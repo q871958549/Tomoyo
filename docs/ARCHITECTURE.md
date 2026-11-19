@@ -186,7 +186,14 @@ sequenceDiagram
   - [x] **Super Match 粘贴胶囊**（输入框 `Ctrl+V` 识别图片/文件列表，直出看图/Base64/SHA-256/打开终端动作）
   - [x] **进程巡检与结束器 (`kill` / `ps`)**、**设置中心内置开放插件市场（SHA-256 校验一键安装/卸载）**、`tomoyo-cli import-utools` 一键导入与远程 HTTPS 索引支持
   - [x] **GitHub Actions CI & Release 自动化流水线**（推送到 `https://github.com/q871958549/Tomoyo` 自动跑全量单测、100 轮反泄露压测与便携版 ZIP + SHA256SUMS 发布）
-- **Phase 6 — 长期演进方向**
-  - Windows Winget / Scoop / MSIX 分发包与一键静默热更新替换脚本
-  - 多平台 UI 适配器（`tomoyo-ui-macos` / `tomoyo-ui-linux`）与本地 OCR / 离线向量语义检索可选插件
+- **Phase 6 — 架构治理、防膨胀规范、极低内存压降与自动安装包发布（v0.5.0 已完成并实测通过 ✅）**
+  - [x] **编码规范与 CI 自动化门禁**：制定 [`docs/CODING_STANDARDS.md`](CODING_STANDARDS.md) 与 [`scripts/check_hygiene.ps1`](../scripts/check_hygiene.ps1)，在 CI 强制执行「单文件 ≤ 450 行、零重型黑名单依赖（禁 `tokio`/`reqwest`/`tauri`/`wry`）、禁 D2D/WARP 回归、`-D warnings` 零警告」。
+  - [x] **全仓去上帝文件模块化重构**：将原 12 个超限大文件（`window.rs` 2,122 行、`settings.html` 1,221 行、`renderer.rs` 981 行、`system.rs` 980 行等）拆分为职责清晰的 82 个小模块，**100% ≤ 450 行**。
+  - [x] **Private Commit 压降 63.3%（43.08 MB → 15.83 MB）**：休眠接入 `mimalloc` `mi_collect(true)` 主动归还页、`Super Match` 查询期短路与 Base64 延迟计算，CI 启用 `--self-test --strict-budget` 硬红线（WS ≤ 2 MB / Private ≤ 28 MB / 100 轮 0 泄露）。
+  - [x] **Windows 自动安装包与本机一键安装**：新增 `packaging/tomoyo.iss`（Inno Setup 免 UAC 安装包）与 `scripts/install-local.ps1`；GitHub Releases 自动发布 `setup.exe` + `portable.zip` + `SHA256SUMS.txt`，自动更新器优先匹配安装包直链。
+- **Phase 7 — 长期演进路线图（v0.6.0 → v1.0.0）**
+  - **v0.6.0（实战打磨与自更新闭环）**：应用内下载 `setup.exe` + SHA-256 校验后静默拉起热升级；多显示器跨 DPI (`WM_DPICHANGED`) 动态字体/窗口重缩放；全局热键被占用时的友好诊断与一键换键引导；应用索引增量刷新（免全量扫描）。
+  - **v0.7.0（安全插件权限与远程社区生态）**：插件首次请求敏感权限（`FilesystemRead`/`Network`/`ShellExec`）时的一次性可视化授权审批与撤权管理；支持直接从 GitHub Release / 远程 ZIP 压缩包一键安装社区插件（含 SHA-256 与签名校验）。
+  - **v0.8.0（高频生产力深度超越 uTools）**：可选按需加载的离线 OCR 插件（截图文字识别，用完即退出 0 常驻内存）、快速脚本/代码片段库（Snippets）、Everything 搜索历史与自定义收藏过滤器。
+  - **v1.0.0（跨平台与分发矩阵）**：发布至 Winget / Scoop / Microsoft Store（MSIX）；基于现有 `tomoyo-core` + `tomoyo-protocol` 零 OS 依赖分层，扩展 `tomoyo-ui-macos` 与 `tomoyo-ui-linux` 适配层。
 

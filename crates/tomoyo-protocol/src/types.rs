@@ -269,6 +269,7 @@ pub enum InternalCommandKind {
     ToggleClipboardPin { id_key: String },
     CheckForUpdates,
     ClearAttachedContext,
+    CopyImageAsBase64 { path: String },
     KillProcess { pid: u32, name: String },
     ToggleAutostart,
     TogglePreviewPane,

@@ -5,10 +5,12 @@
 //! - Tier 2B (`wasm`): Capability-sandboxed, fuel-metered, memory-capped `wasmi` sandbox (0 JIT bloat).
 //! - Tier 3  (`webview`): Zero-idle-RAM trigger returning `ActionKind::OpenWebView` for ephemeral host.
 
+pub mod discovery;
 pub mod host;
 pub mod job;
 pub mod process;
 pub mod wasm;
 
-pub use host::{default_plugin_dirs, PluginHost, PluginRuntimeInfo};
+pub use discovery::default_plugin_dirs;
+pub use host::{PluginHost, PluginRuntimeInfo};
 pub use job::JobGuard;

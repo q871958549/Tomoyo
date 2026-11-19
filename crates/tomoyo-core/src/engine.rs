@@ -140,17 +140,36 @@ impl QueryRouter {
             return self.rank_and_cap(results, limit);
         }
 
+        // 1.5. Super Match short-circuit: when an image/file capsule is attached,
+        // focus exclusively on Super Match system actions + matching plugins (zero app icon churn!).
+        if ctx.attached.is_some() {
+            let mut results = Vec::new();
+            for p in &self.providers {
+                if p.id() == "builtin.system" {
+                    results.extend(p.query(&ctx));
+                }
+            }
+            if let Some(bridge) = &self.plugin_bridge {
+                if !self.is_stale(generation) {
+                    results.extend(bridge.query_global(&ctx));
+                }
+            }
+            return self.rank_and_cap(results, limit);
+        }
+
         // 2. Check for `<keyword> <args>` or exact `<keyword>` routing
         let (first_token, rest) = split_first_token(trimmed);
         let first_lower = first_token.to_lowercase();
         let has_space_after = trimmed.len() > first_token.len();
 
-        // Check built-in prefix providers (`f `, `ev `, `cb `, `w `, `=`, or config web keywords)
+        // Check built-in prefix providers (`f `, `ev `, `cb`, `w`, `kill`, `ps`, `=`, or config web keywords)
         if !first_lower.is_empty() {
             let mut matched_prefix_providers = Vec::new();
             for p in &self.providers {
                 let exact_match = p.matches_prefix(&first_lower);
-                let trigger_now = exact_match && (has_space_after || first_lower == "cb" || first_lower == "w");
+                let trigger_now = exact_match
+                    && (has_space_after
+                        || matches!(first_lower.as_str(), "cb" | "w" | "kill" | "ps"));
                 if trigger_now {
                     matched_prefix_providers.push(p);
                 }

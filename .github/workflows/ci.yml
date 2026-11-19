@@ -13,6 +13,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Enforce coding standards & anti-bloat hygiene gate
+        shell: pwsh
+        run: pwsh -File scripts/check_hygiene.ps1
+
       - name: Setup Rust toolchain (Windows + wasm32)
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -27,15 +31,23 @@ jobs:
           cargo build --manifest-path plugins/example-wasm/Cargo.toml --target wasm32-unknown-unknown --release
           Copy-Item plugins/example-wasm/target/wasm32-unknown-unknown/release/tomoyo_plugin_wasm_demo.wasm plugins/example-wasm/plugin.wasm -Force
 
-      - name: Run full workspace unit & integration tests
+      - name: Run full workspace unit & integration tests (zero warnings)
+        env:
+          RUSTFLAGS: "-D warnings"
         run: cargo test --workspace
 
       - name: Build release binaries
         run: cargo build --release --workspace
 
-      - name: Run release self-tests (anti-leak soak & WebView bridge)
+      - name: Run strict anti-leak resource budget & WebView self-tests
         shell: pwsh
         run: |
-          .\target\release\tomoyo.exe --self-test
-          .\target\release\tomoyo-webview-host.exe --self-test
+          $out1 = Join-Path $env:TEMP "tomoyo_ci_st1.txt"
+          $out2 = Join-Path $env:TEMP "tomoyo_ci_st2.txt"
+          $p1 = Start-Process -FilePath ".\target\release\tomoyo.exe" -ArgumentList "--self-test","--strict-budget" -Wait -PassThru -RedirectStandardOutput $out1 -NoNewWindow
+          Get-Content $out1
+          if ($p1.ExitCode -ne 0) { exit $p1.ExitCode }
+          $p2 = Start-Process -FilePath ".\target\release\tomoyo-webview-host.exe" -ArgumentList "--self-test" -Wait -PassThru -RedirectStandardOutput $out2 -NoNewWindow
+          Get-Content $out2
+          if ($p2.ExitCode -ne 0) { exit $p2.ExitCode }
           .\target\release\tomoyo-cli.exe registry list

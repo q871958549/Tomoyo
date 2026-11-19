@@ -186,15 +186,21 @@ pub fn fetch_latest_github_release(repo: &str, current_ver: &str) -> UpdateStatu
     let mut download_url = None;
     let mut asset_name = None;
     if let Some(assets) = json.get("assets").and_then(|v| v.as_array()) {
-        for a in assets {
-            let name = a.get("name").and_then(|v| v.as_str()).unwrap_or("");
-            let dl = a.get("browser_download_url").and_then(|v| v.as_str());
-            if let Some(url) = dl {
-                if name.ends_with(".zip") || name.ends_with(".exe") || name.ends_with(".msi") {
-                    asset_name = Some(name.to_string());
-                    download_url = Some(url.to_string());
-                    break;
+        // Prefer Windows installer (`-setup.exe` / `.exe` / `.msi`), fall back to portable `.zip`.
+        for suffix in ["-setup.exe", ".exe", ".msi", ".zip"] {
+            for a in assets {
+                let name = a.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                let dl = a.get("browser_download_url").and_then(|v| v.as_str());
+                if let Some(url) = dl {
+                    if name.to_ascii_lowercase().ends_with(suffix) {
+                        asset_name = Some(name.to_string());
+                        download_url = Some(url.to_string());
+                        break;
+                    }
                 }
+            }
+            if download_url.is_some() {
+                break;
             }
         }
     }

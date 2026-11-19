@@ -37,7 +37,7 @@
       "runtime_kind": "wasm",
       "keywords": ["wasm", "jwt", "unit"],
       "source": "plugins/example-wasm",
-      "sha256": "b5c4b0f997d49bc8414a975e63f9c92ae4d91daa72c3a9da082de31dfecb4356"
+      "sha256": "03babfd24b17bba9a44032958c9ab03da73e8fe87393f4a27f677784530c6c68"
     },
     {
       "id": "dev.tomoyo.example-webview-json",

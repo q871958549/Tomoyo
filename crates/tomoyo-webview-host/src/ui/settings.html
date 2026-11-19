@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>Tomoyo 设置中心</title>
+  <style>
+/*__SETTINGS_CSS__*/
+  </style>
+</head>
+<body>
+  <aside>
+    <div class="logo-row">
+      <div class="logo-tile">T</div>
+      <div>
+        <div class="logo-title">Tomoyo</div>
+        <div class="logo-sub" data-i18n="brand_sub">设置中心 · 零后台常驻</div>
+      </div>
+    </div>
+    <nav>
+      <button class="active" data-tab="general" data-i18n="nav_general">常规设置</button>
+      <button data-tab="appearance" data-i18n="nav_appearance">外观与窗口</button>
+      <button data-tab="search" data-i18n="nav_search">Everything 与剪贴板</button>
+      <button data-tab="web" data-i18n="nav_web">快捷网页搜索</button>
+      <button data-tab="store" data-i18n="nav_store">插件市场</button>
+      <button data-tab="plugins" data-i18n="nav_plugins">已安装与路径</button>
+      <button data-tab="updates" data-i18n="nav_updates">检查更新与关于</button>
+    </nav>
+    <div class="sidebar-foot" data-i18n="sidebar_foot">
+      所有修改即时自动保存并同步主窗口。关闭窗口或按 Esc 即彻底退出释放 100% WebView 内存。
+    </div>
+  </aside>
+
+  <main>
+    <div class="content">
+      <!-- GENERAL -->
+      <section id="tab-general" class="active">
+        <h2 data-i18n="h_general">常规设置</h2>
+        <p class="lead" data-i18n="lead_general">界面语言、快捷键自动录入、开机自启与后台反泄露休眠策略。</p>
+        <div class="card">
+          <div class="row">
+            <div>
+              <div class="label-title" data-i18n="lbl_lang">界面语言</div>
+              <div class="label-desc" data-i18n="desc_lang">默认简体中文，完整适配英文，切换即时生效</div>
+            </div>
+            <div class="seg">
+              <button id="lang-zh" onclick="setLanguage('zh')">简体中文</button>
+              <button id="lang-en" onclick="setLanguage('en')">English</button>
+            </div>
+          </div>
+          <div class="row">
+            <div>
+              <div class="label-title" data-i18n="lbl_hotkey">全局呼出快捷键</div>
+              <div class="label-desc" data-i18n="desc_hotkey">点击右侧录入框，直接按下想要的组合键即可自动录入</div>
+            </div>
+            <div class="hotkey-box">
+              <div id="hotkey-recorder" class="hotkey-recorder" tabindex="0"></div>
+              <select id="hotkey-preset" onchange="if(this.value){applyHotkey(this.value);this.value='';}">
+                <option value="" data-i18n="preset_opt">快捷预设</option>
+                <option value="Alt+Space">Alt+Space</option>
+                <option value="Ctrl+Space">Ctrl+Space</option>
+                <option value="Ctrl+Shift+Space">Ctrl+Shift+Space</option>
+                <option value="Alt+Q">Alt+Q</option>
+              </select>
+            </div>
+          </div>
+          <div class="row">
+            <div>
+              <div class="label-title" data-i18n="lbl_autostart">开机静默自启</div>
+              <div class="label-desc" data-i18n="desc_autostart">写入 HKCU\...\Run\Tomoyo，开机以 --silent 驻留托盘</div>
+            </div>
+            <input id="autostart" type="checkbox" onchange="autostart=this.checked;scheduleAutoSave(0)" />
+          </div>
+          <div class="row">
+            <div>
+              <div class="label-title" data-i18n="lbl_hibernate">隐藏后自动休眠延迟</div>
+              <div class="label-desc" data-i18n="desc_hibernate">超时自动释放绘图缓存、图标、SQLite 缓存并 Trim 内存</div>
+            </div>
+            <div class="range-wrap">
+              <input id="hibernate" type="range" min="5" max="120" step="5"
+                     oninput="document.getElementById('hibernate-v').textContent=this.value+' s';scheduleAutoSave(180)" />
+              <span id="hibernate-v" class="range-val">15 s</span>
+            </div>
+          </div>
+          <div class="row">
+            <div>
+              <div class="label-title" data-i18n="lbl_autopreview">自动显示右侧实时预览面板 (Ctrl+P)</div>
+              <div class="label-desc" data-i18n="desc_autopreview">选中文件、剪贴板或插件卡片时自动展开右侧预览</div>
+            </div>
+            <input id="auto_preview" type="checkbox" onchange="scheduleAutoSave(0)" />
+          </div>
+        </div>
+      </section>
+
+      <!-- APPEARANCE & WINDOW -->
+      <section id="tab-appearance">
+        <h2 data-i18n="h_appearance">外观与窗口尺寸</h2>
+        <p class="lead" data-i18n="lead_appearance">支持现代白瓷光、深空黑曜石、午夜蓝三套主题，标题栏与滚动条即时同步切换。</p>
+        <div class="card">
+          <div class="label-title" data-i18n="lbl_theme">主题预设</div>
+          <div class="themes-grid">
+            <div class="theme-card" data-theme="light" onclick="pickTheme('light', true)">
+              <div class="swatch" style="background:#f8f9fc">
+                <div class="swatch-dot" style="background:#181c28"></div>
+                <div class="swatch-bar" style="background:#181c28"></div>
+              </div>
+              <div class="label-title" data-i18n="thm_light">现代白瓷光</div>
+              <div class="label-desc" data-i18n="thm_light_d">纯净瓷白，匹配现代白图标</div>
+            </div>
+            <div class="theme-card" data-theme="dark" onclick="pickTheme('dark', true)">
+              <div class="swatch" style="background:#16161e">
+                <div class="swatch-dot" style="background:#7c6af7"></div>
+                <div class="swatch-bar" style="background:#f3f4f8"></div>
+              </div>
+              <div class="label-title" data-i18n="thm_dark">深空黑曜石</div>
+              <div class="label-desc" data-i18n="thm_dark_d">默认高对比深色主题</div>
+            </div>
+            <div class="theme-card" data-theme="midnight" onclick="pickTheme('midnight', true)">
+              <div class="swatch" style="background:#0e101a">
+                <div class="swatch-dot" style="background:#6366f1"></div>
+                <div class="swatch-bar" style="background:#cbd5e1"></div>
+              </div>
+              <div class="label-title" data-i18n="thm_mid">深邃午夜蓝</div>
+              <div class="label-desc" data-i18n="thm_mid_d">冷调深靛蓝专注模式</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="row">
+            <div>
+              <div class="label-title" data-i18n="lbl_width">主列表宽度</div>
+              <div class="label-desc" data-i18n="desc_width">也可直接在主窗口左右边缘自由拖拽调整</div>
+            </div>
+            <div class="range-wrap">
+              <input id="win_width" type="range" min="520" max="1280" step="20"
+                     oninput="document.getElementById('win_width-v').textContent=this.value+' px';scheduleAutoSave(180)" />
+              <span id="win_width-v" class="range-val">720 px</span>
+            </div>
+          </div>
+          <div class="row">
+            <div>
+              <div class="label-title" data-i18n="lbl_rows">最大可见结果行数</div>
+              <div class="label-desc" data-i18n="desc_rows">也可直接在主窗口上下边缘拖拽自由增减高度</div>
+            </div>
+            <div class="range-wrap">
+              <input id="win_rows" type="range" min="4" max="16" step="1"
+                     oninput="updateRowsLabel(this.value);scheduleAutoSave(180)" />
+              <span id="win_rows-v" class="range-val">8 行</span>
+            </div>
+          </div>
+          <div class="row">
+            <div>
+              <div class="label-title" data-i18n="lbl_preview_w">右侧预览区宽度</div>
+              <div class="label-desc" data-i18n="desc_preview_w">也可直接拖拽主窗口中间的竖向分割线调节</div>
+            </div>
+            <div class="range-wrap">
+              <input id="win_preview" type="range" min="220" max="560" step="10"
+                     oninput="document.getElementById('win_preview-v').textContent=this.value+' px';scheduleAutoSave(180)" />
+              <span id="win_preview-v" class="range-val">310 px</span>
+            </div>
+          </div>
+          <div class="row">
+            <div>
+              <div class="label-title" data-i18n="lbl_pos">窗口位置记忆</div>
+              <div id="pos-desc" class="label-desc"></div>
+            </div>
+            <button class="btn" onclick="resetPosition()" data-i18n="btn_reset_pos">重置居中位置</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- EVERYTHING & CLIPBOARD -->
+      <section id="tab-search">
+        <h2 data-i18n="h_search">Everything 与剪贴板</h2>
+        <p class="lead" data-i18n="lead_search">配置 Everything 毫秒检索条数、默认过滤语法与 SQLite 剪贴板历史上限。</p>
+        <div class="card">
+          <div class="row">
+            <div>
+              <div class="label-title" data-i18n="lbl_ev_global">全局搜索混排 Everything 条数</div>
+              <div class="label-desc" data-i18n="desc_ev_global">不带前缀直接搜索时融合展示的文件数量</div>
+            </div>
+            <input id="ev_global" type="number" min="0" max="10" style="width:84px" onchange="scheduleAutoSave(120)" />
+          </div>
+          <div class="row">
+            <div>
+              <div class="label-title" data-i18n="lbl_ev_ded">专属模式 (f / ev) 最大条数</div>
+              <div class="label-desc" data-i18n="desc_ev_ded">建议 20–50，兼顾极速响应与滚动浏览</div>
+            </div>
+            <input id="ev_ded" type="number" min="5" max="50" style="width:84px" onchange="scheduleAutoSave(120)" />
+          </div>
+          <div class="row">
+            <div>
+              <div class="label-title" data-i18n="lbl_ev_filter">附加 Everything 默认过滤语法</div>
+              <div class="label-desc" data-i18n="desc_ev_filter">例如 !*.tmp !node_modules（仅在 f 模式自动附加）</div>
+            </div>
+            <input id="ev_filter" type="text" placeholder="!*.tmp" style="width:200px" oninput="scheduleAutoSave(350)" />
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="row">
+            <div>
+              <div class="label-title" data-i18n="lbl_clip_persist">SQLite 磁盘持久化剪贴板历史</div>
+              <div class="label-desc" data-i18n="desc_clip_persist">硬限 256 KB 缓存 + 休眠自动收缩 + 支持置顶收藏与回车直贴</div>
+            </div>
+            <input id="clip_persist" type="checkbox" onchange="scheduleAutoSave(0)" />
+          </div>
+          <div class="row">
+            <div>
+              <div class="label-title" data-i18n="lbl_clip_max">最多保留非置顶记录条数</div>
+              <div class="label-desc" data-i18n="desc_clip_max">超过上限自动淘汰最旧的非置顶记录</div>
+            </div>
+            <input id="clip_max" type="number" min="50" max="2000" style="width:92px" onchange="scheduleAutoSave(120)" />
+          </div>
+        </div>
+      </section>
+
+      <!-- WEB SEARCH -->
+      <section id="tab-web">
+        <h2 data-i18n="h_web">快捷网页搜索</h2>
+        <p class="lead" data-i18n="lead_web">输入「关键词 + 空格 + 搜索词」直达网页（{q} 会自动进行 URL 编码），修改即自动生效。</p>
+        <div class="card">
+          <table>
+            <thead>
+              <tr>
+                <th style="width:85px" data-i18n="th_kw">关键词</th>
+                <th style="width:140px" data-i18n="th_name">名称</th>
+                <th data-i18n="th_url">URL 模板</th>
+                <th style="width:52px"></th>
+              </tr>
+            </thead>
+            <tbody id="web-tbody"></tbody>
+          </table>
+          <div style="margin-top:12px">
+            <button class="btn" onclick="addWebRow()" data-i18n="btn_add_web">+ 添加搜索引擎</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- PLUGIN STORE -->
+      <section id="tab-store">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+          <div>
+            <h2 data-i18n="h_store">开放插件市场（免登录 · SHA-256 校验）</h2>
+            <p class="lead" data-i18n="lead_store">去中心化社区插件清单，支持一键安装到本地插件目录并立即热重载生效。</p>
+          </div>
+          <button class="btn" id="btn-refresh-store" onclick="fetchStore()" data-i18n="btn_refresh_store">刷新市场</button>
+        </div>
+        <div class="card">
+          <div id="store-status" class="label-desc" style="margin-bottom:10px"></div>
+          <div id="store-list"></div>
+        </div>
+      </section>
+
+      <!-- PLUGINS & SYSTEM -->
+      <section id="tab-plugins">
+        <h2 data-i18n="h_plugins">已安装插件与系统路径</h2>
+        <p class="lead" data-i18n="lead_plugins">所有外部插件均按需懒启动并自动回收（Job Object / WASM 燃料沙箱 / 独立 WebView）。</p>
+        <div class="card">
+          <table>
+            <thead>
+              <tr>
+                <th data-i18n="th_pname">名称</th>
+                <th data-i18n="th_rt">运行时</th>
+                <th data-i18n="th_trig">触发词</th>
+                <th data-i18n="th_cap">内存上限</th>
+              </tr>
+            </thead>
+            <tbody id="plugins-tbody"></tbody>
+          </table>
+        </div>
+        <div class="card">
+          <div class="row">
+            <div>
+              <div class="label-title" data-i18n="lbl_cfg_path">配置文件位置 (config.toml)</div>
+              <div id="cfg-path" class="label-desc"></div>
+            </div>
+            <button class="btn" onclick="openConfigPath()" data-i18n="btn_open_cfg">打开 config.toml</button>
+          </div>
+          <div class="row">
+            <div>
+              <div class="label-title" data-i18n="lbl_plug_dir">用户插件目录</div>
+              <div id="plug-dir" class="label-desc"></div>
+            </div>
+            <button class="btn" onclick="openPluginsDir()" data-i18n="btn_open_plug">打开插件目录</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- UPDATES & ABOUT -->
+      <section id="tab-updates">
+        <h2 data-i18n="h_updates">检查更新与关于 Tomoyo</h2>
+        <p class="lead" data-i18n="lead_updates">基于原生 WinHTTP 直连 GitHub Releases，零后台常驻线程，100% 开源无遥测。</p>
+        <div class="card">
+          <div class="row">
+            <div>
+              <div class="label-title">Tomoyo <span id="about-ver" class="pill">v0.4.0</span></div>
+              <div class="label-desc" data-i18n="about_desc">MIT / Apache-2.0 双协议开源 · 纯 Rust 超低内存桌面效率启动器</div>
+            </div>
+            <div style="display:flex;gap:8px">
+              <button class="btn" onclick="openRepo()" data-i18n="btn_github">GitHub 仓库</button>
+              <button class="btn primary" id="btn-check-update" onclick="checkUpdatesNow()" data-i18n="btn_check_upd">立即检查更新</button>
+            </div>
+          </div>
+          <div id="update-result-box" class="update-box" style="display:none"></div>
+        </div>
+
+        <div class="card">
+          <div class="row">
+            <div>
+              <div class="label-title" data-i18n="lbl_upd_auto">启动时自动静默检查更新</div>
+              <div class="label-desc" data-i18n="desc_upd_auto">仅在超过检查间隔时发起一次轻量 HTTPS 请求，完成后线程立即销毁</div>
+            </div>
+            <input id="upd_auto" type="checkbox" onchange="scheduleAutoSave(0)" />
+          </div>
+          <div class="row">
+            <div>
+              <div class="label-title" data-i18n="lbl_upd_interval">自动检查间隔</div>
+              <div class="label-desc" data-i18n="desc_upd_interval">控制静默自动检查 GitHub Releases 的最小周期</div>
+            </div>
+            <select id="upd_interval" onchange="scheduleAutoSave(0)">
+              <option value="12">12 h</option>
+              <option value="24">24 h</option>
+              <option value="72">72 h (3d)</option>
+              <option value="168">168 h (7d)</option>
+            </select>
+          </div>
+          <div class="row">
+            <div>
+              <div class="label-title" data-i18n="lbl_upd_repo">GitHub 更新仓库</div>
+              <div class="label-desc" data-i18n="desc_upd_repo">格式：owner/repo（支持自定义 Fork 仓库）</div>
+            </div>
+            <input id="upd_repo" type="text" style="width:210px" oninput="scheduleAutoSave(350)" />
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div class="bottom-bar">
+      <span id="toast"></span>
+      <button class="btn" onclick="closeWin()" data-i18n="btn_close">关闭 (Esc)</button>
+    </div>
+  </main>
+
+  <script>
+/*__SETTINGS_I18N__*/
+/*__SETTINGS_JS__*/
+  </script>
+</body>
+</html>

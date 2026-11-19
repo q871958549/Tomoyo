@@ -7,6 +7,7 @@ use chrono::{DateTime, Local, TimeZone, Utc};
 use thiserror::Error;
 
 pub mod ipc;
+pub mod wire;
 
 #[derive(Debug, Error)]
 pub enum EverythingError {

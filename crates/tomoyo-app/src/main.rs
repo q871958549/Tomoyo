@@ -142,7 +142,7 @@ fn log_mem(stage: &str) {
     );
 }
 
-fn run_self_test(fonts: &PrivateFonts) {
+fn run_self_test(fonts: &PrivateFonts, strict_budget: bool) {
     println!("=== Tomoyo v{CURRENT_VERSION} Full-Stack Anti-Leak & Ecosystem Self-Test ===");
     println!(
         "Font engine: Regular=`{}` · Medium=`{}` (Alibaba PuHuiTi loaded={})",
@@ -183,6 +183,7 @@ fn run_self_test(fonts: &PrivateFonts) {
         "1700000000",
         "g rust tomoyo",
         "f Cargo.toml",
+        "kill",
         "kill explorer",
         ":update",
         ":stats",
@@ -197,12 +198,12 @@ fn run_self_test(fonts: &PrivateFonts) {
         println!("Query `{q}` -> {hits} hits");
     }
 
-    // Exercise Super Match attached capsule (File SHA-256 + PNG thumbnail preview)
+    // Exercise Super Match attached capsule (File SHA-256 + lazy Base64 PNG thumbnail preview)
     let super_hits = shell.self_test_attached_paint(AttachedContext::Files {
         paths: vec!["Cargo.toml".into()],
     });
     println!("Super Match [Files: Cargo.toml] -> {super_hits} hits");
-    assert!(super_hits >= 3, "Super Match should produce File/SHA-256/Terminal actions");
+    assert!((3..=6).contains(&super_hits), "Super Match should focus cleanly on file actions (got {super_hits})");
 
     if std::path::Path::new("assets/tomoyo-icon.png").is_file() {
         let img_hits = shell.self_test_attached_paint(AttachedContext::Image {
@@ -211,7 +212,7 @@ fn run_self_test(fonts: &PrivateFonts) {
             height: 512,
         });
         println!("Super Match [Image: tomoyo-icon.png] -> {img_hits} hits (PNG thumbnail painted)");
-        assert!(img_hits >= 3, "Super Match image should produce Open/Base64/Reveal actions");
+        assert!((3..=6).contains(&img_hits), "Super Match image should focus cleanly on image actions (got {img_hits})");
     }
 
     // Exercise zh/en i18n + all 3 themes live
@@ -231,7 +232,7 @@ fn run_self_test(fonts: &PrivateFonts) {
         "renderer should release surfaces on hibernate"
     );
     let baseline = current_process_stats();
-    log_mem("3. baseline (hibernated)");
+    log_mem("3. baseline (hibernated+mi_purge)");
 
     let soak_queries = ["jsq", "f Cargo.toml", "2^16", ":stats", "g rust", "cb"];
     for cycle in 0..100 {
@@ -242,13 +243,23 @@ fn run_self_test(fonts: &PrivateFonts) {
 
     let after = current_process_stats();
     log_mem("4. after 100 soak cycles");
+    let d_gdi = after.gdi_objects as i64 - baseline.gdi_objects as i64;
+    let d_user = after.user_objects as i64 - baseline.user_objects as i64;
+    let d_handles = after.handle_count as i64 - baseline.handle_count as i64;
+    let d_priv = after.private_mb() - baseline.private_mb();
     println!(
-        "Delta -> GDI: {:+}, USER: {:+}, Handles: {:+}, Private: {:+.2} MB",
-        after.gdi_objects as i64 - baseline.gdi_objects as i64,
-        after.user_objects as i64 - baseline.user_objects as i64,
-        after.handle_count as i64 - baseline.handle_count as i64,
-        after.private_mb() - baseline.private_mb()
+        "Delta -> GDI: {d_gdi:+}, USER: {d_user:+}, Handles: {d_handles:+}, Private: {d_priv:+.2} MB"
     );
+
+    if strict_budget {
+        assert!(after.working_set_mb() <= 2.0, "Hibernated WS exceeded 2.0 MB budget: {:.2} MB", after.working_set_mb());
+        assert!(after.private_mb() <= 28.0, "Hibernated Private Commit exceeded 28.0 MB budget: {:.2} MB", after.private_mb());
+        assert_eq!(d_gdi, 0, "GDI handle leak detected across 100 soak cycles: {d_gdi:+}");
+        assert_eq!(d_user, 0, "USER handle leak detected across 100 soak cycles: {d_user:+}");
+        assert!(d_handles <= 2, "Kernel handle drift exceeded +2 across 100 soak cycles: {d_handles:+}");
+        assert!(d_priv <= 0.5, "Private Commit grew > 0.50 MB across 100 soak cycles: {d_priv:+.2} MB");
+        println!("[PASS] Strict Resource Budget Gate PASSED (WS={:.2} MB, Private={:.2} MB, Zero Leaks)!", after.working_set_mb(), after.private_mb());
+    }
 }
 
 fn main() {
@@ -269,12 +280,13 @@ fn main() {
 
     let args: Vec<String> = std::env::args().collect();
     if args.iter().any(|a| a == "--self-test") {
+        let strict = args.iter().any(|a| a == "--strict-budget");
         unsafe {
             let _ = windows::Win32::System::Console::AttachConsole(
                 windows::Win32::System::Console::ATTACH_PARENT_PROCESS,
             );
         }
-        run_self_test(&fonts);
+        run_self_test(&fonts, strict);
         return;
     }
 

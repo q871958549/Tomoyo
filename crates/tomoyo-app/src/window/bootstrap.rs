@@ -1,0 +1,239 @@
+//! Win32 window bootstrap, EDIT control creation, and async query worker thread setup.
+
+use super::input::{edit_subclass_proc, register_configured_hotkey};
+use super::layout::{apply_cue_banner, apply_dwm_attributes, create_edit_font};
+use super::wndproc::main_wndproc;
+use super::{
+    AppShell, InteractionState, QueryJob, QueryOutcome, WindowGeometry, EDIT_CTRL_ID,
+    EDIT_SUBCLASS_ID, WM_APP_RESULTS_READY,
+};
+use crate::actions::read_clipboard_text;
+use crate::renderer::{
+    FluentRenderer, ThemePalette, FOOTER_HEIGHT_DIP, HEADER_HEIGHT_DIP, MIN_WINDOW_WIDTH_DIP,
+};
+use crate::tray::TrayIcon;
+use std::ffi::c_void;
+use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::{Arc, RwLock};
+use tomoyo_core::{QueryRouter, TomoyoConfig, UpdateManager};
+use tomoyo_plugin_host::PluginHost;
+use tomoyo_providers::ClipboardProvider;
+use windows::core::w;
+use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
+use windows::Win32::Graphics::Gdi::CreateSolidBrush;
+use windows::Win32::System::DataExchange::AddClipboardFormatListener;
+use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::UI::HiDpi::GetDpiForWindow;
+use windows::Win32::UI::Shell::SetWindowSubclass;
+use windows::Win32::UI::WindowsAndMessaging::{
+    CreateWindowExW, LoadCursorW, PostMessageW, RegisterClassW, SendMessageW, SetWindowLongPtrW,
+    CW_USEDEFAULT, ES_AUTOHSCROLL, ES_LEFT, GWLP_USERDATA, HMENU, IDC_ARROW, WINDOW_STYLE,
+    WM_SETFONT, WNDCLASSW, WS_CHILD, WS_CLIPCHILDREN, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
+    WS_VISIBLE,
+};
+
+impl AppShell {
+    #[allow(clippy::too_many_arguments)]
+    pub fn create(
+        config: Arc<RwLock<TomoyoConfig>>,
+        router: Arc<QueryRouter>,
+        plugin_host: Arc<PluginHost>,
+        clipboard: Arc<ClipboardProvider>,
+        updater: Arc<UpdateManager>,
+        font_regular: &'static str,
+        font_medium: &'static str,
+        install_tray_and_hotkey: bool,
+    ) -> windows::core::Result<Box<Self>> {
+        let renderer = FluentRenderer::new(font_regular, font_medium)?;
+        let (query_tx, query_rx) = mpsc::channel::<QueryJob>();
+        let (result_tx, result_rx) = mpsc::channel::<QueryOutcome>();
+
+        let cfg_snap = config.read().map(|c| c.clone()).unwrap_or_default();
+        let initial_lang = cfg_snap.lang();
+        let theme = ThemePalette::from_name(&cfg_snap.theme);
+        let geom = WindowGeometry {
+            list_width_dip: cfg_snap.window.width_dip.clamp(MIN_WINDOW_WIDTH_DIP, 1400),
+            max_visible_rows: cfg_snap.window.max_visible_rows.clamp(4, 18),
+            preview_width_dip: cfg_snap.window.preview_width_dip.clamp(220, 620),
+            custom_pos: cfg_snap.window.custom_x.zip(cfg_snap.window.custom_y),
+        };
+
+        let class_name = w!("TomoyoLauncherWindowClass");
+        let hinstance = unsafe { GetModuleHandleW(None)? };
+        unsafe {
+            let wc = WNDCLASSW {
+                lpfnWndProc: Some(main_wndproc),
+                hInstance: hinstance.into(),
+                hCursor: LoadCursorW(None, IDC_ARROW).unwrap_or_default(),
+                lpszClassName: class_name,
+                ..Default::default()
+            };
+            let _ = RegisterClassW(&wc);
+        }
+
+        let hwnd = unsafe {
+            CreateWindowExW(
+                WS_EX_TOPMOST | WS_EX_TOOLWINDOW,
+                class_name,
+                w!("Tomoyo"),
+                WS_POPUP | WS_CLIPCHILDREN,
+                CW_USEDEFAULT,
+                CW_USEDEFAULT,
+                geom.list_width_dip,
+                HEADER_HEIGHT_DIP + FOOTER_HEIGHT_DIP,
+                None,
+                None,
+                Some(hinstance.into()),
+                None,
+            )?
+        };
+        apply_dwm_attributes(hwnd, theme.is_dark);
+
+        let dpi = unsafe { GetDpiForWindow(hwnd) };
+        let dpi_scale = if dpi > 0 { dpi as f32 / 96.0 } else { 1.0 };
+        let edit_font = create_edit_font(dpi_scale, font_regular);
+        let edit_bg_brush = unsafe { CreateSolidBrush(theme.bg.to_colorref()) };
+
+        let edit_hwnd = unsafe {
+            CreateWindowExW(
+                Default::default(),
+                w!("EDIT"),
+                w!(""),
+                WS_CHILD | WS_VISIBLE | WINDOW_STYLE((ES_LEFT | ES_AUTOHSCROLL) as u32),
+                (62.0 * dpi_scale) as i32,
+                (18.0 * dpi_scale) as i32,
+                ((geom.list_width_dip - 190) as f32 * dpi_scale) as i32,
+                (28.0 * dpi_scale) as i32,
+                Some(hwnd),
+                Some(HMENU(EDIT_CTRL_ID as *mut c_void)),
+                Some(hinstance.into()),
+                None,
+            )?
+        };
+        unsafe {
+            SendMessageW(
+                edit_hwnd,
+                WM_SETFONT,
+                Some(WPARAM(edit_font.0 as usize)),
+                Some(LPARAM(1)),
+            );
+            apply_cue_banner(edit_hwnd, initial_lang);
+            let _ = SetWindowSubclass(
+                edit_hwnd,
+                Some(edit_subclass_proc),
+                EDIT_SUBCLASS_ID,
+                hwnd.0 as usize,
+            );
+        }
+
+        let mut hotkey_label = cfg_snap.hotkey.clone();
+        let tray = if install_tray_and_hotkey {
+            unsafe {
+                let _ = AddClipboardFormatListener(hwnd);
+            }
+            hotkey_label = register_configured_hotkey(hwnd, &cfg_snap.hotkey);
+            Some(TrayIcon::install(hwnd, &hotkey_label))
+        } else {
+            None
+        };
+
+        spawn_query_worker(Arc::clone(&router), hwnd.0 as usize, query_rx, result_tx);
+
+        let mut app = Box::new(Self {
+            hwnd,
+            edit_hwnd,
+            edit_font,
+            edit_bg_brush,
+            tray,
+            renderer,
+            config,
+            lang: initial_lang,
+            theme,
+            theme_name: cfg_snap.theme,
+            router,
+            plugin_host,
+            clipboard,
+            updater,
+            query_tx,
+            result_rx,
+            current_query: String::new(),
+            attached: None,
+            results: Vec::new(),
+            selected: 0,
+            scroll_offset: 0,
+            action_menu_open: false,
+            selected_action: 0,
+            preview_enabled: cfg_snap.auto_preview,
+            cached_preview_id: None,
+            cached_preview: None,
+            geom,
+            inter: InteractionState::default(),
+            toast: None,
+            everything_status: detect_everything_label(),
+            hotkey_label,
+            dpi_scale,
+        });
+
+        unsafe {
+            SetWindowLongPtrW(hwnd, GWLP_USERDATA, &mut *app as *mut AppShell as isize);
+        }
+        if let Some(txt) = read_clipboard_text() {
+            app.clipboard.push_text(txt);
+        }
+        Ok(app)
+    }
+}
+
+fn spawn_query_worker(
+    worker_router: Arc<QueryRouter>,
+    hwnd_raw: usize,
+    query_rx: Receiver<QueryJob>,
+    result_tx: Sender<QueryOutcome>,
+) {
+    let _ = std::thread::Builder::new()
+        .name("tomoyo-query-worker".into())
+        .spawn(move || {
+            while let Ok(mut job) = query_rx.recv() {
+                while let Ok(newer) = query_rx.try_recv() {
+                    job = newer;
+                }
+                if worker_router.is_stale(job.generation) {
+                    continue;
+                }
+                let items = worker_router.search(
+                    &job.query,
+                    job.generation,
+                    30,
+                    job.clipboard,
+                    job.attached,
+                );
+                if worker_router.is_stale(job.generation) {
+                    continue;
+                }
+                if result_tx
+                    .send(QueryOutcome {
+                        generation: job.generation,
+                        items,
+                    })
+                    .is_ok()
+                {
+                    unsafe {
+                        let _ = PostMessageW(
+                            Some(HWND(hwnd_raw as *mut c_void)),
+                            WM_APP_RESULTS_READY,
+                            WPARAM(0),
+                            LPARAM(0),
+                        );
+                    }
+                }
+            }
+        });
+}
+
+pub(super) fn detect_everything_label() -> Option<&'static str> {
+    match tomoyo_everything::detect_running() {
+        Some(tomoyo_everything::EverythingVersion::V15Alpha) => Some("Everything 1.5a"),
+        Some(tomoyo_everything::EverythingVersion::V14) => Some("Everything 1.4"),
+        None => None,
+    }
+}

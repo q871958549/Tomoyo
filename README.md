@@ -11,7 +11,7 @@
   <a href="https://github.com/q871958549/Tomoyo/actions/workflows/ci.yml"><img src="https://github.com/q871958549/Tomoyo/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="LICENSE-MIT"><img src="https://img.shields.io/badge/license-MIT%20%2F%20Apache--2.0-blue.svg" alt="License" /></a>
   <img src="https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-0078D6.svg" alt="Windows" />
-  <img src="https://img.shields.io/badge/version-v0.4.0-7c6af7.svg" alt="Version" />
+  <img src="https://img.shields.io/badge/version-v0.5.0-7c6af7.svg" alt="Version" />
 </p>
 
 ---
@@ -39,41 +39,37 @@
 
 ---
 
-## 实测性能与反泄露压测 (`v0.4.0` Release)
+## 实测性能与反泄露压测 (`v0.5.0` Release — 严格资源预算硬门禁)
 
-| 指标 | 实测结果 |
-|---|---|
-| `tomoyo.exe` 单文件主程序 | **4.66 MB**（内置 SQLite + `wasmi` WASM 引擎 + 拼音 + Everything IPC + PNG 编解码 + WinHTTP 自动更新） |
-| `tomoyo-webview-host.exe`（设置中心 & 插件市场 & WebView 插件） | **1.20 MB**（**0 MB 后台常驻内存**，关闭即进程退出） |
-| `tomoyo-cli.exe`（脚手架 + uTools 导入 + SHA-256 市场） | **2.14 MB** |
-| 示例 WASM 插件 (`plugins/example-wasm/plugin.wasm`) | **166.1 KB** |
-| 休眠后后台 Working Set 内存占用 | **0.13 MB**（0% CPU，0 MB GPU VRAM） |
-| **100 轮完整查询 + 绘图 + 预览 + 休眠压测 Delta** | **GDI `+0` · USER `+0` · Handles `+0` · Private `-0.33 MB`** |
+| 指标 | 实测结果 | CI 硬门禁红线 |
+|---|---|---|
+| `tomoyo.exe` 单文件主程序 | **4.66 MB**（SQLite + `wasmi` + 拼音 + Everything IPC + PNG + WinHTTP） | — |
+| `tomoyo-webview-host.exe`（设置中心 & 插件市场 & WebView 插件） | **1.20 MB**（**0 MB 后台常驻内存**，关闭即退出） | 0 MB 常驻 |
+| 休眠态 Working Set 内存占用 | **0.14 MB**（0% CPU，0 MB GPU VRAM） | ≤ 2.0 MB |
+| 休眠态 Private Commit（含 279 应用索引 + SQLite + 阿里巴巴字体 + `mi_collect`） | **15.83 MB**（较 v0.4.0 压降 **-63.3%**！） | ≤ 28.0 MB |
+| **100 轮完整查询 + 绘图 + 预览 + 休眠压测 Delta** | **GDI `+0` · USER `+0` · Handles `+0` · Private `-0.19 MB`** | 0 泄露 |
+| 架构健康度（[编码规范](docs/CODING_STANDARDS.md)） | **全仓 82 个源码文件全部 ≤ 450 行**（彻底消灭上帝文件） | ≤ 450 行/文件 |
 
 ---
 
-## 快速开始 (Quick Start)
+## 下载安装与快速开始 (Install & Quick Start)
+
+- **直接安装（推荐）**：前往 [GitHub Releases](https://github.com/q871958549/Tomoyo/releases) 下载 `Tomoyo-vX.Y.Z-windows-x64-setup.exe` 安装包（免管理员 UAC，安装至 `%LOCALAPPDATA%\Programs\Tomoyo`，含完整卸载支持）或 `portable.zip` 便携包。
+- **从源码构建并安装到本机**：
 
 ```powershell
-# 克隆仓库
+# 克隆仓库并编译 Release
 git clone https://github.com/q871958549/Tomoyo.git
 cd Tomoyo
-
-# 编译全部 Release 可执行文件
 cargo build --release --workspace
 
-# 启动 Tomoyo（默认 Alt+Space 呼出，右键图标或 Ctrl+, 打开设置中心）
-.\target\release\tomoyo.exe
+# 一键安装到本机（开始菜单 + 桌面快捷方式 + 系统应用列表 + 自动启动托盘）
+pwsh -File scripts\install-local.ps1
 
-# 运行内置 100 轮反泄露与全链路自检
-.\target\release\tomoyo.exe --self-test
+# 运行编码规范守卫 + 100 轮严格内存预算反泄露自检
+pwsh -File scripts\check_hygiene.ps1
+.\target\release\tomoyo.exe --self-test --strict-budget
 .\target\release\tomoyo-webview-host.exe --self-test
-
-# 开放插件生态 CLI
-.\target\release\tomoyo-cli.exe registry list
-.\target\release\tomoyo-cli.exe verify plugins\example-wasm
-.\target\release\tomoyo-cli.exe new my-tool --lang wasm
-.\target\release\tomoyo-cli.exe import-utools C:\path\to\utools-plugin
 ```
 
 ---

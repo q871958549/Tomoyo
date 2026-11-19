@@ -1,3 +1,6 @@
+//! Unified Multi-Runtime Plugin Host lifecycle orchestrator (lazy spawn, query, execute, idle reap).
+
+use crate::discovery::{build_webview_trigger_item, scan_plugin_dirs};
 use crate::process::{LivePluginProcess, ProcessError};
 use crate::wasm::LiveWasmPlugin;
 use std::collections::HashMap;
@@ -6,9 +9,8 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 use tomoyo_core::{inspect_pid_working_set, ExternalPluginBridge, PluginSummary};
 use tomoyo_protocol::{
-    ActionKind, ActionSpec, ExecuteRequest, ExecuteResponse, IconSpec, PluginManifest,
-    PreviewSpec, QueryContext, QueryResponse, ResultCategory, ResultItem, RuntimeConfig,
-    METHOD_EXECUTE, METHOD_QUERY,
+    ExecuteRequest, ExecuteResponse, PluginManifest, QueryContext, QueryResponse, ResultItem,
+    RuntimeConfig, METHOD_EXECUTE, METHOD_QUERY,
 };
 
 #[derive(Debug, Clone)]
@@ -38,21 +40,18 @@ impl LiveRuntime {
             Self::Wasm(w) => w.last_used(),
         }
     }
-
     fn pid(&self) -> Option<u32> {
         match self {
             Self::Stdio(p) => Some(p.pid()),
             Self::Wasm(_) => None,
         }
     }
-
     fn memory_bytes(&self) -> Option<u64> {
         match self {
             Self::Stdio(p) => inspect_pid_working_set(p.pid()),
             Self::Wasm(w) => Some(w.linear_memory_bytes()),
         }
     }
-
     fn shutdown(&mut self) {
         if let Self::Stdio(p) = self {
             p.shutdown_gracefully();
@@ -89,7 +88,6 @@ impl PluginHost {
             }),
             Condvar::new(),
         ));
-
         let host = Arc::new(Self {
             state: Arc::clone(&state),
         });
@@ -98,7 +96,6 @@ impl PluginHost {
         host
     }
 
-    /// Scans all configured plugin directories for `tomoyo-plugin.toml`.
     pub fn discover_plugins(&self) {
         let (lock, _) = &*self.state;
         let mut st = lock.lock().unwrap();
@@ -110,59 +107,23 @@ impl PluginHost {
         st.plugins.clear();
         st.keyword_index.clear();
 
-        let dirs = st.search_dirs.clone();
-        for root in dirs {
-            let Ok(entries) = std::fs::read_dir(&root) else {
-                continue;
-            };
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if !path.is_dir() {
-                    continue;
-                }
-                let manifest_path = path.join("tomoyo-plugin.toml");
-                if !manifest_path.is_file() {
-                    continue;
-                }
-                match std::fs::read_to_string(&manifest_path)
-                    .map_err(|e| e.to_string())
-                    .and_then(|raw| PluginManifest::from_toml_str(&raw).map_err(|e| e.to_string()))
-                {
-                    Ok(manifest) => {
-                        let id = manifest.id.clone();
-                        for kw in &manifest.triggers.keywords {
-                            let kw_lower = kw.trim().to_lowercase();
-                            if !kw_lower.is_empty() {
-                                st.keyword_index
-                                    .entry(kw_lower)
-                                    .or_default()
-                                    .push(id.clone());
-                            }
-                        }
-                        tracing::info!(
-                            "Discovered [{}] plugin `{}` ({}) from {}",
-                            manifest.runtime.kind_badge(),
-                            manifest.name,
-                            manifest.id,
-                            path.display()
-                        );
-                        st.plugins.insert(
-                            id,
-                            RegisteredPlugin {
-                                manifest,
-                                dir: path,
-                                live: None,
-                            },
-                        );
-                    }
-                    Err(err) => {
-                        tracing::warn!(
-                            "Skipping invalid plugin manifest at {}: {err}",
-                            manifest_path.display()
-                        );
-                    }
+        let discovered = scan_plugin_dirs(&st.search_dirs);
+        for item in discovered {
+            let id = item.manifest.id.clone();
+            for kw in &item.manifest.triggers.keywords {
+                let kw_lower = kw.trim().to_lowercase();
+                if !kw_lower.is_empty() {
+                    st.keyword_index.entry(kw_lower).or_default().push(id.clone());
                 }
             }
+            st.plugins.insert(
+                id,
+                RegisteredPlugin {
+                    manifest: item.manifest,
+                    dir: item.dir,
+                    live: None,
+                },
+            );
         }
     }
 
@@ -172,22 +133,18 @@ impl PluginHost {
         let mut list: Vec<PluginRuntimeInfo> = st
             .plugins
             .values()
-            .map(|p| {
-                let pid = p.live.as_ref().and_then(|l| l.pid());
-                let ws = p.live.as_ref().and_then(|l| l.memory_bytes());
-                PluginRuntimeInfo {
-                    id: p.manifest.id.clone(),
-                    name: p.manifest.name.clone(),
-                    version: p.manifest.version.clone(),
-                    description: p.manifest.description.clone(),
-                    runtime_badge: p.manifest.runtime.kind_badge().to_string(),
-                    keywords: p.manifest.triggers.keywords.clone(),
-                    running: p.live.is_some(),
-                    pid,
-                    working_set_bytes: ws,
-                    max_memory_mb: p.manifest.resources.max_memory_mb,
-                    idle_timeout_secs: p.manifest.resources.idle_timeout_secs,
-                }
+            .map(|p| PluginRuntimeInfo {
+                id: p.manifest.id.clone(),
+                name: p.manifest.name.clone(),
+                version: p.manifest.version.clone(),
+                description: p.manifest.description.clone(),
+                runtime_badge: p.manifest.runtime.kind_badge().to_string(),
+                keywords: p.manifest.triggers.keywords.clone(),
+                running: p.live.is_some(),
+                pid: p.live.as_ref().and_then(|l| l.pid()),
+                working_set_bytes: p.live.as_ref().and_then(|l| l.memory_bytes()),
+                max_memory_mb: p.manifest.resources.max_memory_mb,
+                idle_timeout_secs: p.manifest.resources.idle_timeout_secs,
             })
             .collect();
         list.sort_by(|a, b| a.name.cmp(&b.name));
@@ -202,17 +159,12 @@ impl PluginHost {
         let (lock, cvar) = &*self.state;
         let mut st = lock.lock().unwrap();
         let Some(plug) = st.plugins.get_mut(plugin_id) else {
-            return Err(ProcessError::Spawn(format!(
-                "plugin `{plugin_id}` not found"
-            )));
+            return Err(ProcessError::Spawn(format!("plugin `{plugin_id}` not found")));
         };
-
         let timeout = Duration::from_millis(plug.manifest.resources.query_timeout_ms.max(2000));
-        let spawned = ensure_live(plug)?;
-        if spawned {
+        if ensure_live(plug)? {
             cvar.notify_one();
         }
-
         match plug.live.as_mut() {
             Some(LiveRuntime::Stdio(proc)) => {
                 let params = serde_json::to_value(&req)?;
@@ -232,13 +184,11 @@ impl PluginHost {
         }
     }
 
-    /// Reaps any plugin (STDIO process or WASM sandbox) idle beyond TTL (or all if `force_all`).
     pub fn reap_plugins(&self, force_all: bool) -> usize {
         let (lock, _) = &*self.state;
         let mut st = lock.lock().unwrap();
         let now = Instant::now();
         let mut reaped = 0;
-
         for plug in st.plugins.values_mut() {
             let idle_ttl = Duration::from_secs(plug.manifest.resources.idle_timeout_secs);
             let should_reap = plug
@@ -284,8 +234,6 @@ impl PluginHost {
             let Some(plug) = st.plugins.get_mut(id) else {
                 continue;
             };
-
-            // WebView plugins consume 0 bytes until explicitly launched on Enter!
             if let RuntimeConfig::Webview {
                 entry,
                 utools_compat,
@@ -293,69 +241,21 @@ impl PluginHost {
                 height,
             } = &plug.manifest.runtime
             {
-                let entry_path = plug.dir.join(entry).to_string_lossy().into_owned();
-                let compat_tag = if *utools_compat {
-                    "uTools Bridge"
-                } else {
-                    "WebView"
-                };
-                items.push(ResultItem {
-                    id: format!("webview:{}", plug.manifest.id),
-                    provider_id: plug.manifest.id.clone(),
-                    title: format!(
-                        "Open {} {}",
-                        plug.manifest.name,
-                        if ctx.args.trim().is_empty() {
-                            String::new()
-                        } else {
-                            format!("— {}", ctx.args.trim())
-                        }
-                    )
-                    .trim()
-                    .to_string(),
-                    subtitle: format!(
-                        "{} · Ephemeral WebView Host (0 idle RAM, killed on close)",
-                        plug.manifest.description
-                    ),
-                    category: ResultCategory::Plugin,
-                    score: 9_600,
-                    icon: IconSpec::Monogram("WV".into()),
-                    badge: Some(compat_tag.into()),
-                    copy_text: None,
-                    actions: vec![ActionSpec {
-                        id: "open_webview".into(),
-                        label: format!("Launch {} (Isolated WebView)", plug.manifest.name),
-                        shortcut: Some("Enter".into()),
-                        kind: ActionKind::OpenWebView {
-                            plugin_id: plug.manifest.id.clone(),
-                            title: plug.manifest.name.clone(),
-                            entry_path,
-                            utools_compat: *utools_compat,
-                            initial_query: ctx.args.trim().to_string(),
-                            width: *width,
-                            height: *height,
-                            max_memory_mb: plug.manifest.resources.max_memory_mb.max(256),
-                        },
-                    }],
-                    preview: Some(PreviewSpec::KeyValue {
-                        title: plug.manifest.name.clone(),
-                        entries: vec![
-                            ("Runtime".into(), "Ephemeral WebView2 Host".into()),
-                            ("Background RAM".into(), "0 MB (killed immediately on close)".into()),
-                            ("uTools Compat".into(), if *utools_compat { "Enabled (window.utools)" } else { "Disabled" }.into()),
-                            ("Window Size".into(), format!("{width}x{height}")),
-                            ("Description".into(), plug.manifest.description.clone()),
-                        ],
-                    }),
-                });
+                items.push(build_webview_trigger_item(
+                    &plug.manifest,
+                    &plug.dir,
+                    entry,
+                    *utools_compat,
+                    *width,
+                    *height,
+                    ctx,
+                ));
                 continue;
             }
 
             let timeout = Duration::from_millis(plug.manifest.resources.query_timeout_ms);
             match ensure_live(plug) {
-                Ok(spawned) => {
-                    any_spawned |= spawned;
-                }
+                Ok(spawned) => any_spawned |= spawned,
                 Err(err) => {
                     tracing::warn!("Failed to start plugin `{}`: {err}", plug.manifest.id);
                     continue;
@@ -370,9 +270,9 @@ impl PluginHost {
                     proc.call(METHOD_QUERY, params, timeout)
                         .and_then(|val| serde_json::from_value::<QueryResponse>(val).map_err(Into::into))
                 }
-                Some(LiveRuntime::Wasm(wasm)) => wasm
-                    .query(ctx)
-                    .map_err(|e| ProcessError::Spawn(e.to_string())),
+                Some(LiveRuntime::Wasm(wasm)) => {
+                    wasm.query(ctx).map_err(|e| ProcessError::Spawn(e.to_string()))
+                }
                 None => continue,
             };
 
@@ -409,9 +309,7 @@ impl PluginHost {
                     if st.shutting_down {
                         break;
                     }
-                    let any_alive = st.plugins.values().any(|p| p.live.is_some());
-                    if !any_alive {
-                        // Zero CPU wakeups when no plugins are active!
+                    if !st.plugins.values().any(|p| p.live.is_some()) {
                         st = cvar.wait(st).unwrap();
                         continue;
                     }
@@ -453,39 +351,42 @@ impl Drop for PluginHost {
 impl ExternalPluginBridge for PluginHost {
     fn matches_keyword(&self, keyword: &str) -> bool {
         let (lock, _) = &*self.state;
-        let st = lock.lock().unwrap();
-        st.keyword_index.contains_key(&keyword.to_lowercase())
+        lock.lock().unwrap().keyword_index.contains_key(&keyword.to_lowercase())
     }
 
     fn query_keyword(&self, keyword: &str, ctx: &QueryContext) -> Vec<ResultItem> {
         let ids = {
             let (lock, _) = &*self.state;
-            let st = lock.lock().unwrap();
-            st.keyword_index
+            lock.lock()
+                .unwrap()
+                .keyword_index
                 .get(&keyword.to_lowercase())
                 .cloned()
                 .unwrap_or_default()
         };
         if ids.is_empty() {
-            return Vec::new();
+            Vec::new()
+        } else {
+            self.query_plugin_ids(&ids, ctx)
         }
-        self.query_plugin_ids(&ids, ctx)
     }
 
     fn query_global(&self, ctx: &QueryContext) -> Vec<ResultItem> {
         let ids: Vec<String> = {
             let (lock, _) = &*self.state;
-            let st = lock.lock().unwrap();
-            st.plugins
+            lock.lock()
+                .unwrap()
+                .plugins
                 .values()
                 .filter(|p| p.manifest.triggers.match_all)
                 .map(|p| p.manifest.id.clone())
                 .collect()
         };
         if ids.is_empty() {
-            return Vec::new();
+            Vec::new()
+        } else {
+            self.query_plugin_ids(&ids, ctx)
         }
-        self.query_plugin_ids(&ids, ctx)
     }
 
     fn reload(&self) {
@@ -544,30 +445,6 @@ fn ensure_live(plug: &mut RegisteredPlugin) -> Result<bool, ProcessError> {
         }
         RuntimeConfig::Webview { .. } => Ok(false),
     }
-}
-
-/// Default plugin search roots: `./plugins`, `<exe_dir>/plugins`, and `%LOCALAPPDATA%\Tomoyo\plugins`.
-pub fn default_plugin_dirs() -> Vec<PathBuf> {
-    let mut dirs = Vec::new();
-    if let Ok(cwd) = std::env::current_dir() {
-        let p = cwd.join("plugins");
-        if p.is_dir() {
-            dirs.push(p);
-        }
-    }
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            let p = dir.join("plugins");
-            if p.is_dir() && !dirs.contains(&p) {
-                dirs.push(p);
-            }
-        }
-    }
-    let user_dir = tomoyo_core::data_dir().join("plugins");
-    if !dirs.contains(&user_dir) {
-        dirs.push(user_dir);
-    }
-    dirs
 }
 
 pub fn discover_from(path: &Path) -> Arc<PluginHost> {

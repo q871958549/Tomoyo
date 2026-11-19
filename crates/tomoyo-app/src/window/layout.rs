@@ -1,0 +1,385 @@
+//! Window geometry, DPI/multi-monitor positioning, edit control layout, divider & row hit-testing.
+
+use super::{AppShell, EM_SETCUEBANNER};
+use crate::actions::shell_open;
+use crate::renderer::{
+    DEFAULT_PREVIEW_WIDTH_DIP, DEFAULT_WINDOW_WIDTH_DIP, FOOTER_HEIGHT_DIP, HEADER_HEIGHT_DIP,
+    MAX_WINDOW_WIDTH_DIP, MIN_WINDOW_WIDTH_DIP, ROW_HEIGHT_DIP,
+};
+use std::ffi::c_void;
+use tomoyo_core::{ExternalPluginBridge, Lang, TomoyoConfig};
+use tomoyo_protocol::AttachedContext;
+use windows::core::PCWSTR;
+use windows::Win32::Foundation::{HWND, LPARAM, POINT, RECT, WPARAM};
+use windows::Win32::Graphics::Dwm::{
+    DwmSetWindowAttribute, DWMWA_USE_IMMERSIVE_DARK_MODE, DWMWA_WINDOW_CORNER_PREFERENCE,
+    DWMWCP_ROUND,
+};
+use windows::Win32::Graphics::Gdi::{
+    CreateFontW, GetMonitorInfoW, MonitorFromPoint, CLEARTYPE_QUALITY, CLIP_DEFAULT_PRECIS,
+    DEFAULT_CHARSET, DEFAULT_PITCH, FF_DONTCARE, FW_NORMAL, HFONT, MONITORINFO,
+    MONITOR_DEFAULTTONEAREST, MONITOR_DEFAULTTONULL, OUT_DEFAULT_PRECIS,
+};
+use windows::Win32::UI::HiDpi::GetDpiForWindow;
+use windows::Win32::UI::WindowsAndMessaging::{
+    GetClientRect, GetCursorPos, GetWindowRect, GetWindowTextLengthW, GetWindowTextW, MoveWindow,
+    SendMessageW, SetWindowPos, HWND_TOPMOST, SWP_NOACTIVATE, SWP_SHOWWINDOW,
+};
+
+impl AppShell {
+    pub fn reset_window_geometry(&mut self) {
+        self.geom.list_width_dip = DEFAULT_WINDOW_WIDTH_DIP;
+        self.geom.max_visible_rows = 8;
+        self.geom.preview_width_dip = DEFAULT_PREVIEW_WIDTH_DIP;
+        self.geom.custom_pos = None;
+        if let Ok(mut cfg) = self.config.write() {
+            cfg.window = Default::default();
+            let _ = cfg.save();
+        }
+        self.position_on_active_monitor();
+        self.show_toast(self.lang.pick(
+            "已重置窗口位置与默认尺寸",
+            "Window position & size reset to defaults",
+        ));
+    }
+
+    pub(super) fn persist_window_geometry(&mut self) {
+        let mut rect = RECT::default();
+        unsafe {
+            if GetWindowRect(self.hwnd, &mut rect).is_err() {
+                return;
+            }
+        }
+        self.geom.custom_pos = Some((rect.left, rect.top));
+        if let Ok(mut cfg) = self.config.write() {
+            cfg.window.width_dip = self.geom.list_width_dip;
+            cfg.window.max_visible_rows = self.geom.max_visible_rows;
+            cfg.window.preview_width_dip = self.geom.preview_width_dip;
+            cfg.window.custom_x = Some(rect.left);
+            cfg.window.custom_y = Some(rect.top);
+            let _ = cfg.save();
+        }
+    }
+
+    pub(super) fn position_on_active_monitor(&mut self) {
+        unsafe {
+            let dpi = GetDpiForWindow(self.hwnd);
+            if dpi > 0 {
+                self.dpi_scale = dpi as f32 / 96.0;
+            }
+            let width = (self.desired_width_dip() as f32 * self.dpi_scale) as i32;
+            let height = (self.desired_height_dip() as f32 * self.dpi_scale) as i32;
+
+            if let Some((cx, cy)) = self.geom.custom_pos {
+                let test_pt = POINT {
+                    x: cx + width / 2,
+                    y: cy + 30,
+                };
+                if !MonitorFromPoint(test_pt, MONITOR_DEFAULTTONULL).is_invalid() {
+                    let _ = SetWindowPos(
+                        self.hwnd,
+                        Some(HWND_TOPMOST),
+                        cx,
+                        cy,
+                        width,
+                        height,
+                        SWP_NOACTIVATE,
+                    );
+                    self.layout_edit_control(width);
+                    return;
+                }
+            }
+
+            let mut pt = POINT::default();
+            let _ = GetCursorPos(&mut pt);
+            let hmon = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
+            let mut mi = MONITORINFO {
+                cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+                ..Default::default()
+            };
+            let _ = GetMonitorInfoW(hmon, &mut mi);
+            let work = mi.rcWork;
+            let x = work.left + ((work.right - work.left) - width) / 2;
+            let y = work.top + ((work.bottom - work.top) / 5).max(40);
+            let _ = SetWindowPos(self.hwnd, Some(HWND_TOPMOST), x, y, width, height, SWP_NOACTIVATE);
+            self.layout_edit_control(width);
+        }
+    }
+
+    pub(super) fn resize_to_fit_results(&mut self) {
+        if self.inter.in_size_move || self.inter.dragging_divider {
+            return;
+        }
+        let mut rect = RECT::default();
+        unsafe {
+            if GetWindowRect(self.hwnd, &mut rect).is_err() {
+                return;
+            }
+        }
+        let width = (self.desired_width_dip() as f32 * self.dpi_scale) as i32;
+        let height = (self.desired_height_dip() as f32 * self.dpi_scale) as i32;
+        unsafe {
+            let _ = SetWindowPos(
+                self.hwnd,
+                Some(HWND_TOPMOST),
+                rect.left,
+                rect.top,
+                width,
+                height,
+                SWP_NOACTIVATE | SWP_SHOWWINDOW,
+            );
+        }
+        self.layout_edit_control(width);
+    }
+
+    pub(super) fn layout_edit_control(&self, window_width_px: i32) {
+        let left = (62.0 * self.dpi_scale) as i32;
+        let top = (18.0 * self.dpi_scale) as i32;
+        let mut right_pad_dip = 24.0f32;
+        if self.active_mode_badge().is_some() {
+            right_pad_dip += 132.0;
+        }
+        if self.attached.is_some() {
+            right_pad_dip += 196.0;
+        }
+        let right_pad = (right_pad_dip * self.dpi_scale) as i32;
+        let w = (window_width_px - left - right_pad).max(120);
+        let h = (28.0 * self.dpi_scale) as i32;
+        unsafe {
+            let _ = MoveWindow(self.edit_hwnd, left, top, w, h, true);
+        }
+    }
+
+    pub(super) fn is_preview_visible(&self) -> bool {
+        self.cached_preview.is_some() && !self.results.is_empty()
+    }
+
+    pub(super) fn desired_width_dip(&self) -> i32 {
+        if self.is_preview_visible() {
+            (self.geom.list_width_dip + self.geom.preview_width_dip).min(MAX_WINDOW_WIDTH_DIP)
+        } else {
+            self.geom.list_width_dip
+        }
+    }
+
+    pub(super) fn desired_height_dip(&self) -> i32 {
+        let rows = self.results.len().min(self.geom.max_visible_rows) as i32;
+        if rows == 0 {
+            HEADER_HEIGHT_DIP + FOOTER_HEIGHT_DIP
+        } else {
+            let min_preview_rows = if self.cached_preview.is_some() { 5 } else { 0 };
+            let eff_rows = rows.max(min_preview_rows);
+            HEADER_HEIGHT_DIP + 8 + eff_rows * ROW_HEIGHT_DIP + FOOTER_HEIGHT_DIP
+        }
+    }
+
+    pub(super) fn ensure_selected_visible(&mut self) {
+        let cap = self.geom.max_visible_rows.max(1);
+        if self.selected < self.scroll_offset {
+            self.scroll_offset = self.selected;
+        } else if self.selected >= self.scroll_offset + cap {
+            self.scroll_offset = self.selected + 1 - cap;
+        }
+    }
+
+    pub(super) fn is_over_preview_divider(&self, x_px: i32, y_px: i32) -> bool {
+        if !self.is_preview_visible() {
+            return false;
+        }
+        let mut rc = RECT::default();
+        unsafe {
+            let _ = GetClientRect(self.hwnd, &mut rc);
+        }
+        let scale = self.dpi_scale.max(1.0);
+        let w_dip = (rc.right - rc.left) as f32 / scale;
+        let h_dip = (rc.bottom - rc.top) as f32 / scale;
+        if w_dip < 680.0 {
+            return false;
+        }
+        let y_dip = y_px as f32 / scale;
+        if y_dip < HEADER_HEIGHT_DIP as f32 || y_dip > h_dip - FOOTER_HEIGHT_DIP as f32 {
+            return false;
+        }
+        let pw = (self.geom.preview_width_dip as f32).clamp(220.0, (w_dip * 0.48).max(220.0));
+        let div_x_dip = (w_dip - pw).max(380.0);
+        (x_px as f32 / scale - div_x_dip).abs() <= 5.0
+    }
+
+    pub(super) fn hit_test_row(&self, x_px: i32, y_px: i32) -> Option<usize> {
+        let mut rc = RECT::default();
+        unsafe {
+            let _ = GetClientRect(self.hwnd, &mut rc);
+        }
+        let scale = self.dpi_scale.max(1.0);
+        let w_dip = (rc.right - rc.left) as f32 / scale;
+        let x_dip = x_px as f32 / scale;
+        let y_dip = y_px as f32 / scale;
+
+        let list_w_dip = if self.is_preview_visible() && w_dip >= 680.0 {
+            let pw = (self.geom.preview_width_dip as f32).clamp(220.0, (w_dip * 0.48).max(220.0));
+            (w_dip - pw).max(380.0)
+        } else {
+            w_dip
+        };
+        if x_dip > list_w_dip {
+            return None;
+        }
+        let list_top = HEADER_HEIGHT_DIP as f32 + 4.0;
+        if y_dip < list_top {
+            return None;
+        }
+        let slot = ((y_dip - list_top) / ROW_HEIGHT_DIP as f32) as usize;
+        if slot >= self.geom.max_visible_rows.max(1) {
+            return None;
+        }
+        let idx = self.scroll_offset + slot;
+        (idx < self.results.len()).then_some(idx)
+    }
+
+    pub(super) fn active_mode_badge(&self) -> Option<&'static str> {
+        let t = self.current_query.trim();
+        let l = self.lang;
+        if t.starts_with(':') {
+            return Some(l.pick("命令", "COMMAND"));
+        }
+        let low = t.to_lowercase();
+        if low.starts_with("f ") || low.starts_with("ev ") {
+            return Some(l.pick("文件搜索", "EVERYTHING"));
+        }
+        if low == "cb" || low.starts_with("cb ") {
+            return Some(l.pick("剪贴板", "CLIPBOARD"));
+        }
+        if low == "w" || low.starts_with("w ") {
+            return Some(l.pick("窗口切换", "WINDOWS"));
+        }
+        if low == "kill" || low.starts_with("kill ") || low == "ps" || low.starts_with("ps ") {
+            return Some(l.pick("进程管理", "PROCESS"));
+        }
+        if low.starts_with("= ") || low.starts_with("b64 ") || low.starts_with("b64d ") {
+            return Some(l.pick("计算", "CALC"));
+        }
+        if let Some(first) = low.split_whitespace().next() {
+            if self.plugin_host.matches_keyword(first) {
+                return Some(l.pick("插件", "PLUGIN"));
+            }
+            if self
+                .config
+                .read()
+                .map(|c| c.web_searches.iter().any(|w| w.keyword.eq_ignore_ascii_case(first)))
+                .unwrap_or(false)
+                && low.contains(' ')
+            {
+                return Some(l.pick("网页搜索", "WEB"));
+            }
+        }
+        None
+    }
+
+    pub(super) fn attached_capsule_label(&self) -> Option<String> {
+        let l = self.lang;
+        match self.attached.as_ref()? {
+            AttachedContext::Image { width, height, .. } => Some(match l {
+                Lang::Zh => format!("📎 图片 {width}×{height}"),
+                Lang::En => format!("📎 Img {width}×{height}"),
+            }),
+            AttachedContext::Files { paths } => Some(match l {
+                Lang::Zh => format!("📎 {} 个文件", paths.len()),
+                Lang::En => format!("📎 {} file(s)", paths.len()),
+            }),
+        }
+    }
+
+    pub(super) fn open_config_file_in_editor(&mut self) {
+        let path = TomoyoConfig::config_path().to_string_lossy().into_owned();
+        let _ = shell_open(&path, None, None);
+    }
+
+    pub(super) fn handle_window_resize(&mut self, new_w: i32, new_h: i32) {
+        self.layout_edit_control(new_w);
+        if self.inter.in_size_move {
+            let scale = self.dpi_scale.max(1.0);
+            let w_dip = (new_w as f32 / scale).round() as i32;
+            let h_dip = (new_h as f32 / scale).round() as i32;
+            self.geom.list_width_dip = if self.is_preview_visible() {
+                (w_dip - self.geom.preview_width_dip).clamp(MIN_WINDOW_WIDTH_DIP, 1400)
+            } else {
+                w_dip.clamp(MIN_WINDOW_WIDTH_DIP, 1400)
+            };
+            if !self.results.is_empty() {
+                let avail_h = (h_dip - HEADER_HEIGHT_DIP - FOOTER_HEIGHT_DIP - 8).max(0);
+                self.geom.max_visible_rows = (avail_h / ROW_HEIGHT_DIP).clamp(4, 18) as usize;
+            }
+        }
+        self.invalidate();
+    }
+}
+
+pub(super) unsafe fn apply_cue_banner(edit_hwnd: HWND, lang: Lang) {
+    let text = lang.pick(
+        "搜索应用(支持拼音)、Everything 文件 (f)、剪贴板 (cb)、进程 (kill)、插件或 :settings...",
+        "Search apps, Everything (f), clipboard (cb), process (kill), wasm, :settings...",
+    );
+    let cue: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
+    unsafe {
+        SendMessageW(
+            edit_hwnd,
+            EM_SETCUEBANNER,
+            Some(WPARAM(1)),
+            Some(LPARAM(cue.as_ptr() as isize)),
+        );
+    }
+}
+
+pub(super) fn apply_dwm_attributes(hwnd: HWND, is_dark: bool) {
+    unsafe {
+        let dark: i32 = if is_dark { 1 } else { 0 };
+        let _ = DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_USE_IMMERSIVE_DARK_MODE,
+            &dark as *const _ as *const c_void,
+            std::mem::size_of::<i32>() as u32,
+        );
+        let corner = DWMWCP_ROUND;
+        let _ = DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_WINDOW_CORNER_PREFERENCE,
+            &corner as *const _ as *const c_void,
+            std::mem::size_of_val(&corner) as u32,
+        );
+    }
+}
+
+pub(super) fn create_edit_font(dpi_scale: f32, face: &str) -> HFONT {
+    let height = -(20.5 * dpi_scale).round() as i32;
+    let face_w: Vec<u16> = face.encode_utf16().chain(std::iter::once(0)).collect();
+    unsafe {
+        CreateFontW(
+            height,
+            0,
+            0,
+            0,
+            FW_NORMAL.0 as i32,
+            0,
+            0,
+            0,
+            DEFAULT_CHARSET,
+            OUT_DEFAULT_PRECIS,
+            CLIP_DEFAULT_PRECIS,
+            CLEARTYPE_QUALITY,
+            (DEFAULT_PITCH.0 | FF_DONTCARE.0) as u32,
+            PCWSTR(face_w.as_ptr()),
+        )
+    }
+}
+
+pub(super) fn read_edit_text(edit: HWND) -> String {
+    unsafe {
+        let len = GetWindowTextLengthW(edit);
+        if len <= 0 {
+            return String::new();
+        }
+        let mut buf = vec![0u16; (len + 1) as usize];
+        let copied = GetWindowTextW(edit, &mut buf);
+        String::from_utf16_lossy(&buf[..copied as usize])
+    }
+}
