@@ -217,20 +217,22 @@ impl Drop for LivePluginProcess {
 
 /// Resolves relative plugin binaries and falls back cleanly to sibling executables
 /// (e.g. Cargo `target/debug` / `target/release`) during local development.
+/// Always checks `.is_file()` so sibling directories (like `%LOCALAPPDATA%\Programs\Python`)
+/// are never mistaken for executable binaries!
 fn resolve_command(plugin_dir: &Path, command: &str) -> String {
     let candidate = plugin_dir.join(command);
-    if candidate.exists() {
+    if candidate.is_file() {
         return candidate.to_string_lossy().into_owned();
     }
     #[cfg(windows)]
     {
         let with_exe = plugin_dir.join(format!("{command}.exe"));
-        if with_exe.exists() {
+        if with_exe.is_file() {
             return with_exe.to_string_lossy().into_owned();
         }
     }
 
-    // Check alongside current executable (makes workspace dev plugins work immediately!).
+    // Check alongside current executable (makes workspace dev & installed plugins work immediately!).
     if let Ok(exe) = std::env::current_exe() {
         if let Some(exe_dir) = exe.parent() {
             let clean_name = Path::new(command)
@@ -238,24 +240,29 @@ fn resolve_command(plugin_dir: &Path, command: &str) -> String {
                 .map(|s| s.to_string_lossy().into_owned())
                 .unwrap_or_else(|| command.to_string());
             let sib = exe_dir.join(&clean_name);
-            if sib.exists() {
+            if sib.is_file() {
                 return sib.to_string_lossy().into_owned();
             }
             #[cfg(windows)]
             {
                 let sib_exe = exe_dir.join(format!("{clean_name}.exe"));
-                if sib_exe.exists() {
+                if sib_exe.is_file() {
                     return sib_exe.to_string_lossy().into_owned();
                 }
-                // Check parent target dir when running from `target/debug/deps` (cargo test)
-                if let Some(parent_dir) = exe_dir.parent() {
-                    let parent_sib = parent_dir.join(&clean_name);
-                    if parent_sib.exists() {
-                        return parent_sib.to_string_lossy().into_owned();
-                    }
-                    let parent_sib_exe = parent_dir.join(format!("{clean_name}.exe"));
-                    if parent_sib_exe.exists() {
-                        return parent_sib_exe.to_string_lossy().into_owned();
+                // Only check parent dir when running inside Cargo's `target/.../deps` test folder.
+                let is_deps_dir = exe_dir
+                    .file_name()
+                    .is_some_and(|n| n.eq_ignore_ascii_case("deps"));
+                if is_deps_dir {
+                    if let Some(parent_dir) = exe_dir.parent() {
+                        let parent_sib = parent_dir.join(&clean_name);
+                        if parent_sib.is_file() {
+                            return parent_sib.to_string_lossy().into_owned();
+                        }
+                        let parent_sib_exe = parent_dir.join(format!("{clean_name}.exe"));
+                        if parent_sib_exe.is_file() {
+                            return parent_sib_exe.to_string_lossy().into_owned();
+                        }
                     }
                 }
             }
@@ -289,4 +296,22 @@ fn find_real_windows_python() -> Option<String> {
         return Some(py_launcher.to_string_lossy().into_owned());
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolve_command_never_picks_directory() {
+        let tmp = std::env::temp_dir().join(format!("tomoyo_rescmd_{}", std::process::id()));
+        let sub_dir = tmp.join("python");
+        let _ = std::fs::create_dir_all(&sub_dir);
+        let resolved = resolve_command(&tmp, "python");
+        assert!(
+            !Path::new(&resolved).is_dir(),
+            "resolve_command must never return a directory: {resolved}"
+        );
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
 }

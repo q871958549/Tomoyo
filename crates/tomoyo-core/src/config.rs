@@ -396,10 +396,16 @@ pub fn set_autostart_enabled(enable: bool) -> Result<(), String> {
         .map_err(|e| format!("RegOpenKeyExW failed: {e}"))?;
 
         let res = if enable {
-            let exe = std::env::current_exe()
-                .map_err(|e| e.to_string())?
-                .to_string_lossy()
-                .into_owned();
+            let cur = std::env::current_exe().map_err(|e| e.to_string())?;
+            // Ensure toggling autostart from `tomoyo-webview-host.exe` registers `tomoyo.exe`!
+            let sibling_launcher = cur.with_file_name("tomoyo.exe");
+            let exe = if sibling_launcher.is_file() {
+                sibling_launcher
+            } else {
+                cur
+            }
+            .to_string_lossy()
+            .into_owned();
             let cmd = format!("\"{exe}\" --silent");
             let wide: Vec<u16> = cmd.encode_utf16().chain(std::iter::once(0)).collect();
             let bytes = std::slice::from_raw_parts(wide.as_ptr() as *const u8, wide.len() * 2);
