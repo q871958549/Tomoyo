@@ -1,0 +1,20 @@
+id = "dev.tomoyo.example-webview-json"
+name = "JSON Inspector & Formatter (uTools Bridge)"
+version = "0.2.0"
+description = "Interactive JSON formatter & tree viewer using window.utools + window.tomoyo (0 idle RAM)"
+author = "Tomoyo Contributors"
+license = "MIT"
+
+[runtime]
+kind = "webview"
+entry = "index.html"
+utools_compat = true
+width = 920
+height = 640
+
+[triggers]
+keywords = ["json", "utools"]
+
+[resources]
+max_memory_mb = 256
+idle_timeout_secs = 5

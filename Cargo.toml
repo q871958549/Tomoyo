@@ -1,0 +1,60 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/tomoyo-protocol",
+    "crates/tomoyo-everything",
+    "crates/tomoyo-core",
+    "crates/tomoyo-providers",
+    "crates/tomoyo-plugin-host",
+    "crates/tomoyo-sdk",
+    "crates/tomoyo-wasm-sdk",
+    "crates/tomoyo-webview-host",
+    "crates/tomoyo-cli",
+    "crates/tomoyo-app",
+    "plugins/example-hello",
+]
+exclude = [
+    "plugins/example-wasm",
+]
+
+[workspace.package]
+version = "0.4.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/q871958549/Tomoyo"
+authors = ["Tomoyo Contributors"]
+
+[workspace.dependencies]
+tomoyo-protocol = { path = "crates/tomoyo-protocol" }
+tomoyo-everything = { path = "crates/tomoyo-everything" }
+tomoyo-core = { path = "crates/tomoyo-core" }
+tomoyo-providers = { path = "crates/tomoyo-providers" }
+tomoyo-plugin-host = { path = "crates/tomoyo-plugin-host" }
+tomoyo-sdk = { path = "crates/tomoyo-sdk" }
+
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+thiserror = "2.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+base64 = "0.22"
+uuid = { version = "1.11", features = ["v4"] }
+lru = "0.16"
+pinyin = { version = "0.11", default-features = false, features = ["plain"] }
+mimalloc = { version = "0.1", default-features = false }
+rusqlite = { version = "0.43", default-features = false, features = ["bundled"] }
+wasmi = { version = "2.0", default-features = false, features = ["std", "validate", "wat", "auto-dispatch"] }
+sha2 = "0.11"
+png = "0.18"
+webview2-com = "0.39"
+winresource = "0.1"
+windows = "0.62"
+
+[profile.release]
+opt-level = "s"
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+panic = "abort"

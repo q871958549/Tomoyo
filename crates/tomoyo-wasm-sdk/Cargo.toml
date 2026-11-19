@@ -1,0 +1,10 @@
+[package]
+name = "tomoyo-wasm-sdk"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Zero-bloat Rust SDK for authoring capability-sandboxed Tomoyo WebAssembly plugins (wasm32-unknown-unknown)"
+
+[dependencies]
+tomoyo-protocol = { workspace = true }
+serde_json = { workspace = true }

@@ -1,0 +1,10 @@
+/target
+/plugins/**/target
+**/*.rs.bk
+*.pdb
+*.log
+*.tmp
+.DS_Store
+Thumbs.db
+/.idea
+/.vscode

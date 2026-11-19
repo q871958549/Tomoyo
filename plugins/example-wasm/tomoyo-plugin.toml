@@ -1,0 +1,19 @@
+id = "dev.tomoyo.example-wasm"
+name = "WASM Sandbox Toolkit (JWT & Byte Units)"
+version = "0.2.0"
+description = "Fuel-metered, zero-ambient-permission WebAssembly plugin: inspect JWTs & convert byte units"
+author = "Tomoyo Contributors"
+license = "MIT"
+
+[runtime]
+kind = "wasm"
+module = "plugin.wasm"
+max_fuel = 5000000
+
+[triggers]
+keywords = ["wasm", "jwt", "unit"]
+
+[resources]
+max_memory_mb = 16
+idle_timeout_secs = 30
+query_timeout_ms = 1000

@@ -1,0 +1,19 @@
+id = "dev.tomoyo.example-hello"
+name = "Rust Hello & Case Converter"
+version = "0.1.0"
+description = "Reference native Rust plugin (written with tomoyo-sdk): instant string transformations"
+author = "Tomoyo Contributors"
+license = "MIT"
+
+[runtime]
+kind = "stdio_jsonrpc"
+command = "tomoyo-plugin-hello"
+args = []
+
+[triggers]
+keywords = ["hi", "case"]
+
+[resources]
+max_memory_mb = 32
+idle_timeout_secs = 45
+query_timeout_ms = 1000

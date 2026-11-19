@@ -1,0 +1,51 @@
+[package]
+name = "tomoyo-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Native Win32 + pure-Rust SDF anti-aliased ClearType GDI ultra-low-memory launcher shell for Tomoyo"
+
+[[bin]]
+name = "tomoyo"
+path = "src/main.rs"
+
+[dependencies]
+tomoyo-protocol = { workspace = true }
+tomoyo-everything = { workspace = true }
+tomoyo-core = { workspace = true }
+tomoyo-providers = { workspace = true }
+tomoyo-plugin-host = { workspace = true }
+mimalloc = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+lru = { workspace = true }
+png = { workspace = true }
+sha2 = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+windows-core = "0.62"
+windows = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Graphics_Dwm",
+    "Win32_Graphics_Gdi",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Com",
+    "Win32_System_Console",
+    "Win32_System_DataExchange",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Memory",
+    "Win32_System_Ole",
+    "Win32_System_Shutdown",
+    "Win32_System_SystemServices",
+    "Win32_System_Threading",
+    "Win32_UI_Controls",
+    "Win32_UI_HiDpi",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell",
+    "Win32_UI_Shell_Common",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[target.'cfg(windows)'.build-dependencies]
+winresource = { workspace = true }

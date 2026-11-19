@@ -1,0 +1,72 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows-x64:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain (Windows + wasm32)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build example WASM plugin
+        shell: pwsh
+        run: |
+          cargo build --manifest-path plugins/example-wasm/Cargo.toml --target wasm32-unknown-unknown --release
+          Copy-Item plugins/example-wasm/target/wasm32-unknown-unknown/release/tomoyo_plugin_wasm_demo.wasm plugins/example-wasm/plugin.wasm -Force
+
+      - name: Test & build release binaries
+        run: |
+          cargo test --workspace
+          cargo build --release --workspace
+
+      - name: Package portable Windows x64 archive + SHA256SUMS
+        shell: pwsh
+        run: |
+          $tag = if ($env:GITHUB_REF_NAME) { $env:GITHUB_REF_NAME } else { "v0.4.0" }
+          $stage = "dist/Tomoyo-$tag-windows-x64"
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          New-Item -ItemType Directory -Force -Path "$stage/assets/fonts" | Out-Null
+          New-Item -ItemType Directory -Force -Path "$stage/registry" | Out-Null
+
+          Copy-Item target/release/tomoyo.exe $stage/
+          Copy-Item target/release/tomoyo-webview-host.exe $stage/
+          Copy-Item target/release/tomoyo-cli.exe $stage/
+          Copy-Item target/release/tomoyo-plugin-hello.exe $stage/
+          Copy-Item LICENSE-MIT, LICENSE-APACHE, README.md $stage/
+          Copy-Item assets/fonts/*.ttf "$stage/assets/fonts/"
+          Copy-Item registry/index.json "$stage/registry/"
+
+          foreach ($p in @("example-hello", "example-python", "example-wasm", "example-webview-json")) {
+            New-Item -ItemType Directory -Force -Path "$stage/plugins/$p" | Out-Null
+            Get-ChildItem "plugins/$p" -Exclude "target","__pycache__" | Copy-Item -Destination "$stage/plugins/$p" -Recurse -Force
+          }
+
+          $zipPath = "dist/Tomoyo-$tag-windows-x64.zip"
+          Compress-Archive -Path "$stage/*" -DestinationPath $zipPath -Force
+          $hash = (Get-FileHash $zipPath -Algorithm SHA256).Hash.ToLower()
+          "$hash  Tomoyo-$tag-windows-x64.zip" | Out-File -Encoding ascii "dist/SHA256SUMS.txt"
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            dist/Tomoyo-*-windows-x64.zip
+            dist/SHA256SUMS.txt

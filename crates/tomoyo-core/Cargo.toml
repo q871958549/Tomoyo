@@ -1,0 +1,27 @@
+[package]
+name = "tomoyo-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Core query router, config engine, native WinHTTP auto-updater, i18n, private Alibaba fonts, file/image preview, Pinyin + fuzzy matcher, frecency ranker, intent detector, and memory telemetry for Tomoyo"
+
+[dependencies]
+tomoyo-protocol = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+pinyin = { workspace = true }
+chrono = { workspace = true }
+png = { workspace = true }
+tracing = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+windows = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_Networking_WinHttp",
+    "Win32_System_ProcessStatus",
+    "Win32_System_Registry",
+    "Win32_System_Threading",
+    "Win32_UI_WindowsAndMessaging",
+] }

@@ -1,0 +1,203 @@
+//! System tray icon & localized context menu using the embedded Modern White `.ico`
+//! (falling back seamlessly to the procedural SDF Modern White icon) with RAII cleanup.
+
+use crate::brand::generate_icon_bgra;
+use tomoyo_core::Lang;
+use windows::core::PCWSTR;
+use windows::Win32::Foundation::{HWND, POINT};
+use windows::Win32::Graphics::Gdi::{CreateBitmap, DeleteObject, HBITMAP};
+use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::UI::Shell::{
+    Shell_NotifyIconW, NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE, NOTIFYICONDATAW,
+};
+use windows::Win32::UI::WindowsAndMessaging::{
+    AppendMenuW, CreateIconIndirect, CreatePopupMenu, DestroyIcon, DestroyMenu, GetCursorPos,
+    LoadImageW, SendMessageW, SetForegroundWindow, TrackPopupMenu, HICON, ICONINFO, ICON_BIG,
+    ICON_SMALL, IMAGE_ICON, LR_DEFAULTSIZE, MF_SEPARATOR, MF_STRING, TPM_BOTTOMALIGN,
+    TPM_LEFTALIGN, WM_APP, WM_SETICON,
+};
+
+pub const WM_TRAY_CALLBACK: u32 = WM_APP + 10;
+
+pub const MENU_ID_SHOW: usize = 2001;
+pub const MENU_ID_SETTINGS: usize = 2002;
+pub const MENU_ID_UPDATE: usize = 2008;
+pub const MENU_ID_STATS: usize = 2003;
+pub const MENU_ID_CONFIG: usize = 2004;
+pub const MENU_ID_RELOAD: usize = 2005;
+pub const MENU_ID_GC: usize = 2006;
+pub const MENU_ID_QUIT: usize = 2007;
+
+pub struct TrayIcon {
+    hwnd: HWND,
+    hicon: HICON,
+    owns_icon: bool,
+    installed: bool,
+}
+
+impl TrayIcon {
+    pub fn install(hwnd: HWND, hotkey_label: &str) -> Self {
+        let (hicon, owns_icon) = load_embedded_hicon()
+            .map(|h| (h, false))
+            .unwrap_or_else(|| (create_modern_white_hicon(32).unwrap_or_default(), true));
+
+        if !hicon.is_invalid() {
+            unsafe {
+                SendMessageW(
+                    hwnd,
+                    WM_SETICON,
+                    Some(windows::Win32::Foundation::WPARAM(ICON_SMALL as usize)),
+                    Some(windows::Win32::Foundation::LPARAM(hicon.0 as isize)),
+                );
+                SendMessageW(
+                    hwnd,
+                    WM_SETICON,
+                    Some(windows::Win32::Foundation::WPARAM(ICON_BIG as usize)),
+                    Some(windows::Win32::Foundation::LPARAM(hicon.0 as isize)),
+                );
+            }
+        }
+
+        let mut nid = NOTIFYICONDATAW {
+            cbSize: std::mem::size_of::<NOTIFYICONDATAW>() as u32,
+            hWnd: hwnd,
+            uID: 1,
+            uFlags: NIF_MESSAGE | NIF_ICON | NIF_TIP,
+            uCallbackMessage: WM_TRAY_CALLBACK,
+            hIcon: hicon,
+            ..Default::default()
+        };
+
+        let tip: Vec<u16> = format!("Tomoyo 效率启动器 ({hotkey_label})")
+            .encode_utf16()
+            .collect();
+        for (dst, &src) in nid.szTip.iter_mut().zip(tip.iter()) {
+            *dst = src;
+        }
+
+        let installed = unsafe { Shell_NotifyIconW(NIM_ADD, &nid).as_bool() };
+        Self {
+            hwnd,
+            hicon,
+            owns_icon,
+            installed,
+        }
+    }
+
+    pub fn show_context_menu(&self, lang: Lang) {
+        unsafe {
+            let Ok(menu) = CreatePopupMenu() else {
+                return;
+            };
+            append_str(menu, MENU_ID_SHOW, lang.pick("显示 Tomoyo", "Show Tomoyo"));
+            append_str(menu, MENU_ID_SETTINGS, lang.pick("设置中心...", "Settings..."));
+            append_str(
+                menu,
+                MENU_ID_UPDATE,
+                lang.pick("检查更新 (:update)", "Check for Updates (:update)"),
+            );
+            append_str(
+                menu,
+                MENU_ID_STATS,
+                lang.pick("内存与插件监控 (:stats)", "Memory & Plugin Stats (:stats)"),
+            );
+            append_str(
+                menu,
+                MENU_ID_CONFIG,
+                lang.pick("打开 config.toml", "Open config.toml"),
+            );
+            append_str(
+                menu,
+                MENU_ID_RELOAD,
+                lang.pick("热重载配置与插件 (:reload)", "Hot-Reload All (:reload)"),
+            );
+            append_str(
+                menu,
+                MENU_ID_GC,
+                lang.pick("立即休眠整理内存 (:gc)", "Hibernate & Trim RAM (:gc)"),
+            );
+            let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
+            append_str(menu, MENU_ID_QUIT, lang.pick("退出 Tomoyo", "Exit Tomoyo"));
+
+            let mut pt = POINT::default();
+            let _ = GetCursorPos(&mut pt);
+            let _ = SetForegroundWindow(self.hwnd);
+            let _ = TrackPopupMenu(
+                menu,
+                TPM_LEFTALIGN | TPM_BOTTOMALIGN,
+                pt.x,
+                pt.y,
+                Some(0),
+                self.hwnd,
+                None,
+            );
+            let _ = DestroyMenu(menu);
+        }
+    }
+}
+
+impl Drop for TrayIcon {
+    fn drop(&mut self) {
+        unsafe {
+            if self.installed {
+                let nid = NOTIFYICONDATAW {
+                    cbSize: std::mem::size_of::<NOTIFYICONDATAW>() as u32,
+                    hWnd: self.hwnd,
+                    uID: 1,
+                    ..Default::default()
+                };
+                let _ = Shell_NotifyIconW(NIM_DELETE, &nid);
+            }
+            if self.owns_icon && !self.hicon.is_invalid() {
+                let _ = DestroyIcon(self.hicon);
+            }
+        }
+    }
+}
+
+unsafe fn append_str(
+    menu: windows::Win32::UI::WindowsAndMessaging::HMENU,
+    id: usize,
+    text: &str,
+) {
+    let w: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
+    let _ = unsafe { AppendMenuW(menu, MF_STRING, id, PCWSTR(w.as_ptr())) };
+}
+
+fn load_embedded_hicon() -> Option<HICON> {
+    unsafe {
+        let hinst = GetModuleHandleW(None).ok()?;
+        let h = LoadImageW(
+            Some(hinst.into()),
+            PCWSTR(1 as *const u16),
+            IMAGE_ICON,
+            32,
+            32,
+            LR_DEFAULTSIZE,
+        )
+        .ok()?;
+        Some(HICON(h.0))
+    }
+}
+
+pub fn create_modern_white_hicon(size: i32) -> Option<HICON> {
+    let bgra = generate_icon_bgra(size);
+    unsafe {
+        let color_bmp: HBITMAP = CreateBitmap(size, size, 1, 32, Some(bgra.as_ptr() as *const _));
+        let mask_bytes = vec![0u8; ((size * size) / 8) as usize];
+        let mask_bmp: HBITMAP =
+            CreateBitmap(size, size, 1, 1, Some(mask_bytes.as_ptr() as *const _));
+
+        let info = ICONINFO {
+            fIcon: true.into(),
+            xHotspot: 0,
+            yHotspot: 0,
+            hbmMask: mask_bmp,
+            hbmColor: color_bmp,
+        };
+        let icon = CreateIconIndirect(&info).ok();
+        let _ = DeleteObject(color_bmp.into());
+        let _ = DeleteObject(mask_bmp.into());
+        icon
+    }
+}

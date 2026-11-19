@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "name": "Tomoyo Official Open Community Registry (Zero Login Wall)",
+  "updated_at": "2026-11-20",
+  "plugins": [
+    {
+      "id": "dev.tomoyo.example-hello",
+      "name": "Rust Hello & Case Converter",
+      "version": "0.1.0",
+      "description": "Reference native Rust STDIO plugin using tomoyo-sdk: instant string case conversions",
+      "author": "Tomoyo Contributors",
+      "license": "MIT",
+      "runtime_kind": "stdio_jsonrpc",
+      "keywords": ["hi", "case"],
+      "source": "plugins/example-hello",
+      "sha256": "027cab1a845c17ee3ea1f6a3e32672b1703db4772482f99035273a7e2d88b0c5"
+    },
+    {
+      "id": "dev.tomoyo.example-python",
+      "name": "Python Quick Hash & Text Stats",
+      "version": "0.1.0",
+      "description": "Zero-dependency Python 3 plugin computing SHA-256, MD5, and UTF-8 text metrics",
+      "author": "Tomoyo Contributors",
+      "license": "MIT",
+      "runtime_kind": "stdio_jsonrpc",
+      "keywords": ["py", "hash"],
+      "source": "plugins/example-python",
+      "sha256": "f97f3f3648308c67c026c4a2b31db525a5b6983e7ccf028ae8f9d46558a807ef"
+    },
+    {
+      "id": "dev.tomoyo.example-wasm",
+      "name": "WASM Sandbox Toolkit (JWT & Byte Units)",
+      "version": "0.2.0",
+      "description": "Fuel-metered, zero-ambient-permission WebAssembly plugin: inspect JWTs & convert byte units",
+      "author": "Tomoyo Contributors",
+      "license": "MIT",
+      "runtime_kind": "wasm",
+      "keywords": ["wasm", "jwt", "unit"],
+      "source": "plugins/example-wasm",
+      "sha256": "b5c4b0f997d49bc8414a975e63f9c92ae4d91daa72c3a9da082de31dfecb4356"
+    },
+    {
+      "id": "dev.tomoyo.example-webview-json",
+      "name": "JSON Inspector & Formatter (uTools Bridge)",
+      "version": "0.2.0",
+      "description": "Interactive JSON formatter & tree viewer using window.utools + window.tomoyo (0 idle RAM)",
+      "author": "Tomoyo Contributors",
+      "license": "MIT",
+      "runtime_kind": "webview",
+      "keywords": ["json", "utools"],
+      "source": "plugins/example-webview-json",
+      "sha256": "b99dccac2a0b7d1e68eec0fb97730b0887f57ec2a706d53d16690fef8c3e9db8"
+    }
+  ]
+}

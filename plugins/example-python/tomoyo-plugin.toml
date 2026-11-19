@@ -1,0 +1,19 @@
+id = "dev.tomoyo.example-python"
+name = "Python Quick Hash & Text Stats"
+version = "0.1.0"
+description = "Zero-dependency Python 3 plugin demonstrating Tomoyo's language-agnostic JSON-RPC 2.0 protocol"
+author = "Tomoyo Contributors"
+license = "MIT"
+
+[runtime]
+kind = "stdio_jsonrpc"
+command = "python"
+args = ["-u", "main.py"]
+
+[triggers]
+keywords = ["py", "hash"]
+
+[resources]
+max_memory_mb = 64
+idle_timeout_secs = 30
+query_timeout_ms = 1500

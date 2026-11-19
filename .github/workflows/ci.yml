@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  windows-test:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain (Windows + wasm32)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build example WASM plugin
+        shell: pwsh
+        run: |
+          cargo build --manifest-path plugins/example-wasm/Cargo.toml --target wasm32-unknown-unknown --release
+          Copy-Item plugins/example-wasm/target/wasm32-unknown-unknown/release/tomoyo_plugin_wasm_demo.wasm plugins/example-wasm/plugin.wasm -Force
+
+      - name: Run full workspace unit & integration tests
+        run: cargo test --workspace
+
+      - name: Build release binaries
+        run: cargo build --release --workspace
+
+      - name: Run release self-tests (anti-leak soak & WebView bridge)
+        shell: pwsh
+        run: |
+          .\target\release\tomoyo.exe --self-test
+          .\target\release\tomoyo-webview-host.exe --self-test
+          .\target\release\tomoyo-cli.exe registry list

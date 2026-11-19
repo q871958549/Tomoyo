@@ -1,0 +1,18 @@
+[package]
+name = "tomoyo-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Developer & decentralized plugin registry CLI for Tomoyo (scaffold, SHA-256 verify, install)"
+
+[[bin]]
+name = "tomoyo-cli"
+path = "src/main.rs"
+
+[dependencies]
+tomoyo-protocol = { workspace = true }
+tomoyo-core = { workspace = true }
+tomoyo-plugin-host = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }

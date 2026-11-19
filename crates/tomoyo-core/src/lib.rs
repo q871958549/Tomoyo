@@ -1,0 +1,40 @@
+//! Core engine for Tomoyo: configuration, native WinHTTP auto-updater, i18n,
+//! private Alibaba PuHuiTi fonts, query routing, bounded file/image preview,
+//! Pinyin + fuzzy matching, frecency ranking, intent detection, and memory telemetry.
+
+pub mod config;
+pub mod engine;
+pub mod fonts;
+pub mod frecency;
+pub mod http;
+pub mod i18n;
+pub mod intent;
+pub mod matcher;
+pub mod preview;
+pub mod telemetry;
+pub mod updater;
+
+pub use config::*;
+pub use engine::*;
+pub use fonts::*;
+pub use frecency::*;
+pub use http::*;
+pub use i18n::*;
+pub use intent::*;
+pub use matcher::*;
+pub use preview::*;
+pub use telemetry::*;
+pub use updater::*;
+
+use std::path::PathBuf;
+
+/// Returns Tomoyo's local data directory (`%LOCALAPPDATA%\Tomoyo` on Windows).
+pub fn data_dir() -> PathBuf {
+    if let Ok(local) = std::env::var("LOCALAPPDATA") {
+        return PathBuf::from(local).join("Tomoyo");
+    }
+    if let Ok(home) = std::env::var("HOME") {
+        return PathBuf::from(home).join(".tomoyo");
+    }
+    PathBuf::from(".tomoyo")
+}
