@@ -8,7 +8,7 @@ Tomoyo plugins are language-agnostic extensions discovered from `./plugins/<plug
 id = "dev.example.my-plugin"
 name = "My Plugin"
 version = "0.1.0"
-description = "Does something awesome"
+description = "Sample plugin description"
 author = "You"
 license = "MIT"
 

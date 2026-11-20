@@ -3,8 +3,8 @@
 </p>
 
 <p align="center">
-  <strong>100% 开源 · 超低内存 · 零后台泄露的 Rust 桌面效率启动器与开放扩展基座</strong><br/>
-  <em>100% Open-Source, Ultra-Low-Memory Rust Command Launcher & Extensible Productivity Hub</em>
+  <strong>开源、低内存占用的 Windows Rust 桌面启动器</strong><br/>
+  <em>Open-Source, Low-Memory Rust Command Launcher for Windows</em>
 </p>
 
 <p align="center">
@@ -16,46 +16,46 @@
 
 ---
 
-## 核心理念 (Core Philosophy)
+## 项目简介 (Overview)
 
-**Tomoyo** 从零使用纯 Rust 与原生 Win32 架构打造，致力于彻底替代基于 Electron、长期驻留内存动辄 300–600 MB 的传统启动器（如 uTools）：
+**Tomoyo** 使用 Rust 与原生 Win32 API 编写，侧重简洁实用的桌面检索体验与可控的资源占用：
 
-1. **100% 开源（MIT / Apache-2.0 双协议）** — 无账号登录墙、无闭源商业核心、无遥测数据上传、去中心化社区插件清单。
-2. **极低内存与防泄露底线（Zero-Leak Architecture）**：
-   - 纯 Rust + Win32 + 自研 **2×2 超采样 SDF 抗锯齿 32-bit DIB + ClearType GDI** 渲染管线（彻底摒弃 Electron、常驻 WebView2 与 `d3d10warp.dll` 内存膨胀）。
-   - **自动休眠机制 (Auto-Hibernation)**：隐藏后自动销毁绘图表面、字体、Shell `HICON` 缓存、图片缩略图、收缩 SQLite 页缓存（`PRAGMA shrink_memory`）、回收闲置 STDIO/WASM 插件并执行操作系统工作集整理（`SetProcessWorkingSetSizeEx`）。
-   - **系统级插件硬隔离**：STDIO 插件绑定 Windows Job Object（硬限内存 + 退出强杀）；WASM 插件运行于 `wasmi` 燃料计量与零默认权限能力沙箱；WebView 插件与图形化设置中心运行在独立短生命周期进程 `tomoyo-webview-host.exe` 中，关闭即彻底销毁 0 常驻内存。
-3. **原生深度集成 Everything**：
-   - 纯 Rust 实现 **Everything 1.4 & 1.5a** 原生 `WM_COPYDATA` IPC 客户端，**零第三方 DLL 依赖**。
-   - 右侧有界实时预览（支持代码/文本 8 KB 截断、目录列表与 **PNG 图片原生缩略图**）+ **原生 Windows OLE 文件拖拽**（直接从结果列表拖入微信、VS Code 或资源管理器）。
-4. **中文体验与现代美学**：
-   - 内置官方免费 **阿里巴巴普惠体 3.0**（简体中文主语言 + 完整英文切换），现代白瓷感艺术图标，三套原生主题（现代白瓷光 / 深空黑曜石 / 深邃午夜蓝）并实时同步 DWM 标题栏与滚动条。
-   - 自由拖拽窗口位置、八向边缘调宽调高、拖拽预览分割线，配置自动保存与热重载。
-5. **面向未来的三层扩展基座 + uTools 平滑迁移**：
-   - **Tier 1**：原生 Rust 内置引擎（应用含 UWP/MSIX 与拼音首字母、Everything、文本+截图 SQLite 剪贴板、Super Match 粘贴胶囊、计算与意图识别、进程管理、网页搜索、窗口切换、GitHub 自动检查更新）。
-   - **Tier 2A (`stdio_jsonrpc`)**：支持 **Rust (`tomoyo-sdk`)**、**Python**、**Go**、**Node/TS**、**C#** 等任意语言 50 行代码编写插件。
-   - **Tier 2B (`wasm`)**：`tomoyo-wasm-sdk` 燃料计量能力沙箱插件，零默认系统权限。
-   - **Tier 3 (`webview`)**：按需短生命周期 `tomoyo-webview-host.exe`，内置 `window.tomoyo` 与 **`window.utools` 兼容桥**（含 `setSubInput`、`db`/`dbStorage`、`hideMainWindowPasteText`、`Ctrl+Shift+T` 窗口置顶）及 `tomoyo-cli import-utools` 一键导入工具。
+1. **开源与独立运行（MIT / Apache-2.0 双协议）**：无需账号登录，不依赖商业后台服务，支持本地与自定义 JSON 插件清单。
+2. **资源控制与休眠回收**：
+   - 使用 Rust 2×2 超采样 SDF 抗锯齿 32-bit DIB 配合 ClearType GDI 进行界面绘制，不依赖 Electron、常驻 WebView2 或 `d3d10warp.dll`。
+   - **自动休眠清理**：窗口隐藏超时后释放离屏 DIB、字体、Shell `HICON` 缓存与图片缩略图，收缩 SQLite 页缓存（`PRAGMA shrink_memory`），回收空闲插件，并调用 `mimalloc` (`mi_collect`) 与 `SetProcessWorkingSetSizeEx` 整理工作集。
+   - **插件隔离**：STDIO 插件绑定 Windows Job Object（限制内存并随主进程退出清理）；WASM 插件运行于 `wasmi` 燃料计量沙箱；WebView 设置中心与插件运行在独立短生命周期进程 `tomoyo-webview-host.exe`，关闭窗口即退出释放内存。
+3. **Everything 文件检索集成**：
+   - 内置纯 Rust 实现的 **Everything 1.4 / 1.5a** `WM_COPYDATA` IPC 客户端，无需额外 DLL。
+   - 支持异步有界右侧预览（文本 8 KB 截断、目录列表与 PNG 缩略图）及原生 Windows OLE 文件拖拽。
+4. **界面交互与多语言支持**：
+   - 内置阿里巴巴普惠体 3.0 字体，支持简体中文与英文切换，提供浅色（Light）、深色（Dark）、午夜（Midnight）三种配色方案，并同步 DWM 标题栏样式与自定义弹出菜单。
+   - 支持拖拽窗口位置、八向边缘缩放与预览分割线调整，配置自动保存并支持热重载。
+5. **多运行时扩展与 uTools 导入支持**：
+   - **内置 Provider**：本地应用（含 UWP/MSIX、DeskBox 等桌面整理目录、自定义便携目录、拼音与首字母匹配）、Everything、剪贴板历史（文本 + 图片）、粘贴胶囊上下文动作、计算与格式转换、进程管理、网页搜索、窗口切换及 GitHub Releases 检查更新。
+   - **STDIO 插件 (`stdio_jsonrpc`)**：通过标准输入输出 JSON-RPC 2.0 通信，支持 Rust (`tomoyo-sdk`)、Python、Go、Node.js 等语言编写。
+   - **WASM 插件 (`wasm`)**：通过 `tomoyo-wasm-sdk` 编译，由 `wasmi` 提供燃料计数与细粒度能力限制。
+   - **WebView 插件 (`webview`)**：由按需拉起的 `tomoyo-webview-host.exe` 承载，提供 `window.tomoyo` 与基础 `window.utools` API 兼容层（含 `setSubInput`、`db`/`dbStorage`、`hideMainWindowPasteText`、`Ctrl+Shift+T` 置顶等）以及 `tomoyo-cli import-utools` 导入工具。
 
 ---
 
-## 实测性能与反泄露压测 (`v0.5.0` Release — 严格资源预算硬门禁)
+## 实测数据与自检阈值 (`v0.6.0` Release)
 
-| 指标 | 实测结果 | CI 硬门禁红线 |
+| 指标 | 实测记录 | 自检阈值 (`--strict-budget`) |
 |---|---|---|
-| `tomoyo.exe` 单文件主程序 | **4.66 MB**（SQLite + `wasmi` + 拼音 + Everything IPC + PNG + WinHTTP） | — |
-| `tomoyo-webview-host.exe`（设置中心 & 插件市场 & WebView 插件） | **1.20 MB**（**0 MB 后台常驻内存**，关闭即退出） | 0 MB 常驻 |
-| 休眠态 Working Set 内存占用 | **0.14 MB**（0% CPU，0 MB GPU VRAM） | ≤ 2.0 MB |
-| 休眠态 Private Commit（含 279 应用索引 + SQLite + 阿里巴巴字体 + `mi_collect`） | **15.83 MB**（较 v0.4.0 压降 **-63.3%**！） | ≤ 28.0 MB |
-| **100 轮完整查询 + 绘图 + 预览 + 休眠压测 Delta** | **GDI `+0` · USER `+0` · Handles `+0` · Private `-0.19 MB`** | 0 泄露 |
-| 架构健康度（[编码规范](docs/CODING_STANDARDS.md)） | **全仓 82 个源码文件全部 ≤ 450 行**（彻底消灭上帝文件） | ≤ 450 行/文件 |
+| `tomoyo.exe` 主程序体积 | **4.69 MB** | — |
+| `tomoyo-webview-host.exe` 设置与插件宿主 | **1.21 MB**（关闭即退出） | 0 MB 常驻 |
+| 休眠态 Working Set 内存占用 | **0.37–0.39 MB** | ≤ 2.0 MB |
+| 休眠态 Private Commit（本机含 393 应用索引、SQLite 与字体） | **20.04–20.21 MB** | ≤ 28.0 MB |
+| 100 轮查询 / 绘制 / 预览 / 休眠压测 Delta | **GDI `+0` · USER `+0` · Handles `+0` · Private `-0.40 MB`** | 句柄 0 增长 / 内存 ≤ +0.50 MB |
+| 源码规范检查（[编码规范](docs/CODING_STANDARDS.md)） | **全仓 90 个源码文件均 ≤ 450 行** | ≤ 450 行/文件 |
 
 ---
 
-## 下载安装与快速开始 (Install & Quick Start)
+## 下载安装与构建 (Install & Build)
 
-- **直接安装（推荐）**：前往 [GitHub Releases](https://github.com/q871958549/Tomoyo/releases) 下载 `Tomoyo-vX.Y.Z-windows-x64-setup.exe` 安装包（免管理员 UAC，安装至 `%LOCALAPPDATA%\Programs\Tomoyo`，含完整卸载支持）或 `portable.zip` 便携包。
-- **从源码构建并安装到本机**：
+- **安装包与便携版**：前往 [GitHub Releases](https://github.com/q871958549/Tomoyo/releases) 下载 `Tomoyo-vX.Y.Z-windows-x64-setup.exe`（默认安装至 `%LOCALAPPDATA%\Programs\Tomoyo`，无需管理员权限）或 `portable.zip`。
+- **从源码构建与验证**：
 
 ```powershell
 # 克隆仓库并编译 Release
@@ -63,10 +63,10 @@ git clone https://github.com/q871958549/Tomoyo.git
 cd Tomoyo
 cargo build --release --workspace
 
-# 一键安装到本机（开始菜单 + 桌面快捷方式 + 系统应用列表 + 自动启动托盘）
+# 安装到本机用户目录
 pwsh -File scripts\install-local.ps1
 
-# 运行编码规范守卫 + 100 轮严格内存预算反泄露自检
+# 运行规范检查与严格内存/句柄预算自检
 pwsh -File scripts\check_hygiene.ps1
 .\target\release\tomoyo.exe --self-test --strict-budget
 .\target\release\tomoyo-webview-host.exe --self-test
@@ -78,41 +78,41 @@ pwsh -File scripts\check_hygiene.ps1
 
 | 前缀 / 快捷键 | 功能说明 |
 |---|---|
-| *(直接输入)* | 混合极速检索：本机应用 + 桌面整理软件（DeskBox 等）+ 自定义便携目录 + UWP/MSIX（支持拼音/首字母与 `.lnk` 目标英文名）、计算器、意图识别、窗口、Everything 置顶命中 |
-| `Ctrl+Tab` / `Ctrl+1..9` / `@pdf` | **分组筛选栏**：支持按 `全部 / 应用 / 文件夹 / PDF / Excel / Word / PPT / 图片 / 压缩` 一键或 `@标签` 下推筛选 |
-| `Ctrl+V` *(粘贴截图/文件)* | **Super Match 粘贴胶囊**：自动识别图片（看图/转 Base64/定位）与文件（复制路径/SHA-256 校验/在目录开终端），按 `Backspace` 清除 |
-| `f <词>` / `ev <词>` | Everything 毫秒级全盘文件搜索 + 右侧异步有界预览/PNG 缩略图 + **拖拽行直出文件** |
-| `cb <词>` | SQLite 持久化剪贴板历史（**文本 + 截图图片**，支持置顶收藏与回车自动贴回原焦点窗口） |
-| `kill <词>` / `ps <词>` | 进程内存巡检与一键结束失控进程（按内存占用降序排列） |
-| `g` / `gh` / `crates` / `docs` / `bd` / `zh` / `mdn` | 可自定义快捷网页搜索（在设置中心即时增删保存） |
-| `w <词>` | 实时打开窗口快速切换 |
-| `:update` | 联网检查 GitHub Releases 最新版本、预览更新日志并直达下载（支持启动静默自动检查） |
-| `:settings` / `Ctrl+,` | 打开图形化设置中心（自动保存、快捷键直按录入、自定义应用目录、主题实时同步、内置 SHA-256 插件市场、更新检查） |
-| `:stats` / `:plugins` / `:gc` | 实时内存/句柄/插件监控与手动休眠整理 |
-| `:theme dark\|light\|midnight` / `:lang zh\|en` | 即时切换三套主题或中英文界面 |
-| `hi` / `py` / `wasm` / `jwt` / `unit` / `json` | 四大内置示例插件（Rust STDIO / Python STDIO / WASM 能力沙箱 / WebView uTools 兼容桥） |
-| `双击左键` / `Ctrl+P` / `Tab` / `右键` / `Alt+1..8` | 双击直接打开 / 预览面板开关 / 动作菜单 / 主题适配右键菜单 / 快速直达 |
+| *(直接输入)* | 混合检索：本地应用、DeskBox 等桌面整理目录、自定义便携目录与 UWP/MSIX（支持拼音/首字母与 `.lnk` 目标文件名）、计算器、格式识别、窗口列表及 Everything 置顶结果 |
+| `Ctrl+Tab` / `Ctrl+1..9` / `@pdf` | 分组筛选栏：按 `全部 / 应用 / 文件夹 / PDF / Excel / Word / PPT / 图片 / 压缩` 过滤结果并下推至 Everything |
+| `Ctrl+V` *(粘贴截图/文件)* | 粘贴上下文识别：对图片提供看图/Base64/定位目录，对文件提供路径复制/SHA-256 校验/打开终端，按 `Backspace` 清除 |
+| `f <词>` / `ev <词>` | Everything 文件搜索、右侧异步预览/PNG 缩略图及行拖拽导出 |
+| `cb <词>` | SQLite 剪贴板历史（文本与图片，支持置顶与回车贴回原窗口） |
+| `kill <词>` / `ps <词>` | 进程列表查看与终止进程（按内存占用降序排列） |
+| `g` / `gh` / `crates` / `docs` / `bd` / `zh` / `mdn` | 可在设置中心自定义的快捷网页搜索前缀 |
+| `w <词>` | 已打开窗口列表筛选与切换 |
+| `:update` | 检查 GitHub Releases 更新、查看更新说明并跳转下载 |
+| `:settings` / `Ctrl+,` | 打开设置中心（快捷键录入、自定义应用目录、分组栏开关、主题与语言、插件管理、更新检查） |
+| `:stats` / `:plugins` / `:gc` | 查看进程内存/句柄/插件状态，或手动执行休眠清理 |
+| `:theme dark\|light\|midnight` / `:lang zh\|en` | 切换配色主题或界面语言 |
+| `hi` / `py` / `wasm` / `jwt` / `unit` / `json` | 内置参考插件示例（Rust STDIO / Python STDIO / WASM / WebView） |
+| `双击左键` / `Ctrl+P` / `Tab` / `右键` / `Alt+1..8` | 双击打开 / 切换预览面板 / 动作菜单 / 主题弹出右键菜单 / 快捷键直达 |
 
 ---
 
 ## 仓库架构 (Workspace Layout)
 
-- [`crates/tomoyo-protocol`](crates/tomoyo-protocol) — 零 OS 依赖的插件协议、Manifest、注册表 Schema 与 SDUI 原语
-- [`crates/tomoyo-everything`](crates/tomoyo-everything) — 纯 Rust Everything 1.4 / 1.5a 原生 `WM_COPYDATA` IPC 客户端
-- [`crates/tomoyo-core`](crates/tomoyo-core) — `config.toml`、QueryRouter、WinHTTP 客户端、GitHub Releases 自动更新器、有界文件/PNG 缩略图预览、拼音/模糊匹配、Frecency、多语言 i18n、内存与句柄遥测
-- [`crates/tomoyo-providers`](crates/tomoyo-providers) — Built-in Providers：Apps (含 UWP)、Everything、Calc、Text+Image SQLite Clipboard、Process Killer、Web Search、Window Switcher、System/Super Match/`:update`/`:stats`
-- [`crates/tomoyo-plugin-host`](crates/tomoyo-plugin-host) — 统一 STDIO (Job Object) + WASM (`wasmi` 燃料/权限沙箱) + WebView 宿主管理器
+- [`crates/tomoyo-protocol`](crates/tomoyo-protocol) — 插件 Manifest、JSON-RPC、筛选枚举、注册表 Schema 与 UI 原语定义（无 OS 依赖）
+- [`crates/tomoyo-everything`](crates/tomoyo-everything) — Everything 1.4 / 1.5a `WM_COPYDATA` IPC 客户端
+- [`crates/tomoyo-core`](crates/tomoyo-core) — 配置读写、QueryRouter、WinHTTP 客户端、更新检查、有界文件/PNG 缩略图预览、拼音/模糊匹配、Frecency、i18n 与内存句柄采样
+- [`crates/tomoyo-providers`](crates/tomoyo-providers) — 内置数据源：Apps（Desktop/DeskBox/StartMenu/UWP/自定义目录）、Everything、Calc、Clipboard、Process、WebSearch、WindowsSwitcher、System/`:update`/`:stats`
+- [`crates/tomoyo-plugin-host`](crates/tomoyo-plugin-host) — STDIO (Job Object) + WASM (`wasmi`) + WebView 插件宿主管理
 - [`crates/tomoyo-sdk`](crates/tomoyo-sdk) & [`crates/tomoyo-wasm-sdk`](crates/tomoyo-wasm-sdk) — Rust 原生与 WebAssembly 插件开发 SDK
-- [`crates/tomoyo-webview-host`](crates/tomoyo-webview-host) — 按需短生命周期 WebView2 宿主：承载 `window.utools` 插件、图形化设置中心、SHA-256 插件市场与更新检查
-- [`crates/tomoyo-cli`](crates/tomoyo-cli) — 插件脚手架、验证器、SHA-256 哈希工具、uTools 导入器与本地/远程注册表安装器
-- [`crates/tomoyo-app`](crates/tomoyo-app) — 原生 Win32 桌面启动器主程序（SDF 渲染器、阿里巴巴普惠体、现代白品牌图标、OLE 拖出、休眠引擎）
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) & [`docs/PLUGIN_PROTOCOL.md`](docs/PLUGIN_PROTOCOL.md) — 完整架构蓝图与插件通信协议规范
-- [`plugins/`](plugins) & [`registry/index.json`](registry/index.json) — 4 个多运行时参考插件与开源去中心化插件索引
-- [`.github/workflows/`](.github/workflows) — Windows CI 自动化测试与 Tag 触发便携包 + SHA256SUMS 自动发布流水线
+- [`crates/tomoyo-webview-host`](crates/tomoyo-webview-host) — 按需短生命周期 WebView2 宿主，承载设置中心、插件清单视图、`window.utools` 兼容层与更新检查
+- [`crates/tomoyo-cli`](crates/tomoyo-cli) — 插件脚手架、验证工具、SHA-256 校验、uTools 导入与插件安装 CLI
+- [`crates/tomoyo-app`](crates/tomoyo-app) — Windows 桌面启动器主程序（SDF + GDI 渲染、异步图标/预览加载、自定义弹出菜单、OLE 拖出与休眠调度）
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) & [`docs/PLUGIN_PROTOCOL.md`](docs/PLUGIN_PROTOCOL.md) — 架构说明与插件通信协议文档
+- [`plugins/`](plugins) & [`registry/index.json`](registry/index.json) — 4 个多运行时示例插件与本地插件索引清单
+- [`.github/workflows/`](.github/workflows) — Windows CI 检查与 Tag 触发安装包/便携包构建发布流水线
 
 ---
 
 ## 贡献与开源协议
 
-欢迎所有开发者提交 Issue、PR 或向 `registry/index.json` 贡献开源插件！  
+欢迎通过 Issue 或 PR 参与改进或提交插件。  
 本项目采用 **MIT** 或 **Apache-2.0** 双许可协议（详见 [LICENSE-MIT](LICENSE-MIT) 与 [LICENSE-APACHE](LICENSE-APACHE)）。
