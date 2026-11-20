@@ -9,7 +9,8 @@ use windows::Win32::Foundation::HWND;
 use windows::Win32::Graphics::Gdi::{CreateBitmap, DeleteObject, HBITMAP};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Shell::{
-    Shell_NotifyIconW, NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE, NOTIFYICONDATAW,
+    Shell_NotifyIconW, NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE, NIM_MODIFY,
+    NOTIFYICONDATAW,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateIconIndirect, DestroyIcon, LoadImageW, SendMessageW, HICON, ICONINFO, ICON_BIG,
@@ -32,6 +33,7 @@ pub struct TrayIcon {
     hicon: HICON,
     owns_icon: bool,
     installed: bool,
+    hotkey_label: String,
 }
 
 impl TrayIcon {
@@ -57,29 +59,34 @@ impl TrayIcon {
             }
         }
 
-        let mut nid = NOTIFYICONDATAW {
-            cbSize: std::mem::size_of::<NOTIFYICONDATAW>() as u32,
-            hWnd: hwnd,
-            uID: 1,
-            uFlags: NIF_MESSAGE | NIF_ICON | NIF_TIP,
-            uCallbackMessage: WM_TRAY_CALLBACK,
-            hIcon: hicon,
-            ..Default::default()
-        };
-
-        let tip: Vec<u16> = format!("Tomoyo 效率启动器 ({hotkey_label})")
-            .encode_utf16()
-            .collect();
-        for (dst, &src) in nid.szTip.iter_mut().zip(tip.iter()) {
-            *dst = src;
+        let installed = apply_nid_icon(hwnd, hicon, hotkey_label, NIM_ADD);
+        if !installed {
+            tracing::warn!("Initial Shell_NotifyIconW(NIM_ADD) failed; will retry on TaskbarCreated");
         }
-
-        let installed = unsafe { Shell_NotifyIconW(NIM_ADD, &nid).as_bool() };
         Self {
             hwnd,
             hicon,
             owns_icon,
             installed,
+            hotkey_label: hotkey_label.to_string(),
+        }
+    }
+
+    /// Re-registers the tray icon after Explorer restarts (`TaskbarCreated` broadcast).
+    pub fn reinstall(&mut self) {
+        self.installed = apply_nid_icon(self.hwnd, self.hicon, &self.hotkey_label, NIM_ADD);
+        tracing::info!(
+            "Re-registered system tray icon after taskbar rebuild: ok={}",
+            self.installed
+        );
+    }
+
+    pub fn update_tooltip(&mut self, hotkey_label: &str) {
+        self.hotkey_label = hotkey_label.to_string();
+        if self.installed {
+            let _ = apply_nid_icon(self.hwnd, self.hicon, &self.hotkey_label, NIM_MODIFY);
+        } else {
+            self.reinstall();
         }
     }
 
@@ -154,6 +161,32 @@ impl Drop for TrayIcon {
             }
         }
     }
+}
+
+fn apply_nid_icon(
+    hwnd: HWND,
+    hicon: HICON,
+    hotkey_label: &str,
+    msg: windows::Win32::UI::Shell::NOTIFY_ICON_MESSAGE,
+) -> bool {
+    let mut nid = NOTIFYICONDATAW {
+        cbSize: std::mem::size_of::<NOTIFYICONDATAW>() as u32,
+        hWnd: hwnd,
+        uID: 1,
+        uFlags: NIF_MESSAGE | NIF_ICON | NIF_TIP,
+        uCallbackMessage: WM_TRAY_CALLBACK,
+        hIcon: hicon,
+        ..Default::default()
+    };
+
+    let tip: Vec<u16> = format!("Tomoyo 效率启动器 ({hotkey_label})")
+        .encode_utf16()
+        .collect();
+    for (dst, &src) in nid.szTip.iter_mut().zip(tip.iter()) {
+        *dst = src;
+    }
+
+    unsafe { Shell_NotifyIconW(msg, &nid).as_bool() }
 }
 
 fn load_embedded_hicon() -> Option<HICON> {

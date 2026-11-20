@@ -7,6 +7,7 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 mod actions;
 mod brand;
+mod crash_guard;
 mod drag;
 mod icons;
 mod popup_menu;
@@ -26,13 +27,16 @@ use tomoyo_providers::{
     AppsProvider, CalcProvider, ClipboardProvider, EverythingProvider, ProcessProvider,
     SystemProvider, WebSearchProvider, WindowsSwitcherProvider,
 };
-use window::AppShell;
-use windows::core::w;
-use windows::Win32::Foundation::{CloseHandle, GetLastError, ERROR_ALREADY_EXISTS, HANDLE};
+use window::{AppShell, WM_APP_WAKE_EXISTING};
+use windows::core::{w, PCWSTR};
+use windows::Win32::Foundation::{CloseHandle, GetLastError, ERROR_ALREADY_EXISTS, HANDLE, LPARAM, WPARAM};
 use windows::Win32::System::Ole::{OleInitialize, OleUninitialize};
 use windows::Win32::System::Threading::CreateMutexW;
 use windows::Win32::UI::HiDpi::{
     SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
+};
+use windows::Win32::UI::WindowsAndMessaging::{
+    AllowSetForegroundWindow, FindWindowW, GetWindowThreadProcessId, PostMessageW,
 };
 
 struct OleGuard;
@@ -190,6 +194,8 @@ fn run_self_test(fonts: &PrivateFonts, strict_budget: bool) {
         ":update",
         ":stats",
         ":plugins",
+        "cb",
+        "@pdf",
         "hi Tomoyo Rust",
         "py tomoyo",
         "unit 2.5gb",
@@ -268,10 +274,35 @@ fn run_self_test(fonts: &PrivateFonts, strict_budget: bool) {
     }
 }
 
+fn wake_existing_instance(silent: bool) {
+    if silent {
+        return;
+    }
+    unsafe {
+        if let Ok(hwnd) = FindWindowW(w!("TomoyoLauncherWindowClass"), PCWSTR::null()) {
+            if !hwnd.is_invalid() {
+                let mut pid = 0u32;
+                let _ = GetWindowThreadProcessId(hwnd, Some(&mut pid));
+                if pid != 0 {
+                    let _ = AllowSetForegroundWindow(pid);
+                }
+                let _ = PostMessageW(Some(hwnd), WM_APP_WAKE_EXISTING, WPARAM(0), LPARAM(0));
+                tracing::info!("Signaled existing Tomoyo instance (PID {pid}) to show launcher.");
+            }
+        }
+    }
+}
+
 fn main() {
     init_uptime_clock();
+    let args: Vec<String> = std::env::args().collect();
+    let is_self_test = args.iter().any(|a| a == "--self-test");
+    let is_silent = args.iter().any(|a| a == "--silent");
 
+    let log_writer = crash_guard::init_logging_and_crash_guards(is_self_test);
     let _ = tracing_subscriber::fmt()
+        .with_writer(log_writer)
+        .with_ansi(false)
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
@@ -284,8 +315,7 @@ fn main() {
     let _ole = OleGuard::init();
     let fonts = PrivateFonts::load_default();
 
-    let args: Vec<String> = std::env::args().collect();
-    if args.iter().any(|a| a == "--self-test") {
+    if is_self_test {
         let strict = args.iter().any(|a| a == "--strict-budget");
         unsafe {
             let _ = windows::Win32::System::Console::AttachConsole(
@@ -297,10 +327,12 @@ fn main() {
     }
 
     let Some(_singleton) = SingletonMutex::acquire() else {
-        tracing::info!("Tomoyo is already running.");
+        tracing::info!("Tomoyo is already running (silent={is_silent}).");
+        wake_existing_instance(is_silent);
         return;
     };
 
+    tracing::info!("Starting Tomoyo v{CURRENT_VERSION} (args={args:?})");
     let (config, router, plugin_host, clipboard, _apps, updater) = build_engine();
     updater.check_async_if_due(&config);
 
@@ -316,16 +348,17 @@ fn main() {
     ) {
         Ok(s) => s,
         Err(e) => {
-            tracing::error!("Failed to initialize Tomoyo window: {e}");
+            crash_guard::show_fatal_error_dialog(&format!("Failed to initialize Win32 window: {e}"));
             return;
         }
     };
 
     tracing::info!("Tomoyo ready! Press {} to summon.", shell.hotkey_label());
 
-    if !args.iter().any(|a| a == "--silent") {
+    if !is_silent {
         shell.show_launcher();
     }
 
     shell.run_message_loop();
+    tracing::info!("Tomoyo message loop exited cleanly.");
 }

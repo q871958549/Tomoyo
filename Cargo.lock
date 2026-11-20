@@ -791,9 +791,10 @@ checksum = "009dbb7700f11c55ef83aebbe4c0e9cf1f1ac0844bd8d6f00dc38f302026e13a"
 
 [[package]]
 name = "tomoyo-app"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "base64",
+ "chrono",
  "lru",
  "mimalloc",
  "png",
@@ -812,7 +813,7 @@ dependencies = [
 
 [[package]]
 name = "tomoyo-cli"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -824,7 +825,7 @@ dependencies = [
 
 [[package]]
 name = "tomoyo-core"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "chrono",
  "pinyin",
@@ -839,7 +840,7 @@ dependencies = [
 
 [[package]]
 name = "tomoyo-everything"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "chrono",
  "thiserror",
@@ -848,7 +849,7 @@ dependencies = [
 
 [[package]]
 name = "tomoyo-plugin-hello"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "serde_json",
  "tomoyo-sdk",
@@ -856,7 +857,7 @@ dependencies = [
 
 [[package]]
 name = "tomoyo-plugin-host"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -870,7 +871,7 @@ dependencies = [
 
 [[package]]
 name = "tomoyo-protocol"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -880,7 +881,7 @@ dependencies = [
 
 [[package]]
 name = "tomoyo-providers"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "base64",
  "chrono",
@@ -897,7 +898,7 @@ dependencies = [
 
 [[package]]
 name = "tomoyo-sdk"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "serde_json",
  "tomoyo-protocol",
@@ -905,7 +906,7 @@ dependencies = [
 
 [[package]]
 name = "tomoyo-wasm-sdk"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "serde_json",
  "tomoyo-protocol",
@@ -913,7 +914,7 @@ dependencies = [
 
 [[package]]
 name = "tomoyo-webview-host"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "mimalloc",
  "serde",

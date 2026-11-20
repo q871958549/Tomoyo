@@ -29,10 +29,10 @@ use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::Shell::SetWindowSubclass;
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, LoadCursorW, PostMessageW, RegisterClassW, SendMessageW, SetWindowLongPtrW,
-    CS_DBLCLKS, CW_USEDEFAULT, ES_AUTOHSCROLL, ES_LEFT, GWLP_USERDATA, HMENU, IDC_ARROW,
-    WINDOW_STYLE, WM_SETFONT, WNDCLASSW, WS_CHILD, WS_CLIPCHILDREN, WS_EX_TOOLWINDOW,
-    WS_EX_TOPMOST, WS_POPUP, WS_VISIBLE,
+    CreateWindowExW, LoadCursorW, PostMessageW, RegisterClassW, RegisterWindowMessageW,
+    SendMessageW, SetWindowLongPtrW, CS_DBLCLKS, CW_USEDEFAULT, ES_AUTOHSCROLL, ES_LEFT,
+    GWLP_USERDATA, HMENU, IDC_ARROW, WINDOW_STYLE, WM_SETFONT, WNDCLASSW, WS_CHILD,
+    WS_CLIPCHILDREN, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP, WS_VISIBLE,
 };
 
 impl AppShell {
@@ -144,6 +144,8 @@ impl AppShell {
             None
         };
 
+        let taskbar_created_msg = unsafe { RegisterWindowMessageW(w!("TaskbarCreated")) };
+
         spawn_query_worker(Arc::clone(&router), hwnd.0 as usize, query_rx, result_tx);
 
         let mut app = Box::new(Self {
@@ -185,6 +187,8 @@ impl AppShell {
             everything_status: detect_everything_label(),
             hotkey_label,
             dpi_scale,
+            taskbar_created_msg,
+            shutting_down: false,
         });
 
         unsafe {

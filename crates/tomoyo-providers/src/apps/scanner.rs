@@ -29,14 +29,25 @@ pub(super) fn scan_dir_roots(
     let _com = ComApartmentGuard::init();
     let mut roots: Vec<ScanRoot> = Vec::new();
 
-    // 1. User Desktop & Public Desktop (direct user shortcuts take highest priority)
-    if let Ok(userprofile) = std::env::var("USERPROFILE") {
+    // 1. User Desktop (including redirected KnownFolder Desktop) & Public Desktop
+    if let Some(desktop) = known_desktop_dir() {
         roots.push(ScanRoot {
-            path: PathBuf::from(&userprofile).join("Desktop"),
+            path: desktop,
             max_depth: 3,
             allow_exe: true,
             label_prefix: "桌面",
         });
+    }
+    if let Ok(userprofile) = std::env::var("USERPROFILE") {
+        let fallback_desk = PathBuf::from(&userprofile).join("Desktop");
+        if !roots.iter().any(|r| r.path == fallback_desk) {
+            roots.push(ScanRoot {
+                path: fallback_desk,
+                max_depth: 3,
+                allow_exe: true,
+                label_prefix: "桌面",
+            });
+        }
     }
     if let Ok(public_dir) = std::env::var("PUBLIC") {
         roots.push(ScanRoot {
@@ -321,6 +332,24 @@ fn resolve_lnk_target_stem(lnk_path: &Path, shortcut_lower: &str) -> Option<Stri
 
 #[cfg(not(windows))]
 fn resolve_lnk_target_stem(_lnk_path: &Path, _shortcut_lower: &str) -> Option<String> {
+    None
+}
+
+#[cfg(windows)]
+fn known_desktop_dir() -> Option<PathBuf> {
+    use windows::Win32::System::Com::CoTaskMemFree;
+    use windows::Win32::UI::Shell::{FOLDERID_Desktop, SHGetKnownFolderPath, KF_FLAG_DEFAULT};
+
+    unsafe {
+        let pwstr = SHGetKnownFolderPath(&FOLDERID_Desktop, KF_FLAG_DEFAULT, None).ok()?;
+        let s = pwstr.to_string().ok();
+        CoTaskMemFree(Some(pwstr.0 as *const std::ffi::c_void));
+        s.map(PathBuf::from).filter(|p| p.is_dir())
+    }
+}
+
+#[cfg(not(windows))]
+fn known_desktop_dir() -> Option<PathBuf> {
     None
 }
 

@@ -96,6 +96,25 @@ Write-Host "[OK] Installed Tomoyo v$version ($installSizeKb KB) to $InstallDir" 
 Write-Host "[OK] Start Menu & Desktop shortcuts created; registered in Windows Installed Apps." -ForegroundColor Green
 
 if (-not $NoLaunch) {
-    Start-Process -FilePath $exePath -WorkingDirectory $InstallDir -ArgumentList "--silent"
-    Write-Host "[OK] Tomoyo launched in tray! Press Alt+Space (or your custom hotkey) to summon." -ForegroundColor Green
+    $launchedDetached = $false
+    try {
+        $taskName = "TomoyoDetachedLaunch"
+        $action = New-ScheduledTaskAction -Execute $exePath -Argument "--silent" -WorkingDirectory $InstallDir
+        $principal = New-ScheduledTaskPrincipal -UserId ([System.Security.Principal.WindowsIdentity]::GetCurrent().Name) -LogonType Interactive
+        Register-ScheduledTask -TaskName $taskName -Action $action -Principal $principal -Force | Out-Null
+        Start-ScheduledTask -TaskName $taskName
+        Start-Sleep -Milliseconds 900
+        Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+        $launchedDetached = $true
+    } catch {
+        Unregister-ScheduledTask -TaskName "TomoyoDetachedLaunch" -Confirm:$false -ErrorAction SilentlyContinue
+        Start-Process -FilePath $exePath -WorkingDirectory $InstallDir -ArgumentList "--silent"
+    }
+    $running = Get-Process -Name "tomoyo" -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($running) {
+        $modeNote = if ($launchedDetached) { "detached Session $($running.SessionId)" } else { "direct Session $($running.SessionId)" }
+        Write-Host "[OK] Tomoyo launched in tray (PID=$($running.Id), $modeNote)! Press Alt+Space (or your custom hotkey) to summon." -ForegroundColor Green
+    } else {
+        Write-Warning "Tomoyo did not stay running after launch; check $env:LOCALAPPDATA\Tomoyo\logs\tomoyo.log"
+    }
 }

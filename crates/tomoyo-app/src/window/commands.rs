@@ -1,18 +1,71 @@
 //! Action execution, internal commands, Super Match paste, async preview & async updater.
 
-use super::{AppShell, WM_APP_UPDATE_READY};
+use super::input::register_configured_hotkey;
+use super::layout::apply_cue_banner;
+use super::{AppShell, EDIT_CTRL_ID, HOTKEY_ID, WM_APP_UPDATE_READY};
 use crate::actions::{
     copy_image_as_base64_uri, execute_action, kill_process_by_pid,
     paste_into_previous_window_async, read_clipboard_files, read_clipboard_image_png,
 };
+use crate::renderer::MIN_WINDOW_WIDTH_DIP;
+use crate::tray::{
+    MENU_ID_CONFIG, MENU_ID_GC, MENU_ID_QUIT, MENU_ID_RELOAD, MENU_ID_SETTINGS, MENU_ID_SHOW,
+    MENU_ID_STATS, MENU_ID_UPDATE,
+};
 use std::ffi::c_void;
 use std::sync::Arc;
 use tomoyo_core::{
-    is_autostart_enabled, set_autostart_enabled, Lang, UpdateStatus,
+    is_autostart_enabled, set_autostart_enabled, Lang, TomoyoConfig, UpdateStatus,
 };
 use tomoyo_protocol::{ActionKind, AttachedContext, InternalCommandKind};
-use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
-use windows::Win32::UI::WindowsAndMessaging::{DestroyWindow, PostMessageW};
+use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
+use windows::Win32::UI::Input::KeyboardAndMouse::UnregisterHotKey;
+use windows::Win32::UI::WindowsAndMessaging::{
+    DestroyWindow, IsWindowVisible, PostMessageW, EN_CHANGE,
+};
+
+pub(super) fn dispatch_wm_command(hwnd: HWND, app: &mut AppShell, wparam: WPARAM) -> LRESULT {
+    let id = (wparam.0 & 0xFFFF) as u32;
+    let code = ((wparam.0 >> 16) & 0xFFFF) as u32;
+    if id as usize == EDIT_CTRL_ID && code == EN_CHANGE {
+        app.on_edit_changed();
+        return LRESULT(0);
+    }
+    dispatch_menu_id(hwnd, app, id);
+    LRESULT(0)
+}
+
+pub(super) fn dispatch_menu_id(hwnd: HWND, app: &mut AppShell, id: u32) {
+    match id {
+        MENU_ID_SHOW => app.show_launcher(),
+        MENU_ID_SETTINGS => app.open_settings_center(),
+        MENU_ID_UPDATE => {
+            app.inter.suppress_next_deactivate = true;
+            app.show_launcher();
+            app.set_query_text(":update");
+            app.trigger_update_check_async();
+        }
+        MENU_ID_STATS => {
+            app.inter.suppress_next_deactivate = true;
+            app.show_launcher();
+            app.set_query_text(":stats");
+        }
+        MENU_ID_CONFIG => app.open_config_file_in_editor(),
+        MENU_ID_RELOAD => {
+            app.reload_config_and_all();
+            app.show_launcher();
+            app.show_toast(app.lang.pick("已热重载配置、应用与插件", "Hot-reloaded all"));
+        }
+        MENU_ID_GC => {
+            let _ = app.run_hibernate();
+        }
+        MENU_ID_QUIT => {
+            app.shutdown_clean();
+            unsafe { let _ = DestroyWindow(hwnd); }
+        }
+        _ => {}
+    }
+}
 
 impl AppShell {
     pub(super) fn refresh_selected_preview(&mut self) {
@@ -191,7 +244,7 @@ impl AppShell {
                 self.dispatch_query();
             }
             InternalCommandKind::QuitApp => {
-                self.plugin_host.shutdown_all();
+                self.shutdown_clean();
                 unsafe {
                     let _ = DestroyWindow(self.hwnd);
                 }
@@ -266,6 +319,86 @@ impl AppShell {
                 self.resize_to_fit_results();
                 self.invalidate();
             }
+        }
+    }
+
+    pub fn is_renderer_hibernated(&self) -> bool {
+        self.renderer.is_hibernated()
+    }
+
+    pub fn wait_background_idle_for_test(&mut self) {
+        self.renderer.wait_icons_idle_for_test();
+        self.preview_loader.wait_idle_and_drain();
+    }
+
+    pub fn self_test_paint_and_hibernate(&mut self, query: &str) -> usize {
+        self.current_query = query.to_string();
+        let generation = self.router.next_generation();
+        self.results = self.router.search_with_filter(
+            query,
+            generation,
+            20,
+            self.clipboard.latest_snapshot(),
+            self.attached.clone(),
+            self.active_filter,
+        );
+        self.selected = 0;
+        self.inter.hovered = if self.results.len() > 1 { Some(1) } else { None };
+        self.scroll_offset = 0;
+        self.cached_preview_id = None;
+        self.refresh_selected_preview();
+        let count = self.results.len();
+
+        let hdc = unsafe { windows::Win32::Graphics::Gdi::GetDC(Some(self.hwnd)) };
+        let w = (self.desired_width_dip() as f32 * self.dpi_scale) as i32;
+        let h = (self.desired_height_dip() as f32 * self.dpi_scale) as i32;
+        self.render_into_hdc(hdc, w, h);
+        unsafe {
+            windows::Win32::Graphics::Gdi::ReleaseDC(Some(self.hwnd), hdc);
+        }
+        count
+    }
+
+    pub fn self_test_attached_paint(&mut self, ctx: AttachedContext) -> usize {
+        self.attached = Some(ctx);
+        let hits = self.self_test_paint_and_hibernate("");
+        self.attached = None;
+        hits
+    }
+
+    pub(super) fn reload_config_and_all(&mut self) {
+        let fresh = TomoyoConfig::load_or_create();
+        let new_lang = fresh.lang();
+        let new_theme = fresh.theme.clone();
+        let new_hotkey = fresh.hotkey.clone();
+        self.preview_enabled = fresh.auto_preview;
+        self.show_filter_bar = fresh.show_filter_bar;
+        self.geom.list_width_dip = fresh.window.width_dip.clamp(MIN_WINDOW_WIDTH_DIP, 1400);
+        self.geom.max_visible_rows = fresh.window.max_visible_rows.clamp(4, 18);
+        self.geom.preview_width_dip = fresh.window.preview_width_dip.clamp(220, 620);
+        self.geom.custom_pos = fresh.window.custom_x.zip(fresh.window.custom_y);
+        if let Ok(mut cfg) = self.config.write() {
+            *cfg = fresh;
+        }
+        self.lang = new_lang;
+        unsafe {
+            apply_cue_banner(self.edit_hwnd, new_lang);
+        }
+        self.apply_theme(&new_theme, false);
+        if self.tray.is_some() {
+            unsafe {
+                let _ = UnregisterHotKey(Some(self.hwnd), HOTKEY_ID);
+            }
+            self.hotkey_label = register_configured_hotkey(self.hwnd, &new_hotkey);
+            if let Some(tray) = &mut self.tray {
+                tray.update_tooltip(&self.hotkey_label);
+            }
+        }
+        self.router.reload_all();
+        if unsafe { IsWindowVisible(self.hwnd).as_bool() } {
+            self.position_on_active_monitor();
+            self.dispatch_query();
+            self.invalidate();
         }
     }
 }

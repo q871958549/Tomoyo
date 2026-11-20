@@ -256,6 +256,14 @@ impl ClipboardStore {
         };
         Some(rows.into_iter().filter_map(row_to_entry).collect())
     }
+
+    pub fn shutdown_checkpoint(&self) {
+        if let Some(db_lock) = &self.db {
+            if let Ok(conn) = db_lock.lock() {
+                let _ = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
+            }
+        }
+    }
 }
 
 fn open_clipboard_db(path: &PathBuf, initial: &mut VecDeque<ClipboardEntry>) -> Option<Connection> {

@@ -49,6 +49,10 @@ impl ClipboardProvider {
         self.store.item_count()
     }
 
+    pub fn shutdown_checkpoint(&self) {
+        self.store.shutdown_checkpoint();
+    }
+
     pub fn latest_snapshot(&self) -> Option<ClipboardSnapshot> {
         let guard = self.store.history.read().ok()?;
         for entry in guard.iter() {

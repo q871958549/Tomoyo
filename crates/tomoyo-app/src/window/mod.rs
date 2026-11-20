@@ -9,10 +9,9 @@ mod wndproc;
 
 use crate::actions::spawn_settings_window;
 use crate::preview_loader::AsyncPreviewLoader;
-use crate::renderer::{FluentRenderer, RenderState, ThemePalette, MIN_WINDOW_WIDTH_DIP};
+use crate::renderer::{FluentRenderer, RenderState, ThemePalette};
 use crate::tray::TrayIcon;
 use bootstrap::detect_everything_label;
-use input::register_configured_hotkey;
 use layout::{apply_cue_banner, apply_dwm_attributes, read_edit_text};
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, RwLock};
@@ -23,7 +22,7 @@ use tomoyo_providers::ClipboardProvider;
 use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 use windows::Win32::Graphics::Gdi::{CreateSolidBrush, DeleteObject, InvalidateRect, HBRUSH, HDC, HFONT};
-use windows::Win32::UI::Input::KeyboardAndMouse::{SetFocus, UnregisterHotKey};
+use windows::Win32::UI::Input::KeyboardAndMouse::SetFocus;
 use windows::Win32::UI::WindowsAndMessaging::{
     DispatchMessageW, GetForegroundWindow, GetMessageW, IsWindowVisible, KillTimer, SendMessageW,
     SetForegroundWindow, SetTimer, SetWindowTextW, ShowWindow, TranslateMessage, MSG, SW_HIDE,
@@ -38,6 +37,7 @@ pub(super) const WM_APP_EDIT_KEY: u32 = WM_APP + 2;
 pub(super) const WM_APP_PASTE_INTERCEPT: u32 = WM_APP + 3;
 pub(super) const WM_APP_UPDATE_READY: u32 = WM_APP + 4;
 pub(super) const WM_APP_CONFIG_SAVED: u32 = WM_APP + 20;
+pub const WM_APP_WAKE_EXISTING: u32 = WM_APP + 21;
 pub(super) const TIMER_HIBERNATE: usize = 1001;
 pub(super) const TIMER_CLEAR_TOAST: usize = 1002;
 pub(super) const EM_SETCUEBANNER: u32 = 0x1501;
@@ -122,13 +122,11 @@ pub struct AppShell {
     pub(super) everything_status: Option<&'static str>,
     pub(super) hotkey_label: String,
     pub(super) dpi_scale: f32,
+    pub(super) taskbar_created_msg: u32,
+    pub(super) shutting_down: bool,
 }
 
 impl AppShell {
-    pub fn is_renderer_hibernated(&self) -> bool {
-        self.renderer.is_hibernated()
-    }
-
     pub fn hotkey_label(&self) -> &str {
         &self.hotkey_label
     }
@@ -251,9 +249,15 @@ impl AppShell {
         cycles
     }
 
-    pub fn wait_background_idle_for_test(&mut self) {
-        self.renderer.wait_icons_idle_for_test();
-        self.preview_loader.wait_idle_and_drain();
+    pub(super) fn shutdown_clean(&mut self) {
+        if self.shutting_down {
+            return;
+        }
+        self.shutting_down = true;
+        self.plugin_host.shutdown_all();
+        self.clipboard.shutdown_checkpoint();
+        self.preview_loader.cancel_all();
+        self.tray = None;
     }
 
     pub fn set_query_text(&mut self, text: &str) {
@@ -281,72 +285,10 @@ impl AppShell {
     pub fn run_message_loop(&mut self) {
         let mut msg = MSG::default();
         unsafe {
-            while GetMessageW(&mut msg, None, 0, 0).into() {
+            while GetMessageW(&mut msg, None, 0, 0).0 > 0 {
                 let _ = TranslateMessage(&msg);
                 DispatchMessageW(&msg);
             }
-        }
-    }
-
-    pub fn self_test_paint_and_hibernate(&mut self, query: &str) -> usize {
-        self.current_query = query.to_string();
-        let generation = self.router.next_generation();
-        self.results = self.router.search_with_filter(
-            query,
-            generation,
-            20,
-            self.clipboard.latest_snapshot(),
-            self.attached.clone(),
-            self.active_filter,
-        );
-        self.selected = 0;
-        self.inter.hovered = if self.results.len() > 1 { Some(1) } else { None };
-        self.scroll_offset = 0;
-        self.cached_preview_id = None;
-        self.refresh_selected_preview();
-        let count = self.results.len();
-
-        let hdc = unsafe { windows::Win32::Graphics::Gdi::GetDC(Some(self.hwnd)) };
-        let w = (self.desired_width_dip() as f32 * self.dpi_scale) as i32;
-        let h = (self.desired_height_dip() as f32 * self.dpi_scale) as i32;
-        self.render_into_hdc(hdc, w, h);
-        unsafe { windows::Win32::Graphics::Gdi::ReleaseDC(Some(self.hwnd), hdc); }
-        count
-    }
-
-    pub fn self_test_attached_paint(&mut self, ctx: AttachedContext) -> usize {
-        self.attached = Some(ctx);
-        let hits = self.self_test_paint_and_hibernate("");
-        self.attached = None;
-        hits
-    }
-
-    pub(super) fn reload_config_and_all(&mut self) {
-        let fresh = TomoyoConfig::load_or_create();
-        let new_lang = fresh.lang();
-        let new_theme = fresh.theme.clone();
-        let new_hotkey = fresh.hotkey.clone();
-        self.preview_enabled = fresh.auto_preview;
-        self.show_filter_bar = fresh.show_filter_bar;
-        self.geom.list_width_dip = fresh.window.width_dip.clamp(MIN_WINDOW_WIDTH_DIP, 1400);
-        self.geom.max_visible_rows = fresh.window.max_visible_rows.clamp(4, 18);
-        self.geom.preview_width_dip = fresh.window.preview_width_dip.clamp(220, 620);
-        self.geom.custom_pos = fresh.window.custom_x.zip(fresh.window.custom_y);
-        if let Ok(mut cfg) = self.config.write() {
-            *cfg = fresh;
-        }
-        self.lang = new_lang;
-        unsafe { apply_cue_banner(self.edit_hwnd, new_lang); }
-        self.apply_theme(&new_theme, false);
-        if self.tray.is_some() {
-            unsafe { let _ = UnregisterHotKey(Some(self.hwnd), HOTKEY_ID); }
-            self.hotkey_label = register_configured_hotkey(self.hwnd, &new_hotkey);
-        }
-        self.router.reload_all();
-        if unsafe { IsWindowVisible(self.hwnd).as_bool() } {
-            self.position_on_active_monitor();
-            self.dispatch_query();
-            self.invalidate();
         }
     }
 

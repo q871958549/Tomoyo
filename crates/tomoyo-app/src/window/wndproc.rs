@@ -1,8 +1,10 @@
 //! Pure Win32 `main_wndproc` message dispatcher delegating into cohesive `AppShell` methods.
 
+use super::commands::{dispatch_menu_id, dispatch_wm_command};
 use super::{
-    AppShell, EDIT_CTRL_ID, HOTKEY_ID, TIMER_CLEAR_TOAST, TIMER_HIBERNATE, WM_APP_CONFIG_SAVED,
+    AppShell, HOTKEY_ID, TIMER_CLEAR_TOAST, TIMER_HIBERNATE, WM_APP_CONFIG_SAVED,
     WM_APP_EDIT_KEY, WM_APP_PASTE_INTERCEPT, WM_APP_RESULTS_READY, WM_APP_UPDATE_READY,
+    WM_APP_WAKE_EXISTING,
 };
 use crate::actions::{read_clipboard_image_png, read_clipboard_text};
 use crate::drag::start_file_drag;
@@ -11,10 +13,7 @@ use crate::preview_loader::WM_APP_PREVIEW_READY;
 use crate::renderer::{
     FOOTER_HEIGHT_DIP, HEADER_HEIGHT_DIP, MAX_WINDOW_WIDTH_DIP, MIN_WINDOW_WIDTH_DIP,
 };
-use crate::tray::{
-    MENU_ID_CONFIG, MENU_ID_GC, MENU_ID_QUIT, MENU_ID_RELOAD, MENU_ID_SETTINGS, MENU_ID_SHOW,
-    MENU_ID_STATS, MENU_ID_UPDATE, WM_TRAY_CALLBACK,
-};
+use crate::tray::WM_TRAY_CALLBACK;
 use std::ffi::c_void;
 use tomoyo_protocol::IconSpec;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
@@ -28,14 +27,13 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     TRACKMOUSEEVENT,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    DefWindowProcW, DestroyWindow, GetClientRect, GetCursorPos, GetWindowLongPtrW, IsWindowVisible,
-    KillTimer, LoadCursorW, PostQuitMessage, SetCursor, EN_CHANGE, GWLP_USERDATA, HTBOTTOM,
-    HTBOTTOMLEFT, HTBOTTOMRIGHT, HTCAPTION, HTCLIENT, HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT,
-    HTTOPRIGHT, IDC_SIZEWE, MINMAXINFO, WM_ACTIVATE, WM_CLIPBOARDUPDATE, WM_COMMAND,
-    WM_CTLCOLOREDIT, WM_DESTROY, WM_ENTERSIZEMOVE, WM_ERASEBKGND, WM_EXITSIZEMOVE,
-    WM_GETMINMAXINFO, WM_HOTKEY, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE,
-    WM_MOUSEWHEEL, WM_NCHITTEST, WM_NCRBUTTONUP, WM_PAINT, WM_RBUTTONUP, WM_SETCURSOR, WM_SIZE,
-    WM_TIMER,
+    DefWindowProcW, GetClientRect, GetCursorPos, GetWindowLongPtrW, IsWindowVisible, KillTimer,
+    LoadCursorW, PostQuitMessage, SetCursor, GWLP_USERDATA, HTBOTTOM, HTBOTTOMLEFT,
+    HTBOTTOMRIGHT, HTCAPTION, HTCLIENT, HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT, IDC_SIZEWE,
+    MINMAXINFO, WM_ACTIVATE, WM_CLIPBOARDUPDATE, WM_COMMAND, WM_CTLCOLOREDIT, WM_DESTROY,
+    WM_ENDSESSION, WM_ENTERSIZEMOVE, WM_ERASEBKGND, WM_EXITSIZEMOVE, WM_GETMINMAXINFO, WM_HOTKEY,
+    WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCHITTEST,
+    WM_NCRBUTTONUP, WM_PAINT, WM_RBUTTONUP, WM_SETCURSOR, WM_SIZE, WM_TIMER,
 };
 
 pub(super) unsafe extern "system" fn main_wndproc(
@@ -194,6 +192,10 @@ pub(super) unsafe extern "system" fn main_wndproc(
             app.on_update_ready();
             LRESULT(0)
         }
+        WM_APP_WAKE_EXISTING => {
+            app.show_launcher();
+            LRESULT(0)
+        }
         WM_NCRBUTTONUP => {
             if wparam.0 as u32 == HTCAPTION {
                 app.show_logo_context_menu();
@@ -280,11 +282,25 @@ pub(super) unsafe extern "system" fn main_wndproc(
             }
             LRESULT(0)
         }
+        WM_ENDSESSION => {
+            if wparam.0 != 0 {
+                tracing::info!("Windows session ending; performing clean shutdown checkpoint");
+                app.shutdown_clean();
+            }
+            LRESULT(0)
+        }
         WM_DESTROY => {
+            app.shutdown_clean();
             unsafe {
                 let _ = UnregisterHotKey(Some(hwnd), HOTKEY_ID);
                 let _ = RemoveClipboardFormatListener(hwnd);
                 PostQuitMessage(0);
+            }
+            LRESULT(0)
+        }
+        m if m != 0 && m == app.taskbar_created_msg => {
+            if let Some(tray) = &mut app.tray {
+                tray.reinstall();
             }
             LRESULT(0)
         }
@@ -322,49 +338,6 @@ fn hit_test_window_chrome(hwnd: HWND, dpi_scale: f32, lparam: LPARAM) -> LRESULT
         }
     };
     LRESULT(hit as isize)
-}
-
-fn dispatch_wm_command(hwnd: HWND, app: &mut AppShell, wparam: WPARAM) -> LRESULT {
-    let id = (wparam.0 & 0xFFFF) as u32;
-    let code = ((wparam.0 >> 16) & 0xFFFF) as u32;
-    if id as usize == EDIT_CTRL_ID && code == EN_CHANGE {
-        app.on_edit_changed();
-        return LRESULT(0);
-    }
-    dispatch_menu_id(hwnd, app, id);
-    LRESULT(0)
-}
-
-fn dispatch_menu_id(hwnd: HWND, app: &mut AppShell, id: u32) {
-    match id {
-        MENU_ID_SHOW => app.show_launcher(),
-        MENU_ID_SETTINGS => app.open_settings_center(),
-        MENU_ID_UPDATE => {
-            app.inter.suppress_next_deactivate = true;
-            app.show_launcher();
-            app.set_query_text(":update");
-            app.trigger_update_check_async();
-        }
-        MENU_ID_STATS => {
-            app.inter.suppress_next_deactivate = true;
-            app.show_launcher();
-            app.set_query_text(":stats");
-        }
-        MENU_ID_CONFIG => app.open_config_file_in_editor(),
-        MENU_ID_RELOAD => {
-            app.reload_config_and_all();
-            app.show_launcher();
-            app.show_toast(app.lang.pick("已热重载配置、应用与插件", "Hot-reloaded all"));
-        }
-        MENU_ID_GC => {
-            let _ = app.run_hibernate();
-        }
-        MENU_ID_QUIT => {
-            app.plugin_host.shutdown_all();
-            unsafe { let _ = DestroyWindow(hwnd); }
-        }
-        _ => {}
-    }
 }
 
 fn handle_mouse_down(hwnd: HWND, app: &mut AppShell, lparam: LPARAM) -> LRESULT {

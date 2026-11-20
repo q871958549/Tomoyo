@@ -155,7 +155,7 @@ impl AppShell {
                 self.hide_launcher();
             }
             CMD_QUIT => {
-                self.plugin_host.shutdown_all();
+                self.shutdown_clean();
                 unsafe {
                     let _ = DestroyWindow(self.hwnd);
                 }

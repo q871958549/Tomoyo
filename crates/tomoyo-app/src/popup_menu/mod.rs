@@ -1,9 +1,12 @@
 //! Theme-matched SDF + ClearType GDI popup context menu replacing legacy Win32 `CreatePopupMenu`.
 //!
 //! Renders with Tomoyo's active `ThemePalette`, Alibaba PuHuiTi 3.0 fonts, Win11 rounded DWM corners,
-//! keyboard navigation, and deterministic RAII GDI/USER cleanup upon dismissal.
+//! keyboard navigation, safe `WM_QUIT` propagation, and deterministic RAII GDI/USER cleanup.
 
-use crate::renderer::{dip_rect, draw_text_gdi, Canvas, DibSurface, FontPack, Rgb, ThemePalette};
+mod paint;
+
+use crate::renderer::{DibSurface, FontPack, ThemePalette};
+use paint::paint_popup;
 use std::ffi::c_void;
 use std::sync::OnceLock;
 use windows::core::w;
@@ -13,8 +16,8 @@ use windows::Win32::Graphics::Dwm::{
     DWMWCP_ROUND,
 };
 use windows::Win32::Graphics::Gdi::{
-    BeginPaint, EndPaint, GetMonitorInfoW, MonitorFromPoint, GdiFlush, HDC, MONITORINFO,
-    MONITOR_DEFAULTTONEAREST, PAINTSTRUCT, DT_CENTER, DT_LEFT, DT_RIGHT,
+    BeginPaint, EndPaint, GetMonitorInfoW, InvalidateRect, MonitorFromPoint, MONITORINFO,
+    MONITOR_DEFAULTTONEAREST, PAINTSTRUCT,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Controls::WM_MOUSELEAVE;
@@ -23,10 +26,10 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetClientRect, GetCursorPos,
-    GetMessageW, GetWindowLongPtrW, LoadCursorW, PostMessageW, RegisterClassW, SetForegroundWindow,
-    SetWindowLongPtrW, ShowWindow, TranslateMessage, GWLP_USERDATA, IDC_ARROW, MSG, SW_SHOW,
-    WM_ACTIVATE, WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_NULL, WM_PAINT,
-    WM_RBUTTONUP, WNDCLASSW, WS_CLIPCHILDREN, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
+    GetMessageW, GetWindowLongPtrW, LoadCursorW, PostMessageW, PostQuitMessage, RegisterClassW,
+    SetForegroundWindow, SetWindowLongPtrW, ShowWindow, TranslateMessage, GWLP_USERDATA, IDC_ARROW,
+    MSG, SW_SHOW, WM_ACTIVATE, WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_NULL,
+    WM_PAINT, WM_RBUTTONUP, WNDCLASSW, WS_CLIPCHILDREN, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
 };
 
 const ROW_H_DIP: f32 = 31.0;
@@ -55,25 +58,25 @@ impl PopupEntry {
     }
 }
 
-struct RowMetric {
-    y0: f32,
-    y1: f32,
-    is_sep: bool,
+pub(super) struct RowMetric {
+    pub y0: f32,
+    pub y1: f32,
+    pub is_sep: bool,
 }
 
-struct PopupState<'a> {
-    pal: ThemePalette,
-    scale: f32,
-    w_dip: f32,
-    h_dip: f32,
-    entries: &'a [PopupEntry],
-    metrics: Vec<RowMetric>,
-    hovered: Option<usize>,
-    mouse_tracked: bool,
-    chosen: Option<u32>,
-    closed: bool,
-    surface: Option<DibSurface>,
-    fonts: FontPack,
+pub(super) struct PopupState<'a> {
+    pub pal: ThemePalette,
+    pub scale: f32,
+    pub w_dip: f32,
+    pub h_dip: f32,
+    pub entries: &'a [PopupEntry],
+    pub metrics: Vec<RowMetric>,
+    pub hovered: Option<usize>,
+    pub mouse_tracked: bool,
+    pub chosen: Option<u32>,
+    pub closed: bool,
+    pub surface: Option<DibSurface>,
+    pub fonts: FontPack,
 }
 
 static MENU_CLASS_OK: OnceLock<bool> = OnceLock::new();
@@ -169,7 +172,15 @@ pub fn show_themed_popup_menu(
         let _ = SetForegroundWindow(hwnd);
 
         let mut msg = MSG::default();
-        while !state.closed && GetMessageW(&mut msg, None, 0, 0).into() {
+        while !state.closed {
+            let ret = GetMessageW(&mut msg, None, 0, 0);
+            if ret.0 <= 0 {
+                if ret.0 == 0 {
+                    // Propagate WM_QUIT back to outer launcher loop instead of swallowing it.
+                    PostQuitMessage(msg.wParam.0 as i32);
+                }
+                break;
+            }
             let _ = TranslateMessage(&msg);
             DispatchMessageW(&msg);
         }
@@ -265,20 +276,26 @@ unsafe extern "system" fn popup_wndproc(
                     hwndTrack: hwnd,
                     dwHoverTime: 0,
                 };
-                unsafe { let _ = TrackMouseEvent(&mut tme); }
+                unsafe {
+                    let _ = TrackMouseEvent(&mut tme);
+                }
             }
             let y_dip = (((lparam.0 >> 16) & 0xFFFF) as i16 as f32) / st.scale;
             let hit = hit_test_item(&st.metrics, y_dip);
             if hit != st.hovered {
                 st.hovered = hit;
-                unsafe { let _ = windows::Win32::Graphics::Gdi::InvalidateRect(Some(hwnd), None, false); }
+                unsafe {
+                    let _ = InvalidateRect(Some(hwnd), None, false);
+                }
             }
             LRESULT(0)
         }
         WM_MOUSELEAVE => {
             st.mouse_tracked = false;
             if st.hovered.take().is_some() {
-                unsafe { let _ = windows::Win32::Graphics::Gdi::InvalidateRect(Some(hwnd), None, false); }
+                unsafe {
+                    let _ = InvalidateRect(Some(hwnd), None, false);
+                }
             }
             LRESULT(0)
         }
@@ -309,7 +326,9 @@ unsafe extern "system" fn popup_wndproc(
                 close_popup(hwnd, st);
             } else if vk == VK_DOWN.0 || vk == VK_UP.0 {
                 step_selection(st, vk == VK_DOWN.0);
-                unsafe { let _ = windows::Win32::Graphics::Gdi::InvalidateRect(Some(hwnd), None, false); }
+                unsafe {
+                    let _ = InvalidateRect(Some(hwnd), None, false);
+                }
             }
             LRESULT(0)
         }
@@ -363,106 +382,12 @@ fn step_selection(st: &mut PopupState<'_>, down: bool) {
             };
             Some(valid[next])
         }
-        None => Some(if down { valid[0] } else { *valid.last().unwrap() }),
-    };
-}
-
-fn paint_popup(screen_hdc: HDC, width: i32, height: i32, st: &mut PopupState<'_>) {
-    if width <= 0 || height <= 0 {
-        return;
-    }
-    if st.surface.as_ref().map(|s| (s.width, s.height)) != Some((width, height)) {
-        st.surface = None;
-        st.surface = DibSurface::create(screen_hdc, width, height);
-    }
-    let Some(surface) = st.surface.as_mut() else {
-        return;
-    };
-    let pal = st.pal;
-    let scale = st.scale;
-
-    {
-        let mut canvas = Canvas {
-            buf: surface.pixels_mut(),
-            w: width,
-            h: height,
-            scale,
-        };
-        canvas.clear(pal.pop_bg);
-        for (idx, (ent, met)) in st.entries.iter().zip(st.metrics.iter()).enumerate() {
-            if matches!(ent, PopupEntry::Separator) {
-                let sy = (met.y0 + met.y1) * 0.5;
-                canvas.fill_rect_dip(10.0, sy, st.w_dip - 10.0, sy + 1.0, pal.divider);
-            } else if st.hovered == Some(idx) {
-                canvas.fill_rounded_rect(5.0, met.y0 + 1.0, st.w_dip - 5.0, met.y1 - 1.0, 6.0, pal.accent);
+        None => {
+            if down {
+                valid.first().copied()
+            } else {
+                valid.last().copied()
             }
         }
-        canvas.fill_rect_dip(0.0, 0.0, st.w_dip, 1.0, pal.border);
-        canvas.fill_rect_dip(0.0, st.h_dip - 1.0, st.w_dip, st.h_dip, pal.border);
-        canvas.fill_rect_dip(0.0, 0.0, 1.0, st.h_dip, pal.border);
-        canvas.fill_rect_dip(st.w_dip - 1.0, 0.0, st.w_dip, st.h_dip, pal.border);
-    }
-
-    let dc = surface.mem_dc;
-    unsafe {
-        let _ = GdiFlush();
-        for (idx, (ent, met)) in st.entries.iter().zip(st.metrics.iter()).enumerate() {
-            let PopupEntry::Item {
-                label,
-                shortcut,
-                checked,
-                ..
-            } = ent
-            else {
-                continue;
-            };
-            let is_hov = st.hovered == Some(idx);
-            let fg: Rgb = if is_hov { pal.on_accent } else { pal.text_primary };
-            let mut right_x = st.w_dip - 12.0;
-
-            if *checked {
-                let mark_col = if is_hov { pal.on_accent } else { pal.accent };
-                draw_text_gdi(
-                    dc,
-                    st.fonts.badge,
-                    mark_col,
-                    "✓",
-                    dip_rect(8.0, met.y0, 26.0, met.y1, scale),
-                    DT_CENTER,
-                );
-            }
-            if let Some(sc) = shortcut {
-                let sc_col = if is_hov { pal.on_accent } else { pal.text_muted };
-                let sc_w = (sc.chars().count() as f32 * 7.2 + 8.0).clamp(32.0, 96.0);
-                draw_text_gdi(
-                    dc,
-                    st.fonts.footer,
-                    sc_col,
-                    sc,
-                    dip_rect(right_x - sc_w, met.y0, right_x, met.y1, scale),
-                    DT_RIGHT,
-                );
-                right_x -= sc_w + 8.0;
-            }
-            draw_text_gdi(
-                dc,
-                st.fonts.footer,
-                fg,
-                label,
-                dip_rect(28.0, met.y0, right_x, met.y1, scale),
-                DT_LEFT,
-            );
-        }
-        let _ = windows::Win32::Graphics::Gdi::BitBlt(
-            screen_hdc,
-            0,
-            0,
-            width,
-            height,
-            Some(dc),
-            0,
-            0,
-            windows::Win32::Graphics::Gdi::SRCCOPY,
-        );
-    }
+    };
 }
