@@ -18,6 +18,7 @@ pub mod pkg_zip;
 pub mod preview;
 pub mod telemetry;
 pub mod updater;
+pub mod wic_thumb;
 
 pub use config::*;
 pub use diagnostics::*;

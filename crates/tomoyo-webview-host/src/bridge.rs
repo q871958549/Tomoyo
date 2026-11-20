@@ -1,11 +1,10 @@
 //! Dispatches incoming WebView2 host messages safely to native OS helpers, DB, and Plugin Store.
 
+use crate::bridge_os::{notify_parent_mode, set_clipboard_text, shell_open};
 use crate::db::PluginDb;
 use crate::store::{install_plugin_from_source, uninstall_user_plugin};
 use serde::Deserialize;
 use serde_json::Value;
-
-pub const WM_APP_CONFIG_SAVED: u32 = 0x8000 + 20;
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "cmd", rename_all = "snake_case")]
@@ -48,6 +47,14 @@ pub enum HostMessage {
     },
     CopyDiagnosticBundle,
     OpenLogsDir,
+    OpenClipboardManager,
+    ClipList { #[serde(default)] query: String },
+    ClipTogglePin { id_key: String },
+    ClipUpdate { id_key: String, #[serde(default)] text: Option<String>, #[serde(default)] tag: String, #[serde(default)] note: String },
+    ClipDelete { id_key: String },
+    ClipClearUnpinned,
+    ClipExport,
+    ClipImport { json: String },
     Close,
 }
 
@@ -299,6 +306,57 @@ pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isi
             shell_open(&dir.to_string_lossy());
             HostAction::default()
         }
+        HostMessage::OpenClipboardManager => {
+            if let Ok(exe) = std::env::current_exe() {
+                let theme = tomoyo_core::TomoyoConfig::load_or_create().theme;
+                let mut cmd = std::process::Command::new(exe);
+                cmd.args([
+                    "--plugin-id", "builtin.clipboard",
+                    "--title", "Tomoyo 剪贴板工作台",
+                    "--entry", crate::clip_view::CLIP_MANAGER_ENTRY,
+                    "--theme", &theme,
+                    "--width", "1060", "--height", "680",
+                ]);
+                if let Some(h) = notify_hwnd {
+                    cmd.args(["--notify-hwnd", &h.to_string()]);
+                }
+                let _ = cmd.spawn();
+            }
+            HostAction::default()
+        }
+        HostMessage::ClipList { query } => HostAction {
+            reply_json: Some(crate::clip_view::handle_clip_list(&query)),
+            ..Default::default()
+        },
+        HostMessage::ClipTogglePin { id_key } => {
+            let (reply, mutated) = crate::clip_view::handle_clip_toggle_pin(&id_key);
+            if mutated { if let Some(t) = notify_hwnd { notify_parent_mode(t, 2); } }
+            HostAction { reply_json: Some(reply), ..Default::default() }
+        }
+        HostMessage::ClipUpdate { id_key, text, tag, note } => {
+            let (reply, mutated) = crate::clip_view::handle_clip_update(&id_key, text, &tag, &note);
+            if mutated { if let Some(t) = notify_hwnd { notify_parent_mode(t, 2); } }
+            HostAction { reply_json: Some(reply), ..Default::default() }
+        }
+        HostMessage::ClipDelete { id_key } => {
+            let (reply, mutated) = crate::clip_view::handle_clip_delete(&id_key);
+            if mutated { if let Some(t) = notify_hwnd { notify_parent_mode(t, 2); } }
+            HostAction { reply_json: Some(reply), ..Default::default() }
+        }
+        HostMessage::ClipClearUnpinned => {
+            let (reply, mutated) = crate::clip_view::handle_clip_clear_unpinned();
+            if mutated { if let Some(t) = notify_hwnd { notify_parent_mode(t, 2); } }
+            HostAction { reply_json: Some(reply), ..Default::default() }
+        }
+        HostMessage::ClipExport => HostAction {
+            reply_json: Some(crate::clip_view::handle_clip_export()),
+            ..Default::default()
+        },
+        HostMessage::ClipImport { json } => {
+            let (reply, mutated) = crate::clip_view::handle_clip_import(&json);
+            if mutated { if let Some(t) = notify_hwnd { notify_parent_mode(t, 2); } }
+            HostAction { reply_json: Some(reply), ..Default::default() }
+        }
         HostMessage::Close => HostAction {
             should_close: true,
             ..Default::default()
@@ -306,79 +364,9 @@ pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isi
     }
 }
 
-#[cfg(windows)]
 fn notify_parent_reload(raw_hwnd: isize, reload_plugins: bool) {
-    use std::ffi::c_void;
-    use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
-    use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
-
-    if raw_hwnd != 0 {
-        unsafe {
-            let _ = PostMessageW(
-                Some(HWND(raw_hwnd as *mut c_void)),
-                WM_APP_CONFIG_SAVED,
-                WPARAM(usize::from(reload_plugins)),
-                LPARAM(0),
-            );
-        }
-    }
+    notify_parent_mode(raw_hwnd, usize::from(reload_plugins));
 }
-
-#[cfg(not(windows))]
-fn notify_parent_reload(_raw_hwnd: isize, _reload_plugins: bool) {}
-
-#[cfg(windows)]
-fn shell_open(target: &str) {
-    use windows::core::{w, PCWSTR};
-    use windows::Win32::UI::Shell::ShellExecuteW;
-    use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
-
-    let wide: Vec<u16> = target.encode_utf16().chain(std::iter::once(0)).collect();
-    unsafe {
-        let _ = ShellExecuteW(
-            None,
-            w!("open"),
-            PCWSTR(wide.as_ptr()),
-            PCWSTR::null(),
-            PCWSTR::null(),
-            SW_SHOWNORMAL,
-        );
-    }
-}
-
-#[cfg(not(windows))]
-fn shell_open(_target: &str) {}
-
-#[cfg(windows)]
-fn set_clipboard_text(text: &str) {
-    use windows::Win32::Foundation::HANDLE;
-    use windows::Win32::System::DataExchange::{
-        CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData,
-    };
-    use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
-    use windows::Win32::System::Ole::CF_UNICODETEXT;
-
-    let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
-    let byte_len = wide.len() * 2;
-    unsafe {
-        if OpenClipboard(None).is_err() {
-            return;
-        }
-        let _ = EmptyClipboard();
-        if let Ok(hmem) = GlobalAlloc(GMEM_MOVEABLE, byte_len) {
-            let ptr = GlobalLock(hmem) as *mut u16;
-            if !ptr.is_null() {
-                std::ptr::copy_nonoverlapping(wide.as_ptr(), ptr, wide.len());
-                let _ = GlobalUnlock(hmem);
-                let _ = SetClipboardData(CF_UNICODETEXT.0 as u32, Some(HANDLE(hmem.0)));
-            }
-        }
-        let _ = CloseClipboard();
-    }
-}
-
-#[cfg(not(windows))]
-fn set_clipboard_text(_text: &str) {}
 
 #[cfg(test)]
 mod tests {

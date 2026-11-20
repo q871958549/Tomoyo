@@ -46,6 +46,25 @@ impl AppShell {
             return;
         }
 
+        if ctrl_down && shift_down && vk == b'P' as u16 {
+            if self.trigger_selected_clipboard_shortcut("pin") {
+                return;
+            }
+        }
+
+        if ctrl_down && vk == b'E' as u16 {
+            if !self.trigger_selected_clipboard_shortcut("edit_workbench") {
+                self.open_clipboard_workbench(None);
+            }
+            return;
+        }
+
+        if ctrl_down && vk == b'D' as u16 {
+            if self.trigger_selected_clipboard_shortcut("delete") {
+                return;
+            }
+        }
+
         if ctrl_down && vk == b'P' as u16 {
             self.preview_enabled = !self.preview_enabled;
             self.cached_preview_id = None;
@@ -198,6 +217,23 @@ pub(super) fn register_configured_hotkey(hwnd: HWND, spec: &str) -> (String, Opt
     }
 }
 
+pub(super) fn register_optional_hotkey(hwnd: HWND, id: i32, spec: &str) -> bool {
+    let trimmed = spec.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    let Some(parsed) = parse_hotkey(trimmed) else {
+        return false;
+    };
+    let ok = unsafe {
+        RegisterHotKey(Some(hwnd), id, HOT_KEY_MODIFIERS(parsed.modifiers), parsed.vk).is_ok()
+    };
+    if !ok {
+        tracing::warn!(hotkey = %trimmed, id = id, "Optional hotkey registration failed (already in use)");
+    }
+    ok
+}
+
 pub(super) unsafe extern "system" fn edit_subclass_proc(
     hwnd: HWND,
     msg: u32,
@@ -235,9 +271,9 @@ pub(super) unsafe extern "system" fn edit_subclass_proc(
                     let _ = PostMessageW(Some(parent), WM_APP_EDIT_KEY, WPARAM(vk as usize), LPARAM(0));
                 }
             }
-            if ctrl && (vk == b'P' as u16 || vk == 0xBC) {
+            if ctrl && matches!(vk, x if x == b'P' as u16 || x == 0xBC || x == b'E' as u16 || x == b'D' as u16) {
                 unsafe {
-                    let _ = PostMessageW(Some(parent), WM_APP_EDIT_KEY, WPARAM(vk as usize), LPARAM(1));
+                    let _ = PostMessageW(Some(parent), WM_APP_EDIT_KEY, WPARAM(vk as usize), LPARAM(mod_flags));
                 }
                 return LRESULT(0);
             }

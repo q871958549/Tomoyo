@@ -12,6 +12,7 @@ path = "src/main.rs"
 [dependencies]
 tomoyo-protocol = { workspace = true }
 tomoyo-core = { workspace = true }
+tomoyo-providers = { workspace = true }
 tomoyo-plugin-host = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -29,6 +30,7 @@ windows = { workspace = true, features = [
     "Win32_System_Com",
     "Win32_System_Console",
     "Win32_System_DataExchange",
+    "Win32_System_Diagnostics_ToolHelp",
     "Win32_System_LibraryLoader",
     "Win32_System_Memory",
     "Win32_System_Ole",

@@ -1,6 +1,7 @@
 //! Main Win32 launcher shell: orchestrates lifecycle, themes, i18n, hibernation & async query loop.
 
 mod bootstrap;
+mod clipboard_ctrl;
 mod commands;
 mod input;
 mod layout;
@@ -30,6 +31,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 
 pub(super) const HOTKEY_ID: i32 = 1;
+pub(super) const HOTKEY_CLIPBOARD_ID: i32 = 2;
 pub(super) const EDIT_CTRL_ID: usize = 101;
 pub(super) const EDIT_SUBCLASS_ID: usize = 1;
 pub(super) const WM_APP_RESULTS_READY: u32 = WM_APP + 1;

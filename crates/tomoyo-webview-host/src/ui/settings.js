@@ -56,9 +56,13 @@
       renderAppsDepth();
       renderDirsList();
       renderEvFilterChips();
+      renderClipExclChips();
+      const exclInp = document.getElementById('clip-excl-search');
+      if (exclInp) exclInp.placeholder = t('clip_excl_ph');
       updatePosDesc();
       renderWebRows();
       if (!recordingHotkey) renderHotkeyDisplay();
+      if (!recordingClipHotkey) renderClipHotkeyDisplay();
       setToast(t('toast_ready'), false);
     }
 
@@ -129,10 +133,14 @@
     }
 
     window.addEventListener('keydown', (e) => {
-      if (recordingHotkey) {
+      if (recordingHotkey || recordingClipHotkey) {
         e.preventDefault();
         e.stopPropagation();
-        if (e.key === 'Escape') { stopHotkeyRecording(); return; }
+        if (e.key === 'Escape') {
+          if (recordingHotkey) stopHotkeyRecording();
+          if (recordingClipHotkey) stopClipHotkeyRecording();
+          return;
+        }
         const mainKey = keyEventToName(e);
         if (!mainKey) return;
         const mods = [];
@@ -140,8 +148,14 @@
         if (e.altKey) mods.push('Alt');
         if (e.shiftKey) mods.push('Shift');
         if (e.metaKey) mods.push('Win');
-        if (mods.length === 0) { recEl.textContent = t('rec_need_mod'); return; }
-        applyHotkey(mods.concat([mainKey]).join('+'));
+        if (mods.length === 0) {
+          const target = recordingHotkey ? recEl : document.getElementById('clip-hotkey-recorder');
+          if (target) target.textContent = t('rec_need_mod');
+          return;
+        }
+        const combo = mods.concat([mainKey]).join('+');
+        if (recordingHotkey) applyHotkey(combo);
+        else applyClipHotkey(combo);
         return;
       }
       if (e.key === 'Escape') closeWin();
@@ -177,9 +191,14 @@
         extra_filter: (prevEv.extra_filter || '').trim(),
         favorites: prevEv.favorites
       };
+      const prevCb = state.clipboard || {};
       state.clipboard = {
         persist_sqlite: document.getElementById('clip_persist').checked,
-        max_persisted_items: snapClipMax(document.getElementById('clip_max').value)
+        max_persisted_items: snapClipMax(document.getElementById('clip_max').value),
+        hotkey: String(prevCb.hotkey || '').trim(),
+        capture_enabled: document.getElementById('clip_capture') ? document.getElementById('clip_capture').checked : true,
+        capture_images: document.getElementById('clip_images') ? document.getElementById('clip_images').checked : true,
+        excluded_apps: Array.isArray(prevCb.excluded_apps) ? prevCb.excluded_apps : []
       };
       const prevUpd = state.update || {};
       state.update = {
@@ -200,6 +219,8 @@
         renderAppsDepth();
         renderDirsList();
         renderEvFilterChips();
+        renderClipHotkeyDisplay();
+        renderClipExclChips();
         syncRepoUi();
         setToast('⚠ ' + data.notes[0], true);
       } else {
@@ -214,8 +235,9 @@
     }
 
     function populate() {
+      mountClipSettingsControls();
       if (!state.language) state.language = 'zh';
-      document.getElementById('about-ver').textContent = 'v' + (INIT.version || '1.2.0');
+      document.getElementById('about-ver').textContent = 'v' + (INIT.version || '1.3.0');
       document.getElementById('autostart').checked = autostart;
       const hib = state.hibernate_delay_secs || 15;
       document.getElementById('hibernate').value = hib;
@@ -245,6 +267,11 @@
       const cb = state.clipboard || {};
       document.getElementById('clip_persist').checked = cb.persist_sqlite !== false;
       document.getElementById('clip_max').value = String(snapClipMax(cb.max_persisted_items ?? 500));
+      if (document.getElementById('clip_capture')) document.getElementById('clip_capture').checked = cb.capture_enabled !== false;
+      if (document.getElementById('clip_images')) document.getElementById('clip_images').checked = cb.capture_images !== false;
+      if (!state.clipboard) state.clipboard = {};
+      state.clipboard.hotkey = typeof cb.hotkey === 'string' ? cb.hotkey : 'Alt+V';
+      state.clipboard.excluded_apps = Array.isArray(cb.excluded_apps) ? cb.excluded_apps : [];
 
       const upd = state.update || {};
       document.getElementById('upd_auto').checked = upd.auto_check !== false;

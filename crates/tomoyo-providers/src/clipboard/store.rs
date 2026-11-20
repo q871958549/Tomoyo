@@ -1,8 +1,15 @@
-//! Strictly bounded SQLite WAL + RAM ring-buffer storage for Text & Disk-Backed PNG Clipboard History.
+//! Strictly bounded SQLite WAL + RAM ring-buffer storage for CopyQ-grade Clipboard History.
 
+use super::db_io::{
+    entry_matches_query, import_records_locked, load_recent_rows, make_files_preview,
+    make_preview_line, open_clipboard_db, prune_sqlite_locked, query_sqlite_filtered,
+    sanitize_note, sanitize_source, sanitize_tag, truncate_utf8, BackupRecord,
+};
+use super::filter::{classify_text_subtype, ClipboardSubtype, ParsedClipQuery};
 use chrono::Local;
 use rusqlite::{params, Connection};
-use std::collections::VecDeque;
+use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::{Mutex, RwLock};
 
@@ -10,19 +17,44 @@ pub const MAX_RAM_ITEMS: usize = 64;
 pub const MAX_ITEM_BYTES: usize = 16 * 1024;
 pub const MAX_DISK_IMAGES: usize = 50;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ClipboardPayload {
-    Text { text: String, char_count: usize },
-    Image { path: String, width: u32, height: u32 },
+    Text {
+        text: String,
+        char_count: usize,
+        subtype: ClipboardSubtype,
+    },
+    Image {
+        path: String,
+        width: u32,
+        height: u32,
+    },
+    Files {
+        paths: Vec<String>,
+    },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClipboardEntry {
     pub key: String,
     pub payload: ClipboardPayload,
     pub preview_line: String,
     pub captured_at_unix: i64,
     pub pinned: bool,
+    pub tag: String,
+    pub note: String,
+    pub source_app: String,
+}
+
+impl ClipboardEntry {
+    pub fn subtype(&self) -> ClipboardSubtype {
+        match &self.payload {
+            ClipboardPayload::Text { subtype, .. } => *subtype,
+            ClipboardPayload::Image { .. } => ClipboardSubtype::Image,
+            ClipboardPayload::Files { .. } => ClipboardSubtype::Files,
+        }
+    }
 }
 
 pub struct ClipboardStore {
@@ -43,63 +75,127 @@ impl ClipboardStore {
     }
 
     pub fn push_text(&self, raw: String) {
+        self.push_text_with_source(raw, "");
+    }
+
+    pub fn push_text_with_source(&self, raw: String, source_app: &str) {
         if raw.trim().is_empty() {
             return;
         }
         let truncated = truncate_utf8(&raw, MAX_ITEM_BYTES);
         let char_count = truncated.chars().count();
+        let subtype = classify_text_subtype(&truncated);
         let preview_line = make_preview_line(&truncated);
         let now = Local::now().timestamp();
+        let src = sanitize_source(source_app);
 
         self.insert_ram_entry(ClipboardEntry {
             key: truncated.clone(),
             payload: ClipboardPayload::Text {
                 text: truncated.clone(),
                 char_count,
+                subtype,
             },
             preview_line,
             captured_at_unix: now,
             pinned: false,
+            tag: String::new(),
+            note: String::new(),
+            source_app: src.clone(),
         });
 
         if let Some(db_lock) = &self.db {
             if let Ok(conn) = db_lock.lock() {
                 let _ = conn.execute(
-                    "INSERT INTO clipboard_history (text, captured_at, pinned, kind) VALUES (?1, ?2, 0, 'text')
-                     ON CONFLICT(text) DO UPDATE SET captured_at = excluded.captured_at",
-                    params![truncated, now],
+                    "INSERT INTO clipboard_history (text, captured_at, pinned, kind, subtype, source_app)
+                     VALUES (?1, ?2, 0, 'text', ?3, ?4)
+                     ON CONFLICT(text) DO UPDATE SET
+                       captured_at = excluded.captured_at,
+                       subtype = excluded.subtype,
+                       source_app = CASE WHEN excluded.source_app != '' THEN excluded.source_app ELSE clipboard_history.source_app END",
+                    params![truncated, now, subtype.as_str(), src],
                 );
-                self.prune_sqlite_locked(&conn);
+                prune_sqlite_locked(&conn, self.max_persisted);
             }
         }
     }
 
     pub fn push_image(&self, path: String, width: u32, height: u32, digest_key: String) {
+        self.push_image_with_source(path, width, height, digest_key, "");
+    }
+
+    pub fn push_image_with_source(
+        &self,
+        path: String,
+        width: u32,
+        height: u32,
+        digest_key: String,
+        source_app: &str,
+    ) {
         let key = format!("img:{digest_key}");
         let preview_line = format!("[图片] {width}×{height} PNG");
         let now = Local::now().timestamp();
+        let src = sanitize_source(source_app);
 
         self.insert_ram_entry(ClipboardEntry {
             key: key.clone(),
-            payload: ClipboardPayload::Image {
-                path: path.clone(),
-                width,
-                height,
-            },
+            payload: ClipboardPayload::Image { path: path.clone(), width, height },
             preview_line,
             captured_at_unix: now,
             pinned: false,
+            tag: String::new(),
+            note: String::new(),
+            source_app: src.clone(),
         });
 
         if let Some(db_lock) = &self.db {
             if let Ok(conn) = db_lock.lock() {
                 let _ = conn.execute(
-                    "INSERT INTO clipboard_history (text, captured_at, pinned, kind, image_path, img_w, img_h)
-                     VALUES (?1, ?2, 0, 'image', ?3, ?4, ?5)
-                     ON CONFLICT(text) DO UPDATE SET captured_at = excluded.captured_at, image_path = excluded.image_path",
-                    params![key, now, path, width as i64, height as i64],
+                    "INSERT INTO clipboard_history (text, captured_at, pinned, kind, subtype, image_path, img_w, img_h, source_app)
+                     VALUES (?1, ?2, 0, 'image', 'image', ?3, ?4, ?5, ?6)
+                     ON CONFLICT(text) DO UPDATE SET
+                       captured_at = excluded.captured_at,
+                       image_path = excluded.image_path,
+                       source_app = CASE WHEN excluded.source_app != '' THEN excluded.source_app ELSE clipboard_history.source_app END",
+                    params![key, now, path, width as i64, height as i64, src],
                 );
-                self.prune_sqlite_locked(&conn);
+                prune_sqlite_locked(&conn, self.max_persisted);
+            }
+        }
+    }
+
+    pub fn push_files_with_source(&self, mut paths: Vec<String>, source_app: &str) {
+        paths.retain(|p| !p.trim().is_empty());
+        paths.truncate(32);
+        if paths.is_empty() {
+            return;
+        }
+        let key = format!("files:{}", paths.join("\n"));
+        let preview_line = make_files_preview(&paths);
+        let paths_json = serde_json::to_string(&paths).unwrap_or_else(|_| "[]".into());
+        let now = Local::now().timestamp();
+        let src = sanitize_source(source_app);
+
+        self.insert_ram_entry(ClipboardEntry {
+            key: key.clone(),
+            payload: ClipboardPayload::Files { paths },
+            preview_line,
+            captured_at_unix: now,
+            pinned: false,
+            tag: String::new(),
+            note: String::new(),
+            source_app: src.clone(),
+        });
+
+        if let Some(db_lock) = &self.db {
+            if let Ok(conn) = db_lock.lock() {
+                let _ = conn.execute(
+                    "INSERT INTO clipboard_history (text, captured_at, pinned, kind, subtype, file_paths, source_app)
+                     VALUES (?1, ?2, 0, 'files', 'files', ?3, ?4)
+                     ON CONFLICT(text) DO UPDATE SET captured_at = excluded.captured_at, file_paths = excluded.file_paths",
+                    params![key, now, paths_json, src],
+                );
+                prune_sqlite_locked(&conn, self.max_persisted);
             }
         }
     }
@@ -131,12 +227,164 @@ impl ClipboardStore {
         new_pinned
     }
 
+    pub fn delete_item(&self, id_key: &str) -> bool {
+        let mut deleted = false;
+        if let Ok(mut guard) = self.history.write() {
+            if let Some(pos) = guard.iter().position(|e| e.key == id_key) {
+                if let Some(removed) = guard.remove(pos) {
+                    deleted = true;
+                    if let ClipboardPayload::Image { path, .. } = removed.payload {
+                        let _ = std::fs::remove_file(path);
+                    }
+                }
+            }
+        }
+        if let Some(db_lock) = &self.db {
+            if let Ok(conn) = db_lock.lock() {
+                if let Ok(Some(img_path)) = conn.query_row(
+                    "SELECT image_path FROM clipboard_history WHERE text = ?1 AND kind = 'image'",
+                    params![id_key],
+                    |r| r.get::<_, Option<String>>(0),
+                ) {
+                    let _ = std::fs::remove_file(img_path);
+                }
+                if let Ok(n) = conn.execute("DELETE FROM clipboard_history WHERE text = ?1", params![id_key]) {
+                    deleted = deleted || n > 0;
+                }
+            }
+        }
+        deleted
+    }
+
+    pub fn clear_unpinned(&self) -> usize {
+        if let Ok(mut guard) = self.history.write() {
+            guard.retain(|e| e.pinned);
+        }
+        let Some(db_lock) = &self.db else { return 0 };
+        let Ok(conn) = db_lock.lock() else { return 0 };
+        if let Ok(mut stmt) = conn.prepare(
+            "SELECT image_path FROM clipboard_history WHERE pinned = 0 AND kind = 'image' AND image_path IS NOT NULL",
+        ) {
+            if let Ok(rows) = stmt.query_map([], |r| r.get::<_, Option<String>>(0)) {
+                for path in rows.flatten().flatten() {
+                    let _ = std::fs::remove_file(path);
+                }
+            }
+        }
+        conn.execute("DELETE FROM clipboard_history WHERE pinned = 0", []).unwrap_or(0)
+    }
+
+    pub fn update_item(
+        &self,
+        id_key: &str,
+        new_text: Option<String>,
+        tag: &str,
+        note: &str,
+    ) -> Result<String, String> {
+        let clean_tag = sanitize_tag(tag);
+        let clean_note = sanitize_note(note);
+        let next_key = match new_text {
+            Some(t) if !id_key.starts_with("img:") && !id_key.starts_with("files:") => {
+                if t.trim().is_empty() {
+                    return Err("文本内容不能为空".into());
+                }
+                truncate_utf8(&t, MAX_ITEM_BYTES)
+            }
+            _ => id_key.to_string(),
+        };
+
+        if let Some(db_lock) = &self.db {
+            let conn = db_lock.lock().map_err(|_| "数据库锁定失败".to_string())?;
+            if next_key != id_key {
+                let sub = classify_text_subtype(&next_key);
+                let _ = conn.execute("DELETE FROM clipboard_history WHERE text = ?1 AND text != ?2", params![next_key, id_key]);
+                conn.execute(
+                    "UPDATE clipboard_history SET text = ?1, subtype = ?2, tag = ?3, note = ?4 WHERE text = ?5",
+                    params![next_key, sub.as_str(), clean_tag, clean_note, id_key],
+                )
+                .map_err(|e| format!("更新剪贴板记录失败: {e}"))?;
+            } else {
+                conn.execute(
+                    "UPDATE clipboard_history SET tag = ?1, note = ?2 WHERE text = ?3",
+                    params![clean_tag, clean_note, id_key],
+                )
+                .map_err(|e| format!("更新标签/备注失败: {e}"))?;
+            }
+        }
+        self.reload_from_db();
+        Ok(next_key)
+    }
+
+    pub fn list_tags(&self) -> Vec<(String, usize)> {
+        if let Some(db_lock) = &self.db {
+            if let Ok(conn) = db_lock.lock() {
+                if let Ok(mut stmt) = conn.prepare(
+                    "SELECT tag, COUNT(*) FROM clipboard_history WHERE tag != '' GROUP BY tag ORDER BY COUNT(*) DESC, tag ASC LIMIT 32",
+                ) {
+                    if let Ok(rows) = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)? as usize))) {
+                        return rows.flatten().collect();
+                    }
+                }
+            }
+        }
+        let mut map: HashMap<String, usize> = HashMap::new();
+        if let Ok(g) = self.history.read() {
+            for e in g.iter().filter(|e| !e.tag.is_empty()) {
+                *map.entry(e.tag.clone()).or_insert(0) += 1;
+            }
+        }
+        let mut v: Vec<_> = map.into_iter().collect();
+        v.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        v
+    }
+
+    pub fn reload_from_db(&self) {
+        let Some(db_lock) = &self.db else { return };
+        let Ok(conn) = db_lock.lock() else { return };
+        let mut fresh = VecDeque::with_capacity(MAX_RAM_ITEMS);
+        load_recent_rows(&conn, MAX_RAM_ITEMS, &mut fresh);
+        if let Ok(mut guard) = self.history.write() {
+            *guard = fresh;
+        }
+    }
+
+    pub fn export_json(&self) -> String {
+        let entries = self.query_filtered(&ParsedClipQuery::default(), 500);
+        let recs: Vec<BackupRecord> = entries
+            .into_iter()
+            .filter_map(|e| match e.payload {
+                ClipboardPayload::Text { text, .. } => Some(BackupRecord {
+                    kind: "text".into(),
+                    text,
+                    captured_at: e.captured_at_unix,
+                    pinned: e.pinned,
+                    tag: e.tag,
+                    note: e.note,
+                    source_app: e.source_app,
+                }),
+                _ => None,
+            })
+            .collect();
+        serde_json::to_string_pretty(&recs).unwrap_or_else(|_| "[]".into())
+    }
+
+    pub fn import_json(&self, raw: &str) -> Result<usize, String> {
+        let imported = if let Some(db_lock) = &self.db {
+            let conn = db_lock.lock().map_err(|_| "数据库锁定失败".to_string())?;
+            let n = import_records_locked(&conn, raw)?;
+            prune_sqlite_locked(&conn, self.max_persisted);
+            n
+        } else {
+            0
+        };
+        self.reload_from_db();
+        Ok(imported)
+    }
+
     pub fn item_count(&self) -> usize {
         if let Some(db_lock) = &self.db {
             if let Ok(conn) = db_lock.lock() {
-                if let Ok(n) = conn.query_row("SELECT COUNT(*) FROM clipboard_history", [], |r| {
-                    r.get::<_, i64>(0)
-                }) {
+                if let Ok(n) = conn.query_row("SELECT COUNT(*) FROM clipboard_history", [], |r| r.get::<_, i64>(0)) {
                     return n.max(0) as usize;
                 }
             }
@@ -144,27 +392,18 @@ impl ClipboardStore {
         self.history.read().map(|g| g.len()).unwrap_or(0)
     }
 
-    pub fn query_entries(&self, filter: &str, cap: usize) -> Vec<ClipboardEntry> {
-        if let Some(db_items) = self.query_sqlite(filter, cap) {
-            return db_items;
+    pub fn query_filtered(&self, q: &ParsedClipQuery, cap: usize) -> Vec<ClipboardEntry> {
+        let cap = cap.clamp(1, 500);
+        if let Some(db_lock) = &self.db {
+            if let Ok(conn) = db_lock.lock() {
+                if let Some(db_items) = query_sqlite_filtered(&conn, q, cap) {
+                    return db_items;
+                }
+            }
         }
-        let Ok(guard) = self.history.read() else {
-            return Vec::new();
-        };
-        let mut v: Vec<ClipboardEntry> = guard
-            .iter()
-            .filter(|e| {
-                filter.is_empty()
-                    || e.preview_line.to_lowercase().contains(filter)
-                    || e.key.to_lowercase().contains(filter)
-            })
-            .cloned()
-            .collect();
-        v.sort_by(|a, b| {
-            b.pinned
-                .cmp(&a.pinned)
-                .then_with(|| b.captured_at_unix.cmp(&a.captured_at_unix))
-        });
+        let Ok(guard) = self.history.read() else { return Vec::new() };
+        let mut v: Vec<ClipboardEntry> = guard.iter().filter(|e| entry_matches_query(e, q)).cloned().collect();
+        v.sort_by(|a, b| b.pinned.cmp(&a.pinned).then_with(|| b.captured_at_unix.cmp(&a.captured_at_unix)));
         v.truncate(cap);
         v
     }
@@ -180,10 +419,20 @@ impl ClipboardStore {
         }
     }
 
+    pub fn shutdown_checkpoint(&self) {
+        if let Some(db_lock) = &self.db {
+            if let Ok(conn) = db_lock.lock() {
+                let _ = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
+            }
+        }
+    }
+
     fn insert_ram_entry(&self, mut entry: ClipboardEntry) {
         if let Ok(mut guard) = self.history.write() {
             if let Some(pos) = guard.iter().position(|e| e.key == entry.key) {
                 entry.pinned = guard[pos].pinned;
+                if entry.tag.is_empty() { entry.tag = guard[pos].tag.clone(); }
+                if entry.note.is_empty() { entry.note = guard[pos].note.clone(); }
                 guard.remove(pos);
             }
             guard.push_front(entry);
@@ -195,178 +444,5 @@ impl ClipboardStore {
                 }
             }
         }
-    }
-
-    fn prune_sqlite_locked(&self, conn: &Connection) {
-        if let Ok(mut stmt) = conn.prepare(
-            "SELECT id, image_path FROM clipboard_history
-             WHERE kind = 'image' AND pinned = 0 AND id NOT IN (
-                 SELECT id FROM clipboard_history WHERE kind = 'image'
-                 ORDER BY pinned DESC, captured_at DESC LIMIT ?1
-             )",
-        ) {
-            if let Ok(rows) = stmt.query_map(params![MAX_DISK_IMAGES as i64], |r| {
-                Ok((r.get::<_, i64>(0)?, r.get::<_, Option<String>>(1)?))
-            }) {
-                for (id, path_opt) in rows.flatten() {
-                    if let Some(p) = path_opt {
-                        let _ = std::fs::remove_file(p);
-                    }
-                    let _ = conn.execute("DELETE FROM clipboard_history WHERE id = ?1", params![id]);
-                }
-            }
-        }
-
-        let _ = conn.execute(
-            "DELETE FROM clipboard_history WHERE pinned = 0 AND kind = 'text' AND id NOT IN (
-                SELECT id FROM clipboard_history ORDER BY pinned DESC, captured_at DESC LIMIT ?1
-            )",
-            params![self.max_persisted as i64],
-        );
-    }
-
-    fn query_sqlite(&self, filter: &str, limit: usize) -> Option<Vec<ClipboardEntry>> {
-        let conn = self.db.as_ref()?.lock().ok()?;
-        let sql = if filter.is_empty() {
-            "SELECT text, captured_at, pinned, kind, image_path, img_w, img_h
-             FROM clipboard_history ORDER BY pinned DESC, captured_at DESC LIMIT ?1"
-        } else {
-            "SELECT text, captured_at, pinned, kind, image_path, img_w, img_h
-             FROM clipboard_history
-             WHERE text LIKE ?1 ESCAPE '\\' OR (kind = 'image' AND ('img 图片 png' LIKE ?1 ESCAPE '\\'))
-             ORDER BY pinned DESC, captured_at DESC LIMIT ?2"
-        };
-        let mut stmt = conn.prepare(sql).ok()?;
-        let map_row = |row: &rusqlite::Row<'_>| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, i64>(1)?,
-                row.get::<_, i64>(2)? != 0,
-                row.get::<_, String>(3).unwrap_or_else(|_| "text".into()),
-                row.get::<_, Option<String>>(4).unwrap_or(None),
-                row.get::<_, i64>(5).unwrap_or(0).max(0) as u32,
-                row.get::<_, i64>(6).unwrap_or(0).max(0) as u32,
-            ))
-        };
-        let rows: Vec<_> = if filter.is_empty() {
-            stmt.query_map(params![limit as i64], map_row).ok()?.flatten().collect()
-        } else {
-            let pat = format!("%{}%", filter.replace('%', "\\%").replace('_', "\\_"));
-            stmt.query_map(params![pat, limit as i64], map_row).ok()?.flatten().collect()
-        };
-        Some(rows.into_iter().filter_map(row_to_entry).collect())
-    }
-
-    pub fn shutdown_checkpoint(&self) {
-        if let Some(db_lock) = &self.db {
-            if let Ok(conn) = db_lock.lock() {
-                let _ = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
-            }
-        }
-    }
-}
-
-fn open_clipboard_db(path: &PathBuf, initial: &mut VecDeque<ClipboardEntry>) -> Option<Connection> {
-    if let Some(parent) = path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    let conn = Connection::open(path).ok()?;
-    let _ = conn.execute_batch(
-        "PRAGMA journal_mode = WAL;
-         PRAGMA synchronous = NORMAL;
-         PRAGMA cache_size = -256;
-         CREATE TABLE IF NOT EXISTS clipboard_history (
-             id INTEGER PRIMARY KEY AUTOINCREMENT,
-             text TEXT NOT NULL UNIQUE,
-             captured_at INTEGER NOT NULL,
-             pinned INTEGER NOT NULL DEFAULT 0,
-             kind TEXT NOT NULL DEFAULT 'text',
-             image_path TEXT,
-             img_w INTEGER NOT NULL DEFAULT 0,
-             img_h INTEGER NOT NULL DEFAULT 0
-         );",
-    );
-    let _ = conn.execute("ALTER TABLE clipboard_history ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0", []);
-    let _ = conn.execute("ALTER TABLE clipboard_history ADD COLUMN kind TEXT NOT NULL DEFAULT 'text'", []);
-    let _ = conn.execute("ALTER TABLE clipboard_history ADD COLUMN image_path TEXT", []);
-    let _ = conn.execute("ALTER TABLE clipboard_history ADD COLUMN img_w INTEGER NOT NULL DEFAULT 0", []);
-    let _ = conn.execute("ALTER TABLE clipboard_history ADD COLUMN img_h INTEGER NOT NULL DEFAULT 0", []);
-
-    if let Ok(mut stmt) = conn.prepare(
-        "SELECT text, captured_at, pinned, kind, image_path, img_w, img_h
-         FROM clipboard_history ORDER BY pinned DESC, captured_at DESC LIMIT ?1",
-    ) {
-        if let Ok(rows) = stmt.query_map(params![MAX_RAM_ITEMS as i64], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, i64>(1)?,
-                row.get::<_, i64>(2)? != 0,
-                row.get::<_, String>(3).unwrap_or_else(|_| "text".into()),
-                row.get::<_, Option<String>>(4).unwrap_or(None),
-                row.get::<_, i64>(5).unwrap_or(0).max(0) as u32,
-                row.get::<_, i64>(6).unwrap_or(0).max(0) as u32,
-            ))
-        }) {
-            for entry in rows.flatten().filter_map(row_to_entry) {
-                initial.push_back(entry);
-            }
-        }
-    }
-    Some(conn)
-}
-
-fn row_to_entry(
-    (key, ts, pinned, kind, img_path, img_w, img_h): (String, i64, bool, String, Option<String>, u32, u32),
-) -> Option<ClipboardEntry> {
-    if kind == "image" {
-        let p = img_path?;
-        if !std::path::Path::new(&p).is_file() {
-            return None;
-        }
-        return Some(ClipboardEntry {
-            key,
-            payload: ClipboardPayload::Image {
-                path: p,
-                width: img_w,
-                height: img_h,
-            },
-            preview_line: format!("[图片] {img_w}×{img_h} PNG"),
-            captured_at_unix: ts,
-            pinned,
-        });
-    }
-    let char_count = key.chars().count();
-    let preview_line = make_preview_line(&key);
-    Some(ClipboardEntry {
-        key: key.clone(),
-        payload: ClipboardPayload::Text { text: key, char_count },
-        preview_line,
-        captured_at_unix: ts,
-        pinned,
-    })
-}
-
-fn truncate_utf8(s: &str, max_bytes: usize) -> String {
-    if s.len() <= max_bytes {
-        return s.to_string();
-    }
-    let mut end = max_bytes;
-    while end > 0 && !s.is_char_boundary(end) {
-        end -= 1;
-    }
-    s[..end].to_string()
-}
-
-fn make_preview_line(s: &str) -> String {
-    let single: String = s
-        .chars()
-        .map(|c| if c == '\r' || c == '\n' || c == '\t' { ' ' } else { c })
-        .take(110)
-        .collect();
-    let trimmed = single.trim();
-    if s.chars().count() > 110 {
-        format!("{trimmed}...")
-    } else {
-        trimmed.to_string()
     }
 }

@@ -4,12 +4,13 @@ mod clipboard_win;
 mod shell_win;
 
 pub use clipboard_win::{
-    clipboard_has_rich_attachment, copy_image_as_base64_uri, read_clipboard_files,
-    read_clipboard_image_png, read_clipboard_text, set_clipboard_image_from_png,
-    set_clipboard_text,
+    clipboard_has_rich_attachment, clipboard_source_app_name, copy_image_as_base64_uri,
+    is_clipboard_confidential, read_clipboard_files, read_clipboard_image_png,
+    read_clipboard_text, set_clipboard_image_from_png, set_clipboard_text,
 };
 pub use shell_win::{
-    kill_process_by_pid, paste_into_previous_window_async, shell_open, spawn_settings_window,
+    kill_process_by_pid, paste_into_previous_window_async, shell_open,
+    spawn_clipboard_manager_window, spawn_settings_window,
 };
 
 use shell_win::{focus_window, run_system_command, spawn_ephemeral_webview};

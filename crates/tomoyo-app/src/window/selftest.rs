@@ -1,7 +1,7 @@
 //! Self-test, soak diagnostics, and live hot-reload synchronization for `AppShell`.
 
-use super::input::register_configured_hotkey;
-use super::{bootstrap::apply_cue_banner, AppShell, HOTKEY_ID};
+use super::input::{register_configured_hotkey, register_optional_hotkey};
+use super::{bootstrap::apply_cue_banner, AppShell, HOTKEY_CLIPBOARD_ID, HOTKEY_ID};
 use crate::renderer::{compute_filter_counts, MIN_WINDOW_WIDTH_DIP};
 use tomoyo_core::TomoyoConfig;
 use tomoyo_protocol::{AttachedContext, SearchFilter};
@@ -68,6 +68,7 @@ impl AppShell {
         let new_lang = fresh.lang();
         let new_theme = fresh.theme.clone();
         let new_hotkey = fresh.hotkey.clone();
+        let new_clip_hotkey = fresh.clipboard.hotkey.clone();
         self.preview_enabled = fresh.auto_preview;
         self.show_filter_bar = fresh.show_filter_bar;
         self.geom.list_width_dip = fresh.window.width_dip.clamp(MIN_WINDOW_WIDTH_DIP, 1400);
@@ -94,10 +95,12 @@ impl AppShell {
         if self.tray.is_some() {
             unsafe {
                 let _ = UnregisterHotKey(Some(self.hwnd), HOTKEY_ID);
+                let _ = UnregisterHotKey(Some(self.hwnd), HOTKEY_CLIPBOARD_ID);
             }
             let (active, conflict) = register_configured_hotkey(self.hwnd, &new_hotkey);
             self.hotkey_label = active;
             self.hotkey_conflict = conflict;
+            let _ = register_optional_hotkey(self.hwnd, HOTKEY_CLIPBOARD_ID, &new_clip_hotkey);
             if let Some(tray) = &mut self.tray {
                 tray.update_tooltip(&self.hotkey_label);
             }

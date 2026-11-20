@@ -2,11 +2,10 @@
 
 use super::commands::{dispatch_menu_id, dispatch_wm_command};
 use super::{
-    AppShell, HOTKEY_ID, TIMER_CLEAR_TOAST, TIMER_HIBERNATE, WM_APP_CONFIG_SAVED,
-    WM_APP_EDIT_KEY, WM_APP_PASTE_INTERCEPT, WM_APP_RESULTS_READY, WM_APP_UPDATE_INSTALLED,
-    WM_APP_UPDATE_READY, WM_APP_WAKE_EXISTING,
+    AppShell, HOTKEY_CLIPBOARD_ID, HOTKEY_ID, TIMER_CLEAR_TOAST, TIMER_HIBERNATE,
+    WM_APP_CONFIG_SAVED, WM_APP_EDIT_KEY, WM_APP_PASTE_INTERCEPT, WM_APP_RESULTS_READY,
+    WM_APP_UPDATE_INSTALLED, WM_APP_UPDATE_READY, WM_APP_WAKE_EXISTING,
 };
-use crate::actions::{read_clipboard_image_png, read_clipboard_text};
 use crate::drag::start_file_drag;
 use crate::icons::WM_APP_ICON_READY;
 use crate::preview_loader::WM_APP_PREVIEW_READY;
@@ -113,29 +112,29 @@ pub(super) unsafe extern "system" fn main_wndproc(
         }
         WM_COMMAND => dispatch_wm_command(hwnd, app, wparam),
         WM_APP_CONFIG_SAVED => {
-            if wparam.0 != 0 {
-                app.reload_config_and_all();
-            } else {
-                app.reload_config_from_settings();
+            match wparam.0 {
+                2 => app.on_clipboard_db_external_change(),
+                1 => {
+                    app.reload_config_and_all();
+                    app.show_toast(app.lang.pick("设置与插件已同步生效", "Settings & plugins synced"));
+                }
+                _ => {
+                    app.reload_config_from_settings();
+                    app.show_toast(app.lang.pick("设置已实时同步生效", "Settings synced live"));
+                }
             }
-            app.show_toast(app.lang.pick("设置已实时同步生效", "Settings synced live"));
             LRESULT(0)
         }
         WM_HOTKEY => {
             if wparam.0 as i32 == HOTKEY_ID {
                 app.toggle_launcher();
+            } else if wparam.0 as i32 == HOTKEY_CLIPBOARD_ID {
+                app.toggle_clipboard_launcher();
             }
             LRESULT(0)
         }
         WM_CLIPBOARDUPDATE => {
-            if let Some(txt) = read_clipboard_text() {
-                app.inter.suppress_next_clip_img = false;
-                app.clipboard.push_text(txt);
-            } else if app.inter.suppress_next_clip_img {
-                app.inter.suppress_next_clip_img = false;
-            } else if let Some((path, w, h, digest)) = read_clipboard_image_png() {
-                app.clipboard.push_image(path, w, h, digest);
-            }
+            app.on_clipboard_update();
             LRESULT(0)
         }
         WM_ACTIVATE => {
@@ -312,6 +311,7 @@ pub(super) unsafe extern "system" fn main_wndproc(
             app.shutdown_clean();
             unsafe {
                 let _ = UnregisterHotKey(Some(hwnd), HOTKEY_ID);
+                let _ = UnregisterHotKey(Some(hwnd), HOTKEY_CLIPBOARD_ID);
                 let _ = RemoveClipboardFormatListener(hwnd);
                 PostQuitMessage(0);
             }

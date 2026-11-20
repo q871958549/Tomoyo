@@ -1,36 +1,35 @@
 //! Native Win32 WebView2 container window, DWM titlebar theme sync, topmost pin & async worker relay.
 
 use crate::bridge::handle_host_message;
+use crate::clip_view::{assemble_clip_manager_html, is_clip_manager_entry, load_clip_manager_bootstrap};
 use crate::db::PluginDb;
 use crate::ocr_view::{assemble_ocr_viewer_html, is_ocr_viewer_entry, load_ocr_viewer_bootstrap};
 use crate::shim_js::build_init_script;
 use crate::single_instance::{
-    acquire_or_activate_settings, EPHEMERAL_WINDOW_CLASS, SETTINGS_WINDOW_CLASS,
+    acquire_or_activate_clipboard, acquire_or_activate_settings, CLIPBOARD_WINDOW_CLASS,
+    EPHEMERAL_WINDOW_CLASS, SETTINGS_WINDOW_CLASS, WM_APP_ACTIVATE_CLIPBOARD,
     WM_APP_ACTIVATE_SETTINGS,
 };
+use crate::win_theme::{apply_host_window_theme, map_vdir, to_file_url};
 use crate::win_workers::{
     spawn_install_update_worker, spawn_store_worker, spawn_update_worker,
 };
 use crate::{assemble_settings_html, build_settings_init_script, LaunchArgs};
 use std::cell::RefCell;
 use std::ffi::c_void;
-use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::mpsc;
 use tomoyo_core::locate_fonts_dir;
 use webview2_com::Microsoft::Web::WebView2::Win32::{
     CreateCoreWebView2EnvironmentWithOptions, ICoreWebView2, ICoreWebView2Controller,
-    ICoreWebView2_3, COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_ALLOW,
+    ICoreWebView2_3,
 };
 use webview2_com::{
     CreateCoreWebView2ControllerCompletedHandler, CreateCoreWebView2EnvironmentCompletedHandler,
     WebMessageReceivedEventHandler,
 };
 use windows::core::{w, HSTRING, Interface, PCWSTR, PWSTR};
-use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, RECT, WPARAM};
-use windows::Win32::Graphics::Dwm::{
-    DwmSetWindowAttribute, DWMWA_CAPTION_COLOR, DWMWA_TEXT_COLOR, DWMWA_USE_IMMERSIVE_DARK_MODE,
-};
+use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::HiDpi::{
@@ -41,9 +40,9 @@ use windows::Win32::UI::WindowsAndMessaging::{
     GetSystemMetrics, GetWindowLongPtrW, IsIconic, LoadCursorW, LoadIconW, PostMessageW,
     PostQuitMessage, RegisterClassW, SendMessageW, SetForegroundWindow, SetWindowLongPtrW,
     SetWindowPos, SetWindowTextW, ShowWindow, TranslateMessage, GWLP_USERDATA, HWND_NOTOPMOST,
-    HWND_TOPMOST, ICON_BIG, ICON_SMALL, IDC_ARROW, MSG, SM_CXSCREEN, SM_CYSCREEN,
-    SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SW_RESTORE, SW_SHOW,
-    WM_CLOSE, WM_DESTROY, WM_SETICON, WM_SIZE, WNDCLASSW, WS_OVERLAPPEDWINDOW, WS_VISIBLE,
+    HWND_TOPMOST, ICON_BIG, ICON_SMALL, IDC_ARROW, MSG, SM_CXSCREEN, SM_CYSCREEN, SWP_NOACTIVATE,
+    SWP_NOMOVE, SWP_NOSIZE, SW_RESTORE, SW_SHOW, WM_CLOSE, WM_DESTROY, WM_SETICON, WM_SIZE,
+    WNDCLASSW, WS_OVERLAPPEDWINDOW, WS_VISIBLE,
 };
 
 const WM_APP_WEBVIEW_EVENT: u32 = 0x8000 + 31;
@@ -56,44 +55,6 @@ struct HostWindowState {
     base_title: String,
     is_topmost: bool,
     picking_folder: bool,
-}
-
-pub fn apply_host_window_theme(hwnd: HWND, theme: &str) {
-    let (is_dark, caption_bgr, text_bgr) = match theme.trim().to_ascii_lowercase().as_str() {
-        "light" | "white" => (0i32, COLORREF(0x00FBF7F6), COLORREF(0x00221815)),
-        "midnight" => (1i32, COLORREF(0x001A100E), COLORREF(0x00F9F5F1)),
-        _ => (1i32, COLORREF(0x001C1413), COLORREF(0x00F8F4F3)),
-    };
-
-    unsafe {
-        let _ = DwmSetWindowAttribute(
-            hwnd,
-            DWMWA_USE_IMMERSIVE_DARK_MODE,
-            &is_dark as *const _ as *const c_void,
-            std::mem::size_of::<i32>() as u32,
-        );
-        let _ = DwmSetWindowAttribute(
-            hwnd,
-            DWMWA_CAPTION_COLOR,
-            &caption_bgr as *const _ as *const c_void,
-            std::mem::size_of::<COLORREF>() as u32,
-        );
-        let _ = DwmSetWindowAttribute(
-            hwnd,
-            DWMWA_TEXT_COLOR,
-            &text_bgr as *const _ as *const c_void,
-            std::mem::size_of::<COLORREF>() as u32,
-        );
-        let _ = SetWindowPos(
-            hwnd,
-            None,
-            0,
-            0,
-            0,
-            0,
-            SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
-        );
-    }
 }
 
 unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
@@ -137,7 +98,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             }
             LRESULT(0)
         }
-        WM_APP_ACTIVATE_SETTINGS => {
+        WM_APP_ACTIVATE_SETTINGS | WM_APP_ACTIVATE_CLIPBOARD => {
             unsafe {
                 if IsIconic(hwnd).as_bool() {
                     let _ = ShowWindow(hwnd, SW_RESTORE);
@@ -167,8 +128,14 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
 }
 
 pub fn run_windows_host(opts: LaunchArgs) {
-    let _settings_guard = if opts.settings_mode {
+    let clip_mode = is_clip_manager_entry(&opts.entry);
+    let _singleton_guard = if opts.settings_mode {
         match acquire_or_activate_settings() {
+            Some(guard) => Some(guard),
+            None => return,
+        }
+    } else if clip_mode {
+        match acquire_or_activate_clipboard() {
             Some(guard) => Some(guard),
             None => return,
         }
@@ -185,6 +152,8 @@ pub fn run_windows_host(opts: LaunchArgs) {
     let embedded_icon = unsafe { LoadIconW(Some(hinst.into()), PCWSTR(1 as *const u16)).ok() };
     let cls = if opts.settings_mode {
         SETTINGS_WINDOW_CLASS
+    } else if clip_mode {
+        CLIPBOARD_WINDOW_CLASS
     } else {
         EPHEMERAL_WINDOW_CLASS
     };
@@ -251,11 +220,14 @@ pub fn run_windows_host(opts: LaunchArgs) {
     let settings_mode = opts.settings_mode;
     let ocr_mode = is_ocr_viewer_entry(&opts.entry);
     let notify_hwnd = opts.notify_hwnd;
-    let (init_script, ocr_img_dir) = if settings_mode {
-        (build_settings_init_script(), None)
+    let (init_script, ocr_img_dir, clip_img_dir) = if settings_mode {
+        (build_settings_init_script(), None, None)
     } else if ocr_mode {
         let boot = load_ocr_viewer_bootstrap(&opts.theme, &opts.query);
-        (boot.init_script, boot.image_dir)
+        (boot.init_script, boot.image_dir, None)
+    } else if clip_mode {
+        let boot = load_clip_manager_bootstrap(&opts.theme, &opts.query);
+        (boot.init_script, None, Some(boot.images_dir))
     } else {
         (
             build_init_script(
@@ -266,9 +238,10 @@ pub fn run_windows_host(opts: LaunchArgs) {
                 &plugin_db.borrow().snapshot_json(),
             ),
             None,
+            None,
         )
     };
-    let entry_url = if settings_mode || ocr_mode {
+    let entry_url = if settings_mode || ocr_mode || clip_mode {
         String::new()
     } else {
         to_file_url(&opts.entry)
@@ -290,6 +263,7 @@ pub fn run_windows_host(opts: LaunchArgs) {
             let entry_url_inner = entry_url.clone();
             let fonts_inner = fonts_dir_opt.clone();
             let ocr_dir_inner = ocr_img_dir.clone();
+            let clip_dir_inner = clip_img_dir.clone();
             let db_inner = Rc::clone(&db_for_msg);
             let tx_inner = event_tx.clone();
 
@@ -309,6 +283,7 @@ pub fn run_windows_host(opts: LaunchArgs) {
                             if let Ok(wv3) = webview.cast::<ICoreWebView2_3>() {
                                 map_vdir(&wv3, w!("tomoyo-fonts.local"), fonts_inner.as_ref());
                                 map_vdir(&wv3, w!("tomoyo-ocr-img.local"), ocr_dir_inner.as_ref());
+                                map_vdir(&wv3, w!("tomoyo-clip-img.local"), clip_dir_inner.as_ref());
                             }
                             let script_w = HSTRING::from(&init_script_inner);
                             let _ = webview.AddScriptToExecuteOnDocumentCreated(PCWSTR(script_w.as_ptr()), None);
@@ -366,6 +341,9 @@ pub fn run_windows_host(opts: LaunchArgs) {
                             } else if ocr_mode {
                                 let html = HSTRING::from(assemble_ocr_viewer_html());
                                 let _ = webview.NavigateToString(PCWSTR(html.as_ptr()));
+                            } else if clip_mode {
+                                let html = HSTRING::from(assemble_clip_manager_html());
+                                let _ = webview.NavigateToString(PCWSTR(html.as_ptr()));
                             } else {
                                 let url_w = HSTRING::from(&entry_url_inner);
                                 let _ = webview.Navigate(PCWSTR(url_w.as_ptr()));
@@ -415,27 +393,4 @@ unsafe fn toggle_pin_topmost(hwnd: HWND, st: &mut HostWindowState) {
         let tw = HSTRING::from(new_title);
         let _ = SetWindowTextW(hwnd, PCWSTR(tw.as_ptr()));
     }
-}
-
-unsafe fn map_vdir(wv3: &ICoreWebView2_3, host: PCWSTR, dir: Option<&PathBuf>) {
-    if let Some(d) = dir {
-        let dir_w = HSTRING::from(d.to_string_lossy().as_ref());
-        let _ = unsafe {
-            wv3.SetVirtualHostNameToFolderMapping(
-                host,
-                PCWSTR(dir_w.as_ptr()),
-                COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_ALLOW,
-            )
-        };
-    }
-}
-
-fn to_file_url(entry: &str) -> String {
-    if entry.starts_with("http://") || entry.starts_with("https://") || entry.starts_with("file://") {
-        return entry.to_string();
-    }
-    let abs = std::fs::canonicalize(PathBuf::from(entry)).unwrap_or_else(|_| PathBuf::from(entry));
-    let s = abs.to_string_lossy();
-    let cleaned = s.strip_prefix(r"\\?\").unwrap_or(&s).replace('\\', "/");
-    format!("file:///{cleaned}")
 }

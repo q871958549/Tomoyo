@@ -14,6 +14,31 @@ pub const MAX_EXTRA_DIRS: usize = 16;
 pub const MAX_WEB_SEARCHES: usize = 24;
 pub const MAX_EXTRA_FILTER_CHARS: usize = 160;
 pub const MAX_FAVORITES: usize = 12;
+pub const MAX_EXCLUDED_APPS: usize = 32;
+
+/// Normalizes and validates a privacy-excluded Windows process filename (e.g., `keepass` -> `keepass.exe`).
+pub fn normalize_exe_name(raw: &str) -> Option<String> {
+    let trimmed = raw.trim().trim_matches('"').trim();
+    if trimmed.is_empty() || trimmed.len() > 64 {
+        return None;
+    }
+    if trimmed.contains('/') || trimmed.contains('\\') || trimmed.contains("..") {
+        return None;
+    }
+    let mut low = trimmed.to_ascii_lowercase();
+    if !low.ends_with(".exe") {
+        low.push_str(".exe");
+    }
+    let stem = low.strip_suffix(".exe")?;
+    if stem.is_empty()
+        || !stem
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'.' | b' '))
+    {
+        return None;
+    }
+    Some(low)
+}
 
 const RESERVED_KEYWORDS: &[&str] = &[
     "f", "ev", "cb", "w", "kill", "ps", "snip", "=", "b64", "b64d",
@@ -256,6 +281,30 @@ pub fn sanitize_config(cfg: &mut TomoyoConfig) -> Vec<String> {
         cfg.clipboard.max_persisted_items = clip_max;
         notes.push(format!("剪贴板记录上限已约束为 {clip_max}"));
     }
+    let clip_hk = cfg.clipboard.hotkey.trim().to_string();
+    if clip_hk.is_empty() {
+        cfg.clipboard.hotkey.clear();
+    } else if parse_hotkey(&clip_hk).is_none() || clip_hk.eq_ignore_ascii_case(&cfg.hotkey) {
+        let fallback = if cfg.hotkey.eq_ignore_ascii_case("Alt+V") {
+            String::new()
+        } else {
+            "Alt+V".into()
+        };
+        notes.push(format!("剪贴板快捷键 `{clip_hk}` 无效或与主快捷键冲突，已重置"));
+        cfg.clipboard.hotkey = fallback;
+    } else {
+        cfg.clipboard.hotkey = clip_hk;
+    }
+    let mut seen_apps = HashSet::new();
+    let mut clean_apps = Vec::new();
+    for raw in std::mem::take(&mut cfg.clipboard.excluded_apps) {
+        if let Some(exe) = normalize_exe_name(&raw) {
+            if seen_apps.insert(exe.clone()) && clean_apps.len() < MAX_EXCLUDED_APPS {
+                clean_apps.push(exe);
+            }
+        }
+    }
+    cfg.clipboard.excluded_apps = clean_apps;
 
     cfg.update.check_interval_hours = cfg.update.check_interval_hours.clamp(6, 720);
     if !is_valid_github_repo(&cfg.update.repo) {
@@ -319,6 +368,13 @@ mod tests {
         cfg.everything.max_global_results = 99_999;
         cfg.everything.max_dedicated_results = 99_999;
         cfg.clipboard.max_persisted_items = 9_999_999;
+        cfg.clipboard.hotkey = "Alt+Space".into();
+        cfg.clipboard.excluded_apps = vec![
+            "KeePass".into(),
+            "keepass.exe".into(),
+            "..\\evil.exe".into(),
+            "Bitwarden.EXE".into(),
+        ];
         cfg.window.width_dip = 99_999;
         cfg.update.repo = "https://evil.com/../../etc/passwd".into();
         cfg.web_searches.push(WebSearchEngine {
@@ -339,6 +395,8 @@ mod tests {
         assert_eq!(cfg.everything.max_global_results, 10);
         assert_eq!(cfg.everything.max_dedicated_results, 50);
         assert_eq!(cfg.clipboard.max_persisted_items, 2000);
+        assert_eq!(cfg.clipboard.hotkey, "Alt+V");
+        assert_eq!(cfg.clipboard.excluded_apps, vec!["keepass.exe", "bitwarden.exe"]);
         assert_eq!(cfg.window.width_dip, 1280);
         assert_eq!(cfg.update.repo, "q871958549/Tomoyo");
         assert!(!cfg.web_searches.iter().any(|w| w.keyword == "bad" || w.keyword == "f"));

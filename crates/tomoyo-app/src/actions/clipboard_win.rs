@@ -356,3 +356,82 @@ pub fn copy_image_as_base64_uri(path_str: &str) -> Result<usize, String> {
         Err("写入剪贴板失败".into())
     }
 }
+
+/// Checks Windows confidential clipboard markers (`ExcludeClipboardContentFromMonitorProcessing`
+/// and `CanIncludeInClipboardHistory == 0`) used by password managers.
+#[cfg(windows)]
+pub fn is_clipboard_confidential() -> bool {
+    use windows::core::w;
+    use windows::Win32::Foundation::HGLOBAL;
+    use windows::Win32::System::DataExchange::{
+        CloseClipboard, GetClipboardData, IsClipboardFormatAvailable, OpenClipboard,
+        RegisterClipboardFormatW,
+    };
+    use windows::Win32::System::Memory::{GlobalLock, GlobalSize, GlobalUnlock};
+    unsafe {
+        let excl = RegisterClipboardFormatW(w!("ExcludeClipboardContentFromMonitorProcessing"));
+        if excl != 0 && IsClipboardFormatAvailable(excl).is_ok() {
+            return true;
+        }
+        let hist = RegisterClipboardFormatW(w!("CanIncludeInClipboardHistory"));
+        if hist != 0 && IsClipboardFormatAvailable(hist).is_ok() && OpenClipboard(None).is_ok() {
+            let mut disallowed = false;
+            if let Ok(h) = GetClipboardData(hist) {
+                let hm = HGLOBAL(h.0);
+                if GlobalSize(hm) >= 4 {
+                    let ptr = GlobalLock(hm) as *const u32;
+                    if !ptr.is_null() {
+                        disallowed = *ptr == 0;
+                        let _ = GlobalUnlock(hm);
+                    }
+                }
+            }
+            let _ = CloseClipboard();
+            return disallowed;
+        }
+        false
+    }
+}
+
+/// Returns the lowercase `.exe` filename of the clipboard owner or foreground window.
+#[cfg(windows)]
+pub fn clipboard_source_app_name() -> String {
+    use windows::core::PWSTR;
+    use windows::Win32::Foundation::CloseHandle;
+    use windows::Win32::System::DataExchange::GetClipboardOwner;
+    use windows::Win32::System::Threading::{
+        OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
+        PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+    use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
+    unsafe {
+        let mut hwnd = GetClipboardOwner().unwrap_or_default();
+        if hwnd.is_invalid() {
+            hwnd = GetForegroundWindow();
+        }
+        if hwnd.is_invalid() {
+            return String::new();
+        }
+        let mut pid = 0u32;
+        let _ = GetWindowThreadProcessId(hwnd, Some(&mut pid));
+        if pid == 0 {
+            return String::new();
+        }
+        let Ok(handle) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) else {
+            return String::new();
+        };
+        let mut buf = [0u16; 260];
+        let mut len = buf.len() as u32;
+        let ok = QueryFullProcessImageNameW(handle, PROCESS_NAME_WIN32, PWSTR(buf.as_mut_ptr()), &mut len).is_ok();
+        let _ = CloseHandle(handle);
+        if !ok || len == 0 {
+            return String::new();
+        }
+        let full = String::from_utf16_lossy(&buf[..len as usize]);
+        std::path::Path::new(&full)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map(|s| s.to_ascii_lowercase())
+            .unwrap_or_default()
+    }
+}

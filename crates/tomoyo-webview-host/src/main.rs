@@ -9,6 +9,8 @@
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 mod bridge;
+mod bridge_os;
+mod clip_view;
 mod db;
 #[cfg(windows)]
 mod folder_picker;
@@ -19,6 +21,8 @@ mod single_instance;
 mod store;
 #[cfg(windows)]
 mod win_host;
+#[cfg(windows)]
+mod win_theme;
 #[cfg(windows)]
 mod win_workers;
 
@@ -71,6 +75,7 @@ const SETTINGS_CSS: &str = include_str!("ui/settings.css");
 const SETTINGS_I18N_JS: &str = include_str!("ui/i18n.js");
 const SETTINGS_STORE_JS: &str = include_str!("ui/store_updater.js");
 const SETTINGS_CONTROLS_JS: &str = include_str!("ui/controls.js");
+const SETTINGS_CLIP_JS: &str = include_str!("ui/clip_controls.js");
 const SETTINGS_APP_JS: &str = include_str!("ui/settings.js");
 
 pub fn assemble_settings_html() -> String {
@@ -79,6 +84,7 @@ pub fn assemble_settings_html() -> String {
         .replace("/*__SETTINGS_I18N__*/", SETTINGS_I18N_JS)
         .replace("/*__SETTINGS_STORE_JS__*/", SETTINGS_STORE_JS)
         .replace("/*__SETTINGS_CONTROLS_JS__*/", SETTINGS_CONTROLS_JS)
+        .replace("/*__SETTINGS_CLIP_JS__*/", SETTINGS_CLIP_JS)
         .replace("/*__SETTINGS_JS__*/", SETTINGS_APP_JS)
 }
 
@@ -103,7 +109,10 @@ fn parse_args() -> LaunchArgs {
     };
     let settings_mode = args.iter().any(|a| a == "--settings");
     let entry = val("--entry").unwrap_or_default();
-    let cfg_theme = if settings_mode || ocr_view::is_ocr_viewer_entry(&entry) {
+    let cfg_theme = if settings_mode
+        || ocr_view::is_ocr_viewer_entry(&entry)
+        || clip_view::is_clip_manager_entry(&entry)
+    {
         TomoyoConfig::load_or_create().theme
     } else if args.iter().any(|a| a == "--light") {
         "light".into()
@@ -171,6 +180,7 @@ pub fn build_settings_init_script() -> String {
         "plugins_dir": plugins_dir.to_string_lossy(),
         "logs_dir": logs_dir().to_string_lossy(),
         "log_issues": count_recent_log_issues(),
+        "running_apps": clip_view::enumerate_running_app_exes(),
         "has_bundled_alibaba_font": locate_fonts_dir().is_some(),
     });
     format!(
@@ -219,8 +229,18 @@ fn main() {
         assert!(html.contains("show_filter_bar"));
         assert!(html.contains("tab-store"));
         assert!(html.contains("tab-logs"));
+        assert!(html.contains("clip-advanced-mount"));
+        assert!(html.contains("clip-excl-search"));
         assert!(html.contains("tab-updates"));
         assert!(ocr_view::assemble_ocr_viewer_html().contains("__TOMOYO_OCR_DATA__"));
+        assert!(clip_view::assemble_clip_manager_html().contains("__TOMOYO_CLIP_INIT__"));
+        assert!(handle_host_message(
+            r#"{"cmd":"clip_list","query":""}"#,
+            &mut pdb,
+            None
+        )
+        .reply_json
+        .is_some());
         assert!(handle_host_message(
             r#"{"cmd":"read_logs","source":"tomoyo.log","errors_only":false}"#,
             &mut pdb,

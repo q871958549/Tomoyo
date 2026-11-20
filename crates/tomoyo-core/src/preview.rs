@@ -20,7 +20,8 @@ pub struct ResolvedPreview {
     pub image_rgba: Option<(u32, u32, Vec<u8>)>,
 }
 
-/// Decodes a local PNG image into a bounded RGBA thumbnail (`<= max_w x max_h`) in pure Rust.
+/// Decodes a local image (PNG/JPEG/WebP/BMP/GIF/ICO via Win32 WIC, falling back to pure-Rust PNG)
+/// into a bounded RGBA thumbnail (`<= max_w x max_h`).
 pub fn read_image_thumbnail(path_str: &str, max_w: u32, max_h: u32) -> ResolvedPreview {
     let path = Path::new(path_str);
     let title = path
@@ -28,8 +29,14 @@ pub fn read_image_thumbnail(path_str: &str, max_w: u32, max_h: u32) -> ResolvedP
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_else(|| "图片预览".into());
     let file_size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+    let ext_label = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_uppercase())
+        .filter(|e| !e.is_empty())
+        .unwrap_or_else(|| "IMG".into());
 
-    let decoded = (|| -> Option<(u32, u32, u32, u32, Vec<u8>)> {
+    let decoded = crate::wic_thumb::decode_image_thumbnail_wic(path, max_w, max_h).or_else(|| {
         let file = File::open(path).ok()?;
         let mut decoder = png::Decoder::new(std::io::BufReader::new(file));
         decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
@@ -45,7 +52,6 @@ pub fn read_image_thumbnail(path_str: &str, max_w: u32, max_h: u32) -> ResolvedP
         let raw = &buf[..frame.buffer_size()];
         let color = frame.color_type;
 
-        // Compute target thumbnail size preserving aspect ratio
         let scale = ((max_w as f32 / src_w as f32).min(max_h as f32 / src_h as f32)).min(1.0);
         let dst_w = ((src_w as f32 * scale).round() as u32).max(1);
         let dst_h = ((src_h as f32 * scale).round() as u32).max(1);
@@ -82,12 +88,12 @@ pub fn read_image_thumbnail(path_str: &str, max_w: u32, max_h: u32) -> ResolvedP
             }
         }
         Some((src_w, src_h, dst_w, dst_h, rgba))
-    })();
+    });
 
     match decoded {
         Some((sw, sh, dw, dh, rgba)) => ResolvedPreview {
             title,
-            meta_line: format!("PNG · {sw}×{sh} · {}", format_size(file_size)),
+            meta_line: format!("{ext_label} · {sw}×{sh} · {}", format_size(file_size)),
             body: format!("路径：{path_str}"),
             is_monospace: false,
             image_rgba: Some((dw, dh, rgba)),
@@ -168,7 +174,11 @@ pub fn read_file_preview(path_str: &str) -> ResolvedPreview {
         .unwrap_or("")
         .to_ascii_lowercase();
 
-    if ext == "png" && size <= 16 * 1024 * 1024 {
+    if matches!(
+        ext.as_str(),
+        "png" | "jpg" | "jpeg" | "webp" | "bmp" | "gif" | "ico" | "tif" | "tiff"
+    ) && size <= 16 * 1024 * 1024
+    {
         return read_image_thumbnail(path_str, 280, 220);
     }
 

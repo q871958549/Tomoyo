@@ -11,7 +11,7 @@
   <a href="https://github.com/q871958549/Tomoyo/actions/workflows/ci.yml"><img src="https://github.com/q871958549/Tomoyo/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="LICENSE-MIT"><img src="https://img.shields.io/badge/license-MIT%20%2F%20Apache--2.0-blue.svg" alt="License" /></a>
   <img src="https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-0078D6.svg" alt="Windows" />
-  <img src="https://img.shields.io/badge/version-v1.2.0-7c6af7.svg" alt="Version" />
+  <img src="https://img.shields.io/badge/version-v1.3.0-7c6af7.svg" alt="Version" />
 </p>
 
 ---
@@ -27,7 +27,7 @@
    - **插件隔离**：STDIO 插件绑定 Windows Job Object（限制内存并随主进程退出清理）；WASM 插件运行于 `wasmi` 燃料计量沙箱；WebView 设置中心与插件运行在独立短生命周期进程 `tomoyo-webview-host.exe`，关闭窗口即退出释放内存。
 3. **Everything 文件检索集成**：
    - 内置纯 Rust 实现的 **Everything 1.4 / 1.5a** `WM_COPYDATA` IPC 客户端，无需额外 DLL。
-   - 支持异步有界右侧预览（文本 8 KB 截断、目录列表与 PNG 缩略图）及原生 Windows OLE 文件拖拽。
+   - 支持异步有界右侧预览（文本 8 KB 截断、目录列表与 Win32 WIC 全格式图片缩略图）及原生 Windows OLE 文件拖拽。
 4. **界面交互与多语言支持**：
    - 内置阿里巴巴普惠体 3.0 字体，支持简体中文与英文切换，提供浅色（Light）、深色（Dark）、午夜（Midnight）三种配色方案，并同步 DWM 标题栏样式与自定义弹出菜单。
    - 支持拖拽窗口位置、八向边缘缩放与预览分割线调整，配置自动保存并支持热重载。
@@ -39,17 +39,17 @@
 
 ---
 
-## 实测数据与自检阈值 (`v1.2.0` Release)
+## 实测数据与自检阈值 (`v1.3.0` Release)
 
 | 指标 | 实测记录 | 自检阈值 (`--strict-budget`) |
 |---|---|---|
-| `tomoyo.exe` 主程序体积 | **5.20 MB** (`5328.0 KB`) | — |
-| `tomoyo-webview-host.exe` 设置、OCR 审校与插件宿主 | **1.93 MB**（关闭即退出） | 0 MB 常驻 |
-| `tomoyo-plugin-ocr.exe` 离线 WinRT OCR 插件 | **0.35 MB**（空闲 15 秒自动回收） | 0 MB 常驻 |
-| 休眠态 Working Set 内存占用 (`--self-test`) | **1.09–1.48 MB** | ≤ 2.0 MB |
-| 休眠态 Private Commit（含 392 应用索引、SQLite 与字体） | **19.64 MB** | ≤ 28.0 MB |
-| 100 轮查询 / 绘制 / 预览 / 休眠压测 Delta | **GDI `+0` · USER `+0` · Handles `+0` · Private `+0.00 MB`** | 句柄 0 增长 / 内存 ≤ +0.50 MB |
-| 源码规范检查（[编码规范](docs/CODING_STANDARDS.md) / [UI 规范](docs/UI_DESIGN_STANDARDS.md)） | **全仓 120 个源码文件均 ≤ 450 行** | ≤ 450 行/文件 |
+| `tomoyo.exe` 主程序体积 | **5.27 MB** (`5394.5 KB`) | — |
+| `tomoyo-webview-host.exe` 设置、剪贴板工作台、OCR 审校与插件宿主 | **3.61 MB**（关闭即退出） | 0 MB 常驻 |
+| `tomoyo-plugin-ocr.exe` 离线 WinRT OCR 插件 | **0.36 MB**（空闲 15 秒自动回收） | 0 MB 常驻 |
+| 休眠态 Working Set 内存占用 (`--self-test`) | **1.10–1.55 MB** | ≤ 2.0 MB |
+| 休眠态 Private Commit（含 392 应用索引、SQLite 与字体） | **20.72 MB** | ≤ 28.0 MB |
+| 100 轮查询 / 绘制 / 预览 / 休眠压测 Delta | **GDI `+0` · USER `+0` · Handles `+0` · Private `+0.13 MB`** | 句柄 0 增长 / 内存 ≤ +0.50 MB |
+| 源码规范检查（[编码规范](docs/CODING_STANDARDS.md) / [UI 规范](docs/UI_DESIGN_STANDARDS.md)） | **全仓 131 个源码文件均 ≤ 450 行** | ≤ 450 行/文件 |
 
 ---
 
@@ -85,7 +85,7 @@ pwsh -File scripts\check_hygiene.ps1
 | `f <词>` / `ev <词>` | Everything 文件搜索（空参数列出收藏筛选器 `@today/@large/@code` 与最近搜索历史）、异步预览及拖拽导出 |
 | `snip <词>` / `:reload` | 代码片段与动态模板扩展（支持 `{{date}}`/`{{datetime}}`/`{{unix}}`/`{{uuid}}`/`{{clipboard}}`） |
 | `ocr` / `ocr en` / `Ctrl+V` 贴图 | 按需拉起原生 WinRT 离线 OCR（自适应 2× 放大与标点清理、支持免贴图直识最近截图、原图对照审校编辑窗与单行复制，15s 自动释放） |
-| `cb <词>` | SQLite 剪贴板历史（文本与图片，支持置顶与回车贴回原窗口） |
+| `Alt+V` / `cb <词>` | 增强剪贴板管理中心（文本/图片/文件、语义分类、来源应用、`@pin/@img/@link/@file/@code/#标签` 与拼音检索、`Shift+Enter` 单行纯文本贴回或图片一键 OCR、`Ctrl+E` 工作台、`Ctrl+D` 删除、`Ctrl+Shift+P` 置顶，自动屏蔽密码管理器机密剪贴板） |
 | `kill <词>` / `ps <词>` | 进程列表查看与终止进程（按内存占用降序排列） |
 | `g` / `gh` / `crates` / `docs` / `bd` / `zh` / `mdn` | 可在设置中心自定义的快捷网页搜索前缀 |
 | `w <词>` | 已打开窗口列表筛选与切换 |

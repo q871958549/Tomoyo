@@ -5,7 +5,7 @@ mod sanitize;
 
 pub use hotkey::{is_autostart_enabled, parse_hotkey, set_autostart_enabled, ParsedHotkey};
 pub use sanitize::{
-    is_safe_http_url, is_valid_github_repo, sanitize_config, validate_scan_dir,
+    is_safe_http_url, is_valid_github_repo, normalize_exe_name, sanitize_config, validate_scan_dir,
     validate_web_search, MAX_EXTRA_DIRS, MAX_SCAN_DEPTH,
 };
 
@@ -220,6 +220,32 @@ pub struct ClipboardConfig {
     pub max_persisted_items: usize,
     #[serde(default = "default_true")]
     pub persist_sqlite: bool,
+    /// Dedicated global shortcut to summon Clipboard Center directly (empty `""` disables).
+    #[serde(default = "default_clip_hotkey")]
+    pub hotkey: String,
+    /// Master switch for automatic background clipboard recording.
+    #[serde(default = "default_true")]
+    pub capture_enabled: bool,
+    /// Record copied screenshots/images (`CF_DIB`) to disk-backed LRU.
+    #[serde(default = "default_true")]
+    pub capture_images: bool,
+    /// Process executable names ignored during clipboard capture (privacy / password managers).
+    #[serde(default = "default_excluded_apps")]
+    pub excluded_apps: Vec<String>,
+}
+
+fn default_clip_hotkey() -> String {
+    "Alt+V".into()
+}
+
+pub fn default_excluded_apps() -> Vec<String> {
+    vec![
+        "keepass.exe".into(),
+        "keepassxc.exe".into(),
+        "bitwarden.exe".into(),
+        "1password.exe".into(),
+        "enpass.exe".into(),
+    ]
 }
 
 impl Default for ClipboardConfig {
@@ -227,6 +253,10 @@ impl Default for ClipboardConfig {
         Self {
             max_persisted_items: default_clip_max(),
             persist_sqlite: true,
+            hotkey: default_clip_hotkey(),
+            capture_enabled: true,
+            capture_images: true,
+            excluded_apps: default_excluded_apps(),
         }
     }
 }

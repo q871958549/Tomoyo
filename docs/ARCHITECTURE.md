@@ -185,3 +185,6 @@ sequenceDiagram
 - **v1.2.0 — 统一多进程日志溯源与离线 OCR 根治重构**
   - **全链路日志与崩溃溯源**：在 `tomoyo-core` 抽离公共 `diagnostics` 模块（1 MB × 3 主进程轮转 `tomoyo.log`、512 KB × 2 宿主轮转 `webview.log`、单调 `trace_id`、`last_crash.txt` panic/SEH 快照与脱敏诊断报告生成）；`tomoyo-plugin-host` 接管全部子进程 `stderr`（12 行环形缓冲）写入主日志，并在插件启动/查询失败时向主列表返回附带 `trace_id` 的错误卡片；`tomoyo-webview-host` 接入独立日志、崩溃守护及前端 JS `error`/`unhandledrejection` 上报；修复设置中心滑块拖动触发全量热重载刷屏日志的问题；新增 `:logs` 指令与设置中心「诊断与日志」面板。
   - **OCR 死循环修复、精度优化与审校窗口**：修复 `QueryRouter` 粘贴图片胶囊拦截显式 `ocr` 关键词的路由缺陷；`tomoyo-plugin-ocr` 引入 WinRT `BitmapTransform` 自适应 2× Cubic 放大、中文空格清理与数字/IP/时间全角标点规范化，支持 `ocr en`/`zh`/`raw` 及免贴图识别最近剪贴板截图；新增按需启动的「OCR 审校与编辑窗口」（左原图缩放对照 + 右可编辑文本，关闭释放 100% 内存）及主列表单行直拷卡片。
+- **v1.3.0 — 增强剪贴板管理中心（替代 CopyQ）与 Win32 WIC 全图预览**
+  - **剪贴板存储与筛选引擎**：`ClipboardStore` 升级 SQLite v2 模式（`subtype`、`tag`、`note`、`source_app`、`file_paths` 与联合索引），支持文本语义分类（链接/色值/路径/代码/文本）、截图图片与复制文件（`CF_HDROP`）、`@pin/@img/@text/@link/@file/@code/@color/#标签` 过滤、拼音多词匹配、单条编辑/删除、清空非置顶与 JSON 备份导出/导入。
+  - **专属热键、隐私保护与工作台**：新增独立剪贴板全局快捷键（默认 `Alt+V`）与 `cb` 模式快捷键（`Shift+Enter` 单行纯文本贴回 / 图片一键 OCR、`Ctrl+E` 工作台、`Ctrl+D` 删除、`Ctrl+Shift+P` 置顶）；新增 Windows 机密剪贴板格式自动拦截与来源应用隐私屏蔽名单（设置中心落盘「下拉搜索框」组件）；新增按需单实例三栏「剪贴板工作台」（`__tomoyo_clipboard_manager__`，关闭即释放 100% WebView 内存）以及 `tomoyo-core::wic_thumb` Win32 WIC 全格式图片缩略图解码。
