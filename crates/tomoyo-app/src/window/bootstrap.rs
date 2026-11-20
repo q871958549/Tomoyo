@@ -200,7 +200,7 @@ impl AppShell {
             everything_status: detect_everything_label(),
             hotkey_label,
             hotkey_conflict,
-            pending_update_install: Arc::new(Mutex::new(None)),
+            pending_update_install: Arc::new(Mutex::new(Default::default())),
             dpi_scale,
             taskbar_created_msg,
             suppress_clipboard_capture: Arc::new(std::sync::atomic::AtomicBool::new(false)),

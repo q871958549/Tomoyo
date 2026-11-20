@@ -26,6 +26,7 @@
 
     // Sidebar navigation
     let storeLoadedOnce = false;
+    let updatesCheckedInSession = false;
     document.querySelectorAll('nav button').forEach(btn => {
       btn.addEventListener('click', () => {
         document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
@@ -37,6 +38,13 @@
           fetchStore();
         } else if (btn.dataset.tab === 'logs') {
           refreshLogs();
+        } else if (btn.dataset.tab === 'updates' && !updatesCheckedInSession) {
+          updatesCheckedInSession = true;
+          const nowSec = Math.floor(Date.now() / 1000);
+          const lastSec = (INIT.cached_update && INIT.cached_update.checked_at_unix) || 0;
+          if (!INIT.cached_update || (nowSec - lastSec) > 300) {
+            checkUpdatesNow();
+          }
         }
       });
     });
@@ -254,7 +262,7 @@
       mountClipSettingsControls();
       mountTranslateSettingsControls();
       if (!state.language) state.language = 'zh';
-      document.getElementById('about-ver').textContent = 'v' + (INIT.version || '1.4.0');
+      document.getElementById('about-ver').textContent = 'v' + (INIT.version || '1.4.1');
       document.getElementById('autostart').checked = autostart;
       const hib = state.hibernate_delay_secs || 15;
       document.getElementById('hibernate').value = hib;
@@ -321,6 +329,9 @@
       });
       document.getElementById('cfg-path').textContent = INIT.config_path || '';
       document.getElementById('plug-dir').textContent = INIT.plugins_dir || '';
+      if (INIT.cached_update && typeof renderUpdateStatus === 'function') {
+        renderUpdateStatus(INIT.cached_update);
+      }
 
       applyI18n();
     }

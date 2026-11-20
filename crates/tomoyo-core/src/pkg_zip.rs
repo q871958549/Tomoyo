@@ -11,9 +11,31 @@ use std::collections::BTreeMap;
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 
-const MAX_ZIP_BYTES: u64 = 32 * 1024 * 1024;
-const MAX_UNPACKED_TOTAL: usize = 48 * 1024 * 1024;
+const MAX_ZIP_BYTES: u64 = 64 * 1024 * 1024;
+const MAX_UNPACKED_TOTAL: usize = 96 * 1024 * 1024;
 const MAX_ENTRY_COUNT: usize = 512;
+
+fn write_entries_to_dir(entries: BTreeMap<PathBuf, Vec<u8>>, dest_dir: &Path) -> Result<(), String> {
+    if dest_dir.exists() {
+        let _ = std::fs::remove_dir_all(dest_dir);
+    }
+    std::fs::create_dir_all(dest_dir).map_err(|e| format!("创建目标目录失败: {e}"))?;
+    for (rel, data) in entries {
+        let target = dest_dir.join(rel);
+        if let Some(parent) = target.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| format!("创建子目录失败: {e}"))?;
+        }
+        std::fs::write(&target, data).map_err(|e| format!("写入解压文件失败: {e}"))?;
+    }
+    Ok(())
+}
+
+/// Safely unpacks a general `.zip` archive (e.g. portable self-update bundle) with ZipSlip guards.
+pub fn unpack_zip_to_dir(zip_path: &Path, dest_dir: &Path) -> Result<(), String> {
+    let bytes = std::fs::read(zip_path).map_err(|e| format!("读取压缩包失败: {e}"))?;
+    let unpacked = extract_zip_entries(&bytes)?;
+    write_entries_to_dir(unpacked, dest_dir)
+}
 
 /// Verifies `expected_sha256` (if non-empty) against a `.zip` file, unpacks safely, and validates
 /// `tomoyo-plugin.toml` before atomically installing into `dest_dir`.
@@ -33,18 +55,7 @@ pub fn install_zip_file_verified(
     let bytes = std::fs::read(zip_path).map_err(|e| format!("读取压缩包失败: {e}"))?;
     let unpacked = extract_zip_entries(&bytes)?;
     let normalized = flatten_plugin_root(unpacked)?;
-
-    if dest_dir.exists() {
-        let _ = std::fs::remove_dir_all(dest_dir);
-    }
-    std::fs::create_dir_all(dest_dir).map_err(|e| format!("创建插件目录失败: {e}"))?;
-    for (rel, data) in normalized {
-        let target = dest_dir.join(rel);
-        if let Some(parent) = target.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| format!("创建子目录失败: {e}"))?;
-        }
-        std::fs::write(&target, data).map_err(|e| format!("写入插件文件失败: {e}"))?;
-    }
+    write_entries_to_dir(normalized, dest_dir)?;
     Ok(actual_sha)
 }
 

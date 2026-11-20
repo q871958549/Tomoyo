@@ -8,6 +8,7 @@ mod layout;
 mod menus;
 mod selftest;
 mod translate_ctrl;
+mod updater_ctrl;
 mod wndproc;
 
 use crate::actions::spawn_settings_window;
@@ -40,7 +41,7 @@ pub(super) const EDIT_SUBCLASS_ID: usize = 1;
 pub(super) const WM_APP_RESULTS_READY: u32 = WM_APP + 1;
 pub(super) const WM_APP_EDIT_KEY: u32 = WM_APP + 2;
 pub(super) const WM_APP_PASTE_INTERCEPT: u32 = WM_APP + 3;
-pub(super) const WM_APP_UPDATE_READY: u32 = WM_APP + 4;
+pub const WM_APP_UPDATE_READY: u32 = WM_APP + 4;
 pub(super) const WM_APP_CONFIG_SAVED: u32 = WM_APP + 20;
 pub const WM_APP_WAKE_EXISTING: u32 = WM_APP + 21;
 pub(super) const WM_APP_UPDATE_INSTALLED: u32 = WM_APP + 22;
@@ -129,7 +130,7 @@ pub struct AppShell {
     pub(super) everything_status: Option<&'static str>,
     pub(super) hotkey_label: String,
     pub(super) hotkey_conflict: Option<String>,
-    pub(super) pending_update_install: Arc<Mutex<Option<Result<bool, String>>>>,
+    pub(super) pending_update_install: Arc<Mutex<updater_ctrl::UpdateInstallSlot>>,
     pub(super) dpi_scale: f32,
     pub(super) taskbar_created_msg: u32,
     pub(super) suppress_clipboard_capture: Arc<AtomicBool>,
@@ -138,6 +139,7 @@ pub struct AppShell {
 
 impl AppShell {
     pub fn hotkey_label(&self) -> &str { &self.hotkey_label }
+    pub fn hwnd_raw(&self) -> usize { self.hwnd.0 as usize }
 
     pub fn apply_theme(&mut self, theme_name: &str, persist: bool) {
         let new_theme = ThemePalette::from_name(theme_name);
@@ -385,7 +387,7 @@ impl AppShell {
         self.dispatch_query();
     }
 
-    pub(super) fn show_toast(&mut self, msg: &str) {
+    pub fn show_toast(&mut self, msg: &str) {
         self.toast = Some(msg.to_string());
         unsafe {
             let _ = KillTimer(Some(self.hwnd), TIMER_CLEAR_TOAST);
@@ -393,7 +395,6 @@ impl AppShell {
         }
         self.invalidate();
     }
-
     pub(super) fn invalidate(&self) {
         unsafe { let _ = InvalidateRect(Some(self.hwnd), None, false); }
     }

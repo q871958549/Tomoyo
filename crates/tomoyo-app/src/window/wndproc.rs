@@ -1,6 +1,7 @@
 //! Pure Win32 `main_wndproc` message dispatcher delegating into cohesive `AppShell` methods.
 
 use super::commands::{dispatch_menu_id, dispatch_wm_command};
+use super::updater_ctrl::WM_APP_UPDATE_PROGRESS;
 use super::{
     AppShell, HOTKEY_CLIPBOARD_ID, HOTKEY_ID, HOTKEY_TRANSLATE_ID, TIMER_CLEAR_TOAST,
     TIMER_HIBERNATE, WM_APP_CONFIG_SAVED, WM_APP_EDIT_KEY, WM_APP_PASTE_INTERCEPT,
@@ -28,9 +29,9 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 use windows::Win32::UI::WindowsAndMessaging::{
     DefWindowProcW, GetClientRect, GetCursorPos, GetWindowLongPtrW, IsWindowVisible, KillTimer,
     LoadCursorW, PostQuitMessage, SetCursor, GWLP_USERDATA, HTBOTTOM, HTBOTTOMLEFT,
-    HTBOTTOMRIGHT, HTCAPTION, HTCLIENT, HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT, IDC_SIZEWE,
-    MINMAXINFO, WM_ACTIVATE, WM_CLIPBOARDUPDATE, WM_COMMAND, WM_CTLCOLOREDIT, WM_DESTROY,
-    WM_DPICHANGED, WM_ENDSESSION, WM_ENTERSIZEMOVE, WM_ERASEBKGND, WM_EXITSIZEMOVE,
+    HTBOTTOMRIGHT, HTCAPTION, HTCLIENT, HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT, IDC_HAND,
+    IDC_SIZEWE, MINMAXINFO, WM_ACTIVATE, WM_CLIPBOARDUPDATE, WM_COMMAND, WM_CTLCOLOREDIT,
+    WM_DESTROY, WM_DPICHANGED, WM_ENDSESSION, WM_ENTERSIZEMOVE, WM_ERASEBKGND, WM_EXITSIZEMOVE,
     WM_GETMINMAXINFO, WM_HOTKEY, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE,
     WM_MOUSEWHEEL, WM_NCHITTEST, WM_NCRBUTTONUP, WM_PAINT, WM_RBUTTONUP, WM_SETCURSOR, WM_SIZE,
     WM_TIMER,
@@ -59,7 +60,7 @@ pub(super) unsafe extern "system" fn main_wndproc(
             mmi.ptMaxTrackSize.y = (1080.0 * scale) as i32;
             LRESULT(0)
         }
-        WM_NCHITTEST => hit_test_window_chrome(hwnd, app.dpi_scale, lparam),
+        WM_NCHITTEST => hit_test_window_chrome(hwnd, app, lparam),
         WM_SETCURSOR => {
             if (lparam.0 & 0xFFFF) as u32 == HTCLIENT {
                 let mut pt = POINT::default();
@@ -69,6 +70,12 @@ pub(super) unsafe extern "system" fn main_wndproc(
                 }
                 if app.inter.dragging_divider || app.is_over_preview_divider(pt.x, pt.y) {
                     if let Ok(cur) = unsafe { LoadCursorW(None, IDC_SIZEWE) } {
+                        unsafe { SetCursor(Some(cur)); }
+                        return LRESULT(1);
+                    }
+                }
+                if app.hit_test_update_badge(pt.x, pt.y) {
+                    if let Ok(cur) = unsafe { LoadCursorW(None, IDC_HAND) } {
                         unsafe { SetCursor(Some(cur)); }
                         return LRESULT(1);
                     }
@@ -195,6 +202,10 @@ pub(super) unsafe extern "system" fn main_wndproc(
         }
         WM_APP_UPDATE_READY => {
             app.on_update_ready();
+            LRESULT(0)
+        }
+        WM_APP_UPDATE_PROGRESS => {
+            app.on_update_progress();
             LRESULT(0)
         }
         WM_APP_UPDATE_INSTALLED => {
@@ -333,7 +344,7 @@ fn unpack_xy(lparam: LPARAM) -> (i32, i32) {
     ((lparam.0 & 0xFFFF) as i16 as i32, ((lparam.0 >> 16) & 0xFFFF) as i16 as i32)
 }
 
-fn hit_test_window_chrome(hwnd: HWND, dpi_scale: f32, lparam: LPARAM) -> LRESULT {
+fn hit_test_window_chrome(hwnd: HWND, app: &AppShell, lparam: LPARAM) -> LRESULT {
     let (sx, sy) = unpack_xy(lparam);
     let mut pt = POINT { x: sx, y: sy };
     let mut rc = RECT::default();
@@ -342,7 +353,7 @@ fn hit_test_window_chrome(hwnd: HWND, dpi_scale: f32, lparam: LPARAM) -> LRESULT
         let _ = GetClientRect(hwnd, &mut rc);
     }
     let (w, h) = (rc.right - rc.left, rc.bottom - rc.top);
-    let grip = (6.0 * dpi_scale.max(1.0)).round() as i32;
+    let grip = (6.0 * app.dpi_scale.max(1.0)).round() as i32;
     let hit = match (pt.x < grip, pt.x >= w - grip, pt.y < grip, pt.y >= h - grip) {
         (true, _, true, _) => HTTOPLEFT,
         (_, true, true, _) => HTTOPRIGHT,
@@ -353,9 +364,15 @@ fn hit_test_window_chrome(hwnd: HWND, dpi_scale: f32, lparam: LPARAM) -> LRESULT
         (_, _, true, _) => HTTOP,
         (_, _, _, true) => HTBOTTOM,
         _ => {
-            let header_px = (HEADER_HEIGHT_DIP as f32 * dpi_scale.max(1.0)) as i32;
-            let footer_px = (FOOTER_HEIGHT_DIP as f32 * dpi_scale.max(1.0)) as i32;
-            if pt.y < header_px || pt.y >= h - footer_px { HTCAPTION } else { HTCLIENT }
+            let header_px = (HEADER_HEIGHT_DIP as f32 * app.dpi_scale.max(1.0)) as i32;
+            let footer_px = (FOOTER_HEIGHT_DIP as f32 * app.dpi_scale.max(1.0)) as i32;
+            if app.hit_test_update_badge(pt.x, pt.y) {
+                HTCLIENT
+            } else if pt.y < header_px || pt.y >= h - footer_px {
+                HTCAPTION
+            } else {
+                HTCLIENT
+            }
         }
     };
     LRESULT(hit as isize)
@@ -363,6 +380,10 @@ fn hit_test_window_chrome(hwnd: HWND, dpi_scale: f32, lparam: LPARAM) -> LRESULT
 
 fn handle_mouse_down(hwnd: HWND, app: &mut AppShell, lparam: LPARAM) -> LRESULT {
     let (x, y) = unpack_xy(lparam);
+    if app.hit_test_update_badge(x, y) {
+        app.set_query_text(":update");
+        return LRESULT(0);
+    }
     if app.is_over_preview_divider(x, y) {
         app.inter.dragging_divider = true;
         unsafe { SetCapture(hwnd); }

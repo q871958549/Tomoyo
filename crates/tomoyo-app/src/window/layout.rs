@@ -267,6 +267,22 @@ impl AppShell {
         }
     }
 
+    pub(super) fn hit_test_update_badge(&self, x_px: i32, y_px: i32) -> bool {
+        let Some(rel) = self.updater.available_release() else {
+            return false;
+        };
+        let mut rc = RECT::default();
+        unsafe { let _ = GetClientRect(self.hwnd, &mut rc); }
+        let scale = self.dpi_scale.max(1.0);
+        let w_dip = (rc.right - rc.left) as f32 / scale;
+        let fy0 = ((rc.bottom - rc.top) as f32 / scale) - FOOTER_HEIGHT_DIP as f32;
+        let ver = format!("↑ v{}", rel.version);
+        let uw = (ver.chars().count() as f32 * 7.2 + 18.0).clamp(64.0, 120.0);
+        let ux0 = w_dip - 190.0 - uw;
+        let (xd, yd) = (x_px as f32 / scale, y_px as f32 / scale);
+        ux0 > 220.0 && xd >= ux0 && xd <= w_dip - 190.0 && yd >= fy0 + 5.0 && yd <= fy0 + 25.0
+    }
+
     pub(super) fn is_over_preview_divider(&self, x_px: i32, y_px: i32) -> bool {
         if !self.is_preview_visible() {
             return false;

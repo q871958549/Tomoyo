@@ -27,9 +27,11 @@ use tomoyo_providers::{
     AppsProvider, CalcProvider, ClipboardProvider, EverythingProvider, ProcessProvider,
     SnippetsProvider, SystemProvider, TranslateProvider, WebSearchProvider, WindowsSwitcherProvider,
 };
-use window::{AppShell, WM_APP_WAKE_EXISTING};
+use window::{AppShell, WM_APP_UPDATE_READY, WM_APP_WAKE_EXISTING};
 use windows::core::{w, PCWSTR};
-use windows::Win32::Foundation::{CloseHandle, GetLastError, ERROR_ALREADY_EXISTS, HANDLE, LPARAM, WPARAM};
+use windows::Win32::Foundation::{
+    CloseHandle, GetLastError, ERROR_ALREADY_EXISTS, HANDLE, HWND, LPARAM, WPARAM,
+};
 use windows::Win32::System::Ole::{OleInitialize, OleUninitialize};
 use windows::Win32::System::Threading::CreateMutexW;
 use windows::Win32::UI::HiDpi::{
@@ -94,12 +96,12 @@ fn build_engine() -> (
         None
     };
     let clip_max = loaded_cfg.clipboard.max_persisted_items;
+    let updater = UpdateManager::with_cached(&loaded_cfg.update.repo);
     let config = Arc::new(RwLock::new(loaded_cfg));
 
     let plugin_dirs = default_plugin_dirs();
     let plugin_host = PluginHost::new(plugin_dirs);
     let bridge: Arc<dyn ExternalPluginBridge> = plugin_host.clone();
-    let updater = UpdateManager::new();
 
     let frecency_path = data_dir().join("frecency.json");
     let frecency = Arc::new(RwLock::new(FrecencyStore::load_or_default(frecency_path)));
@@ -305,6 +307,8 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     let is_self_test = args.iter().any(|a| a == "--self-test");
     let is_silent = args.iter().any(|a| a == "--silent");
+    let is_updated = args.iter().any(|a| a == "--updated");
+    let is_update_failed = args.iter().any(|a| a == "--update-failed");
 
     let log_writer = crash_guard::init_logging_and_crash_guards(is_self_test);
     let _ = tracing_subscriber::fmt()
@@ -342,14 +346,13 @@ fn main() {
 
     tracing::info!("Starting Tomoyo v{CURRENT_VERSION} (args={args:?})");
     let (config, router, plugin_host, clipboard, _apps, updater) = build_engine();
-    updater.check_async_if_due(&config);
 
     let mut shell = match AppShell::create(
-        config,
+        Arc::clone(&config),
         router,
         plugin_host,
         clipboard,
-        updater,
+        Arc::clone(&updater),
         fonts.regular_family(),
         fonts.medium_family(),
         true,
@@ -361,9 +364,25 @@ fn main() {
         }
     };
 
+    let hwnd_raw = shell.hwnd_raw();
+    updater.check_async_if_due_with_notify(&config, move || unsafe {
+        let _ = PostMessageW(
+            Some(HWND(hwnd_raw as *mut std::ffi::c_void)),
+            WM_APP_UPDATE_READY,
+            WPARAM(0),
+            LPARAM(0),
+        );
+    });
+
     tracing::info!("Tomoyo ready! Press {} to summon.", shell.hotkey_label());
 
-    if !is_silent {
+    if is_updated {
+        shell.show_launcher();
+        shell.show_toast(&format!("✓ Tomoyo 已自动更新至 v{CURRENT_VERSION}"));
+    } else if is_update_failed {
+        shell.show_launcher();
+        shell.show_toast("⚠ 自动安装未完成，已为您恢复旧版本（可在 :update 重试）");
+    } else if !is_silent {
         shell.show_launcher();
     }
 

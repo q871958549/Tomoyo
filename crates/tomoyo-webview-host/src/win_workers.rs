@@ -4,7 +4,7 @@ use crate::store::fetch_store_catalog_json;
 use std::ffi::c_void;
 use std::sync::mpsc;
 use tomoyo_core::{
-    download_and_verify_release_asset, fetch_latest_github_release,
+    download_and_verify_release_asset_with_progress, fetch_latest_github_release,
     launch_verified_update_installer, ReleaseInfo, TomoyoConfig, UpdateStatus, CURRENT_VERSION,
 };
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
@@ -51,15 +51,38 @@ pub fn spawn_install_update_worker(
     let _ = std::thread::Builder::new()
         .name("tomoyo-settings-installer".into())
         .spawn(move || {
-            let res = download_and_verify_release_asset(&rel)
-                .and_then(|path| launch_verified_update_installer(&path));
+            let mut last_pct: i16 = -1;
+            let mut last_stage = String::new();
+            let res = download_and_verify_release_asset_with_progress(&rel, |prog| {
+                if prog.percent as i16 == last_pct && prog.stage == last_stage {
+                    return;
+                }
+                last_pct = prog.percent as i16;
+                last_stage = prog.stage.clone();
+                let evt = serde_json::json!({
+                    "event": "update_install_progress",
+                    "progress": prog
+                })
+                .to_string();
+                if tx.send(evt).is_ok() {
+                    unsafe {
+                        let _ = PostMessageW(
+                            Some(HWND(hwnd_raw as *mut c_void)),
+                            notify_msg,
+                            WPARAM(0),
+                            LPARAM(0),
+                        );
+                    }
+                }
+            })
+            .and_then(|path| launch_verified_update_installer(&path));
             let evt = match res {
                 Ok(started_exe) => serde_json::json!({
                     "event": "update_install_result",
                     "ok": true,
                     "launched_installer": started_exe,
                     "message": if started_exe {
-                        "SHA-256 校验通过，正在启动静默覆盖安装并重启更新..."
+                        "SHA-256 校验通过，正在后台安装新版本并自动重启 Tomoyo..."
                     } else {
                         "SHA-256 校验通过，已在资源管理器选中便携包"
                     }

@@ -186,6 +186,7 @@ pub fn build_settings_init_script() -> String {
     let _ = std::fs::create_dir_all(&plugins_dir);
 
     let (log_warns, log_errs, log_crash) = count_recent_log_issues();
+    let cached_update = tomoyo_core::load_cached_update_status(&cfg.update.repo, CURRENT_VERSION);
     let payload = serde_json::json!({
         "version": CURRENT_VERSION,
         "config": cfg,
@@ -197,6 +198,7 @@ pub fn build_settings_init_script() -> String {
         "log_issues": { "warnings": log_warns, "errors": log_errs, "has_crash_report": log_crash },
         "running_apps": clip_view::enumerate_running_app_exes(),
         "secrets_status": tr_view::secrets_status_json(),
+        "cached_update": cached_update,
         "has_bundled_alibaba_font": locate_fonts_dir().is_some(),
     });
     format!(

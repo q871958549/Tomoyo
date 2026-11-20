@@ -34,7 +34,7 @@ pub fn build_update_item(
                 vec![
                     ActionSpec {
                         id: "install_update".into(),
-                        label: lang.pick("自动下载校并安装新版本", "Download, Verify & Install Update").into(),
+                        label: lang.pick("自动下载校验并安装新版本", "Download, Verify & Install Update").into(),
                         shortcut: Some("Enter".into()),
                         kind: ActionKind::InternalCommand {
                             command: InternalCommandKind::InstallUpdate,
@@ -97,18 +97,39 @@ pub fn build_update_item(
             None,
         ),
         UpdateStatus::Error { message, .. } => (
-            format!(":update — 检查失败 ({message})"),
-            lang.pick("回车重试检查 GitHub Releases", "Enter to retry GitHub Releases check").into(),
+            format!(":update — {}", lang.pick("检查更新失败", "Update Check Failed")),
+            format!("{message} · {}", lang.pick("回车重试 · Ctrl+Enter 打开设置中心", "Enter retry · Ctrl+Enter Settings")),
             "ERR".into(),
-            vec![ActionSpec {
-                id: "retry".into(),
-                label: lang.pick("重试检查更新", "Retry Check").into(),
-                shortcut: Some("Enter".into()),
-                kind: ActionKind::InternalCommand {
-                    command: InternalCommandKind::CheckForUpdates,
+            vec![
+                ActionSpec {
+                    id: "retry".into(),
+                    label: lang.pick("重试检查更新", "Retry Check").into(),
+                    shortcut: Some("Enter".into()),
+                    kind: ActionKind::InternalCommand {
+                        command: InternalCommandKind::CheckForUpdates,
+                    },
                 },
-            }],
-            None,
+                ActionSpec {
+                    id: "open_settings".into(),
+                    label: lang.pick("打开设置中心", "Open Settings").into(),
+                    shortcut: Some("Ctrl+Enter".into()),
+                    kind: ActionKind::InternalCommand {
+                        command: InternalCommandKind::OpenSettingsWindow,
+                    },
+                },
+                ActionSpec {
+                    id: "open_repo".into(),
+                    label: lang.pick("打开 GitHub Releases", "Open GitHub Releases").into(),
+                    shortcut: None,
+                    kind: ActionKind::OpenUrl {
+                        url: format!("https://github.com/{repo}/releases"),
+                    },
+                },
+            ],
+            Some(PreviewSpec::Text {
+                title: lang.pick("检查更新诊断详情", "Update Diagnostic Details").into(),
+                body: format!("{message}\n\nhttps://github.com/{repo}/releases"),
+            }),
         ),
         UpdateStatus::Checking => (
             lang.pick(":update — 正在连接 GitHub 检查最新版本...", ":update — Checking GitHub Releases...").into(),

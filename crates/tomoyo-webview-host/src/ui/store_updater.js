@@ -58,6 +58,18 @@
       post({ cmd: 'uninstall_plugin', plugin_id: p.id });
     }
 
+    function formatSourceLabel(src) {
+      if (src === 'github_web') return t('upd_src_web');
+      if (src === 'github_api_cached') return t('upd_src_cache');
+      if (src === 'github_api') return t('upd_src_api');
+      return '';
+    }
+
+    function formatUnixTime(sec) {
+      if (!sec) return '';
+      try { return new Date(sec * 1000).toLocaleString(); } catch (_) { return ''; }
+    }
+
     function checkUpdatesNow() {
       const btn = document.getElementById('btn-check-update');
       const box = document.getElementById('update-result-box');
@@ -73,12 +85,19 @@
       post({ cmd: 'open_external', url: 'https://github.com/' + repo });
     }
 
+    function openReleasesPage() {
+      const repo = (state.update && state.update.repo) || 'q871958549/Tomoyo';
+      post({ cmd: 'open_external', url: 'https://github.com/' + repo + '/releases' });
+    }
+
     function renderUpdateStatus(st) {
       const btn = document.getElementById('btn-check-update');
       const box = document.getElementById('update-result-box');
+      if (!btn || !box) return;
       btn.disabled = false;
       box.style.display = 'block';
       if (!st) return;
+      const checkedStr = formatUnixTime(st.checked_at_unix);
       if (st.state === 'available' && st.release) {
         const r = st.release;
         latestAvailableRelease = r;
@@ -86,22 +105,48 @@
         const installBtn = r.download_url
           ? `<button class="btn primary" id="btn-install-upd" onclick="installAvailableUpdate()">${esc(t('upd_install_now'))}</button>`
           : '';
+        const srcTag = formatSourceLabel(r.source || '');
+        const metaParts = [srcTag, checkedStr ? t('upd_last_checked')(checkedStr) : ''].filter(Boolean);
         box.innerHTML = `
           <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
-            <div><b>${esc(t('upd_avail')(r.version))}</b> <span style="color:var(--muted);font-size:12px">${esc(r.name)}</span></div>
+            <div>
+              <div><b>${esc(t('upd_avail')(r.version))}</b> <span style="color:var(--muted);font-size:12px">${esc(r.name)}</span></div>
+              ${metaParts.length ? `<div class="upd-meta-line">${esc(metaParts.join(' · '))}</div>` : ''}
+            </div>
             <div style="display:flex;gap:8px">
               <button class="btn" onclick="post({cmd:'open_external',url:${JSON.stringify(dl)}})">${esc(t('upd_download'))}</button>
               ${installBtn}
             </div>
           </div>
+          <div id="upd-prog-wrap" class="upd-prog-wrap" style="display:none">
+            <div id="upd-prog-txt" class="upd-meta-line"></div>
+            <div class="upd-prog-track"><div id="upd-prog-fill" class="upd-prog-fill"></div></div>
+          </div>
           ${r.notes ? `<div class="update-notes">${esc(r.notes)}</div>` : ''}
         `;
       } else if (st.state === 'up_to_date') {
-        const extra = st.note ? `<div class="label-desc" style="margin-top:4px">${esc(st.note)}</div>` : '';
-        box.innerHTML = `<div style="color:var(--ok);font-weight:600">${esc(t('upd_latest')(st.current || INIT.version || '1.4.0'))}</div>${extra}`;
+        const meta = [st.note || '', checkedStr ? t('upd_last_checked')(checkedStr) : ''].filter(Boolean).join(' · ');
+        const extra = meta ? `<div class="upd-meta-line">${esc(meta)}</div>` : '';
+        box.innerHTML = `<div style="color:var(--ok);font-weight:600">${esc(t('upd_latest')(st.current || INIT.version || '1.4.1'))}</div>${extra}`;
       } else if (st.state === 'error') {
-        box.innerHTML = `<div style="color:#ef4444;font-weight:500">${esc(t('upd_err')(st.message || 'Unknown error'))}</div>`;
+        box.innerHTML = `
+          <div style="color:#ef4444;font-weight:500">${esc(t('upd_err')(st.message || 'Unknown error'))}</div>
+          <div class="upd-err-actions">
+            <button class="btn primary" onclick="checkUpdatesNow()">${esc(t('upd_retry'))}</button>
+            <button class="btn" onclick="openReleasesPage()">${esc(t('upd_open_releases'))}</button>
+          </div>
+        `;
       }
+    }
+
+    function renderUpdateInstallProgress(p) {
+      if (!p) return;
+      const wrap = document.getElementById('upd-prog-wrap');
+      const txt = document.getElementById('upd-prog-txt');
+      const fill = document.getElementById('upd-prog-fill');
+      if (wrap) wrap.style.display = 'block';
+      if (txt) { txt.style.color = 'var(--text)'; txt.textContent = p.message || t('upd_downloading'); }
+      if (fill) fill.style.width = Math.max(4, Math.min(100, Number(p.percent || 5))) + '%';
     }
 
     if (window.chrome && window.chrome.webview) {
@@ -134,12 +179,26 @@
           setToast(t('log_copied'), false);
         } else if (data.event === 'secrets_status') {
           if (typeof onSecretsStatusEvent === 'function') onSecretsStatusEvent(data);
+        } else if (data.event === 'update_install_progress') {
+          renderUpdateInstallProgress(data.progress);
         } else if (data.event === 'update_install_result') {
           const btn = document.getElementById('btn-install-upd');
-          if (btn) btn.disabled = false;
+          if (btn) {
+            btn.disabled = !!data.ok;
+            if (!data.ok) btn.textContent = t('upd_retrying_install');
+          }
+          const wrap = document.getElementById('upd-prog-wrap');
+          const txt = document.getElementById('upd-prog-txt');
+          const fill = document.getElementById('upd-prog-fill');
+          if (wrap) wrap.style.display = 'block';
+          if (txt) {
+            txt.style.color = data.ok ? 'var(--ok)' : '#ef4444';
+            txt.textContent = (data.ok ? '✓ ' : '✗ ') + data.message;
+          }
+          if (fill && data.ok) fill.style.width = '100%';
           document.getElementById('toast').textContent = (data.ok ? '✓ ' : '✗ ') + data.message;
           if (data.ok && data.launched_installer) {
-            setTimeout(() => post({ cmd: 'close' }), 400);
+            setTimeout(() => post({ cmd: 'close' }), 450);
           }
         }
       });
@@ -188,6 +247,7 @@
       if (!latestAvailableRelease) return;
       const btn = document.getElementById('btn-install-upd');
       if (btn) btn.disabled = true;
+      renderUpdateInstallProgress({ message: t('upd_downloading'), percent: 3 });
       document.getElementById('toast').textContent = t('upd_downloading');
       post({ cmd: 'install_update', release: latestAvailableRelease });
     }

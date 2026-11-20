@@ -192,3 +192,6 @@ sequenceDiagram
   - **多引擎并行翻译与 DPAPI 密钥存储**：新增 `tomoyo-core::translate`（Google、MyMemory + 有道英汉音标词典、DeepL、OpenAI 兼容、本地 Ollama）及 `CryptProtectData` 加密凭证库（`secrets.json`），支持 `Alt+T` 无损划词翻译（不污染剪贴板历史）、`tr` / `fy` 命令、OCR 审校/剪贴板工作台一键联动与按需单实例双语浮窗（`__tomoyo_translator__`，内置生词本与历史）。
   - **检索完整性与精度治理**：将 Start Menu 噪声过滤升级为词边界识别（避免误杀 `HiBit Uninstaller` 等工具），桌面/公共桌面/DeskBox/PecoFence 启用零噪声策略并补充顶层文件夹及 `.bat/.cmd/.ps1/.url/.appref-ms/.msc` 索引；新增 Windows `Uninstall` 注册表兜底扫描（按目标可执行路径去重）；收敛拼音散乱子序列误匹配并支持中英文边界权重。
   - **管理员运行与北京时间日志**：应用与可执行文件右键菜单及 `Ctrl+Shift+Enter` 支持「以管理员身份运行」（`ShellExecuteW("runas")`）；主进程、WebView 宿主与崩溃报告时间戳统一为北京时间（`+08:00`），并修复设置中心诊断面板的 WARN/ERROR 统计展示。
+- **v1.4.1 — 自动更新根治重构（零 API 限额回退 + 进度条 + 安装自重启）**
+  - **消除 `GitHub API HTTP 403`**：在 `tomoyo-core::updater` 引入 `If-None-Match` (`ETag`) 条件请求缓存（`304` 零额度）及无配额限制的 GitHub Web 多级回退（`releases/latest` + `releases.atom` + `expanded_assets`），并模块化拆分为 `http/{mod,download}.rs` 与 `updater/{mod,web_feed,cache,installer}.rs`（严守 `<= 450` 行上限）。
+  - **全闭环自升级 UX**：支持下载阶段百分比/MB 实时进度推送、点击底部 `↑ vX.Y.Z` 徽标直达 `:update`、自动识别 Inno Setup / 便携 ZIP 安装形态并在静默升级完成后自动重启拉起新版（`--updated` toast 提示），彻底告别手动前往仓库下载与升级后托盘消失问题。

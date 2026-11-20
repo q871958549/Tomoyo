@@ -1,6 +1,6 @@
 //! Action execution, internal commands, Super Match paste, async preview & async updater.
 
-use super::{AppShell, EDIT_CTRL_ID, WM_APP_UPDATE_INSTALLED, WM_APP_UPDATE_READY};
+use super::{AppShell, EDIT_CTRL_ID};
 use crate::actions::{
     copy_image_as_base64_uri, execute_action, kill_process_by_pid,
     paste_into_previous_window_async, read_clipboard_files, read_clipboard_image_png,
@@ -9,15 +9,10 @@ use crate::tray::{
     MENU_ID_CLIPBOARD, MENU_ID_CONFIG, MENU_ID_GC, MENU_ID_QUIT, MENU_ID_RELOAD, MENU_ID_SETTINGS,
     MENU_ID_SHOW, MENU_ID_STATS, MENU_ID_TRANSLATE, MENU_ID_UPDATE,
 };
-use std::ffi::c_void;
-use std::sync::Arc;
-use tomoyo_core::{
-    download_and_verify_release_asset, is_autostart_enabled, launch_verified_update_installer,
-    set_autostart_enabled, Lang, UpdateStatus,
-};
+use tomoyo_core::{is_autostart_enabled, set_autostart_enabled, Lang};
 use tomoyo_protocol::{ActionKind, AttachedContext, InternalCommandKind};
-use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
-use windows::Win32::UI::WindowsAndMessaging::{DestroyWindow, PostMessageW, EN_CHANGE};
+use windows::Win32::Foundation::{HWND, LRESULT, WPARAM};
+use windows::Win32::UI::WindowsAndMessaging::{DestroyWindow, EN_CHANGE};
 
 pub(super) fn dispatch_wm_command(hwnd: HWND, app: &mut AppShell, wparam: WPARAM) -> LRESULT {
     let id = (wparam.0 & 0xFFFF) as u32;
@@ -94,71 +89,6 @@ impl AppShell {
             // Disk / image preview resolves asynchronously off the UI thread.
             self.cached_preview_id = None;
             self.cached_preview = None;
-        }
-    }
-
-    pub(super) fn trigger_update_check_async(&mut self) {
-        let repo = self
-            .config
-            .read()
-            .map(|c| c.update.repo.clone())
-            .unwrap_or_else(|_| "q871958549/Tomoyo".into());
-        self.show_toast(self.lang.pick(
-            "正在连接 GitHub Releases 检查最新版本...",
-            "Checking GitHub Releases for updates...",
-        ));
-        let updater = Arc::clone(&self.updater);
-        let cfg = Arc::clone(&self.config);
-        let hwnd_raw = self.hwnd.0 as usize;
-        let _ = std::thread::Builder::new()
-            .name("tomoyo-manual-update".into())
-            .spawn(move || {
-                let res = updater.check_now_sync(&repo);
-                if matches!(res, UpdateStatus::UpToDate { .. } | UpdateStatus::Available { .. }) {
-                    if let Ok(mut w) = cfg.write() {
-                        w.update.last_checked_unix = std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .map(|d| d.as_secs())
-                            .unwrap_or(0);
-                        let _ = w.save();
-                    }
-                }
-                unsafe {
-                    let _ = PostMessageW(
-                        Some(HWND(hwnd_raw as *mut c_void)),
-                        WM_APP_UPDATE_READY,
-                        WPARAM(0),
-                        LPARAM(0),
-                    );
-                }
-            });
-    }
-
-    pub(super) fn on_update_ready(&mut self) {
-        let msg = match self.updater.snapshot() {
-            UpdateStatus::Available { release, .. } => match self.lang {
-                Lang::Zh => format!("发现新版本 v{}！输入 :update 查看更新日志并下载", release.version),
-                Lang::En => format!("New version v{} available! Type :update to download", release.version),
-            },
-            UpdateStatus::UpToDate { current, note, .. } => {
-                if note.is_empty() {
-                    match self.lang {
-                        Lang::Zh => format!("当前已是最新版本 v{current}"),
-                        Lang::En => format!("Already on latest version v{current}"),
-                    }
-                } else {
-                    note
-                }
-            }
-            UpdateStatus::Error { message, .. } => match self.lang {
-                Lang::Zh => format!("检查更新失败：{message}"),
-                Lang::En => format!("Update check failed: {message}"),
-            },
-            _ => return,
-        };
-        self.show_toast(&msg);
-        if self.current_query.trim().starts_with(':') {
-            self.dispatch_query();
         }
     }
 
@@ -358,63 +288,6 @@ impl AppShell {
                 self.refresh_selected_preview();
                 self.resize_to_fit_results();
                 self.invalidate();
-            }
-        }
-    }
-
-    pub(super) fn trigger_update_install_async(&mut self) {
-        let Some(release) = self.updater.available_release() else {
-            self.trigger_update_check_async();
-            return;
-        };
-        self.show_toast(&match self.lang {
-            Lang::Zh => format!("正在下载 v{} 安装包并校验 SHA-256...", release.version),
-            Lang::En => format!("Downloading v{} & verifying SHA-256...", release.version),
-        });
-        let slot = Arc::clone(&self.pending_update_install);
-        let hwnd_raw = self.hwnd.0 as usize;
-        let _ = std::thread::Builder::new()
-            .name("tomoyo-self-updater".into())
-            .spawn(move || {
-                let res = download_and_verify_release_asset(&release)
-                    .and_then(|path| launch_verified_update_installer(&path));
-                if let Ok(mut g) = slot.lock() {
-                    *g = Some(res);
-                }
-                unsafe {
-                    let _ = PostMessageW(
-                        Some(HWND(hwnd_raw as *mut c_void)),
-                        WM_APP_UPDATE_INSTALLED,
-                        WPARAM(0),
-                        LPARAM(0),
-                    );
-                }
-            });
-    }
-
-    pub(super) fn on_update_installed(&mut self) {
-        let outcome = self.pending_update_install.lock().ok().and_then(|mut g| g.take());
-        let Some(res) = outcome else {
-            return;
-        };
-        match res {
-            Ok(true) => {
-                self.shutdown_clean();
-                unsafe {
-                    let _ = DestroyWindow(self.hwnd);
-                }
-            }
-            Ok(false) => {
-                self.show_toast(self.lang.pick(
-                    "便携包校验通过并已下载，已在资源管理器中选中",
-                    "Verified update ZIP downloaded and highlighted in Explorer",
-                ));
-            }
-            Err(err) => {
-                self.show_toast(&format!(
-                    "{}: {err}",
-                    self.lang.pick("自动更新失败", "Auto-update failed")
-                ));
             }
         }
     }

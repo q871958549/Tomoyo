@@ -1,11 +1,11 @@
 {
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "100% open-source, low-memory native Rust launcher for Windows with Everything IPC, WASM sandbox, snippets, offline WinRT OCR, multi-engine translation, and WebView2 compatibility bridge.",
   "homepage": "https://github.com/q871958549/Tomoyo",
   "license": "MIT|Apache-2.0",
   "architecture": {
     "64bit": {
-      "url": "https://github.com/q871958549/Tomoyo/releases/download/v1.4.0/Tomoyo-v1.4.0-windows-x64-portable.zip",
+      "url": "https://github.com/q871958549/Tomoyo/releases/download/v1.4.1/Tomoyo-v1.4.1-windows-x64-portable.zip",
       "hash": "PLACEHOLDER_UPDATED_BY_RELEASE_SHA256SUMS"
     }
   },

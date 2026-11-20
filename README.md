@@ -11,7 +11,7 @@
   <a href="https://github.com/q871958549/Tomoyo/actions/workflows/ci.yml"><img src="https://github.com/q871958549/Tomoyo/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="LICENSE-MIT"><img src="https://img.shields.io/badge/license-MIT%20%2F%20Apache--2.0-blue.svg" alt="License" /></a>
   <img src="https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-0078D6.svg" alt="Windows" />
-  <img src="https://img.shields.io/badge/version-v1.4.0-7c6af7.svg" alt="Version" />
+  <img src="https://img.shields.io/badge/version-v1.4.1-7c6af7.svg" alt="Version" />
 </p>
 
 ---
@@ -39,17 +39,17 @@
 
 ---
 
-## 实测数据与自检阈值 (`v1.4.0` Release)
+## 实测数据与自检阈值 (`v1.4.1` Release)
 
 | 指标 | 实测记录 | 自检阈值 (`--strict-budget`) |
 |---|---|---|
-| `tomoyo.exe` 主程序体积 | **5.34 MB** (`5472.5 KB`) | — |
-| `tomoyo-webview-host.exe` 设置、剪贴板、多源翻译、OCR 审校与插件宿主 | **3.79 MB**（关闭即退出） | 0 MB 常驻 |
+| `tomoyo.exe` 主程序体积 | **5.45 MB** (`5581.0 KB`) | — |
+| `tomoyo-webview-host.exe` 设置、剪贴板、多源翻译、OCR 审校与插件宿主 | **3.88 MB**（关闭即退出） | 0 MB 常驻 |
 | `tomoyo-plugin-ocr.exe` 离线 WinRT OCR 插件 | **0.36 MB**（空闲 15 秒自动回收） | 0 MB 常驻 |
-| 休眠态 Working Set 内存占用 (`--self-test`) | **1.18–1.76 MB** | ≤ 2.0 MB |
-| 休眠态 Private Commit（含 406 应用/桌面条目索引、SQLite 与字体） | **21.45 MB** | ≤ 28.0 MB |
-| 100 轮查询 / 绘制 / 预览 / 休眠压测 Delta | **GDI `+0` · USER `+0` · Handles `+0` · Private `+0.01 MB`** | 句柄 0 增长 / 内存 ≤ +0.50 MB |
-| 源码规范检查（[编码规范](docs/CODING_STANDARDS.md) / [UI 规范](docs/UI_DESIGN_STANDARDS.md)） | **全仓 142 个源码文件均 ≤ 450 行** | ≤ 450 行/文件 |
+| 休眠态 Working Set 内存占用 (`--self-test`) | **1.49–1.52 MB** | ≤ 2.0 MB |
+| 休眠态 Private Commit（含 345 应用/桌面条目索引、SQLite 与字体） | **22.52 MB** | ≤ 28.0 MB |
+| 100 轮查询 / 绘制 / 预览 / 休眠压测 Delta | **GDI `+0` · USER `+0` · Handles `+0` · Private `+0.11 MB`** | 句柄 0 增长 / 内存 ≤ +0.50 MB |
+| 源码规范检查（[编码规范](docs/CODING_STANDARDS.md) / [UI 规范](docs/UI_DESIGN_STANDARDS.md)） | **全仓 147 个源码文件均 ≤ 450 行** | ≤ 450 行/文件 |
 
 ---
 

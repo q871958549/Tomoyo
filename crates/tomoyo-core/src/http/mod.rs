@@ -1,9 +1,12 @@
 //! Zero-bloat HTTPS GET/POST & streaming download helper built directly on Windows native `WinHTTP`.
 //!
 //! Uses the OS certificate store & automatic system proxy, follows HTTPS redirects,
+//! reads response headers (`ETag`, `Location`, `Content-Length`, `WINHTTP_OPTION_URL`),
 //! and enforces strict timeouts + size caps without pulling reqwest/hyper/tokio.
 
-use std::path::Path;
+mod download;
+
+pub use download::{http_download_to_file, http_download_to_file_with_progress};
 
 #[derive(Debug, Clone)]
 pub struct HttpResponse {
@@ -17,8 +20,24 @@ impl HttpResponse {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct HttpDetailedResponse {
+    pub status_code: u16,
+    pub body: Vec<u8>,
+    pub final_url: String,
+    pub etag: Option<String>,
+    pub location: Option<String>,
+    pub content_length: Option<u64>,
+}
+
+impl HttpDetailedResponse {
+    pub fn text_lossy(&self) -> String {
+        String::from_utf8_lossy(&self.body).into_owned()
+    }
+}
+
 #[cfg(windows)]
-struct WinHttpHandle(*mut std::ffi::c_void);
+pub(super) struct WinHttpHandle(pub(super) *mut std::ffi::c_void);
 
 #[cfg(windows)]
 impl Drop for WinHttpHandle {
@@ -32,20 +51,80 @@ impl Drop for WinHttpHandle {
 }
 
 #[cfg(windows)]
-struct OpenHttpStream {
-    _session: WinHttpHandle,
-    _conn: WinHttpHandle,
-    req: WinHttpHandle,
-    status_code: u16,
+pub(super) struct OpenHttpStream {
+    pub(super) _session: WinHttpHandle,
+    pub(super) _conn: WinHttpHandle,
+    pub(super) req: WinHttpHandle,
+    pub(super) status_code: u16,
+    pub(super) final_url: String,
+    pub(super) etag: Option<String>,
+    pub(super) location: Option<String>,
+    pub(super) content_length: Option<u64>,
 }
 
 #[cfg(windows)]
-fn open_http_stream(
+unsafe fn query_winhttp_string_header(req: *mut std::ffi::c_void, flag: u32) -> Option<String> {
+    use windows::core::PCWSTR;
+    use windows::Win32::Networking::WinHttp::WinHttpQueryHeaders;
+
+    let mut buf = [0u16; 1024];
+    let mut len_bytes = (buf.len() * 2) as u32;
+    let ok = unsafe {
+        WinHttpQueryHeaders(
+            req,
+            flag,
+            PCWSTR::null(),
+            Some(buf.as_mut_ptr() as *mut std::ffi::c_void),
+            &mut len_bytes,
+            std::ptr::null_mut(),
+        )
+    }
+    .is_ok();
+    if !ok || len_bytes == 0 {
+        return None;
+    }
+    let chars = (len_bytes as usize / 2).min(buf.len());
+    let s = String::from_utf16_lossy(&buf[..chars])
+        .trim_end_matches('\0')
+        .trim()
+        .to_string();
+    if s.is_empty() { None } else { Some(s) }
+}
+
+#[cfg(windows)]
+unsafe fn query_winhttp_final_url(req: *mut std::ffi::c_void) -> Option<String> {
+    use windows::Win32::Networking::WinHttp::{WinHttpQueryOption, WINHTTP_OPTION_URL};
+
+    let mut buf = [0u16; 1024];
+    let mut len_bytes = (buf.len() * 2) as u32;
+    let ok = unsafe {
+        WinHttpQueryOption(
+            req,
+            WINHTTP_OPTION_URL,
+            Some(buf.as_mut_ptr() as *mut std::ffi::c_void),
+            &mut len_bytes,
+        )
+    }
+    .is_ok();
+    if !ok || len_bytes == 0 {
+        return None;
+    }
+    let chars = (len_bytes as usize / 2).min(buf.len());
+    let s = String::from_utf16_lossy(&buf[..chars])
+        .trim_end_matches('\0')
+        .trim()
+        .to_string();
+    if s.is_empty() { None } else { Some(s) }
+}
+
+#[cfg(windows)]
+pub(super) fn open_http_stream(
     method: &str,
     url: &str,
     extra_headers: &[(&str, &str)],
     body_opt: Option<&[u8]>,
     timeout_ms: u32,
+    allow_redirects: bool,
 ) -> Result<OpenHttpStream, String> {
     use std::ffi::c_void;
     use windows::core::PCWSTR;
@@ -54,8 +133,9 @@ fn open_http_stream(
         WinHttpReceiveResponse, WinHttpSendRequest, WinHttpSetOption, WinHttpSetTimeouts,
         URL_COMPONENTS, WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY, WINHTTP_FLAG_SECURE,
         WINHTTP_OPEN_REQUEST_FLAGS, WINHTTP_OPTION_REDIRECT_POLICY,
-        WINHTTP_OPTION_REDIRECT_POLICY_ALWAYS, WINHTTP_QUERY_FLAG_NUMBER,
-        WINHTTP_QUERY_STATUS_CODE,
+        WINHTTP_OPTION_REDIRECT_POLICY_ALWAYS, WINHTTP_OPTION_REDIRECT_POLICY_NEVER,
+        WINHTTP_QUERY_CONTENT_LENGTH, WINHTTP_QUERY_ETAG, WINHTTP_QUERY_FLAG_NUMBER,
+        WINHTTP_QUERY_LOCATION, WINHTTP_QUERY_STATUS_CODE,
     };
 
     let url_w: Vec<u16> = url.encode_utf16().collect();
@@ -142,7 +222,12 @@ fn open_http_stream(
         }
         let req = WinHttpHandle(req_raw);
 
-        let policy_bytes = WINHTTP_OPTION_REDIRECT_POLICY_ALWAYS.to_ne_bytes();
+        let policy = if allow_redirects {
+            WINHTTP_OPTION_REDIRECT_POLICY_ALWAYS
+        } else {
+            WINHTTP_OPTION_REDIRECT_POLICY_NEVER
+        };
+        let policy_bytes = policy.to_ne_bytes();
         let _ = WinHttpSetOption(Some(req.0), WINHTTP_OPTION_REDIRECT_POLICY, Some(&policy_bytes));
 
         let mut hdr_str = String::from("Accept: application/vnd.github+json, application/json, */*\r\n");
@@ -176,18 +261,27 @@ fn open_http_stream(
             &mut status_len,
             std::ptr::null_mut(),
         );
+        let final_url = query_winhttp_final_url(req.0).unwrap_or_else(|| url.to_string());
+        let etag = query_winhttp_string_header(req.0, WINHTTP_QUERY_ETAG);
+        let location = query_winhttp_string_header(req.0, WINHTTP_QUERY_LOCATION);
+        let content_length = query_winhttp_string_header(req.0, WINHTTP_QUERY_CONTENT_LENGTH)
+            .and_then(|s| s.parse::<u64>().ok());
 
         Ok(OpenHttpStream {
             _session: session,
             _conn: conn,
             req,
             status_code: status_code as u16,
+            final_url,
+            etag,
+            location,
+            content_length,
         })
     }
 }
 
 #[cfg(windows)]
-fn read_stream_bounded(stream: OpenHttpStream, max_bytes: usize) -> HttpResponse {
+fn read_stream_bounded(stream: &OpenHttpStream, max_bytes: usize) -> Vec<u8> {
     use std::ffi::c_void;
     use windows::Win32::Networking::WinHttp::{WinHttpQueryDataAvailable, WinHttpReadData};
 
@@ -220,16 +314,14 @@ fn read_stream_bounded(stream: OpenHttpStream, max_bytes: usize) -> HttpResponse
             body.truncate(old_len + read as usize);
         }
     }
-    HttpResponse { status_code: stream.status_code, body }
+    body
 }
 
-/// Performs a bounded HTTPS/HTTP GET request in memory.
 #[cfg(windows)]
 pub fn http_get(url: &str, timeout_ms: u32, max_bytes: usize) -> Result<HttpResponse, String> {
     http_get_with_headers(url, &[], timeout_ms, max_bytes)
 }
 
-/// Performs a bounded HTTPS/HTTP GET request with custom headers.
 #[cfg(windows)]
 pub fn http_get_with_headers(
     url: &str,
@@ -237,11 +329,43 @@ pub fn http_get_with_headers(
     timeout_ms: u32,
     max_bytes: usize,
 ) -> Result<HttpResponse, String> {
-    let stream = open_http_stream("GET", url, headers, None, timeout_ms)?;
-    Ok(read_stream_bounded(stream, max_bytes))
+    let stream = open_http_stream("GET", url, headers, None, timeout_ms, true)?;
+    let body = read_stream_bounded(&stream, max_bytes);
+    Ok(HttpResponse { status_code: stream.status_code, body })
 }
 
-/// Performs a bounded HTTPS/HTTP POST request with custom headers and request body.
+#[cfg(windows)]
+pub fn http_get_detailed(
+    url: &str,
+    headers: &[(&str, &str)],
+    timeout_ms: u32,
+    max_bytes: usize,
+) -> Result<HttpDetailedResponse, String> {
+    let stream = open_http_stream("GET", url, headers, None, timeout_ms, true)?;
+    let body = read_stream_bounded(&stream, max_bytes);
+    Ok(HttpDetailedResponse {
+        status_code: stream.status_code,
+        body,
+        final_url: stream.final_url,
+        etag: stream.etag,
+        location: stream.location,
+        content_length: stream.content_length,
+    })
+}
+
+#[cfg(windows)]
+pub fn http_head_redirect(url: &str, timeout_ms: u32) -> Result<HttpDetailedResponse, String> {
+    let stream = open_http_stream("HEAD", url, &[], None, timeout_ms, false)?;
+    Ok(HttpDetailedResponse {
+        status_code: stream.status_code,
+        body: Vec::new(),
+        final_url: stream.final_url,
+        etag: stream.etag,
+        location: stream.location,
+        content_length: stream.content_length,
+    })
+}
+
 #[cfg(windows)]
 pub fn http_post_bytes(
     url: &str,
@@ -250,63 +374,9 @@ pub fn http_post_bytes(
     timeout_ms: u32,
     max_bytes: usize,
 ) -> Result<HttpResponse, String> {
-    let stream = open_http_stream("POST", url, headers, Some(body), timeout_ms)?;
-    Ok(read_stream_bounded(stream, max_bytes))
-}
-
-/// Streams an HTTPS/HTTP download directly to `dest` using a 16 KB buffer.
-#[cfg(windows)]
-pub fn http_download_to_file(
-    url: &str,
-    dest: &Path,
-    timeout_ms: u32,
-    max_bytes: u64,
-) -> Result<u64, String> {
-    use std::ffi::c_void;
-    use std::io::{BufWriter, Write};
-    use windows::Win32::Networking::WinHttp::{WinHttpQueryDataAvailable, WinHttpReadData};
-
-    let stream = open_http_stream("GET", url, &[], None, timeout_ms)?;
-    if stream.status_code != 200 {
-        return Err(format!("HTTP download failed: status {}", stream.status_code));
-    }
-    if let Some(parent) = dest.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    let file = std::fs::File::create(dest).map_err(|e| format!("create `{}`: {e}", dest.display()))?;
-    let mut writer = BufWriter::with_capacity(16 * 1024, file);
-    let mut buf = [0u8; 16 * 1024];
-    let mut total: u64 = 0;
-
-    unsafe {
-        loop {
-            let mut avail: u32 = 0;
-            if WinHttpQueryDataAvailable(stream.req.0, &mut avail).is_err() || avail == 0 {
-                break;
-            }
-            let rem = max_bytes.saturating_sub(total);
-            if rem == 0 {
-                return Err(format!("Download exceeded safety ceiling ({max_bytes} bytes)"));
-            }
-            let to_read = (avail as usize).min(buf.len()).min(rem as usize);
-            let mut read: u32 = 0;
-            if WinHttpReadData(
-                stream.req.0,
-                buf.as_mut_ptr() as *mut c_void,
-                to_read as u32,
-                &mut read,
-            )
-            .is_err()
-                || read == 0
-            {
-                break;
-            }
-            writer.write_all(&buf[..read as usize]).map_err(|e| format!("write error: {e}"))?;
-            total += read as u64;
-        }
-    }
-    writer.flush().map_err(|e| format!("flush error: {e}"))?;
-    Ok(total)
+    let stream = open_http_stream("POST", url, headers, Some(body), timeout_ms, true)?;
+    let out = read_stream_bounded(&stream, max_bytes);
+    Ok(HttpResponse { status_code: stream.status_code, body: out })
 }
 
 #[cfg(not(windows))]
@@ -325,6 +395,21 @@ pub fn http_get_with_headers(
 }
 
 #[cfg(not(windows))]
+pub fn http_get_detailed(
+    _url: &str,
+    _headers: &[(&str, &str)],
+    _timeout_ms: u32,
+    _max_bytes: usize,
+) -> Result<HttpDetailedResponse, String> {
+    Err("WinHTTP is only available on Windows".into())
+}
+
+#[cfg(not(windows))]
+pub fn http_head_redirect(_url: &str, _timeout_ms: u32) -> Result<HttpDetailedResponse, String> {
+    Err("WinHTTP is only available on Windows".into())
+}
+
+#[cfg(not(windows))]
 pub fn http_post_bytes(
     _url: &str,
     _headers: &[(&str, &str)],
@@ -333,14 +418,4 @@ pub fn http_post_bytes(
     _max_bytes: usize,
 ) -> Result<HttpResponse, String> {
     Err("WinHTTP is only available on Windows".into())
-}
-
-#[cfg(not(windows))]
-pub fn http_download_to_file(
-    _url: &str,
-    _dest: &Path,
-    _timeout_ms: u32,
-    _max_bytes: u64,
-) -> Result<u64, String> {
-    Err("WinHTTP download is only available on Windows".into())
 }
