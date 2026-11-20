@@ -3,18 +3,20 @@
 use crate::bridge::handle_host_message;
 use crate::db::PluginDb;
 use crate::shim_js::build_init_script;
-use crate::store::fetch_store_catalog_json;
+use crate::single_instance::{
+    acquire_or_activate_settings, EPHEMERAL_WINDOW_CLASS, SETTINGS_WINDOW_CLASS,
+    WM_APP_ACTIVATE_SETTINGS,
+};
+use crate::win_workers::{
+    spawn_install_update_worker, spawn_store_worker, spawn_update_worker,
+};
 use crate::{assemble_settings_html, build_settings_init_script, LaunchArgs};
 use std::cell::RefCell;
 use std::ffi::c_void;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::mpsc;
-use tomoyo_core::{
-    download_and_verify_release_asset, fetch_latest_github_release,
-    launch_verified_update_installer, locate_fonts_dir, ReleaseInfo, TomoyoConfig, UpdateStatus,
-    CURRENT_VERSION,
-};
+use tomoyo_core::locate_fonts_dir;
 use webview2_com::Microsoft::Web::WebView2::Win32::{
     CreateCoreWebView2EnvironmentWithOptions, ICoreWebView2, ICoreWebView2Controller,
     ICoreWebView2_3, COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_ALLOW,
@@ -35,12 +37,12 @@ use windows::Win32::UI::HiDpi::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetClientRect, GetMessageW,
-    GetSystemMetrics, GetWindowLongPtrW, LoadCursorW, LoadIconW, PostMessageW, PostQuitMessage,
-    RegisterClassW, SendMessageW, SetWindowLongPtrW, SetWindowPos, SetWindowTextW, ShowWindow,
-    TranslateMessage, GWLP_USERDATA, HWND_NOTOPMOST, HWND_TOPMOST, ICON_BIG, ICON_SMALL, IDC_ARROW,
-    MSG, SM_CXSCREEN, SM_CYSCREEN, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
-    SWP_NOZORDER, SW_SHOW, WM_CLOSE, WM_DESTROY, WM_SETICON, WM_SIZE, WNDCLASSW,
-    WS_OVERLAPPEDWINDOW, WS_VISIBLE,
+    GetSystemMetrics, GetWindowLongPtrW, IsIconic, LoadCursorW, LoadIconW, PostMessageW,
+    PostQuitMessage, RegisterClassW, SendMessageW, SetForegroundWindow, SetWindowLongPtrW,
+    SetWindowPos, SetWindowTextW, ShowWindow, TranslateMessage, GWLP_USERDATA, HWND_NOTOPMOST,
+    HWND_TOPMOST, ICON_BIG, ICON_SMALL, IDC_ARROW, MSG, SM_CXSCREEN, SM_CYSCREEN,
+    SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SW_RESTORE, SW_SHOW,
+    WM_CLOSE, WM_DESTROY, WM_SETICON, WM_SIZE, WNDCLASSW, WS_OVERLAPPEDWINDOW, WS_VISIBLE,
 };
 
 const WM_APP_WEBVIEW_EVENT: u32 = 0x8000 + 31;
@@ -117,6 +119,16 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             }
             LRESULT(0)
         }
+        WM_APP_ACTIVATE_SETTINGS => {
+            unsafe {
+                if IsIconic(hwnd).as_bool() {
+                    let _ = ShowWindow(hwnd, SW_RESTORE);
+                }
+                let _ = ShowWindow(hwnd, SW_SHOW);
+                let _ = SetForegroundWindow(hwnd);
+            }
+            LRESULT(0)
+        }
         WM_CLOSE => {
             if !ptr.is_null() {
                 let st = unsafe { &mut *ptr };
@@ -137,6 +149,15 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
 }
 
 pub fn run_windows_host(opts: LaunchArgs) {
+    let _settings_guard = if opts.settings_mode {
+        match acquire_or_activate_settings() {
+            Some(guard) => Some(guard),
+            None => return,
+        }
+    } else {
+        None
+    };
+
     unsafe {
         let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
         let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
@@ -144,7 +165,11 @@ pub fn run_windows_host(opts: LaunchArgs) {
 
     let hinst = unsafe { GetModuleHandleW(None).unwrap() };
     let embedded_icon = unsafe { LoadIconW(Some(hinst.into()), PCWSTR(1 as *const u16)).ok() };
-    let cls = w!("TomoyoEphemeralWebViewHost");
+    let cls = if opts.settings_mode {
+        SETTINGS_WINDOW_CLASS
+    } else {
+        EPHEMERAL_WINDOW_CLASS
+    };
     unsafe {
         let wc = WNDCLASSW {
             lpfnWndProc: Some(wndproc),
@@ -286,13 +311,13 @@ pub fn run_windows_host(opts: LaunchArgs) {
                                                 }
                                             }
                                             if let Some(repo) = act.async_check_updates {
-                                                spawn_update_worker(repo, tx_cb.clone(), hwnd_raw);
+                                                spawn_update_worker(repo, tx_cb.clone(), hwnd_raw, WM_APP_WEBVIEW_EVENT);
                                             }
                                             if let Some(rel) = act.async_install_update {
-                                                spawn_install_update_worker(rel, tx_cb.clone(), hwnd_raw);
+                                                spawn_install_update_worker(rel, tx_cb.clone(), hwnd_raw, WM_APP_WEBVIEW_EVENT);
                                             }
                                             if let Some(sources) = act.async_fetch_store {
-                                                spawn_store_worker(sources, tx_cb.clone(), hwnd_raw);
+                                                spawn_store_worker(sources, tx_cb.clone(), hwnd_raw, WM_APP_WEBVIEW_EVENT);
                                             }
                                             if act.should_close {
                                                 let _ = PostMessageW(Some(hwnd), WM_CLOSE, WPARAM(0), LPARAM(0));
@@ -357,74 +382,6 @@ unsafe fn toggle_pin_topmost(hwnd: HWND, st: &mut HostWindowState) {
         let tw = HSTRING::from(new_title);
         let _ = SetWindowTextW(hwnd, PCWSTR(tw.as_ptr()));
     }
-}
-
-fn spawn_update_worker(repo: String, tx: mpsc::Sender<String>, hwnd_raw: usize) {
-    let _ = std::thread::Builder::new()
-        .name("tomoyo-settings-updater".into())
-        .spawn(move || {
-            let st = fetch_latest_github_release(&repo, CURRENT_VERSION);
-            if matches!(st, UpdateStatus::UpToDate { .. } | UpdateStatus::Available { .. }) {
-                let mut cfg = TomoyoConfig::load_or_create();
-                cfg.update.last_checked_unix = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.as_secs())
-                    .unwrap_or(0);
-                let _ = cfg.save();
-            }
-            let evt = serde_json::json!({ "event": "update_status", "status": st }).to_string();
-            if tx.send(evt).is_ok() {
-                unsafe {
-                    let _ = PostMessageW(Some(HWND(hwnd_raw as *mut c_void)), WM_APP_WEBVIEW_EVENT, WPARAM(0), LPARAM(0));
-                }
-            }
-        });
-}
-
-fn spawn_install_update_worker(rel: ReleaseInfo, tx: mpsc::Sender<String>, hwnd_raw: usize) {
-    let _ = std::thread::Builder::new()
-        .name("tomoyo-settings-installer".into())
-        .spawn(move || {
-            let res = download_and_verify_release_asset(&rel)
-                .and_then(|path| launch_verified_update_installer(&path));
-            let evt = match res {
-                Ok(started_exe) => serde_json::json!({
-                    "event": "update_install_result",
-                    "ok": true,
-                    "launched_installer": started_exe,
-                    "message": if started_exe {
-                        "SHA-256 校验通过，正在启动静默覆盖安装并重启更新..."
-                    } else {
-                        "SHA-256 校验通过，已在资源管理器选中便携包"
-                    }
-                }),
-                Err(e) => serde_json::json!({
-                    "event": "update_install_result",
-                    "ok": false,
-                    "launched_installer": false,
-                    "message": e
-                }),
-            }
-            .to_string();
-            if tx.send(evt).is_ok() {
-                unsafe {
-                    let _ = PostMessageW(Some(HWND(hwnd_raw as *mut c_void)), WM_APP_WEBVIEW_EVENT, WPARAM(0), LPARAM(0));
-                }
-            }
-        });
-}
-
-fn spawn_store_worker(sources: Vec<String>, tx: mpsc::Sender<String>, hwnd_raw: usize) {
-    let _ = std::thread::Builder::new()
-        .name("tomoyo-settings-store".into())
-        .spawn(move || {
-            let evt = fetch_store_catalog_json(&sources);
-            if tx.send(evt).is_ok() {
-                unsafe {
-                    let _ = PostMessageW(Some(HWND(hwnd_raw as *mut c_void)), WM_APP_WEBVIEW_EVENT, WPARAM(0), LPARAM(0));
-                }
-            }
-        });
 }
 
 fn to_file_url(entry: &str) -> String {

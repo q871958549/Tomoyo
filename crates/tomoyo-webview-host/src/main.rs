@@ -11,9 +11,13 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 mod bridge;
 mod db;
 mod shim_js;
+#[cfg(windows)]
+mod single_instance;
 mod store;
 #[cfg(windows)]
 mod win_host;
+#[cfg(windows)]
+mod win_workers;
 
 use bridge::handle_host_message;
 use db::PluginDb;

@@ -5,6 +5,9 @@ use tomoyo_plugin_host::JobGuard;
 use tomoyo_protocol::SystemCommandKind;
 
 pub fn spawn_settings_window(parent_hwnd: isize, theme_name: &str) -> Result<(), String> {
+    if try_focus_existing_settings_window() {
+        return Ok(());
+    }
     let host_exe = locate_webview_host()?;
     let mut cmd = Command::new(&host_exe);
     cmd.args([
@@ -28,6 +31,43 @@ pub fn spawn_settings_window(parent_hwnd: isize, theme_name: &str) -> Result<(),
             let _ = child.wait();
         });
     Ok(())
+}
+
+#[cfg(windows)]
+fn try_focus_existing_settings_window() -> bool {
+    use windows::core::{w, PCWSTR};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        AllowSetForegroundWindow, FindWindowW, GetWindowThreadProcessId, IsIconic, PostMessageW,
+        SetForegroundWindow, ShowWindow, SW_RESTORE, SW_SHOW,
+    };
+
+    // Must match SETTINGS_WINDOW_CLASS and WM_APP_ACTIVATE_SETTINGS in tomoyo-webview-host.
+    const WM_APP_ACTIVATE_SETTINGS: u32 = 0x8000 + 32;
+    unsafe {
+        let Ok(hwnd) = FindWindowW(w!("TomoyoSettingsCenterWindowClass"), PCWSTR::null()) else {
+            return false;
+        };
+        if hwnd.is_invalid() {
+            return false;
+        }
+        let mut pid = 0u32;
+        let _ = GetWindowThreadProcessId(hwnd, Some(&mut pid));
+        if pid != 0 {
+            let _ = AllowSetForegroundWindow(pid);
+        }
+        if IsIconic(hwnd).as_bool() {
+            let _ = ShowWindow(hwnd, SW_RESTORE);
+        }
+        let _ = ShowWindow(hwnd, SW_SHOW);
+        let _ = SetForegroundWindow(hwnd);
+        let _ = PostMessageW(
+            Some(hwnd),
+            WM_APP_ACTIVATE_SETTINGS,
+            Default::default(),
+            Default::default(),
+        );
+        true
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
