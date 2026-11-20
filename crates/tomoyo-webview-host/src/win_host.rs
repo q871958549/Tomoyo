@@ -46,6 +46,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 
 const WM_APP_WEBVIEW_EVENT: u32 = 0x8000 + 31;
+const WM_APP_PICK_FOLDER: u32 = 0x8000 + 33;
 
 struct HostWindowState {
     controller: Option<ICoreWebView2Controller>,
@@ -53,6 +54,7 @@ struct HostWindowState {
     event_rx: mpsc::Receiver<String>,
     base_title: String,
     is_topmost: bool,
+    picking_folder: bool,
 }
 
 pub fn apply_host_window_theme(hwnd: HWND, theme: &str) {
@@ -114,6 +116,21 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     if let Some(wv) = &st.webview {
                         let jw = HSTRING::from(&json);
                         let _ = unsafe { wv.PostWebMessageAsJson(PCWSTR(jw.as_ptr())) };
+                    }
+                }
+            }
+            LRESULT(0)
+        }
+        WM_APP_PICK_FOLDER => {
+            if !ptr.is_null() {
+                let st = unsafe { &mut *ptr };
+                if !st.picking_folder {
+                    st.picking_folder = true;
+                    let reply = crate::folder_picker::pick_scan_folder(hwnd);
+                    st.picking_folder = false;
+                    if let Some(wv) = &st.webview {
+                        let rw = HSTRING::from(&reply);
+                        let _ = unsafe { wv.PostWebMessageAsJson(PCWSTR(rw.as_ptr())) };
                     }
                 }
             }
@@ -221,6 +238,7 @@ pub fn run_windows_host(opts: LaunchArgs) {
         event_rx,
         base_title: opts.title.clone(),
         is_topmost: false,
+        picking_folder: false,
     });
     let state_ptr = &mut *state as *mut HostWindowState;
     unsafe {
@@ -303,6 +321,10 @@ pub fn run_windows_host(opts: LaunchArgs) {
                                             }
                                             if act.toggle_topmost {
                                                 toggle_pin_topmost(hwnd, &mut *state_ptr);
+                                            }
+                                            if act.pick_folder {
+                                                // Defer modal IFileOpenDialog out of WebMessageReceived to avoid WebView2 COM reentrancy.
+                                                let _ = PostMessageW(Some(hwnd), WM_APP_PICK_FOLDER, WPARAM(0), LPARAM(0));
                                             }
                                             if let Some(reply) = &act.reply_json {
                                                 if let Some(wv) = &wv_sender {

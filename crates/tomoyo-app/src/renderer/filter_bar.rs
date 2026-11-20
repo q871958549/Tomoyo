@@ -7,7 +7,7 @@ use tomoyo_core::Lang;
 use tomoyo_protocol::SearchFilter;
 use windows::Win32::Graphics::Gdi::{GdiFlush, HDC, DT_CENTER};
 
-pub const FILTER_BAR_HEIGHT_DIP: i32 = 34;
+pub const FILTER_BAR_HEIGHT_DIP: i32 = 38;
 
 #[derive(Debug, Clone, Copy)]
 pub struct FilterChipHitbox {
@@ -18,7 +18,7 @@ pub struct FilterChipHitbox {
     pub y1: f32,
 }
 
-/// Computes deterministic horizontal chip layout inside `[12 .. list_w_dip - 12]` at `header_h`.
+/// Computes deterministic horizontal chip layout inside `[14 .. list_w_dip - 12]` at `header_h`.
 pub fn compute_filter_hitboxes(
     list_w_dip: f32,
     header_h: f32,
@@ -26,8 +26,8 @@ pub fn compute_filter_hitboxes(
 ) -> Vec<FilterChipHitbox> {
     let zh = lang == Lang::Zh;
     let max_x = list_w_dip - 12.0;
-    let y0 = header_h + 5.0;
-    let y1 = header_h + FILTER_BAR_HEIGHT_DIP as f32 - 5.0;
+    let y0 = header_h + 7.0;
+    let y1 = header_h + FILTER_BAR_HEIGHT_DIP as f32 - 7.0;
     let mut x = 14.0f32;
     let mut out = Vec::with_capacity(SearchFilter::ALL.len());
 
@@ -35,9 +35,9 @@ pub fn compute_filter_hitboxes(
         let label = filter.label(zh);
         let text_w: f32 = label
             .chars()
-            .map(|c| if c.is_ascii() { 7.4 } else { 12.5 })
+            .map(|c| if c.is_ascii() { 7.5 } else { 12.8 })
             .sum();
-        let pill_w = (text_w + 18.0).clamp(38.0, 74.0);
+        let pill_w = (text_w + 22.0).clamp(44.0, 82.0);
         if x + pill_w > max_x {
             break;
         }
@@ -67,14 +67,15 @@ pub fn paint_filter_bar_sdf(
     for hb in boxes {
         let is_active = hb.filter == active;
         let is_hover = hovered == Some(hb.filter);
-        let bg = if is_active {
-            pal.accent
+        let (bg, border) = if is_active {
+            (pal.chip_active_bg, pal.chip_active_border)
         } else if is_hover {
-            pal.card_sel
+            (pal.chip_hover_bg, pal.chip_hover_border)
         } else {
-            pal.pill_bg
+            (pal.chip_bg, pal.chip_border)
         };
-        canvas.fill_rounded_rect(hb.x0, hb.y0, hb.x1, hb.y1, 6.0, bg);
+        canvas.fill_rounded_rect(hb.x0, hb.y0, hb.x1, hb.y1, 7.0, bg);
+        canvas.stroke_rounded_rect(hb.x0, hb.y0, hb.x1, hb.y1, 7.0, border);
     }
 }
 
@@ -95,16 +96,16 @@ pub unsafe fn paint_filter_bar_gdi(
         let _ = GdiFlush();
         for hb in boxes {
             let is_active = hb.filter == active;
-            let col = if is_active {
-                pal.on_accent
+            let (font, col) = if is_active {
+                (fonts.chip_active, pal.chip_active_text)
             } else if hovered == Some(hb.filter) {
-                pal.text_primary
+                (fonts.chip, pal.chip_hover_text)
             } else {
-                pal.text_muted
+                (fonts.chip, pal.chip_text)
             };
             draw_text_gdi(
                 dc,
-                fonts.badge,
+                font,
                 col,
                 hb.filter.label(zh),
                 dip_rect(hb.x0, hb.y0, hb.x1, hb.y1, scale),

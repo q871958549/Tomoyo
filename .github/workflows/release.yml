@@ -91,9 +91,9 @@ jobs:
           $lines | Out-File -Encoding ascii "dist/SHA256SUMS.txt"
           Get-Content "dist/SHA256SUMS.txt"
 
-          $scoopOut = (Get-Content "packaging/scoop/tomoyo.json" -Raw).Replace("PLACEHOLDER_UPDATED_BY_RELEASE_SHA256SUMS", $zipSha).Replace("1.0.0", $ver)
+          $scoopOut = [regex]::Replace((Get-Content "packaging/scoop/tomoyo.json" -Raw).Replace("PLACEHOLDER_UPDATED_BY_RELEASE_SHA256SUMS", $zipSha), "\d+\.\d+\.\d+", $ver)
           Set-Content -Path "dist/tomoyo.scoop.json" -Value $scoopOut -Encoding UTF8
-          $wingetOut = (Get-Content "packaging/winget/TomoyoContributors.Tomoyo.installer.yaml" -Raw).Replace("PLACEHOLDER_UPDATED_BY_RELEASE_SHA256SUMS", $setupSha).Replace("1.0.0", $ver)
+          $wingetOut = [regex]::Replace((Get-Content "packaging/winget/TomoyoContributors.Tomoyo.installer.yaml" -Raw).Replace("PLACEHOLDER_UPDATED_BY_RELEASE_SHA256SUMS", $setupSha), "1\.\d+\.\d+", $ver)
           Set-Content -Path "dist/TomoyoContributors.Tomoyo.installer.yaml" -Value $wingetOut -Encoding UTF8
 
       - name: Publish GitHub Release

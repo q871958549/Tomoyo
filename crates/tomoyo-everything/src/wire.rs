@@ -63,9 +63,9 @@ pub fn pack_query2w_payload(
     payload
 }
 
-/// Parses a raw `EVERYTHING_IPC_LIST2` reply buffer with strict bounds checking.
+/// Parses a raw `EVERYTHING_IPC_LIST2` reply buffer (20-byte header + 8-byte item headers).
 pub fn parse_list2_buffer(buf: &[u8]) -> Result<EverythingResponse, EverythingError> {
-    if buf.len() < 28 {
+    if buf.len() < 20 {
         return Err(EverythingError::Ipc(format!(
             "reply buffer too short: {} bytes",
             buf.len()
@@ -112,19 +112,19 @@ pub fn parse_list2_buffer(buf: &[u8]) -> Result<EverythingResponse, EverythingEr
         Ok(String::from_utf16_lossy(&units))
     };
 
-    let total_folders = read_u32(0)?;
-    let total_files = read_u32(4)?;
-    let total_items = read_u32(8)?;
-    let num_items = read_u32(12)?;
-    let _offset = read_u32(16)?;
-    let request_flags = read_u32(20)?;
-    let _sort_type = read_u32(24)?;
+    // Real Voidtools EVERYTHING_IPC_LIST2 header is 5 DWORDs (20 bytes):
+    // totitems, numitems, offset, request_flags, sort_type; items[] start at offset 20.
+    let total_items = read_u32(0)?;
+    let num_items = read_u32(4)?;
+    let _offset = read_u32(8)?;
+    let request_flags = read_u32(12)?;
+    let _sort_type = read_u32(16)?;
 
     let safe_count = (num_items as usize).min(1000);
     let mut entries = Vec::with_capacity(safe_count);
 
     for i in 0..safe_count {
-        let item_header_offset = 28 + i * 8;
+        let item_header_offset = 20 + i * 8;
         if item_header_offset + 8 > buf.len() {
             break;
         }
@@ -211,6 +211,9 @@ pub fn parse_list2_buffer(buf: &[u8]) -> Result<EverythingResponse, EverythingEr
             attributes,
         });
     }
+
+    let total_folders = entries.iter().filter(|e| e.is_folder).count() as u32;
+    let total_files = entries.len() as u32 - total_folders;
 
     Ok(EverythingResponse {
         total_folders,

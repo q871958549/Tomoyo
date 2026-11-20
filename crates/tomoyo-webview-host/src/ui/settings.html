@@ -13,7 +13,7 @@
       <div class="logo-tile">T</div>
       <div>
         <div class="logo-title">Tomoyo</div>
-        <div class="logo-sub" data-i18n="brand_sub">设置中心 · 零后台常驻</div>
+        <div class="logo-sub" data-i18n="brand_sub">设置中心 · 按需运行</div>
       </div>
     </div>
     <nav>
@@ -21,12 +21,12 @@
       <button data-tab="appearance" data-i18n="nav_appearance">外观与窗口</button>
       <button data-tab="search" data-i18n="nav_search">应用、文件与剪贴板</button>
       <button data-tab="web" data-i18n="nav_web">快捷网页搜索</button>
-      <button data-tab="store" data-i18n="nav_store">插件市场</button>
+      <button data-tab="store" data-i18n="nav_store">插件清单</button>
       <button data-tab="plugins" data-i18n="nav_plugins">已安装与路径</button>
       <button data-tab="updates" data-i18n="nav_updates">检查更新与关于</button>
     </nav>
     <div class="sidebar-foot" data-i18n="sidebar_foot">
-      所有修改即时自动保存并同步主窗口。关闭窗口或按 Esc 即彻底退出释放 100% WebView 内存。
+      所有设置修改自动校验保存并同步主窗口。关闭窗口或按 Esc 即退出释放 WebView 进程内存。
     </div>
   </aside>
 
@@ -35,12 +35,12 @@
       <!-- GENERAL -->
       <section id="tab-general" class="active">
         <h2 data-i18n="h_general">常规设置</h2>
-        <p class="lead" data-i18n="lead_general">界面语言、快捷键自动录入、开机自启与后台反泄露休眠策略。</p>
+        <p class="lead" data-i18n="lead_general">界面语言、快捷键录入、开机自启与休眠回收策略。</p>
         <div class="card">
           <div class="row">
             <div>
               <div class="label-title" data-i18n="lbl_lang">界面语言</div>
-              <div class="label-desc" data-i18n="desc_lang">默认简体中文，完整适配英文，切换即时生效</div>
+              <div class="label-desc" data-i18n="desc_lang">支持简体中文与英文切换，修改即时生效</div>
             </div>
             <div class="seg">
               <button id="lang-zh" onclick="setLanguage('zh')">简体中文</button>
@@ -50,7 +50,7 @@
           <div class="row">
             <div>
               <div class="label-title" data-i18n="lbl_hotkey">全局呼出快捷键</div>
-              <div class="label-desc" data-i18n="desc_hotkey">点击右侧录入框，直接按下想要的组合键即可自动录入</div>
+              <div class="label-desc" data-i18n="desc_hotkey">点击右侧录入框直接按下组合键，或从预设选择</div>
             </div>
             <div class="hotkey-box">
               <div id="hotkey-recorder" class="hotkey-recorder" tabindex="0"></div>
@@ -73,7 +73,7 @@
           <div class="row">
             <div>
               <div class="label-title" data-i18n="lbl_hibernate">隐藏后自动休眠延迟</div>
-              <div class="label-desc" data-i18n="desc_hibernate">超时自动释放绘图缓存、图标、SQLite 缓存并 Trim 内存</div>
+              <div class="label-desc" data-i18n="desc_hibernate">超时释放绘图表面、图标与 SQLite 缓存并整理内存</div>
             </div>
             <div class="range-wrap">
               <input id="hibernate" type="range" min="5" max="120" step="5"
@@ -83,15 +83,15 @@
           </div>
           <div class="row">
             <div>
-              <div class="label-title" data-i18n="lbl_autopreview">自动显示右侧实时预览面板 (Ctrl+P)</div>
-              <div class="label-desc" data-i18n="desc_autopreview">选中文件、剪贴板或插件卡片时自动展开右侧预览</div>
+              <div class="label-title" data-i18n="lbl_autopreview">自动显示右侧预览面板 (Ctrl+P)</div>
+              <div class="label-desc" data-i18n="desc_autopreview">选中文件、剪贴板或插件条目时展开右侧预览</div>
             </div>
             <input id="auto_preview" type="checkbox" onchange="scheduleAutoSave(0)" />
           </div>
           <div class="row">
             <div>
               <div class="label-title" data-i18n="lbl_filter_bar">显示搜索结果分组筛选栏 (Ctrl+Tab)</div>
-              <div class="label-desc" data-i18n="desc_filter_bar">支持一键筛选 应用 / 文件夹 / PDF / Excel / Word / PPT / 图片 / 压缩</div>
+              <div class="label-desc" data-i18n="desc_filter_bar">按应用 / 文件夹 / PDF / Excel / Word / PPT / 图片 / 压缩筛选</div>
             </div>
             <input id="show_filter_bar" type="checkbox" onchange="scheduleAutoSave(0)" />
           </div>
@@ -101,33 +101,33 @@
       <!-- APPEARANCE & WINDOW -->
       <section id="tab-appearance">
         <h2 data-i18n="h_appearance">外观与窗口尺寸</h2>
-        <p class="lead" data-i18n="lead_appearance">支持现代白瓷光、深空黑曜石、午夜蓝三套主题，标题栏与滚动条即时同步切换。</p>
+        <p class="lead" data-i18n="lead_appearance">提供浅色、深色与午夜蓝三套主题，标题栏与菜单即时同步。</p>
         <div class="card">
           <div class="label-title" data-i18n="lbl_theme">主题预设</div>
           <div class="themes-grid">
             <div class="theme-card" data-theme="light" onclick="pickTheme('light', true)">
               <div class="swatch" style="background:#f8f9fc">
-                <div class="swatch-dot" style="background:#181c28"></div>
-                <div class="swatch-bar" style="background:#181c28"></div>
+                <div class="swatch-dot" style="background:#3b5bdb"></div>
+                <div class="swatch-bar" style="background:#1e293b"></div>
               </div>
-              <div class="label-title" data-i18n="thm_light">现代白瓷光</div>
-              <div class="label-desc" data-i18n="thm_light_d">纯净瓷白，匹配现代白图标</div>
+              <div class="label-title" data-i18n="thm_light">浅色 (Light)</div>
+              <div class="label-desc" data-i18n="thm_light_d">清爽浅灰白底色，适合日间办公</div>
             </div>
             <div class="theme-card" data-theme="dark" onclick="pickTheme('dark', true)">
               <div class="swatch" style="background:#16161e">
                 <div class="swatch-dot" style="background:#7c6af7"></div>
                 <div class="swatch-bar" style="background:#f3f4f8"></div>
               </div>
-              <div class="label-title" data-i18n="thm_dark">深空黑曜石</div>
-              <div class="label-desc" data-i18n="thm_dark_d">默认高对比深色主题</div>
+              <div class="label-title" data-i18n="thm_dark">深色 (Dark)</div>
+              <div class="label-desc" data-i18n="thm_dark_d">标准高对比深灰背景</div>
             </div>
             <div class="theme-card" data-theme="midnight" onclick="pickTheme('midnight', true)">
               <div class="swatch" style="background:#0e101a">
                 <div class="swatch-dot" style="background:#6366f1"></div>
                 <div class="swatch-bar" style="background:#cbd5e1"></div>
               </div>
-              <div class="label-title" data-i18n="thm_mid">深邃午夜蓝</div>
-              <div class="label-desc" data-i18n="thm_mid_d">冷调深靛蓝专注模式</div>
+              <div class="label-title" data-i18n="thm_mid">午夜蓝 (Midnight)</div>
+              <div class="label-desc" data-i18n="thm_mid_d">偏冷色调深蓝背景</div>
             </div>
           </div>
         </div>
@@ -136,7 +136,7 @@
           <div class="row">
             <div>
               <div class="label-title" data-i18n="lbl_width">主列表宽度</div>
-              <div class="label-desc" data-i18n="desc_width">也可直接在主窗口左右边缘自由拖拽调整</div>
+              <div class="label-desc" data-i18n="desc_width">也可直接拖拽主窗口左右边缘调节</div>
             </div>
             <div class="range-wrap">
               <input id="win_width" type="range" min="520" max="1280" step="20"
@@ -147,7 +147,7 @@
           <div class="row">
             <div>
               <div class="label-title" data-i18n="lbl_rows">最大可见结果行数</div>
-              <div class="label-desc" data-i18n="desc_rows">也可直接在主窗口上下边缘拖拽自由增减高度</div>
+              <div class="label-desc" data-i18n="desc_rows">也可直接拖拽主窗口上下边缘增减高度</div>
             </div>
             <div class="range-wrap">
               <input id="win_rows" type="range" min="4" max="16" step="1"
@@ -158,7 +158,7 @@
           <div class="row">
             <div>
               <div class="label-title" data-i18n="lbl_preview_w">右侧预览区宽度</div>
-              <div class="label-desc" data-i18n="desc_preview_w">也可直接拖拽主窗口中间的竖向分割线调节</div>
+              <div class="label-desc" data-i18n="desc_preview_w">也可直接拖拽主窗口中间分割线调节</div>
             </div>
             <div class="range-wrap">
               <input id="win_preview" type="range" min="220" max="560" step="10"
@@ -179,51 +179,70 @@
       <!-- APPS, EVERYTHING & CLIPBOARD -->
       <section id="tab-search">
         <h2 data-i18n="h_search">应用扫描、Everything 与剪贴板</h2>
-        <p class="lead" data-i18n="lead_search">配置桌面整理与绿色软件目录、Everything 毫秒检索及 SQLite 剪贴板上限。</p>
+        <p class="lead" data-i18n="lead_search">通过受控组件配置扫描目录、层级、Everything 条数与剪贴板上限。</p>
         <div class="card">
           <div class="row">
             <div>
               <div class="label-title" data-i18n="lbl_apps_org">自动识别桌面整理软件目录（DeskBox 等）</div>
-              <div class="label-desc" data-i18n="desc_apps_org">解决桌面图标被整理工具移动后搜不到桌面应用的问题</div>
+              <div class="label-desc" data-i18n="desc_apps_org">自动扫描桌面整理软件托管的应用快捷方式目录</div>
             </div>
             <input id="apps_org" type="checkbox" onchange="scheduleAutoSave(0)" />
           </div>
           <div class="row">
             <div>
               <div class="label-title" data-i18n="lbl_apps_depth">自定义目录扫描深度</div>
-              <div class="label-desc" data-i18n="desc_apps_depth">扫描自定义绿色软件目录下的子目录层级（推荐 2 层）</div>
+              <div class="label-desc" data-i18n="desc_apps_depth">限定 1–4 层子目录遍历深度，防止深层递归卡顿（推荐 2 层）</div>
             </div>
-            <input id="apps_depth" type="number" min="1" max="4" style="width:84px" onchange="scheduleAutoSave(120)" />
+            <div class="seg" id="apps_depth_seg">
+              <button data-depth="1" onclick="setAppsDepth(1)">1 层</button>
+              <button data-depth="2" onclick="setAppsDepth(2)">2 层</button>
+              <button data-depth="3" onclick="setAppsDepth(3)">3 层</button>
+              <button data-depth="4" onclick="setAppsDepth(4)">4 层</button>
+            </div>
           </div>
-          <div class="row" style="align-items:flex-start">
-            <div style="flex:1;padding-right:16px">
-              <div class="label-title" data-i18n="lbl_apps_dirs">自定义应用与绿色软件扫描目录（每行一个路径）</div>
-              <div class="label-desc" data-i18n="desc_apps_dirs">例如 E:\Tools 或 D:\Tools，保存后立即热重载应用索引</div>
-              <textarea id="apps_dirs" rows="3" placeholder="E:\Tools&#10;D:\Tools" oninput="scheduleAutoSave(450)"></textarea>
+          <div class="row" style="align-items:flex-start;flex-direction:column;gap:10px">
+            <div style="display:flex;width:100%;align-items:center;justify-content:space-between;gap:12px">
+              <div>
+                <div class="label-title" data-i18n="lbl_apps_dirs">自定义应用与便携软件目录</div>
+                <div class="label-desc" data-i18n="desc_apps_dirs">通过系统目录选择框添加（自动拦截盘符根目录与 Windows 系统目录）</div>
+              </div>
+              <button class="btn primary" onclick="pickScanFolder()" data-i18n="btn_browse_dir">浏览添加目录…</button>
             </div>
+            <div id="apps_dirs" class="dir-list"></div>
+            <div id="apps_dirs_err" class="field-err" style="display:none"></div>
           </div>
         </div>
+
         <div class="card">
           <div class="row">
             <div>
               <div class="label-title" data-i18n="lbl_ev_global">全局搜索混排 Everything 条数</div>
-              <div class="label-desc" data-i18n="desc_ev_global">不带前缀直接搜索时融合展示的文件数量</div>
+              <div class="label-desc" data-i18n="desc_ev_global">不带前缀直接搜索时融合展示的文件/目录数量（设为 0 可关闭混排）</div>
             </div>
-            <input id="ev_global" type="number" min="0" max="10" style="width:84px" onchange="scheduleAutoSave(120)" />
+            <div class="range-wrap">
+              <input id="ev_global" type="range" min="0" max="10" step="1"
+                     oninput="updateEvGlobalLabel(this.value);scheduleAutoSave(160)" />
+              <span id="ev_global-v" class="range-val">6 条</span>
+            </div>
           </div>
           <div class="row">
             <div>
-              <div class="label-title" data-i18n="lbl_ev_ded">专属模式 (f / ev) 最大条数</div>
-              <div class="label-desc" data-i18n="desc_ev_ded">建议 20–50，兼顾极速响应与滚动浏览</div>
+              <div class="label-title" data-i18n="lbl_ev_ded">专属模式 (f / ev) 与分类筛选最大条数</div>
+              <div class="label-desc" data-i18n="desc_ev_ded">限定 10–50 条，兼顾结果完整度与滚动性能</div>
             </div>
-            <input id="ev_ded" type="number" min="5" max="50" style="width:84px" onchange="scheduleAutoSave(120)" />
+            <div class="range-wrap">
+              <input id="ev_ded" type="range" min="10" max="50" step="5"
+                     oninput="updateEvDedLabel(this.value);scheduleAutoSave(160)" />
+              <span id="ev_ded-v" class="range-val">30 条</span>
+            </div>
           </div>
-          <div class="row">
+          <div class="row" style="align-items:flex-start;flex-direction:column;gap:8px">
             <div>
-              <div class="label-title" data-i18n="lbl_ev_filter">附加 Everything 默认过滤语法</div>
-              <div class="label-desc" data-i18n="desc_ev_filter">例如 !*.tmp !node_modules（仅在 f 模式自动附加）</div>
+              <div class="label-title" data-i18n="lbl_ev_filter">Everything 默认排除规则（仅 f 模式与文件分类生效）</div>
+              <div class="label-desc" data-i18n="desc_ev_filter">点击下方安全预设开关进行组合，无需手写易错语法</div>
             </div>
-            <input id="ev_filter" type="text" placeholder="!*.tmp" style="width:200px" oninput="scheduleAutoSave(350)" />
+            <div id="ev_filter_chips" class="chip-group"></div>
+            <div id="ev_filter_preview" class="label-desc"></div>
           </div>
         </div>
 
@@ -231,7 +250,7 @@
           <div class="row">
             <div>
               <div class="label-title" data-i18n="lbl_clip_persist">SQLite 磁盘持久化剪贴板历史</div>
-              <div class="label-desc" data-i18n="desc_clip_persist">硬限 256 KB 缓存 + 休眠自动收缩 + 支持置顶收藏与回车直贴</div>
+              <div class="label-desc" data-i18n="desc_clip_persist">限制 256 KB 页缓存，休眠自动收缩，支持置顶与贴回原窗口</div>
             </div>
             <input id="clip_persist" type="checkbox" onchange="scheduleAutoSave(0)" />
           </div>
@@ -240,7 +259,13 @@
               <div class="label-title" data-i18n="lbl_clip_max">最多保留非置顶记录条数</div>
               <div class="label-desc" data-i18n="desc_clip_max">超过上限自动淘汰最旧的非置顶记录</div>
             </div>
-            <input id="clip_max" type="number" min="50" max="2000" style="width:92px" onchange="scheduleAutoSave(120)" />
+            <select id="clip_max" onchange="scheduleAutoSave(0)">
+              <option value="100">100</option>
+              <option value="200">200</option>
+              <option value="500">500 (推荐)</option>
+              <option value="1000">1000</option>
+              <option value="2000">2000</option>
+            </select>
           </div>
         </div>
       </section>
@@ -248,22 +273,33 @@
       <!-- WEB SEARCH -->
       <section id="tab-web">
         <h2 data-i18n="h_web">快捷网页搜索</h2>
-        <p class="lead" data-i18n="lead_web">输入「关键词 + 空格 + 搜索词」直达网页（{q} 会自动进行 URL 编码），修改即自动生效。</p>
+        <p class="lead" data-i18n="lead_web">输入「关键词 + 空格 + 搜索词」打开网页，仅允许合法 https:// / http:// 且含 {q} 的模板。</p>
         <div class="card">
+          <div class="row" style="padding-top:0;border-bottom:1px solid var(--border);margin-bottom:8px">
+            <div class="label-desc" data-i18n="web_preset_hint">推荐直接从常用引擎预设添加，或在下方列表微调</div>
+            <select id="web-preset-select" onchange="addWebPreset(this.value);this.value='';">
+              <option value="" data-i18n="web_preset_opt">+ 从预设添加引擎…</option>
+              <option value="bing">Bing (bing)</option>
+              <option value="wiki">Wikipedia (wiki)</option>
+              <option value="bili">Bilibili (bili)</option>
+              <option value="npm">npm (npm)</option>
+              <option value="pypi">PyPI (pypi)</option>
+              <option value="so">StackOverflow (so)</option>
+              <option value="custom">自定义空白项…</option>
+            </select>
+          </div>
           <table>
             <thead>
               <tr>
-                <th style="width:85px" data-i18n="th_kw">关键词</th>
-                <th style="width:140px" data-i18n="th_name">名称</th>
-                <th data-i18n="th_url">URL 模板</th>
+                <th style="width:92px" data-i18n="th_kw">关键词</th>
+                <th style="width:136px" data-i18n="th_name">名称</th>
+                <th data-i18n="th_url">URL 模板 (https://…{q}…)</th>
                 <th style="width:52px"></th>
               </tr>
             </thead>
             <tbody id="web-tbody"></tbody>
           </table>
-          <div style="margin-top:12px">
-            <button class="btn" onclick="addWebRow()" data-i18n="btn_add_web">+ 添加搜索引擎</button>
-          </div>
+          <div id="web-err" class="field-err" style="display:none;margin-top:8px"></div>
         </div>
       </section>
 
@@ -271,10 +307,10 @@
       <section id="tab-store">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
           <div>
-            <h2 data-i18n="h_store">开放插件市场（免登录 · SHA-256 校验）</h2>
-            <p class="lead" data-i18n="lead_store">去中心化社区插件清单，支持一键安装到本地插件目录并立即热重载生效。</p>
+            <h2 data-i18n="h_store">开源插件清单（SHA-256 校验）</h2>
+            <p class="lead" data-i18n="lead_store">支持从本地或 HTTPS 清单校验并安装插件，安装后自动热重载。</p>
           </div>
-          <button class="btn" id="btn-refresh-store" onclick="fetchStore()" data-i18n="btn_refresh_store">刷新市场</button>
+          <button class="btn" id="btn-refresh-store" onclick="fetchStore()" data-i18n="btn_refresh_store">刷新清单</button>
         </div>
         <div class="card">
           <div id="store-status" class="label-desc" style="margin-bottom:10px"></div>
@@ -285,7 +321,7 @@
       <!-- PLUGINS & SYSTEM -->
       <section id="tab-plugins">
         <h2 data-i18n="h_plugins">已安装插件与系统路径</h2>
-        <p class="lead" data-i18n="lead_plugins">所有外部插件均按需懒启动并自动回收（Job Object / WASM 燃料沙箱 / 独立 WebView）。</p>
+        <p class="lead" data-i18n="lead_plugins">外部插件按需启动并在空闲时自动回收（Job Object / WASM 沙箱 / 独立 WebView）。</p>
         <div class="card">
           <table>
             <thead>
@@ -293,7 +329,7 @@
                 <th data-i18n="th_pname">名称</th>
                 <th data-i18n="th_rt">运行时</th>
                 <th data-i18n="th_trig">触发词</th>
-                <th data-i18n="th_perms">安全权限控制</th>
+                <th data-i18n="th_perms">权限控制</th>
                 <th data-i18n="th_cap">内存上限</th>
               </tr>
             </thead>
@@ -321,12 +357,12 @@
       <!-- UPDATES & ABOUT -->
       <section id="tab-updates">
         <h2 data-i18n="h_updates">检查更新与关于 Tomoyo</h2>
-        <p class="lead" data-i18n="lead_updates">基于原生 WinHTTP 直连 GitHub Releases，零后台常驻线程，100% 开源无遥测。</p>
+        <p class="lead" data-i18n="lead_updates">通过原生 WinHTTP 检查 GitHub Releases，完成校验后自动退出工作线程。</p>
         <div class="card">
           <div class="row">
             <div>
-              <div class="label-title">Tomoyo <span id="about-ver" class="pill">v1.0.0</span></div>
-              <div class="label-desc" data-i18n="about_desc">MIT / Apache-2.0 双协议开源 · 纯 Rust 超低内存桌面效率启动器</div>
+              <div class="label-title">Tomoyo <span id="about-ver" class="pill">v1.0.1</span></div>
+              <div class="label-desc" data-i18n="about_desc">MIT / Apache-2.0 开源协议 · Windows Rust 桌面启动器</div>
             </div>
             <div style="display:flex;gap:8px">
               <button class="btn" onclick="openRepo()" data-i18n="btn_github">GitHub 仓库</button>
@@ -339,15 +375,15 @@
         <div class="card">
           <div class="row">
             <div>
-              <div class="label-title" data-i18n="lbl_upd_auto">启动时自动静默检查更新</div>
-              <div class="label-desc" data-i18n="desc_upd_auto">仅在超过检查间隔时发起一次轻量 HTTPS 请求，完成后线程立即销毁</div>
+              <div class="label-title" data-i18n="lbl_upd_auto">启动时静默检查更新</div>
+              <div class="label-desc" data-i18n="desc_upd_auto">超过设定周期后执行一次轻量 HTTPS 检查</div>
             </div>
             <input id="upd_auto" type="checkbox" onchange="scheduleAutoSave(0)" />
           </div>
           <div class="row">
             <div>
               <div class="label-title" data-i18n="lbl_upd_interval">自动检查间隔</div>
-              <div class="label-desc" data-i18n="desc_upd_interval">控制静默自动检查 GitHub Releases 的最小周期</div>
+              <div class="label-desc" data-i18n="desc_upd_interval">两次自动检查更新的最小时间间隔</div>
             </div>
             <select id="upd_interval" onchange="scheduleAutoSave(0)">
               <option value="12">12 h</option>
@@ -356,12 +392,21 @@
               <option value="168">168 h (7d)</option>
             </select>
           </div>
-          <div class="row">
-            <div>
-              <div class="label-title" data-i18n="lbl_upd_repo">GitHub 更新仓库</div>
-              <div class="label-desc" data-i18n="desc_upd_repo">格式：owner/repo（支持自定义 Fork 仓库）</div>
+          <div class="row" style="align-items:flex-start;flex-direction:column;gap:8px">
+            <div style="display:flex;width:100%;align-items:center;justify-content:space-between;gap:12px">
+              <div>
+                <div class="label-title" data-i18n="lbl_upd_repo">更新源仓库</div>
+                <div class="label-desc" data-i18n="desc_upd_repo">默认使用官方仓库；如切换自建 Fork 需严格符合 owner/repo 格式</div>
+              </div>
+              <select id="upd_repo_mode" onchange="onRepoModeChanged(this.value)">
+                <option value="official" data-i18n="repo_official">官方源 (q871958549/Tomoyo)</option>
+                <option value="custom" data-i18n="repo_custom">自定义 Fork 仓库…</option>
+              </select>
             </div>
-            <input id="upd_repo" type="text" style="width:210px" oninput="scheduleAutoSave(350)" />
+            <div id="upd_repo_custom_wrap" style="display:none;width:100%">
+              <input id="upd_repo" type="text" maxlength="165" placeholder="owner/repo" style="width:260px" oninput="onCustomRepoInput()" />
+              <div id="upd_repo_err" class="field-err" style="display:none;margin-top:4px"></div>
+            </div>
           </div>
         </div>
       </section>
@@ -376,6 +421,7 @@
   <script>
 /*__SETTINGS_I18N__*/
 /*__SETTINGS_STORE_JS__*/
+/*__SETTINGS_CONTROLS_JS__*/
 /*__SETTINGS_JS__*/
   </script>
 </body>

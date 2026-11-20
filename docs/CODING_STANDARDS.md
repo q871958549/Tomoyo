@@ -23,9 +23,11 @@
 - **插件宿主 `tomoyo-plugin-host`**：发现 (`discovery.rs`)、进程隔离 (`job.rs`/`process.rs`)、WASM 沙箱 (`wasm.rs`)、生命周期调度 (`host.rs`) 分离维护。
 - **桌面外壳 `tomoyo-app`**：
   - `window/`：消息路由 (`wndproc.rs`)、初始化 (`bootstrap.rs`)、布局几何 (`layout.rs`)、输入导航 (`input.rs`)、菜单 (`menus.rs`)、命令执行 (`commands.rs`)、主调度 (`mod.rs`)；
-  - `renderer/`：主题色板 (`theme.rs`)、SDF 光栅 (`canvas.rs`)、筛选栏 (`filter_bar.rs`)、GDI/DIB RAII (`gdi.rs`)、主绘制调度 (`mod.rs`)；
+  - `renderer/`：主题色板 (`theme.rs`)、SDF 光栅 (`canvas.rs`)、筛选栏 (`filter_bar.rs`)、GDI/DIB RAII (`gdi.rs`)、SDF/GDI 绘制通道 (`sdf_pass.rs` / `gdi_pass.rs`)、主绘制调度 (`mod.rs`)；
   - `actions/`：动作分发 (`mod.rs`)、剪贴板 Win32 读写 (`clipboard_win.rs`)、Shell 与进程辅助 (`shell_win.rs`)。
-- **按需 WebView 宿主 `tomoyo-webview-host`**：原生宿主 (`win_host.rs`)、桥接分发 (`bridge.rs`)、注入脚本 (`shim_js.rs`)、市场数据 (`store.rs`)、本地 DB (`db.rs`)，以及 `ui/` 下独立的 `settings.html` / `settings.css` / `i18n.js` / `store_updater.js` / `settings.js`。
+- **按需 WebView 宿主 `tomoyo-webview-host`**：原生宿主 (`win_host.rs`)、单实例守护 (`single_instance.rs`)、原生目录浏览 (`folder_picker.rs`)、桥接分发 (`bridge.rs`)、注入脚本 (`shim_js.rs`)、市场数据 (`store.rs`)、本地 DB (`db.rs`)，以及 `ui/` 下独立的 `settings.html` / `settings.css` / `i18n.js` / `store_updater.js` / `settings.js`。
+
+> 表单组件选型、双层配置校验与 ClearType 字体/主题对比度规范详见 [UI/UX 与组件设计规范](UI_DESIGN_STANDARDS.md)。
 
 ---
 

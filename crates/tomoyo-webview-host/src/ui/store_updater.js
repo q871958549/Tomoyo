@@ -61,7 +61,7 @@
     function checkUpdatesNow() {
       const btn = document.getElementById('btn-check-update');
       const box = document.getElementById('update-result-box');
-      const repo = (document.getElementById('upd_repo').value || '').trim() || 'q871958549/Tomoyo';
+      const repo = (state.update && state.update.repo) || 'q871958549/Tomoyo';
       btn.disabled = true;
       box.style.display = 'block';
       box.textContent = t('upd_checking');
@@ -69,7 +69,7 @@
     }
 
     function openRepo() {
-      const repo = (document.getElementById('upd_repo').value || '').trim() || 'q871958549/Tomoyo';
+      const repo = (state.update && state.update.repo) || 'q871958549/Tomoyo';
       post({ cmd: 'open_external', url: 'https://github.com/' + repo });
     }
 
@@ -98,7 +98,7 @@
         `;
       } else if (st.state === 'up_to_date') {
         const extra = st.note ? `<div class="label-desc" style="margin-top:4px">${esc(st.note)}</div>` : '';
-        box.innerHTML = `<div style="color:var(--ok);font-weight:600">${esc(t('upd_latest')(st.current || INIT.version || '0.6.0'))}</div>${extra}`;
+        box.innerHTML = `<div style="color:var(--ok);font-weight:600">${esc(t('upd_latest')(st.current || INIT.version || '1.0.1'))}</div>${extra}`;
       } else if (st.state === 'error') {
         box.innerHTML = `<div style="color:#ef4444;font-weight:500">${esc(t('upd_err')(st.message || 'Unknown error'))}</div>`;
       }
@@ -113,6 +113,10 @@
         if (!data || !data.event) return;
         if (data.event === 'update_status') {
           renderUpdateStatus(data.status);
+        } else if (data.event === 'folder_picked') {
+          if (typeof onFolderPicked === 'function') onFolderPicked(data);
+        } else if (data.event === 'settings_saved') {
+          if (typeof onSettingsSavedAck === 'function') onSettingsSavedAck(data);
         } else if (data.event === 'store_loaded') {
           storeItems = data.items || [];
           const srcs = (data.sources || []).join(' · ');

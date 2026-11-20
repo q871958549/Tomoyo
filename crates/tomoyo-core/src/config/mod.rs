@@ -1,8 +1,13 @@
 //! Hot-reloadable `config.toml`, hotkey parser, and Windows login autostart management.
 
 mod hotkey;
+mod sanitize;
 
 pub use hotkey::{is_autostart_enabled, parse_hotkey, set_autostart_enabled, ParsedHotkey};
+pub use sanitize::{
+    is_safe_http_url, is_valid_github_repo, sanitize_config, validate_scan_dir,
+    validate_web_search, MAX_EXTRA_DIRS, MAX_SCAN_DEPTH,
+};
 
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -320,6 +325,10 @@ impl Default for TomoyoConfig {
 }
 
 impl TomoyoConfig {
+    pub fn sanitize(&mut self) -> Vec<String> {
+        sanitize_config(self)
+    }
+
     pub fn lang(&self) -> crate::Lang {
         crate::Lang::from_code(&self.language)
     }
@@ -336,7 +345,14 @@ impl TomoyoConfig {
     pub fn load_from_path(path: &Path) -> Self {
         if let Ok(raw) = std::fs::read_to_string(path) {
             match toml::from_str::<Self>(&raw) {
-                Ok(cfg) => return cfg,
+                Ok(mut cfg) => {
+                    let notes = cfg.sanitize();
+                    if !notes.is_empty() {
+                        tracing::warn!("Sanitized config.toml on load: {}", notes.join("; "));
+                        let _ = cfg.save_to_path(path);
+                    }
+                    return cfg;
+                }
                 Err(e) => {
                     tracing::warn!("Invalid config.toml at {}: {e}; using defaults", path.display());
                 }
@@ -352,10 +368,12 @@ impl TomoyoConfig {
     }
 
     pub fn save_to_path(&self, path: &Path) -> std::io::Result<()> {
+        let mut clean = self.clone();
+        let _ = clean.sanitize();
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let body = toml::to_string_pretty(self).unwrap_or_default();
+        let body = toml::to_string_pretty(&clean).unwrap_or_default();
         let header = "# Tomoyo Configuration (hot-reloaded via `:reload`)\n\
                       # Themes: \"dark\" | \"light\" | \"midnight\"\n\
                       # Hotkey examples: \"Alt+Space\", \"Ctrl+Space\", \"Ctrl+Shift+Space\"\n\n";

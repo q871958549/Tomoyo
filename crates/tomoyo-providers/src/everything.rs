@@ -1,7 +1,8 @@
 use crate::everything_history::recent_everything_queries;
+use crate::everything_rank::{build_prefix_query, compute_ev_score, merge_unique_entries};
 use std::path::Path;
 use std::sync::{Arc, RwLock};
-use tomoyo_core::{score_match, IndexedText, Lang, Provider, TomoyoConfig};
+use tomoyo_core::{Lang, Provider, TomoyoConfig};
 use tomoyo_everything::{EverythingQueryOptions, SortOrder};
 use tomoyo_protocol::{
     extension_short_tag, ActionKind, ActionSpec, IconSpec, PreviewSpec, QueryContext,
@@ -94,25 +95,51 @@ impl Provider for EverythingProvider {
         let effective_query = parts.join(" ");
 
         let expanded = dedicated || filtered_file_mode;
-        let max_results = if expanded {
-            ctx.limit.min(cfg_ded).clamp(1, 50) as u32
+        if !expanded && cfg_global == 0 {
+            return Vec::new();
+        }
+        let target_cap = if expanded {
+            ctx.limit.min(cfg_ded).clamp(1, 50)
         } else {
-            ctx.limit.min(cfg_global.max(8)).clamp(1, 12) as u32
+            ctx.limit.min(cfg_global).clamp(1, 10)
+        };
+        let fetch_limit = if search_text.is_empty() {
+            target_cap as u32
+        } else {
+            (target_cap * 6).clamp(48, 80) as u32
         };
 
         let opts = EverythingQueryOptions {
-            max_results,
-            sort: if expanded {
+            max_results: fetch_limit,
+            sort: if search_text.is_empty() {
                 SortOrder::DateModifiedDesc
             } else {
-                SortOrder::RunCountDesc
+                SortOrder::NameAsc
             },
-            timeout_ms: if expanded { 500 } else { 200 },
+            timeout_ms: if expanded { 800 } else { 450 },
             ..Default::default()
         };
 
         match tomoyo_everything::query(&effective_query, &opts) {
-            Ok(resp) => {
+            Ok(mut resp) => {
+                // When many files match a simple token, also pull instant prefix hits (`startwith:`)
+                // so exact/prefix user folders & files (e.g. `1118`) are never buried behind `000_...`.
+                let is_plain_token = !search_text.is_empty()
+                    && !search_text.contains(char::is_whitespace)
+                    && !search_text.contains(':');
+                if is_plain_token && resp.total_items > fetch_limit {
+                    let prefix_q = build_prefix_query(search_text, ctx.filter, &extra_filter, expanded);
+                    let prefix_opts = EverythingQueryOptions {
+                        max_results: 32,
+                        sort: SortOrder::NameAsc,
+                        timeout_ms: 250,
+                        ..Default::default()
+                    };
+                    if let Ok(pref_resp) = tomoyo_everything::query(&prefix_q, &prefix_opts) {
+                        merge_unique_entries(&mut resp.entries, pref_resp.entries);
+                    }
+                }
+
                 if resp.entries.is_empty() && expanded {
                     return vec![empty_result_item(self.id(), search_text, ctx.filter, lang)];
                 }
@@ -122,21 +149,13 @@ impl Provider for EverythingProvider {
                     .into_iter()
                     .enumerate()
                     .map(|(idx, entry)| {
-                        let score = compute_ev_score(
-                            search_text,
-                            &entry.name,
-                            entry.is_folder,
-                            expanded,
-                            idx,
-                        );
+                        let score = compute_ev_score(search_text, &entry, expanded, idx);
                         build_entry_item(self.id(), entry, score, lang)
                     })
                     .collect();
 
-                if !expanded {
-                    items.sort_by(|a, b| b.score.cmp(&a.score));
-                    items.truncate(cfg_global.clamp(1, 10));
-                }
+                items.sort_by(|a, b| b.score.cmp(&a.score).then_with(|| a.title.cmp(&b.title)));
+                items.truncate(target_cap);
                 items
             }
             Err(tomoyo_everything::EverythingError::NotRunning) => {
@@ -146,46 +165,12 @@ impl Provider for EverythingProvider {
                     Vec::new()
                 }
             }
-            Err(_) => Vec::new(),
+            Err(e) => {
+                tracing::warn!("Everything query `{effective_query}` failed: {e}");
+                Vec::new()
+            }
         }
     }
-}
-
-fn compute_ev_score(
-    search_text: &str,
-    name: &str,
-    is_folder: bool,
-    expanded: bool,
-    idx: usize,
-) -> i64 {
-    if expanded {
-        return 8_500 - (idx as i64 * 25);
-    }
-    let name_score = if search_text.is_empty() {
-        4_200
-    } else {
-        let indexed = IndexedText::new(name);
-        match score_match(search_text, &indexed) {
-            Some(s) if s >= 8_500 => 6_100,
-            Some(s) if s >= 6_200 => 5_100,
-            Some(s) if s >= 4_400 => 4_500,
-            Some(_) => 3_950,
-            None => 3_800,
-        }
-    };
-    let ext_lower = Path::new(name)
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_ascii_lowercase();
-    let kind_boost = if matches!(ext_lower.as_str(), "exe" | "lnk") {
-        350
-    } else if is_folder {
-        150
-    } else {
-        0
-    };
-    name_score + kind_boost - (idx as i64 * 20)
 }
 
 fn build_entry_item(

@@ -16,11 +16,12 @@ fn parses_synthetic_list2_buffer() {
     let flags = EVERYTHING_IPC_QUERY2_REQUEST_NAME
         | EVERYTHING_IPC_QUERY2_REQUEST_PATH
         | EVERYTHING_IPC_QUERY2_REQUEST_SIZE;
-    for v in [1u32, 1, 2, 1, 0, flags, 1] {
+    // Real EVERYTHING_IPC_LIST2 header (20 bytes): totitems, numitems, offset, request_flags, sort_type
+    for v in [2u32, 1, 0, flags, 1] {
         buf.extend_from_slice(&v.to_le_bytes());
     }
     buf.extend_from_slice(&0u32.to_le_bytes());
-    buf.extend_from_slice(&36u32.to_le_bytes());
+    buf.extend_from_slice(&28u32.to_le_bytes());
 
     buf.extend_from_slice(&7u32.to_le_bytes());
     for u in "demo.rs".encode_utf16().chain(std::iter::once(0)) {
@@ -82,11 +83,12 @@ fn loopback_wm_copydata_roundtrip() {
                 let query_str = String::from_utf16_lossy(&query_u16);
 
                 let mut reply = Vec::new();
-                for v in [0u32, 1, 1, 1, 0, req_flags, 1] {
+                // Real EVERYTHING_IPC_LIST2 header (20 bytes) + 1 item header (8 bytes) -> data_offset 28
+                for v in [1u32, 1, 0, req_flags, 1] {
                     reply.extend_from_slice(&v.to_le_bytes());
                 }
                 reply.extend_from_slice(&0u32.to_le_bytes());
-                reply.extend_from_slice(&36u32.to_le_bytes());
+                reply.extend_from_slice(&28u32.to_le_bytes());
 
                 if (req_flags & EVERYTHING_IPC_QUERY2_REQUEST_NAME) != 0 {
                     let name = format!("matched_{query_str}");

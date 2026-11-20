@@ -17,6 +17,7 @@ pub enum HostMessage {
     DbPut { id: String, doc: Value },
     DbRemove { id: String },
     SaveSettings { config: tomoyo_core::TomoyoConfig, autostart: bool },
+    PickFolder,
     SyncTheme { theme: String },
     TogglePinTopmost,
     CheckUpdates { repo: String },
@@ -41,6 +42,7 @@ pub struct HostAction {
     pub should_close: bool,
     pub apply_theme: Option<String>,
     pub toggle_topmost: bool,
+    pub pick_folder: bool,
     pub reply_json: Option<String>,
     pub async_check_updates: Option<String>,
     pub async_install_update: Option<tomoyo_core::ReleaseInfo>,
@@ -64,11 +66,15 @@ pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isi
             }
         }
         HostMessage::OpenExternal { url } => {
-            shell_open(&url);
+            if tomoyo_core::is_safe_http_url(&url) {
+                shell_open(&url);
+            }
             HostAction::default()
         }
         HostMessage::OpenPath { path } => {
-            shell_open(&path);
+            if std::path::Path::new(&path).exists() {
+                shell_open(&path);
+            }
             HostAction::default()
         }
         HostMessage::DbPut { id, doc } => {
@@ -79,18 +85,30 @@ pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isi
             db.remove(&id);
             HostAction::default()
         }
-        HostMessage::SaveSettings { config, autostart } => {
+        HostMessage::SaveSettings { mut config, autostart } => {
+            let notes = config.sanitize();
             let theme = config.theme.clone();
             let _ = config.save();
             let _ = tomoyo_core::set_autostart_enabled(autostart);
             if let Some(target) = notify_hwnd {
                 notify_parent_reload(target);
             }
+            let evt = serde_json::json!({
+                "event": "settings_saved",
+                "config": config,
+                "notes": notes,
+            })
+            .to_string();
             HostAction {
                 apply_theme: Some(theme),
+                reply_json: Some(evt),
                 ..Default::default()
             }
         }
+        HostMessage::PickFolder => HostAction {
+            pick_folder: true,
+            ..Default::default()
+        },
         HostMessage::SyncTheme { theme } => HostAction {
             apply_theme: Some(theme),
             ..Default::default()
@@ -99,10 +117,17 @@ pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isi
             toggle_topmost: true,
             ..Default::default()
         },
-        HostMessage::CheckUpdates { repo } => HostAction {
-            async_check_updates: Some(repo),
-            ..Default::default()
-        },
+        HostMessage::CheckUpdates { repo } => {
+            let safe_repo = if tomoyo_core::is_valid_github_repo(&repo) {
+                repo.trim().to_string()
+            } else {
+                "q871958549/Tomoyo".into()
+            };
+            HostAction {
+                async_check_updates: Some(safe_repo),
+                ..Default::default()
+            }
+        }
         HostMessage::InstallUpdate { release } => HostAction {
             async_install_update: Some(release),
             ..Default::default()

@@ -120,7 +120,7 @@ impl<'a> Canvas<'a> {
         let r = (r_dip * self.scale)
             .min((px1 - px0) * 0.5)
             .min((py1 - py0) * 0.5);
-        let half_stroke = 0.65 * self.scale;
+        let half_stroke = 0.5 * self.scale;
         let (cx, cy) = ((px0 + px1) * 0.5, (py0 + py1) * 0.5);
         let (hx, hy) = ((px1 - px0) * 0.5 - r, (py1 - py0) * 0.5 - r);
 

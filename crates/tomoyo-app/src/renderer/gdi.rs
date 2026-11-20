@@ -9,8 +9,7 @@ use windows::Win32::Graphics::Gdi::{
     SelectObject, SetBkMode, SetTextColor, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, CLEARTYPE_QUALITY,
     CLIP_DEFAULT_PRECIS, DEFAULT_CHARSET, DEFAULT_PITCH, DIB_RGB_COLORS, DRAW_TEXT_FORMAT,
     DT_END_ELLIPSIS, DT_LEFT, DT_NOPREFIX, DT_SINGLELINE, DT_TOP, DT_VCENTER, DT_WORDBREAK,
-    FF_DONTCARE, FW_BOLD, FW_MEDIUM, FW_NORMAL, FW_SEMIBOLD, HBITMAP, HDC, HFONT, HGDIOBJ,
-    OUT_DEFAULT_PRECIS, TRANSPARENT,
+    FF_DONTCARE, FW_NORMAL, HBITMAP, HDC, HFONT, HGDIOBJ, OUT_DEFAULT_PRECIS, TRANSPARENT,
 };
 
 pub struct DibSurface {
@@ -85,6 +84,8 @@ pub struct FontPack {
     pub dpi_key: i32,
     pub title: HFONT,
     pub subtitle: HFONT,
+    pub chip: HFONT,
+    pub chip_active: HFONT,
     pub badge: HFONT,
     pub footer: HFONT,
     pub preview_body: HFONT,
@@ -94,14 +95,19 @@ pub struct FontPack {
 impl FontPack {
     pub fn create(dpi_scale: f32, regular_face: &str, medium_face: &str) -> Self {
         let dpi_key = (dpi_scale * 100.0).round() as i32;
+        // Always pass FW_NORMAL (400) so GDI uses the native outlines of `55 Regular`
+        // and `65 Medium` without algorithmic faux-bold horizontal double-striking.
+        let normal = FW_NORMAL.0 as i32;
         Self {
             dpi_key,
-            title: make_gdi_font(15.5 * dpi_scale, FW_SEMIBOLD.0 as i32, medium_face),
-            subtitle: make_gdi_font(12.5 * dpi_scale, FW_NORMAL.0 as i32, regular_face),
-            badge: make_gdi_font(11.0 * dpi_scale, FW_BOLD.0 as i32, medium_face),
-            footer: make_gdi_font(12.0 * dpi_scale, FW_MEDIUM.0 as i32, regular_face),
-            preview_body: make_gdi_font(12.5 * dpi_scale, FW_NORMAL.0 as i32, regular_face),
-            preview_mono: make_gdi_font(12.0 * dpi_scale, FW_NORMAL.0 as i32, "Consolas"),
+            title: make_gdi_font(15.5 * dpi_scale, normal, medium_face),
+            subtitle: make_gdi_font(12.5 * dpi_scale, normal, regular_face),
+            chip: make_gdi_font(12.5 * dpi_scale, normal, regular_face),
+            chip_active: make_gdi_font(12.5 * dpi_scale, normal, medium_face),
+            badge: make_gdi_font(11.5 * dpi_scale, normal, medium_face),
+            footer: make_gdi_font(12.0 * dpi_scale, normal, regular_face),
+            preview_body: make_gdi_font(12.5 * dpi_scale, normal, regular_face),
+            preview_mono: make_gdi_font(12.0 * dpi_scale, normal, "Consolas"),
         }
     }
 }
@@ -112,6 +118,8 @@ impl Drop for FontPack {
             for f in [
                 self.title,
                 self.subtitle,
+                self.chip,
+                self.chip_active,
                 self.badge,
                 self.footer,
                 self.preview_body,

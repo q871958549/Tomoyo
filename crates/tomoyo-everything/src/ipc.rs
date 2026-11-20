@@ -18,8 +18,8 @@ mod win {
     use windows::Win32::UI::WindowsAndMessaging::{
         CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, FindWindowW,
         GetWindowLongPtrW, MsgWaitForMultipleObjects, PeekMessageW, RegisterClassW,
-        SendMessageTimeoutW, SetWindowLongPtrW, TranslateMessage, GWLP_USERDATA, HWND_MESSAGE,
-        MSG, PM_REMOVE, QS_ALLINPUT, SMTO_ABORTIFHUNG, WM_COPYDATA, WNDCLASSW,
+        SendMessageTimeoutW, SetWindowLongPtrW, TranslateMessage, GWLP_USERDATA, MSG, PM_REMOVE,
+        QS_ALLINPUT, SMTO_NORMAL, WM_COPYDATA, WNDCLASSW,
     };
 
     const RECV_CLASS_NAME: PCWSTR = w!("TomoyoEverythingIpcRecv");
@@ -51,6 +51,7 @@ mod win {
                     RegisterClassW(&wc) != 0
                 });
 
+                // Voidtools Everything 1.4 requires a hidden top-level receiver window (not HWND_MESSAGE).
                 let hwnd = CreateWindowExW(
                     Default::default(),
                     RECV_CLASS_NAME,
@@ -60,7 +61,7 @@ mod win {
                     0,
                     0,
                     0,
-                    Some(HWND_MESSAGE),
+                    None,
                     None,
                     Some(hinstance.into()),
                     None,
@@ -168,7 +169,7 @@ mod win {
                     WM_COPYDATA,
                     WPARAM(recv_hwnd.0 as usize),
                     LPARAM(&cds as *const COPYDATASTRUCT as isize),
-                    SMTO_ABORTIFHUNG,
+                    SMTO_NORMAL,
                     opts.timeout_ms,
                     Some(&mut _out),
                 )

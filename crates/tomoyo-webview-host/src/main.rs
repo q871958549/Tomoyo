@@ -10,6 +10,8 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 mod bridge;
 mod db;
+#[cfg(windows)]
+mod folder_picker;
 mod shim_js;
 #[cfg(windows)]
 mod single_instance;
@@ -32,6 +34,7 @@ const SETTINGS_HTML_TPL: &str = include_str!("ui/settings.html");
 const SETTINGS_CSS: &str = include_str!("ui/settings.css");
 const SETTINGS_I18N_JS: &str = include_str!("ui/i18n.js");
 const SETTINGS_STORE_JS: &str = include_str!("ui/store_updater.js");
+const SETTINGS_CONTROLS_JS: &str = include_str!("ui/controls.js");
 const SETTINGS_APP_JS: &str = include_str!("ui/settings.js");
 
 pub fn assemble_settings_html() -> String {
@@ -39,6 +42,7 @@ pub fn assemble_settings_html() -> String {
         .replace("/*__SETTINGS_CSS__*/", SETTINGS_CSS)
         .replace("/*__SETTINGS_I18N__*/", SETTINGS_I18N_JS)
         .replace("/*__SETTINGS_STORE_JS__*/", SETTINGS_STORE_JS)
+        .replace("/*__SETTINGS_CONTROLS_JS__*/", SETTINGS_CONTROLS_JS)
         .replace("/*__SETTINGS_JS__*/", SETTINGS_APP_JS)
 }
 
@@ -169,10 +173,27 @@ fn main() {
         assert!(html.contains("AlibabaPuHuiTi-3-55-Regular.ttf"));
         assert!(html.contains("hotkey-recorder"));
         assert!(html.contains("apps_dirs"));
+        assert!(html.contains("apps_depth_seg"));
+        assert!(html.contains("ev_filter_chips"));
+        assert!(!html.contains("type=\"number\""));
+        assert!(!html.contains("<textarea"));
         assert!(html.contains("show_filter_bar"));
         assert!(html.contains("tab-store"));
         assert!(html.contains("tab-updates"));
         assert!(pdb.get("demo").is_some());
+        let mut dirty_cfg = TomoyoConfig::default();
+        dirty_cfg.apps.extra_scan_depth = 12000;
+        dirty_cfg.apps.extra_dirs = vec!["C:\\Windows".into(), "C:\\".into()];
+        dirty_cfg.web_searches.push(tomoyo_core::WebSearchEngine {
+            keyword: "bad".into(),
+            name: "Bad".into(),
+            url: "file:///C:/Windows/System32/cmd.exe?{q}".into(),
+        });
+        let notes = dirty_cfg.sanitize();
+        assert!(!notes.is_empty());
+        assert_eq!(dirty_cfg.apps.extra_scan_depth, 4);
+        assert!(dirty_cfg.apps.extra_dirs.is_empty());
+        assert!(dirty_cfg.web_searches.iter().all(|w| w.keyword != "bad"));
         assert!(handle_host_message(r#"{"cmd":"close"}"#, &mut pdb, None).should_close);
         assert_eq!(
             handle_host_message(r#"{"cmd":"sync_theme","theme":"light"}"#, &mut pdb, None)

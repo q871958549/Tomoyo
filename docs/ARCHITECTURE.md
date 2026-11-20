@@ -169,9 +169,13 @@ sequenceDiagram
   - 新增自绘主题弹出菜单，替换 Logo、结果行与托盘右键菜单为符合当前配色与字体的统一样式。
   - 增强应用扫描：自动识别 DeskBox 托管桌面目录、公共桌面、完整开始菜单与自定义便携目录，读取 `.lnk` 原生目标可执行文件名，修复 `App Paths` 解析。
   - 新增搜索分组筛选栏（`全部 / 应用 / 文件夹 / PDF / Excel / Word / PPT / 图片 / 压缩`），支持 `@tag` 内联过滤、`Ctrl+Tab` / `Ctrl+1..9` 快捷键与 Everything 下推筛选。
-- **v0.6.1 – v1.0.0 — 异常退出治理、自更新闭环、效率工具超越与跨平台分发底座**
+- **v0.6.1 – v1.0.0 — 异常退出治理、自更新闭环、效率功能完善与跨平台分发底座**
   - **稳定性与生命周期治理**：新增 `crash_guard.rs`（256 KB 滚动日志 + panic/Win32 SEH 捕获 `last_crash.txt`）、`TaskbarCreated` 托盘重建、单实例窗口唤醒、退出时 SQLite WAL checkpoint 与独立任务分离启动。
   - **v0.6.x 体验闭环**：WinHTTP 流式下载 `setup.exe` + `SHA256SUMS.txt` 校验并自动启动覆盖升级；`WM_DPICHANGED` 多屏 DPI 动态字体与窗口重缩放；全局热键冲突提醒；`FindFirstChangeNotificationW` 零轮询应用目录增量刷新；重定向 KnownFolder 桌面扫描。
   - **v0.7.0 安全生态**：`PermissionStore`（`permissions.json`）敏感权限首次弹窗审批与设置中心热撤权管理；纯 Rust PKZIP + `flate2` 解析器实现本地/远程社区 `.zip` 一键 SHA-256 校验安装。
-  - **v0.8.0 高频生产力**：`SnippetsProvider` 动态模板片段库（`snippets.toml`）、Everything 最近搜索历史（`ev_history.json`）与收藏筛选器，以及基于系统 WinRT `OcrEngine` 的 0 常驻内存离线 OCR 插件（`tomoyo-plugin-ocr.exe`）。
+  - **v0.8.0 效率工具与离线 OCR**：`SnippetsProvider` 动态模板片段库（`snippets.toml`）、Everything 最近搜索历史（`ev_history.json`）与收藏筛选器，以及基于系统 WinRT `OcrEngine` 的 0 常驻内存离线 OCR 插件（`tomoyo-plugin-ocr.exe`）。
   - **v1.0.0 分发与跨平台**：新增 Winget / Scoop / MSIX 分发清单与 `tomoyo-ui-shared` / `tomoyo-ui-macos` / `tomoyo-ui-linux` 适配层（Windows 10/11 x64 全套实机验证通过，macOS/Linux 适配层纳入 CI 跨平台编译测试）。
+- **v1.0.1 — Everything 1.4 协议修复、设置中心受控组件重构与 UI 字体对比度优化**
+  - **搜索结果完整性修复**：修复 `tomoyo-everything` 三个底层 IPC 问题（`HWND_MESSAGE` 改为隐藏顶层接收窗口、`SMTO_ABORTIFHUNG` 改为 `SMTO_NORMAL`、`EVERYTHING_IPC_LIST2` 头部由 28 字节修正为实际 20 字节），并在 `EverythingProvider` 引入快速索引排序、`startwith:` 二次合并与路径权重重排（桌面/DeskBox 提权、隐藏点目录与缓存目录降权）。
+  - **设置中心单实例与受控输入**：设置中心新增命名互斥体单实例唤起；移除全部裸 `<input type="number">` 与路径 `<textarea>`，替换为分段深度选择、原生 Win32 `IFileOpenDialog` 目录浏览、范围滑块、Everything 排除标签组与带协议校验的搜索模板配置；Rust 后端 `TomoyoConfig::sanitize()` 在加载与保存时统一执行边界钳制与高危目录/协议拦截。
+  - **界面清晰度与设计规范**：修复私有字体因 GDI 伪粗体（`FW_BOLD`/`FW_SEMIBOLD`/`FW_MEDIUM`）导致的小字模糊问题，统一使用 `FW_NORMAL` 原生字形，引入三级文字对比度与柔和选中态标签，并新增 [`docs/UI_DESIGN_STANDARDS.md`](UI_DESIGN_STANDARDS.md)。

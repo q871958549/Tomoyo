@@ -10,11 +10,18 @@
     function t(key) {
       return (I18N[curLang()] && I18N[curLang()][key]) || I18N.zh[key] || key;
     }
-
+    function esc(s) {
+      return String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+    }
     function post(msg) {
       if (window.chrome && window.chrome.webview) {
         window.chrome.webview.postMessage(JSON.stringify(msg));
       }
+    }
+    function setToast(text, isWarn) {
+      const el = document.getElementById('toast');
+      el.classList.toggle('warn', !!isWarn);
+      el.textContent = text;
     }
 
     // Sidebar navigation
@@ -38,15 +45,19 @@
       document.getElementById('lang-zh').classList.toggle('active', lang === 'zh');
       document.getElementById('lang-en').classList.toggle('active', lang === 'en');
       document.querySelectorAll('[data-i18n]').forEach(el => {
-        const k = el.getAttribute('data-i18n');
-        const val = t(k);
+        const val = t(el.getAttribute('data-i18n'));
         if (typeof val === 'string') el.textContent = val;
       });
       updateRowsLabel(document.getElementById('win_rows').value);
+      updateEvGlobalLabel(document.getElementById('ev_global').value);
+      updateEvDedLabel(document.getElementById('ev_ded').value);
+      renderAppsDepth();
+      renderDirsList();
+      renderEvFilterChips();
       updatePosDesc();
       renderWebRows();
       if (!recordingHotkey) renderHotkeyDisplay();
-      document.getElementById('toast').textContent = t('toast_ready');
+      setToast(t('toast_ready'), false);
     }
 
     function setLanguage(code) {
@@ -68,18 +79,16 @@
       if (shouldSave) scheduleAutoSave(0);
     }
 
-    function updateRowsLabel(v) {
-      document.getElementById('win_rows-v').textContent = t('rows_unit')(v);
-    }
+    function updateRowsLabel(v) { document.getElementById('win_rows-v').textContent = t('rows_unit')(v); }
+    function updateEvGlobalLabel(v) { document.getElementById('ev_global-v').textContent = t('items_unit')(v); }
+    function updateEvDedLabel(v) { document.getElementById('ev_ded-v').textContent = t('items_unit')(v); }
 
     function updatePosDesc() {
       const w = state.window || {};
       const el = document.getElementById('pos-desc');
-      if (w.custom_x != null && w.custom_y != null) {
-        el.textContent = t('pos_saved')(w.custom_x, w.custom_y);
-      } else {
-        el.textContent = t('pos_auto');
-      }
+      el.textContent = (w.custom_x != null && w.custom_y != null)
+        ? t('pos_saved')(w.custom_x, w.custom_y)
+        : t('pos_auto');
     }
 
     function resetPosition() {
@@ -103,15 +112,8 @@
       recEl.textContent = t('rec_prompt');
       recEl.focus();
     }
-    function stopHotkeyRecording() {
-      recordingHotkey = false;
-      renderHotkeyDisplay();
-    }
-    function applyHotkey(spec) {
-      state.hotkey = spec;
-      stopHotkeyRecording();
-      scheduleAutoSave(0);
-    }
+    function stopHotkeyRecording() { recordingHotkey = false; renderHotkeyDisplay(); }
+    function applyHotkey(spec) { state.hotkey = spec; stopHotkeyRecording(); scheduleAutoSave(0); }
     recEl.addEventListener('click', startHotkeyRecording);
     recEl.addEventListener('blur', () => { if (recordingHotkey) stopHotkeyRecording(); });
 
@@ -128,10 +130,7 @@
       if (recordingHotkey) {
         e.preventDefault();
         e.stopPropagation();
-        if (e.key === 'Escape') {
-          stopHotkeyRecording();
-          return;
-        }
+        if (e.key === 'Escape') { stopHotkeyRecording(); return; }
         const mainKey = keyEventToName(e);
         if (!mainKey) return;
         const mods = [];
@@ -139,51 +138,19 @@
         if (e.altKey) mods.push('Alt');
         if (e.shiftKey) mods.push('Shift');
         if (e.metaKey) mods.push('Win');
-        if (mods.length === 0) {
-          recEl.textContent = t('rec_need_mod');
-          return;
-        }
+        if (mods.length === 0) { recEl.textContent = t('rec_need_mod'); return; }
         applyHotkey(mods.concat([mainKey]).join('+'));
         return;
       }
-      if (e.key === 'Escape') {
-        closeWin();
-      }
+      if (e.key === 'Escape') closeWin();
     }, true);
 
-    function renderWebRows() {
-      const tb = document.getElementById('web-tbody');
-      tb.innerHTML = '';
-      (state.web_searches || []).forEach((w, idx) => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td><input type="text" value="${esc(w.keyword)}" style="width:74px" oninput="state.web_searches[${idx}].keyword=this.value;scheduleAutoSave(300)" /></td>
-          <td><input type="text" value="${esc(w.name)}" style="width:130px" oninput="state.web_searches[${idx}].name=this.value;scheduleAutoSave(300)" /></td>
-          <td><input type="text" value="${esc(w.url)}" style="width:100%" oninput="state.web_searches[${idx}].url=this.value;scheduleAutoSave(300)" /></td>
-          <td><button class="btn danger" style="padding:4px 8px" onclick="delWebRow(${idx})">${esc(t('del'))}</button></td>
-        `;
-        tb.appendChild(tr);
-      });
-    }
-
-    function addWebRow() {
-      if (!state.web_searches) state.web_searches = [];
-      state.web_searches.push({ keyword: 'wiki', name: 'Wikipedia', url: 'https://en.wikipedia.org/wiki/Special:Search?search={q}' });
-      renderWebRows();
-      scheduleAutoSave(0);
-    }
-
-    function delWebRow(i) {
-      state.web_searches.splice(i, 1);
-      renderWebRows();
-      scheduleAutoSave(0);
-    }
-
-    function esc(s) {
-      return String(s || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
-    }
-
     function collectAndSave() {
+      if (!validateAllWebRows()) return;
+      const repoMode = document.getElementById('upd_repo_mode').value;
+      const customRepo = document.getElementById('upd_repo').value.trim();
+      if (repoMode === 'custom' && !isValidRepo(customRepo)) return;
+
       state.hibernate_delay_secs = parseInt(document.getElementById('hibernate').value, 10) || 15;
       state.auto_preview = document.getElementById('auto_preview').checked;
       state.show_filter_bar = document.getElementById('show_filter_bar').checked;
@@ -194,50 +161,59 @@
         custom_x: state.window ? state.window.custom_x : null,
         custom_y: state.window ? state.window.custom_y : null
       };
-      const rawDirs = (document.getElementById('apps_dirs').value || '')
-        .split(/\r?\n|;/)
-        .map(s => s.trim())
-        .filter(Boolean);
+      const prevApps = state.apps || {};
       state.apps = {
-        extra_dirs: rawDirs,
+        extra_dirs: Array.isArray(prevApps.extra_dirs) ? prevApps.extra_dirs : [],
         auto_detect_desktop_organizers: document.getElementById('apps_org').checked,
-        extra_scan_depth: parseInt(document.getElementById('apps_depth').value, 10) || 2
+        extra_scan_depth: Math.min(4, Math.max(1, Number(prevApps.extra_scan_depth) || 2))
       };
       const prevEv = state.everything || {};
+      const evGlobalVal = parseInt(document.getElementById('ev_global').value, 10);
       state.everything = {
-        max_global_results: parseInt(document.getElementById('ev_global').value, 10) || 6,
+        max_global_results: Number.isNaN(evGlobalVal) ? 6 : evGlobalVal,
         max_dedicated_results: parseInt(document.getElementById('ev_ded').value, 10) || 30,
-        extra_filter: document.getElementById('ev_filter').value.trim(),
+        extra_filter: (prevEv.extra_filter || '').trim(),
         favorites: prevEv.favorites
       };
       state.clipboard = {
         persist_sqlite: document.getElementById('clip_persist').checked,
-        max_persisted_items: parseInt(document.getElementById('clip_max').value, 10) || 500
+        max_persisted_items: snapClipMax(document.getElementById('clip_max').value)
       };
       const prevUpd = state.update || {};
       state.update = {
         auto_check: document.getElementById('upd_auto').checked,
         check_interval_hours: parseInt(document.getElementById('upd_interval').value, 10) || 24,
-        repo: (document.getElementById('upd_repo').value || '').trim() || 'q871958549/Tomoyo',
+        repo: repoMode === 'custom' ? customRepo : OFFICIAL_REPO,
         last_checked_unix: prevUpd.last_checked_unix || 0,
         skipped_version: prevUpd.skipped_version || null
       };
       post({ cmd: 'save_settings', config: state, autostart });
-      document.getElementById('toast').textContent = t('toast_saved') + ' · ' + new Date().toLocaleTimeString();
+      setToast(t('toast_saved') + ' · ' + new Date().toLocaleTimeString(), false);
+    }
+
+    function onSettingsSavedAck(data) {
+      if (!data) return;
+      if (data.config) state = data.config;
+      if (Array.isArray(data.notes) && data.notes.length > 0) {
+        renderAppsDepth();
+        renderDirsList();
+        renderEvFilterChips();
+        syncRepoUi();
+        setToast('⚠ ' + data.notes[0], true);
+      } else {
+        setToast(t('toast_saved') + ' · ' + new Date().toLocaleTimeString(), false);
+      }
     }
 
     function scheduleAutoSave(delayMs) {
       if (saveTimer) clearTimeout(saveTimer);
-      if (delayMs <= 0) {
-        collectAndSave();
-      } else {
-        saveTimer = setTimeout(collectAndSave, delayMs);
-      }
+      if (delayMs <= 0) collectAndSave();
+      else saveTimer = setTimeout(collectAndSave, delayMs);
     }
 
     function populate() {
       if (!state.language) state.language = 'zh';
-      document.getElementById('about-ver').textContent = 'v' + (INIT.version || '1.0.0');
+      document.getElementById('about-ver').textContent = 'v' + (INIT.version || '1.0.1');
       document.getElementById('autostart').checked = autostart;
       const hib = state.hibernate_delay_secs || 15;
       document.getElementById('hibernate').value = hib;
@@ -256,22 +232,22 @@
 
       const appsCfg = state.apps || {};
       document.getElementById('apps_org').checked = appsCfg.auto_detect_desktop_organizers !== false;
-      document.getElementById('apps_depth').value = appsCfg.extra_scan_depth ?? 2;
-      document.getElementById('apps_dirs').value = (appsCfg.extra_dirs || []).join('\n');
+      if (!state.apps) state.apps = {};
+      state.apps.extra_scan_depth = Math.min(4, Math.max(1, Number(appsCfg.extra_scan_depth ?? 2)));
+      state.apps.extra_dirs = Array.isArray(appsCfg.extra_dirs) ? appsCfg.extra_dirs : [];
 
       const ev = state.everything || {};
       document.getElementById('ev_global').value = ev.max_global_results ?? 6;
-      document.getElementById('ev_ded').value = ev.max_dedicated_results ?? 30;
-      document.getElementById('ev_filter').value = ev.extra_filter || '';
+      document.getElementById('ev_ded').value = Math.min(50, Math.max(10, Number(ev.max_dedicated_results ?? 30)));
 
       const cb = state.clipboard || {};
       document.getElementById('clip_persist').checked = cb.persist_sqlite !== false;
-      document.getElementById('clip_max').value = cb.max_persisted_items ?? 500;
+      document.getElementById('clip_max').value = String(snapClipMax(cb.max_persisted_items ?? 500));
 
       const upd = state.update || {};
       document.getElementById('upd_auto').checked = upd.auto_check !== false;
       document.getElementById('upd_interval').value = String(upd.check_interval_hours || 24);
-      document.getElementById('upd_repo').value = upd.repo || 'q871958549/Tomoyo';
+      syncRepoUi();
 
       const ptb = document.getElementById('plugins-tbody');
       ptb.innerHTML = '';
@@ -304,13 +280,8 @@
     function togglePluginPermission(pluginId, permission, allowed) {
       post({ cmd: 'set_plugin_permission', plugin_id: pluginId, permission, allowed });
     }
-
-    function openConfigPath() {
-      if (INIT.config_path) post({ cmd: 'open_path', path: INIT.config_path });
-    }
-    function openPluginsDir() {
-      if (INIT.plugins_dir) post({ cmd: 'open_path', path: INIT.plugins_dir });
-    }
+    function openConfigPath() { if (INIT.config_path) post({ cmd: 'open_path', path: INIT.config_path }); }
+    function openPluginsDir() { if (INIT.plugins_dir) post({ cmd: 'open_path', path: INIT.plugins_dir }); }
     function closeWin() { post({ cmd: 'close' }); }
 
     populate();

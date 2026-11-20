@@ -42,7 +42,15 @@ pub(super) fn paint_popup(
                     st.w_dip - 5.0,
                     met.y1 - 1.0,
                     6.0,
-                    pal.accent,
+                    pal.chip_active_bg,
+                );
+                canvas.stroke_rounded_rect(
+                    5.0,
+                    met.y0 + 1.0,
+                    st.w_dip - 5.0,
+                    met.y1 - 1.0,
+                    6.0,
+                    pal.sel_border,
                 );
             }
         }
@@ -66,14 +74,14 @@ pub(super) fn paint_popup(
                 continue;
             };
             let is_hov = st.hovered == Some(idx);
-            let fg: Rgb = if is_hov { pal.on_accent } else { pal.text_primary };
+            let fg: Rgb = if is_hov { pal.chip_active_text } else { pal.text_primary };
             let mut right_x = st.w_dip - 12.0;
 
             if *checked {
-                let mark_col = if is_hov { pal.on_accent } else { pal.accent };
+                let mark_col = if is_hov { pal.chip_active_text } else { pal.accent };
                 draw_text_gdi(
                     dc,
-                    st.fonts.badge,
+                    st.fonts.chip_active,
                     mark_col,
                     "✓",
                     dip_rect(8.0, met.y0, 26.0, met.y1, scale),
@@ -81,7 +89,7 @@ pub(super) fn paint_popup(
                 );
             }
             if let Some(sc) = shortcut {
-                let sc_col = if is_hov { pal.on_accent } else { pal.text_muted };
+                let sc_col = if is_hov { pal.chip_active_text } else { pal.text_muted };
                 let sc_w = (sc.chars().count() as f32 * 7.2 + 8.0).clamp(32.0, 96.0);
                 draw_text_gdi(
                     dc,
@@ -95,7 +103,7 @@ pub(super) fn paint_popup(
             }
             draw_text_gdi(
                 dc,
-                st.fonts.footer,
+                if is_hov { st.fonts.chip_active } else { st.fonts.chip },
                 fg,
                 label,
                 dip_rect(28.0, met.y0, right_x, met.y1, scale),
