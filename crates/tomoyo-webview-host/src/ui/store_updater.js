@@ -98,7 +98,7 @@
         `;
       } else if (st.state === 'up_to_date') {
         const extra = st.note ? `<div class="label-desc" style="margin-top:4px">${esc(st.note)}</div>` : '';
-        box.innerHTML = `<div style="color:var(--ok);font-weight:600">${esc(t('upd_latest')(st.current || INIT.version || '1.0.1'))}</div>${extra}`;
+        box.innerHTML = `<div style="color:var(--ok);font-weight:600">${esc(t('upd_latest')(st.current || INIT.version || '1.1.0'))}</div>${extra}`;
       } else if (st.state === 'error') {
         box.innerHTML = `<div style="color:#ef4444;font-weight:500">${esc(t('upd_err')(st.message || 'Unknown error'))}</div>`;
       }

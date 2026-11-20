@@ -2,12 +2,14 @@
 
 use super::canvas::Canvas;
 use super::filter_bar::paint_filter_bar_gdi;
-use super::gdi::{dip_rect, draw_multiline_gdi, draw_text_gdi, DibSurface, FontPack};
+use super::gdi::{
+    dip_rect, draw_multiline_gdi, draw_text_gdi, draw_text_highlighted_gdi, DibSurface, FontPack,
+};
 use super::theme::{category_rgb, Rgb};
 use super::{FrameLayout, RenderState};
 use crate::icons::IconCache;
 use std::path::Path;
-use tomoyo_core::{current_process_stats, Lang};
+use tomoyo_core::{current_process_stats, highlight_title_ranges, Lang};
 use tomoyo_protocol::{extension_short_tag, IconSpec, ResultCategory, ResultItem};
 use windows::Win32::Graphics::Gdi::{BitBlt, GdiFlush, HDC, SRCCOPY, DT_CENTER, DT_LEFT, DT_RIGHT};
 use windows::Win32::UI::WindowsAndMessaging::{DrawIconEx, DI_NORMAL};
@@ -53,6 +55,7 @@ pub(super) fn paint_gdi_pass(
                 state.lang,
                 state.active_filter,
                 state.hovered_filter,
+                state.filter_counts,
             );
         }
 
@@ -98,7 +101,16 @@ pub(super) fn paint_gdi_pass(
                 draw_text_gdi(dc, fonts.badge, pal.text_secondary, badge, dip_rect(bx0, y0 + 15.5, text_right, y0 + 36.5, scale), DT_CENTER);
                 text_right = bx0 - 10.0;
             }
-            draw_text_gdi(dc, fonts.title, pal.text_primary, &item.title, dip_rect(62.0, y0 + 5.0, text_right, y0 + 28.0, scale), DT_LEFT);
+            let hl_spans = highlight_title_ranges(state.query, &item.title);
+            draw_text_highlighted_gdi(
+                dc,
+                fonts.title,
+                pal.text_primary,
+                pal.accent,
+                &item.title,
+                &hl_spans,
+                dip_rect(62.0, y0 + 5.0, text_right, y0 + 28.0, scale),
+            );
             draw_text_gdi(dc, fonts.subtitle, pal.text_secondary, &item.subtitle, dip_rect(62.0, y0 + 28.0, text_right, y0 + 47.0, scale), DT_LEFT);
         }
 

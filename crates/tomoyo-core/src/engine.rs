@@ -1,5 +1,5 @@
-use crate::{record_hibernation_cycle, trim_working_set, FrecencyStore};
-use std::collections::HashSet;
+use crate::engine_rank::{build_zero_result_fallbacks, rank_and_dedup};
+use crate::{record_hibernation_cycle, trim_working_set, FrecencyStore, TomoyoConfig};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 use tomoyo_protocol::{AttachedContext, ClipboardSnapshot, QueryContext, ResultItem, SearchFilter};
@@ -64,6 +64,7 @@ pub struct QueryRouter {
     providers: Vec<Arc<dyn Provider>>,
     plugin_bridge: Option<Arc<dyn ExternalPluginBridge>>,
     frecency: Arc<RwLock<FrecencyStore>>,
+    config: Option<Arc<RwLock<TomoyoConfig>>>,
     generation: Arc<AtomicU64>,
 }
 
@@ -77,8 +78,14 @@ impl QueryRouter {
             providers,
             plugin_bridge,
             frecency,
+            config: None,
             generation: Arc::new(AtomicU64::new(1)),
         }
+    }
+
+    pub fn with_config(mut self, config: Arc<RwLock<TomoyoConfig>>) -> Self {
+        self.config = Some(config);
+        self
     }
 
     pub fn next_generation(&self) -> u64 {
@@ -94,8 +101,12 @@ impl QueryRouter {
     }
 
     pub fn record_execution(&self, item_id: &str) {
+        self.record_execution_for_query("", item_id);
+    }
+
+    pub fn record_execution_for_query(&self, raw_query: &str, item_id: &str) {
         if let Ok(mut store) = self.frecency.write() {
-            store.record_use(item_id);
+            store.record_use_for_query(raw_query, item_id);
         }
     }
 
@@ -147,7 +158,7 @@ impl QueryRouter {
                 }
             }
             return FastQueryBatch {
-                items: self.rank_and_cap(results, limit),
+                items: self.rank_and_cap_for_query(trimmed, results, limit),
                 effective_ctx: ctx,
                 is_dedicated_route: true,
                 run_slow_ipc: false,
@@ -168,7 +179,7 @@ impl QueryRouter {
                 }
             }
             return FastQueryBatch {
-                items: self.rank_and_cap(results, limit),
+                items: self.rank_and_cap_for_query(trimmed, results, limit),
                 effective_ctx: ctx,
                 is_dedicated_route: true,
                 run_slow_ipc: false,
@@ -209,7 +220,7 @@ impl QueryRouter {
                     results.extend(p.query(&p_ctx));
                 }
                 return FastQueryBatch {
-                    items: self.rank_and_cap(results, limit),
+                    items: self.rank_and_cap_for_query(trimmed, results, limit),
                     effective_ctx: p_ctx,
                     is_dedicated_route: true,
                     run_slow_ipc: false,
@@ -221,7 +232,7 @@ impl QueryRouter {
                     let p_ctx = ctx.clone().with_keyword(&first_lower, rest);
                     let results = bridge.query_keyword(&first_lower, &p_ctx);
                     return FastQueryBatch {
-                        items: self.rank_and_cap(results, limit),
+                        items: self.rank_and_cap_for_query(trimmed, results, limit),
                         effective_ctx: p_ctx,
                         is_dedicated_route: true,
                         run_slow_ipc: false,
@@ -255,8 +266,9 @@ impl QueryRouter {
 
         let run_slow_ipc = ctx.filter != SearchFilter::App
             && (!ctx.trimmed.is_empty() || ctx.filter.is_file_only());
+        let ranked = self.rank_and_cap_for_query(&ctx.trimmed, results, limit);
         FastQueryBatch {
-            items: self.rank_and_cap(results, limit),
+            items: ranked,
             effective_ctx: ctx,
             is_dedicated_route: false,
             run_slow_ipc,
@@ -296,7 +308,11 @@ impl QueryRouter {
             }
         }
 
-        self.rank_and_cap(combined, limit)
+        let mut ranked = self.rank_and_cap_for_query(&ctx.trimmed, combined, limit);
+        if ranked.is_empty() && ctx.filter == SearchFilter::All && !ctx.trimmed.is_empty() {
+            ranked = build_zero_result_fallbacks(self.config.as_ref(), &ctx.trimmed);
+        }
+        ranked
     }
 
     /// Synchronous convenience search combining Phase 1 and Phase 2 (used by tests & self-test).
@@ -308,14 +324,7 @@ impl QueryRouter {
         clipboard: Option<ClipboardSnapshot>,
         attached: Option<AttachedContext>,
     ) -> Vec<ResultItem> {
-        self.search_with_filter(
-            raw_input,
-            generation,
-            limit,
-            clipboard,
-            attached,
-            SearchFilter::All,
-        )
+        self.search_with_filter(raw_input, generation, limit, clipboard, attached, SearchFilter::All)
     }
 
     pub fn search_with_filter(
@@ -331,26 +340,17 @@ impl QueryRouter {
         self.search_slow_and_merge(fast, limit)
     }
 
-    pub fn rank_and_cap(&self, mut items: Vec<ResultItem>, limit: usize) -> Vec<ResultItem> {
-        let frecency = self.frecency.read().ok();
-        for item in &mut items {
-            if let Some(store) = frecency.as_ref() {
-                item.score = item.score.saturating_add(store.bonus(&item.id));
-            }
-        }
-        items.sort_by(|a, b| b.score.cmp(&a.score).then_with(|| a.title.cmp(&b.title)));
+    pub fn rank_and_cap(&self, items: Vec<ResultItem>, limit: usize) -> Vec<ResultItem> {
+        self.rank_and_cap_for_query("", items, limit)
+    }
 
-        let mut seen = HashSet::with_capacity(items.len().min(limit));
-        let mut deduped = Vec::with_capacity(limit.min(items.len()));
-        for item in items {
-            if seen.insert(item.id.clone()) {
-                deduped.push(item);
-                if deduped.len() >= limit {
-                    break;
-                }
-            }
-        }
-        deduped
+    pub fn rank_and_cap_for_query(
+        &self,
+        raw_query: &str,
+        items: Vec<ResultItem>,
+        limit: usize,
+    ) -> Vec<ResultItem> {
+        rank_and_dedup(&self.frecency, raw_query, items, limit)
     }
 }
 
@@ -408,11 +408,7 @@ mod tests {
                 provider_id: self.id.into(),
                 title: format!("{}:{}", self.id, ctx.trimmed),
                 subtitle: String::new(),
-                category: if self.slow {
-                    ResultCategory::File
-                } else {
-                    ResultCategory::App
-                },
+                category: if self.slow { ResultCategory::File } else { ResultCategory::App },
                 score: 5000,
                 icon: Default::default(),
                 badge: None,
@@ -442,5 +438,17 @@ mod tests {
         let app_hits = router.search_with_filter("oc", g2, 20, None, None, SearchFilter::App);
         assert_eq!(app_hits.len(), 1);
         assert_eq!(app_hits[0].id, "builtin.apps:App:oc");
+    }
+
+    #[test]
+    fn empty_global_search_falls_back_to_web_and_everything() {
+        let frecency = Arc::new(RwLock::new(FrecencyStore::default()));
+        let router = QueryRouter::new(vec![], None, frecency)
+            .with_config(Arc::new(RwLock::new(TomoyoConfig::default())));
+        let g = router.next_generation();
+        let hits = router.search("zzzz_no_such_local_item", g, 20, None, None);
+        assert_eq!(hits.len(), 2);
+        assert!(hits[0].id.starts_with("fallback:web:"));
+        assert!(hits[1].id.starts_with("fallback:ev:"));
     }
 }

@@ -10,7 +10,7 @@ mod wndproc;
 
 use crate::actions::spawn_settings_window;
 use crate::preview_loader::AsyncPreviewLoader;
-use crate::renderer::{FluentRenderer, RenderState, ThemePalette};
+use crate::renderer::{compute_filter_counts, FilterCounts, FluentRenderer, RenderState, ThemePalette};
 use crate::tray::TrayIcon;
 use bootstrap::{apply_cue_banner, apply_dwm_attributes, detect_everything_label, read_edit_text};
 use std::sync::mpsc::{Receiver, Sender};
@@ -75,6 +75,7 @@ pub(super) struct WindowGeometry {
 pub(super) struct InteractionState {
     pub hovered: Option<usize>,
     pub hovered_filter: Option<SearchFilter>,
+    pub filter_counts: Option<FilterCounts>,
     pub mouse_tracked: bool,
     pub in_size_move: bool,
     pub dragging_divider: bool,
@@ -189,6 +190,7 @@ impl AppShell {
         self.selected_action = 0;
         self.inter.hovered = None;
         self.inter.hovered_filter = None;
+        self.inter.filter_counts = None;
         self.position_on_active_monitor();
         self.dispatch_query();
         unsafe {
@@ -213,6 +215,7 @@ impl AppShell {
         self.selected_action = 0;
         self.inter.hovered = None;
         self.inter.hovered_filter = None;
+        self.inter.filter_counts = None;
         self.toast = None;
         self.inter.drag_origin = None;
         self.inter.dragging_divider = false;
@@ -333,6 +336,9 @@ impl AppShell {
         };
         self.last_result_gen = out.generation;
         self.results = out.items;
+        if self.active_filter == SearchFilter::All {
+            self.inter.filter_counts = Some(compute_filter_counts(&self.results));
+        }
         self.selected = prev_sel_id
             .and_then(|id| self.results.iter().position(|r| r.id == id))
             .unwrap_or(0);
@@ -371,6 +377,7 @@ impl AppShell {
 
     pub(super) fn on_edit_changed(&mut self) {
         self.current_query = read_edit_text(self.edit_hwnd);
+        self.inter.filter_counts = None;
         self.dispatch_query();
     }
 
@@ -395,12 +402,14 @@ impl AppShell {
         let state = RenderState {
             lang: self.lang,
             theme: self.theme,
+            query: &self.current_query,
             mode_badge: mode,
             attached_capsule: attached_label.as_deref(),
             update_badge: update_label.as_deref(),
             filter_bar_visible: filter_vis,
             active_filter: self.active_filter,
             hovered_filter: self.inter.hovered_filter,
+            filter_counts: self.inter.filter_counts.as_ref(),
             items: &self.results,
             selected: self.selected,
             hovered: self.inter.hovered,

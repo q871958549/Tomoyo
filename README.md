@@ -11,7 +11,7 @@
   <a href="https://github.com/q871958549/Tomoyo/actions/workflows/ci.yml"><img src="https://github.com/q871958549/Tomoyo/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="LICENSE-MIT"><img src="https://img.shields.io/badge/license-MIT%20%2F%20Apache--2.0-blue.svg" alt="License" /></a>
   <img src="https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-0078D6.svg" alt="Windows" />
-  <img src="https://img.shields.io/badge/version-v1.0.1-7c6af7.svg" alt="Version" />
+  <img src="https://img.shields.io/badge/version-v1.1.0-7c6af7.svg" alt="Version" />
 </p>
 
 ---
@@ -39,17 +39,17 @@
 
 ---
 
-## 实测数据与自检阈值 (`v1.0.1` Release)
+## 实测数据与自检阈值 (`v1.1.0` Release)
 
 | 指标 | 实测记录 | 自检阈值 (`--strict-budget`) |
 |---|---|---|
-| `tomoyo.exe` 主程序体积 | **4.87 MB** (`4987.0 KB`) | — |
+| `tomoyo.exe` 主程序体积 | **5.18 MB** (`5299.5 KB`) | — |
 | `tomoyo-webview-host.exe` 设置与插件宿主 | **1.45 MB**（关闭即退出） | 0 MB 常驻 |
 | `tomoyo-plugin-ocr.exe` 离线 WinRT OCR 插件 | **0.31 MB**（空闲 15 秒自动回收） | 0 MB 常驻 |
-| 休眠态 Working Set 内存占用 (`--self-test`) | **1.07–1.46 MB** | ≤ 2.0 MB |
-| 休眠态 Private Commit（含 393 应用索引、SQLite 与字体） | **20.31–20.62 MB** | ≤ 28.0 MB |
-| 100 轮查询 / 绘制 / 预览 / 休眠压测 Delta | **GDI `+0` · USER `+0` · Handles `+0` · Private `-0.31 MB`** | 句柄 0 增长 / 内存 ≤ +0.50 MB |
-| 源码规范检查（[编码规范](docs/CODING_STANDARDS.md) / [UI 规范](docs/UI_DESIGN_STANDARDS.md)） | **全仓 112 个源码文件均 ≤ 450 行** | ≤ 450 行/文件 |
+| 休眠态 Working Set 内存占用 (`--self-test`) | **1.12–1.51 MB** | ≤ 2.0 MB |
+| 休眠态 Private Commit（含 393 应用索引、SQLite 与字体） | **20.43 MB** | ≤ 28.0 MB |
+| 100 轮查询 / 绘制 / 预览 / 休眠压测 Delta | **GDI `+0` · USER `+0` · Handles `+0` · Private `+0.01 MB`** | 句柄 0 增长 / 内存 ≤ +0.50 MB |
+| 源码规范检查（[编码规范](docs/CODING_STANDARDS.md) / [UI 规范](docs/UI_DESIGN_STANDARDS.md)） | **全仓 115 个源码文件均 ≤ 450 行** | ≤ 450 行/文件 |
 
 ---
 
@@ -79,8 +79,8 @@ pwsh -File scripts\check_hygiene.ps1
 
 | 前缀 / 快捷键 | 功能说明 |
 |---|---|
-| *(直接输入)* | 混合检索：本地应用、DeskBox 等桌面整理目录、自定义便携目录与 UWP/MSIX（支持拼音/首字母与 `.lnk` 目标文件名）、计算器、格式识别、窗口列表及 Everything 置顶结果 |
-| `Ctrl+Tab` / `Ctrl+1..9` / `@pdf` | 分组筛选栏：按 `全部 / 应用 / 文件夹 / PDF / Excel / Word / PPT / 图片 / 压缩` 过滤结果并下推至 Everything |
+| *(直接输入)* | 混合检索：本地应用、DeskBox 等桌面整理目录、自定义便携目录与 UWP/MSIX（支持拼音/多音字/多词交集/命中高亮与查询词记忆）、计算器、格式识别、窗口列表、Everything 置顶结果与无本地命中时的网页/全盘回退 |
+| `Ctrl+Tab` / `Ctrl+1..9` / `@pdf` | 分组筛选栏（含分类实时计数）：按 `全部 / 应用 / 文件夹 / PDF / Excel / Word / PPT / 图片 / 压缩` 过滤结果并下推至 Everything |
 | `Ctrl+V` *(粘贴截图/文件)* | 粘贴上下文识别：对图片提供看图/Base64/定位目录，对文件提供路径复制/SHA-256 校验/打开终端，按 `Backspace` 清除 |
 | `f <词>` / `ev <词>` | Everything 文件搜索（空参数列出收藏筛选器 `@today/@large/@code` 与最近搜索历史）、异步预览及拖拽导出 |
 | `snip <词>` / `:reload` | 代码片段与动态模板扩展（支持 `{{date}}`/`{{datetime}}`/`{{unix}}`/`{{uuid}}`/`{{clipboard}}`） |
@@ -94,7 +94,7 @@ pwsh -File scripts\check_hygiene.ps1
 | `:stats` / `:plugins` / `:gc` | 查看进程内存/句柄/插件状态，或手动执行休眠清理 |
 | `:theme dark\|light\|midnight` / `:lang zh\|en` | 切换配色主题或界面语言 |
 | `hi` / `py` / `wasm` / `jwt` / `unit` / `json` | 内置参考插件示例（Rust STDIO / Python STDIO / WASM / WebView） |
-| `双击左键` / `Ctrl+P` / `Tab` / `右键` / `Alt+1..8` | 双击打开 / 切换预览面板 / 动作菜单 / 主题弹出右键菜单 / 快捷键直达 |
+| `双击左键` / `Ctrl+Enter` / `Shift+Enter` / `Ctrl+P` / `Tab` / `Alt+1..8` | 双击打开 / 定位目录 / 终端或复制路径 / 预览面板 / 动作菜单 / 快捷键直达 |
 
 ---
 
@@ -112,7 +112,7 @@ pwsh -File scripts\check_hygiene.ps1
 - [`crates/tomoyo-plugin-ocr`](crates/tomoyo-plugin-ocr) — 基于 Windows 10/11 原生 WinRT `OcrEngine` 的按需离线 OCR 子进程插件（0 常驻内存）
 - [`crates/tomoyo-ui-shared`](crates/tomoyo-ui-shared)、[`crates/tomoyo-ui-macos`](crates/tomoyo-ui-macos)、[`crates/tomoyo-ui-linux`](crates/tomoyo-ui-linux) — 跨平台 UI 状态模型与 macOS (`.app` / Spotlight) / Linux (XDG `.desktop` / `fd`) 适配底座
 - [`packaging/`](packaging) — Inno Setup 安装包、Winget / Scoop 清单与 MSIX 打包脚本
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)、[`docs/CODING_STANDARDS.md`](docs/CODING_STANDARDS.md)、[`docs/UI_DESIGN_STANDARDS.md`](docs/UI_DESIGN_STANDARDS.md) & [`docs/PLUGIN_PROTOCOL.md`](docs/PLUGIN_PROTOCOL.md) — 架构、编码与 UI 组件规范及插件通信协议文档
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)、[`docs/CODING_STANDARDS.md`](docs/CODING_STANDARDS.md)、[`docs/UI_DESIGN_STANDARDS.md`](docs/UI_DESIGN_STANDARDS.md)、[`docs/ROADMAP.md`](docs/ROADMAP.md) & [`docs/PLUGIN_PROTOCOL.md`](docs/PLUGIN_PROTOCOL.md) — 架构、编码与 UI 组件规范、演进蓝图及插件通信协议文档
 - [`plugins/`](plugins) & [`registry/index.json`](registry/index.json) — 5 个多运行时示例与内置 OCR 插件及插件索引清单
 - [`.github/workflows/`](.github/workflows) — Windows 资源预算门禁 + Linux/macOS 跨平台编译 CI 与 Tag 触发发包流水线
 

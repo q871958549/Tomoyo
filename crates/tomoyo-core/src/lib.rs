@@ -4,12 +4,14 @@
 
 pub mod config;
 pub mod engine;
+mod engine_rank;
 pub mod fonts;
 pub mod frecency;
 pub mod http;
 pub mod i18n;
 pub mod intent;
 pub mod matcher;
+pub mod matcher_highlight;
 pub mod permissions;
 pub mod pkg_zip;
 pub mod preview;
@@ -24,6 +26,7 @@ pub use http::*;
 pub use i18n::*;
 pub use intent::*;
 pub use matcher::*;
+pub use matcher_highlight::*;
 pub use permissions::*;
 pub use pkg_zip::*;
 pub use preview::*;

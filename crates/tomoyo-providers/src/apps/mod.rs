@@ -6,7 +6,9 @@ use scanner::{app_watch_paths, scan_dir_roots, ScannedApp};
 use std::collections::HashSet;
 use std::path::Path;
 use std::sync::{Arc, RwLock};
-use tomoyo_core::{score_match_with_alias, AppsConfig, IndexedText, Lang, Provider, TomoyoConfig};
+use tomoyo_core::{
+    score_match_with_alias, AppsConfig, FrecencyStore, IndexedText, Lang, Provider, TomoyoConfig,
+};
 use tomoyo_protocol::{
     ActionKind, ActionSpec, IconSpec, QueryContext, ResultCategory, ResultItem, SearchFilter,
 };
@@ -31,11 +33,26 @@ pub(super) struct AppEntry {
 pub struct AppsProvider {
     entries: Arc<RwLock<Vec<AppEntry>>>,
     config: Arc<RwLock<TomoyoConfig>>,
+    frecency: Option<Arc<RwLock<FrecencyStore>>>,
     _watcher: Option<AppDirWatcher>,
 }
 
 impl AppsProvider {
     pub fn new(config: Arc<RwLock<TomoyoConfig>>) -> Self {
+        Self::create(config, None)
+    }
+
+    pub fn with_frecency(
+        config: Arc<RwLock<TomoyoConfig>>,
+        frecency: Arc<RwLock<FrecencyStore>>,
+    ) -> Self {
+        Self::create(config, Some(frecency))
+    }
+
+    fn create(
+        config: Arc<RwLock<TomoyoConfig>>,
+        frecency: Option<Arc<RwLock<FrecencyStore>>>,
+    ) -> Self {
         let entries = Arc::new(RwLock::new(Vec::new()));
         let apps_cfg = config.read().map(|c| c.apps.clone()).unwrap_or_default();
         reload_entries(&entries, &apps_cfg);
@@ -52,6 +69,7 @@ impl AppsProvider {
         Self {
             entries,
             config,
+            frecency,
             _watcher: watcher,
         }
     }
@@ -94,10 +112,30 @@ impl Provider for AppsProvider {
         };
 
         if q.is_empty() {
-            return entries
+            let empty_cap = if ctx.filter == SearchFilter::App { cap } else { cap.min(8) };
+            let mut ranked_empty: Vec<(&AppEntry, i64)> = entries
                 .iter()
-                .take(cap)
-                .map(|app| to_result_item(app, 500, lang))
+                .map(|app| {
+                    let bonus = self
+                        .frecency
+                        .as_ref()
+                        .and_then(|f| f.read().ok())
+                        .map(|s| s.bonus(&app.id))
+                        .unwrap_or(0);
+                    (app, 500 + bonus)
+                })
+                .collect();
+            ranked_empty.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.name.cmp(&b.0.name)));
+            return ranked_empty
+                .into_iter()
+                .take(empty_cap)
+                .map(|(app, sc)| {
+                    let mut item = to_result_item(app, sc, lang);
+                    if sc > 500 && item.badge.is_none() {
+                        item.badge = Some(lang.pick("常用", "FREQUENT").into());
+                    }
+                    item
+                })
                 .collect();
         }
 
@@ -221,7 +259,7 @@ fn to_result_item(app: &AppEntry, score: i64, lang: Lang) -> ResultItem {
         actions.push(ActionSpec {
             id: "copy_path".into(),
             label: lang.pick("复制路径", "Copy Path").into(),
-            shortcut: Some("Ctrl+C".into()),
+            shortcut: Some("Shift+Enter".into()),
             kind: ActionKind::CopyText {
                 text: app.path.clone(),
                 paste_immediately: false,

@@ -179,3 +179,6 @@ sequenceDiagram
   - **搜索结果完整性修复**：修复 `tomoyo-everything` 三个底层 IPC 问题（`HWND_MESSAGE` 改为隐藏顶层接收窗口、`SMTO_ABORTIFHUNG` 改为 `SMTO_NORMAL`、`EVERYTHING_IPC_LIST2` 头部由 28 字节修正为实际 20 字节），并在 `EverythingProvider` 引入快速索引排序、`startwith:` 二次合并与路径权重重排（桌面/DeskBox 提权、隐藏点目录与缓存目录降权）。
   - **设置中心单实例与受控输入**：设置中心新增命名互斥体单实例唤起；移除全部裸 `<input type="number">` 与路径 `<textarea>`，替换为分段深度选择、原生 Win32 `IFileOpenDialog` 目录浏览、范围滑块、Everything 排除标签组与带协议校验的搜索模板配置；Rust 后端 `TomoyoConfig::sanitize()` 在加载与保存时统一执行边界钳制与高危目录/协议拦截。
   - **界面清晰度与设计规范**：修复私有字体因 GDI 伪粗体（`FW_BOLD`/`FW_SEMIBOLD`/`FW_MEDIUM`）导致的小字模糊问题，统一使用 `FW_NORMAL` 原生字形，引入三级文字对比度与柔和选中态标签，并新增 [`docs/UI_DESIGN_STANDARDS.md`](UI_DESIGN_STANDARDS.md)。
+- **v1.1.0 — 查询词绑定记忆、命中字符高亮、多音字与跨源去重**
+  - **检索引擎升级**：`FrecencyStore` 新增有界查询词绑定记忆（`query -> item`，上限 400 词 × 8 项，14 天半衰期）；`IndexedText` 支持多音字（`pinyin` `heteronym`）与空格多词跨字段交集匹配；`QueryRouter` 合并 `Apps` 与 `Everything` 时按规范化文件系统路径去重，并在全局零结果时提供默认网页搜索与 `f ` 全盘检索回退项。
+  - **可解释高亮与快捷操作**：新增 `highlight_title_ranges` 与 `draw_text_highlighted_gdi`（严格 `FW_NORMAL` 零伪粗体），实时高亮标题中的文本/拼音/多音字/首字母命中区间；筛选栏标签展示分类实时命中数；空输入框按历史高频应用排序；新增 `Shift+Enter` 快捷次动作（文件/目录在此处打开终端，应用复制路径），并建立 `ranking_golden.rs` 排序回归测试集与长期规划 [`docs/ROADMAP.md`](ROADMAP.md)。

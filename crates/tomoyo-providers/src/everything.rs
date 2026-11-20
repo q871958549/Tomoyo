@@ -251,6 +251,12 @@ fn build_entry_item(
                 },
             },
             ActionSpec {
+                id: "terminal".into(),
+                label: lang.pick("在此处打开终端", "Open Terminal Here").into(),
+                shortcut: Some("Shift+Enter".into()),
+                kind: ActionKind::OpenTerminalAt { dir: parent_dir },
+            },
+            ActionSpec {
                 id: "copy_path".into(),
                 label: lang.pick("复制完整路径", "Copy Full Path").into(),
                 shortcut: Some("Ctrl+C".into()),
@@ -258,12 +264,6 @@ fn build_entry_item(
                     text: entry.full_path.clone(),
                     paste_immediately: false,
                 },
-            },
-            ActionSpec {
-                id: "terminal".into(),
-                label: lang.pick("在此处打开终端", "Open Terminal Here").into(),
-                shortcut: None,
-                kind: ActionKind::OpenTerminalAt { dir: parent_dir },
             },
             ActionSpec {
                 id: "copy_name".into(),

@@ -2,9 +2,9 @@
 
 use super::input::register_configured_hotkey;
 use super::{bootstrap::apply_cue_banner, AppShell, HOTKEY_ID};
-use crate::renderer::MIN_WINDOW_WIDTH_DIP;
+use crate::renderer::{compute_filter_counts, MIN_WINDOW_WIDTH_DIP};
 use tomoyo_core::TomoyoConfig;
-use tomoyo_protocol::AttachedContext;
+use tomoyo_protocol::{AttachedContext, SearchFilter};
 use windows::Win32::UI::Input::KeyboardAndMouse::UnregisterHotKey;
 use windows::Win32::UI::WindowsAndMessaging::IsWindowVisible;
 
@@ -30,6 +30,8 @@ impl AppShell {
             self.active_filter,
         );
         self.selected = 0;
+        self.inter.filter_counts = (self.active_filter == SearchFilter::All)
+            .then(|| compute_filter_counts(&self.results));
         self.inter.hovered = if self.results.len() > 1 { Some(1) } else { None };
         self.scroll_offset = 0;
         self.cached_preview_id = None;

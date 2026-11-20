@@ -65,6 +65,7 @@ pub(super) fn paint_sdf_pass(
             state.lang,
             state.active_filter,
             state.hovered_filter,
+            state.filter_counts,
         );
     } else if !state.items.is_empty() {
         canvas.fill_rect_dip(12.0, lay.header_h, lay.w_dip - 12.0, lay.header_h + 1.0, pal.divider);

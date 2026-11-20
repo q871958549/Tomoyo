@@ -8,7 +8,9 @@ mod sdf_pass;
 mod theme;
 
 pub use canvas::Canvas;
-pub use filter_bar::{compute_filter_hitboxes, FILTER_BAR_HEIGHT_DIP};
+pub use filter_bar::{
+    compute_filter_counts, compute_filter_hitboxes, FilterCounts, FILTER_BAR_HEIGHT_DIP,
+};
 pub use gdi::{dip_rect, draw_text_gdi, DibSurface, FontPack};
 pub use theme::{Rgb, ThemePalette};
 
@@ -30,12 +32,14 @@ pub const MAX_WINDOW_WIDTH_DIP: i32 = 1600;
 pub struct RenderState<'a> {
     pub lang: Lang,
     pub theme: ThemePalette,
+    pub query: &'a str,
     pub mode_badge: Option<&'a str>,
     pub attached_capsule: Option<&'a str>,
     pub update_badge: Option<&'a str>,
     pub filter_bar_visible: bool,
     pub active_filter: SearchFilter,
     pub hovered_filter: Option<SearchFilter>,
+    pub filter_counts: Option<&'a FilterCounts>,
     pub items: &'a [ResultItem],
     pub selected: usize,
     pub hovered: Option<usize>,

@@ -3,13 +3,14 @@
 use super::theme::Rgb;
 use std::ffi::c_void;
 use windows::core::PCWSTR;
-use windows::Win32::Foundation::RECT;
+use windows::Win32::Foundation::{RECT, SIZE};
 use windows::Win32::Graphics::Gdi::{
     CreateCompatibleDC, CreateDIBSection, CreateFontW, DeleteDC, DeleteObject, DrawTextW,
-    SelectObject, SetBkMode, SetTextColor, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, CLEARTYPE_QUALITY,
-    CLIP_DEFAULT_PRECIS, DEFAULT_CHARSET, DEFAULT_PITCH, DIB_RGB_COLORS, DRAW_TEXT_FORMAT,
-    DT_END_ELLIPSIS, DT_LEFT, DT_NOPREFIX, DT_SINGLELINE, DT_TOP, DT_VCENTER, DT_WORDBREAK,
-    FF_DONTCARE, FW_NORMAL, HBITMAP, HDC, HFONT, HGDIOBJ, OUT_DEFAULT_PRECIS, TRANSPARENT,
+    GetTextExtentPoint32W, SelectObject, SetBkMode, SetTextColor, BITMAPINFO, BITMAPINFOHEADER,
+    BI_RGB, CLEARTYPE_QUALITY, CLIP_DEFAULT_PRECIS, DEFAULT_CHARSET, DEFAULT_PITCH, DIB_RGB_COLORS,
+    DRAW_TEXT_FORMAT, DT_END_ELLIPSIS, DT_LEFT, DT_NOPREFIX, DT_SINGLELINE, DT_TOP, DT_VCENTER,
+    DT_WORDBREAK, FF_DONTCARE, FW_NORMAL, HBITMAP, HDC, HFONT, HGDIOBJ, OUT_DEFAULT_PRECIS,
+    TRANSPARENT,
 };
 
 pub struct DibSurface {
@@ -176,6 +177,85 @@ pub unsafe fn draw_text_gdi(
             &mut rect,
             align | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS | DT_NOPREFIX,
         );
+        let _ = SelectObject(dc, old);
+    }
+}
+
+pub unsafe fn draw_text_highlighted_gdi(
+    dc: HDC,
+    font: HFONT,
+    base_color: Rgb,
+    highlight_color: Rgb,
+    text: &str,
+    spans: &[(usize, usize)],
+    rect: RECT,
+) {
+    if spans.is_empty() {
+        unsafe {
+            draw_text_gdi(dc, font, base_color, text, rect, DT_LEFT);
+        }
+        return;
+    }
+
+    // Build contiguous (slice, is_highlighted) segments using validated char boundaries.
+    let mut runs: Vec<(&str, bool)> = Vec::with_capacity(spans.len() * 2 + 1);
+    let mut pos = 0usize;
+    for &(s, e) in spans {
+        if s > pos && s <= text.len() && text.is_char_boundary(s) {
+            runs.push((&text[pos..s], false));
+        }
+        if s < e && e <= text.len() && text.is_char_boundary(s) && text.is_char_boundary(e) {
+            runs.push((&text[s..e], true));
+            pos = e;
+        }
+    }
+    if pos < text.len() && text.is_char_boundary(pos) {
+        runs.push((&text[pos..], false));
+    }
+    if runs.is_empty() {
+        return;
+    }
+
+    unsafe {
+        let old = SelectObject(dc, font.into());
+        let mut cursor_x = rect.left;
+        for (idx, (seg, is_hl)) in runs.iter().enumerate() {
+            if cursor_x >= rect.right {
+                break;
+            }
+            let mut wide: Vec<u16> = seg.encode_utf16().collect();
+            if wide.is_empty() {
+                continue;
+            }
+            let mut sz = SIZE::default();
+            let _ = GetTextExtentPoint32W(dc, &wide, &mut sz);
+            let is_last = idx + 1 == runs.len();
+            let overflows = cursor_x + sz.cx > rect.right;
+            let mut seg_rc = RECT {
+                left: cursor_x,
+                top: rect.top,
+                right: if is_last || overflows {
+                    rect.right
+                } else {
+                    (cursor_x + sz.cx).min(rect.right)
+                },
+                bottom: rect.bottom,
+            };
+            SetTextColor(
+                dc,
+                if *is_hl { highlight_color } else { base_color }.to_colorref(),
+            );
+            let flags = if is_last || overflows {
+                DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS | DT_NOPREFIX
+            } else {
+                DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX
+            };
+            let _ = DrawTextW(dc, &mut wide, &mut seg_rc, flags);
+            cursor_x += sz.cx;
+            if overflows {
+                break;
+            }
+        }
         let _ = SelectObject(dc, old);
     }
 }

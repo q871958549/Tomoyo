@@ -22,7 +22,7 @@ exclude = [
 ]
 
 [workspace.package]
-version = "1.0.1"
+version = "1.1.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 
@@ -44,7 +44,7 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "std"
 base64 = "0.22"
 uuid = { version = "1.11", features = ["v4"] }
 lru = "0.16"
-pinyin = { version = "0.11", default-features = false, features = ["plain"] }
+pinyin = { version = "0.11", default-features = false, features = ["plain", "heteronym"] }
 mimalloc = { version = "0.1", default-features = false }
 rusqlite = { version = "0.43", default-features = false, features = ["bundled"] }
 wasmi = { version = "2.0", default-features = false, features = ["std", "validate", "wat", "auto-dispatch"] }

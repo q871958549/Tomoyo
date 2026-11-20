@@ -298,7 +298,12 @@ impl AppShell {
         let x_dip = x_px as f32 / scale;
         let y_dip = y_px as f32 / scale;
         let list_w_dip = self.current_list_width_dip();
-        for hb in compute_filter_hitboxes(list_w_dip, HEADER_HEIGHT_DIP as f32, self.lang) {
+        for hb in compute_filter_hitboxes(
+            list_w_dip,
+            HEADER_HEIGHT_DIP as f32,
+            self.lang,
+            self.inter.filter_counts.as_ref(),
+        ) {
             if x_dip >= hb.x0 && x_dip <= hb.x1 && y_dip >= hb.y0 && y_dip <= hb.y1 {
                 return Some(hb.filter);
             }

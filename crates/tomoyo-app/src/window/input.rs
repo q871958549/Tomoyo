@@ -122,6 +122,8 @@ impl AppShell {
                     self.execute_selected(self.selected_action);
                 } else if ctrl_down {
                     self.execute_selected(1);
+                } else if shift_down {
+                    self.execute_selected(2);
                 } else {
                     self.execute_selected(0);
                 }

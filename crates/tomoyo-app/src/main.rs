@@ -101,7 +101,10 @@ fn build_engine() -> (
     let bridge: Arc<dyn ExternalPluginBridge> = plugin_host.clone();
     let updater = UpdateManager::new();
 
-    let apps = Arc::new(AppsProvider::new(config.clone()));
+    let frecency_path = data_dir().join("frecency.json");
+    let frecency = Arc::new(RwLock::new(FrecencyStore::load_or_default(frecency_path)));
+
+    let apps = Arc::new(AppsProvider::with_frecency(config.clone(), frecency.clone()));
     let clipboard = Arc::new(ClipboardProvider::with_sqlite(
         clip_db_path,
         clip_max,
@@ -131,9 +134,7 @@ fn build_engine() -> (
         system,
     ];
 
-    let frecency_path = data_dir().join("frecency.json");
-    let frecency = Arc::new(RwLock::new(FrecencyStore::load_or_default(frecency_path)));
-    let router = Arc::new(QueryRouter::new(providers, Some(bridge), frecency));
+    let router = Arc::new(QueryRouter::new(providers, Some(bridge), frecency).with_config(config.clone()));
     (config, router, plugin_host, clipboard, apps, updater)
 }
 

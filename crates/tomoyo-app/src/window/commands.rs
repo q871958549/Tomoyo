@@ -196,7 +196,8 @@ impl AppShell {
             return;
         };
 
-        self.router.record_execution(&item.id);
+        self.router
+            .record_execution_for_query(&self.current_query, &item.id);
         if item.provider_id == "builtin.everything"
             && !item.id.starts_with("everything.")
             && !item.id.starts_with("ev:")
