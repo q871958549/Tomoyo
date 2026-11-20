@@ -1,13 +1,10 @@
 //! Action execution, internal commands, Super Match paste, async preview & async updater.
 
-use super::input::register_configured_hotkey;
-use super::layout::apply_cue_banner;
-use super::{AppShell, EDIT_CTRL_ID, HOTKEY_ID, WM_APP_UPDATE_READY};
+use super::{AppShell, EDIT_CTRL_ID, WM_APP_UPDATE_INSTALLED, WM_APP_UPDATE_READY};
 use crate::actions::{
     copy_image_as_base64_uri, execute_action, kill_process_by_pid,
     paste_into_previous_window_async, read_clipboard_files, read_clipboard_image_png,
 };
-use crate::renderer::MIN_WINDOW_WIDTH_DIP;
 use crate::tray::{
     MENU_ID_CONFIG, MENU_ID_GC, MENU_ID_QUIT, MENU_ID_RELOAD, MENU_ID_SETTINGS, MENU_ID_SHOW,
     MENU_ID_STATS, MENU_ID_UPDATE,
@@ -15,14 +12,12 @@ use crate::tray::{
 use std::ffi::c_void;
 use std::sync::Arc;
 use tomoyo_core::{
-    is_autostart_enabled, set_autostart_enabled, Lang, TomoyoConfig, UpdateStatus,
+    download_and_verify_release_asset, is_autostart_enabled, launch_verified_update_installer,
+    set_autostart_enabled, Lang, UpdateStatus,
 };
 use tomoyo_protocol::{ActionKind, AttachedContext, InternalCommandKind};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
-use windows::Win32::UI::Input::KeyboardAndMouse::UnregisterHotKey;
-use windows::Win32::UI::WindowsAndMessaging::{
-    DestroyWindow, IsWindowVisible, PostMessageW, EN_CHANGE,
-};
+use windows::Win32::UI::WindowsAndMessaging::{DestroyWindow, PostMessageW, EN_CHANGE};
 
 pub(super) fn dispatch_wm_command(hwnd: HWND, app: &mut AppShell, wparam: WPARAM) -> LRESULT {
     let id = (wparam.0 & 0xFFFF) as u32;
@@ -202,6 +197,12 @@ impl AppShell {
         };
 
         self.router.record_execution(&item.id);
+        if item.provider_id == "builtin.everything"
+            && !item.id.starts_with("everything.")
+            && !item.id.starts_with("ev:")
+        {
+            tomoyo_providers::record_everything_query(&self.current_query);
+        }
         if matches!(action.kind, ActionKind::CopyImage { .. }) {
             self.inter.suppress_next_clip_img = true;
         }
@@ -275,6 +276,7 @@ impl AppShell {
                 self.dispatch_query();
             }
             InternalCommandKind::CheckForUpdates => self.trigger_update_check_async(),
+            InternalCommandKind::InstallUpdate => self.trigger_update_install_async(),
             InternalCommandKind::ClearAttachedContext => {
                 self.attached = None;
                 self.dispatch_query();
@@ -322,83 +324,60 @@ impl AppShell {
         }
     }
 
-    pub fn is_renderer_hibernated(&self) -> bool {
-        self.renderer.is_hibernated()
+    pub(super) fn trigger_update_install_async(&mut self) {
+        let Some(release) = self.updater.available_release() else {
+            self.trigger_update_check_async();
+            return;
+        };
+        self.show_toast(&match self.lang {
+            Lang::Zh => format!("正在下载 v{} 安装包并校验 SHA-256...", release.version),
+            Lang::En => format!("Downloading v{} & verifying SHA-256...", release.version),
+        });
+        let slot = Arc::clone(&self.pending_update_install);
+        let hwnd_raw = self.hwnd.0 as usize;
+        let _ = std::thread::Builder::new()
+            .name("tomoyo-self-updater".into())
+            .spawn(move || {
+                let res = download_and_verify_release_asset(&release)
+                    .and_then(|path| launch_verified_update_installer(&path));
+                if let Ok(mut g) = slot.lock() {
+                    *g = Some(res);
+                }
+                unsafe {
+                    let _ = PostMessageW(
+                        Some(HWND(hwnd_raw as *mut c_void)),
+                        WM_APP_UPDATE_INSTALLED,
+                        WPARAM(0),
+                        LPARAM(0),
+                    );
+                }
+            });
     }
 
-    pub fn wait_background_idle_for_test(&mut self) {
-        self.renderer.wait_icons_idle_for_test();
-        self.preview_loader.wait_idle_and_drain();
-    }
-
-    pub fn self_test_paint_and_hibernate(&mut self, query: &str) -> usize {
-        self.current_query = query.to_string();
-        let generation = self.router.next_generation();
-        self.results = self.router.search_with_filter(
-            query,
-            generation,
-            20,
-            self.clipboard.latest_snapshot(),
-            self.attached.clone(),
-            self.active_filter,
-        );
-        self.selected = 0;
-        self.inter.hovered = if self.results.len() > 1 { Some(1) } else { None };
-        self.scroll_offset = 0;
-        self.cached_preview_id = None;
-        self.refresh_selected_preview();
-        let count = self.results.len();
-
-        let hdc = unsafe { windows::Win32::Graphics::Gdi::GetDC(Some(self.hwnd)) };
-        let w = (self.desired_width_dip() as f32 * self.dpi_scale) as i32;
-        let h = (self.desired_height_dip() as f32 * self.dpi_scale) as i32;
-        self.render_into_hdc(hdc, w, h);
-        unsafe {
-            windows::Win32::Graphics::Gdi::ReleaseDC(Some(self.hwnd), hdc);
-        }
-        count
-    }
-
-    pub fn self_test_attached_paint(&mut self, ctx: AttachedContext) -> usize {
-        self.attached = Some(ctx);
-        let hits = self.self_test_paint_and_hibernate("");
-        self.attached = None;
-        hits
-    }
-
-    pub(super) fn reload_config_and_all(&mut self) {
-        let fresh = TomoyoConfig::load_or_create();
-        let new_lang = fresh.lang();
-        let new_theme = fresh.theme.clone();
-        let new_hotkey = fresh.hotkey.clone();
-        self.preview_enabled = fresh.auto_preview;
-        self.show_filter_bar = fresh.show_filter_bar;
-        self.geom.list_width_dip = fresh.window.width_dip.clamp(MIN_WINDOW_WIDTH_DIP, 1400);
-        self.geom.max_visible_rows = fresh.window.max_visible_rows.clamp(4, 18);
-        self.geom.preview_width_dip = fresh.window.preview_width_dip.clamp(220, 620);
-        self.geom.custom_pos = fresh.window.custom_x.zip(fresh.window.custom_y);
-        if let Ok(mut cfg) = self.config.write() {
-            *cfg = fresh;
-        }
-        self.lang = new_lang;
-        unsafe {
-            apply_cue_banner(self.edit_hwnd, new_lang);
-        }
-        self.apply_theme(&new_theme, false);
-        if self.tray.is_some() {
-            unsafe {
-                let _ = UnregisterHotKey(Some(self.hwnd), HOTKEY_ID);
+    pub(super) fn on_update_installed(&mut self) {
+        let outcome = self.pending_update_install.lock().ok().and_then(|mut g| g.take());
+        let Some(res) = outcome else {
+            return;
+        };
+        match res {
+            Ok(true) => {
+                self.shutdown_clean();
+                unsafe {
+                    let _ = DestroyWindow(self.hwnd);
+                }
             }
-            self.hotkey_label = register_configured_hotkey(self.hwnd, &new_hotkey);
-            if let Some(tray) = &mut self.tray {
-                tray.update_tooltip(&self.hotkey_label);
+            Ok(false) => {
+                self.show_toast(self.lang.pick(
+                    "便携包校验通过并已下载，已在资源管理器中选中",
+                    "Verified update ZIP downloaded and highlighted in Explorer",
+                ));
             }
-        }
-        self.router.reload_all();
-        if unsafe { IsWindowVisible(self.hwnd).as_bool() } {
-            self.position_on_active_monitor();
-            self.dispatch_query();
-            self.invalidate();
+            Err(err) => {
+                self.show_toast(&format!(
+                    "{}: {err}",
+                    self.lang.pick("自动更新失败", "Auto-update failed")
+                ));
+            }
         }
     }
 }

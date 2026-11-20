@@ -5,16 +5,16 @@ mod commands;
 mod input;
 mod layout;
 mod menus;
+mod selftest;
 mod wndproc;
 
 use crate::actions::spawn_settings_window;
 use crate::preview_loader::AsyncPreviewLoader;
 use crate::renderer::{FluentRenderer, RenderState, ThemePalette};
 use crate::tray::TrayIcon;
-use bootstrap::detect_everything_label;
-use layout::{apply_cue_banner, apply_dwm_attributes, read_edit_text};
+use bootstrap::{apply_cue_banner, apply_dwm_attributes, detect_everything_label, read_edit_text};
 use std::sync::mpsc::{Receiver, Sender};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 use tomoyo_core::{Lang, QueryRouter, ResolvedPreview, TomoyoConfig, UpdateManager};
 use tomoyo_plugin_host::PluginHost;
 use tomoyo_protocol::{AttachedContext, ClipboardSnapshot, ResultItem, SearchFilter};
@@ -38,6 +38,7 @@ pub(super) const WM_APP_PASTE_INTERCEPT: u32 = WM_APP + 3;
 pub(super) const WM_APP_UPDATE_READY: u32 = WM_APP + 4;
 pub(super) const WM_APP_CONFIG_SAVED: u32 = WM_APP + 20;
 pub const WM_APP_WAKE_EXISTING: u32 = WM_APP + 21;
+pub(super) const WM_APP_UPDATE_INSTALLED: u32 = WM_APP + 22;
 pub(super) const TIMER_HIBERNATE: usize = 1001;
 pub(super) const TIMER_CLEAR_TOAST: usize = 1002;
 pub(super) const EM_SETCUEBANNER: u32 = 0x1501;
@@ -121,6 +122,8 @@ pub struct AppShell {
     pub(super) toast: Option<String>,
     pub(super) everything_status: Option<&'static str>,
     pub(super) hotkey_label: String,
+    pub(super) hotkey_conflict: Option<String>,
+    pub(super) pending_update_install: Arc<Mutex<Option<Result<bool, String>>>>,
     pub(super) dpi_scale: f32,
     pub(super) taskbar_created_msg: u32,
     pub(super) shutting_down: bool,
@@ -195,6 +198,14 @@ impl AppShell {
             SendMessageW(self.edit_hwnd, EM_SETSEL, Some(WPARAM(0)), Some(LPARAM(-1)));
             let _ = InvalidateRect(Some(self.hwnd), None, false);
         }
+        if let Some(orig) = self.hotkey_conflict.take() {
+            let active = self.hotkey_label.clone();
+            let msg = match self.lang {
+                Lang::Zh => format!("热键 {orig} 被其他软件占用，已改用 {active}（按 Ctrl+, 重设）"),
+                Lang::En => format!("Hotkey {orig} is busy; using {active} (Ctrl+, to change)"),
+            };
+            self.show_toast(&msg);
+        }
     }
 
     pub fn hide_launcher(&mut self) {
@@ -238,14 +249,17 @@ impl AppShell {
 
     pub fn run_hibernate(&mut self) -> u64 {
         unsafe { let _ = KillTimer(Some(self.hwnd), TIMER_HIBERNATE); }
-        self.preview_loader.cancel_all();
+        self.preview_loader.purge_worker();
         self.renderer.hibernate_release();
         self.results.clear();
         self.results.shrink_to_fit();
         self.cached_preview_id = None;
         self.cached_preview = None;
         let cycles = self.router.hibernate_trim();
-        unsafe { mi_collect(true); }
+        unsafe {
+            windows::Win32::System::Com::CoFreeUnusedLibraries();
+            mi_collect(true);
+        }
         cycles
     }
 

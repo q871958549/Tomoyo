@@ -278,6 +278,7 @@ pub enum InternalCommandKind {
     SetLanguage { lang: String },
     ToggleClipboardPin { id_key: String },
     CheckForUpdates,
+    InstallUpdate,
     ClearAttachedContext,
     CopyImageAsBase64 { path: String },
     KillProcess { pid: u32, name: String },

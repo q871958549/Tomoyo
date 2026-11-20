@@ -158,6 +158,13 @@ impl Default for WindowConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EverythingFavorite {
+    pub tag: String,
+    pub label: String,
+    pub expr: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EverythingConfig {
     #[serde(default = "default_ev_global")]
     pub max_global_results: usize,
@@ -166,6 +173,29 @@ pub struct EverythingConfig {
     /// Extra default filter appended to dedicated/file queries (e.g. `"!*.tmp"`).
     #[serde(default)]
     pub extra_filter: String,
+    /// User saved favorite Everything filter expressions (`@today`, `@large`, `@code`, etc.).
+    #[serde(default = "default_ev_favorites")]
+    pub favorites: Vec<EverythingFavorite>,
+}
+
+pub fn default_ev_favorites() -> Vec<EverythingFavorite> {
+    vec![
+        EverythingFavorite {
+            tag: "@today".into(),
+            label: "今日修改文件".into(),
+            expr: "dm:today".into(),
+        },
+        EverythingFavorite {
+            tag: "@large".into(),
+            label: "大文件 (>50MB)".into(),
+            expr: "size:>50mb".into(),
+        },
+        EverythingFavorite {
+            tag: "@code".into(),
+            label: "源码工程文件".into(),
+            expr: "ext:rs;ts;tsx;py;go;c;cpp;h;toml".into(),
+        },
+    ]
 }
 
 impl Default for EverythingConfig {
@@ -174,6 +204,7 @@ impl Default for EverythingConfig {
             max_global_results: default_ev_global(),
             max_dedicated_results: default_ev_dedicated(),
             extra_filter: String::new(),
+            favorites: default_ev_favorites(),
         }
     }
 }

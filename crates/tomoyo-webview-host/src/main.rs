@@ -106,6 +106,9 @@ pub fn build_settings_init_script() -> String {
                 "runtime": p.runtime_badge,
                 "keywords": p.keywords,
                 "max_memory_mb": p.max_memory_mb,
+                "declared_permissions": p.declared_permissions,
+                "granted_permissions": p.granted_permissions,
+                "bundled_trusted": p.bundled_trusted,
             })
         })
         .collect();

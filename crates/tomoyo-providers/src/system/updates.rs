@@ -23,13 +23,24 @@ pub fn build_update_item(
                     Lang::Zh => format!(":update — 发现新版本 v{}（当前 v{}）", release.version, CURRENT_VERSION),
                     Lang::En => format!(":update — New Release v{} available (current v{})", release.version, CURRENT_VERSION),
                 },
-                format!("{} · 回车直达下载安装包", release.name),
+                match lang {
+                    Lang::Zh => format!("{} · 回车自动下载并校验 SHA-256 安装升级", release.name),
+                    Lang::En => format!("{} · Enter to download, verify SHA-256 & install", release.name),
+                },
                 format!("v{}", release.version),
                 vec![
                     ActionSpec {
-                        id: "open_release".into(),
-                        label: lang.pick("前往 GitHub 下载新版本", "Download New Release").into(),
+                        id: "install_update".into(),
+                        label: lang.pick("自动下载校并安装新版本", "Download, Verify & Install Update").into(),
                         shortcut: Some("Enter".into()),
+                        kind: ActionKind::InternalCommand {
+                            command: InternalCommandKind::InstallUpdate,
+                        },
+                    },
+                    ActionSpec {
+                        id: "open_release".into(),
+                        label: lang.pick("在浏览器打开 GitHub Release", "Open GitHub Release").into(),
+                        shortcut: Some("Ctrl+Enter".into()),
                         kind: ActionKind::OpenUrl { url: dl },
                     },
                     ActionSpec {

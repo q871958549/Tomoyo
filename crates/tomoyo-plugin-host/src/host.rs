@@ -1,16 +1,18 @@
 //! Unified Multi-Runtime Plugin Host lifecycle orchestrator (lazy spawn, query, execute, idle reap).
 
 use crate::discovery::{build_webview_trigger_item, scan_plugin_dirs};
-use crate::process::{LivePluginProcess, ProcessError};
-use crate::wasm::LiveWasmPlugin;
+use crate::permissions::is_bundled_plugin_dir;
+use crate::process::ProcessError;
+use crate::runtime::{ensure_live, LiveRuntime, RegisteredPlugin};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
-use tomoyo_core::{inspect_pid_working_set, ExternalPluginBridge, PluginSummary};
+use tomoyo_core::{permission_key, ExternalPluginBridge, PermissionStore, PluginSummary};
 use tomoyo_protocol::{
-    ExecuteRequest, ExecuteResponse, PluginManifest, QueryContext, QueryResponse, ResultItem,
-    RuntimeConfig, METHOD_EXECUTE, METHOD_QUERY,
+    ExecuteRequest, ExecuteResponse, QueryContext, QueryResponse, ResultItem, RuntimeConfig,
+    METHOD_EXECUTE, METHOD_QUERY,
 };
 
 #[derive(Debug, Clone)]
@@ -26,55 +28,23 @@ pub struct PluginRuntimeInfo {
     pub working_set_bytes: Option<u64>,
     pub max_memory_mb: u32,
     pub idle_timeout_secs: u64,
-}
-
-enum LiveRuntime {
-    Stdio(LivePluginProcess),
-    Wasm(LiveWasmPlugin),
-}
-
-impl LiveRuntime {
-    fn last_used(&self) -> Instant {
-        match self {
-            Self::Stdio(p) => p.last_used(),
-            Self::Wasm(w) => w.last_used(),
-        }
-    }
-    fn pid(&self) -> Option<u32> {
-        match self {
-            Self::Stdio(p) => Some(p.pid()),
-            Self::Wasm(_) => None,
-        }
-    }
-    fn memory_bytes(&self) -> Option<u64> {
-        match self {
-            Self::Stdio(p) => inspect_pid_working_set(p.pid()),
-            Self::Wasm(w) => Some(w.linear_memory_bytes()),
-        }
-    }
-    fn shutdown(&mut self) {
-        if let Self::Stdio(p) = self {
-            p.shutdown_gracefully();
-        }
-    }
-}
-
-struct RegisteredPlugin {
-    manifest: PluginManifest,
-    dir: PathBuf,
-    live: Option<LiveRuntime>,
+    pub declared_permissions: Vec<String>,
+    pub granted_permissions: Vec<String>,
+    pub bundled_trusted: bool,
 }
 
 struct HostState {
     search_dirs: Vec<PathBuf>,
     plugins: HashMap<String, RegisteredPlugin>,
     keyword_index: HashMap<String, Vec<String>>,
+    perms: PermissionStore,
     shutting_down: bool,
 }
 
 /// Unified Plugin Host managing STDIO JSON-RPC, WASM Sandbox, and On-Demand WebView plugins.
 pub struct PluginHost {
     state: Arc<(Mutex<HostState>, Condvar)>,
+    interactive_prompts: AtomicBool,
 }
 
 impl PluginHost {
@@ -84,21 +54,28 @@ impl PluginHost {
                 search_dirs,
                 plugins: HashMap::new(),
                 keyword_index: HashMap::new(),
+                perms: PermissionStore::load_default(),
                 shutting_down: false,
             }),
             Condvar::new(),
         ));
         let host = Arc::new(Self {
             state: Arc::clone(&state),
+            interactive_prompts: AtomicBool::new(true),
         });
         host.discover_plugins();
         host.spawn_idle_reaper();
         host
     }
 
+    pub fn set_interactive_prompts(&self, enabled: bool) {
+        self.interactive_prompts.store(enabled, Ordering::Release);
+    }
+
     pub fn discover_plugins(&self) {
         let (lock, _) = &*self.state;
         let mut st = lock.lock().unwrap();
+        st.perms = PermissionStore::load_default();
         for plug in st.plugins.values_mut() {
             if let Some(mut live) = plug.live.take() {
                 live.shutdown();
@@ -133,18 +110,36 @@ impl PluginHost {
         let mut list: Vec<PluginRuntimeInfo> = st
             .plugins
             .values()
-            .map(|p| PluginRuntimeInfo {
-                id: p.manifest.id.clone(),
-                name: p.manifest.name.clone(),
-                version: p.manifest.version.clone(),
-                description: p.manifest.description.clone(),
-                runtime_badge: p.manifest.runtime.kind_badge().to_string(),
-                keywords: p.manifest.triggers.keywords.clone(),
-                running: p.live.is_some(),
-                pid: p.live.as_ref().and_then(|l| l.pid()),
-                working_set_bytes: p.live.as_ref().and_then(|l| l.memory_bytes()),
-                max_memory_mb: p.manifest.resources.max_memory_mb,
-                idle_timeout_secs: p.manifest.resources.idle_timeout_secs,
+            .map(|p| {
+                let bundled = is_bundled_plugin_dir(&p.dir);
+                let granted: Vec<String> = st
+                    .perms
+                    .effective_granted(&p.manifest.id, &p.manifest.permissions, bundled)
+                    .into_iter()
+                    .map(|perm| permission_key(perm).to_string())
+                    .collect();
+                let declared: Vec<String> = p
+                    .manifest
+                    .permissions
+                    .iter()
+                    .map(|perm| permission_key(*perm).to_string())
+                    .collect();
+                PluginRuntimeInfo {
+                    id: p.manifest.id.clone(),
+                    name: p.manifest.name.clone(),
+                    version: p.manifest.version.clone(),
+                    description: p.manifest.description.clone(),
+                    runtime_badge: p.manifest.runtime.kind_badge().to_string(),
+                    keywords: p.manifest.triggers.keywords.clone(),
+                    running: p.live.is_some(),
+                    pid: p.live.as_ref().and_then(|l| l.pid()),
+                    working_set_bytes: p.live.as_ref().and_then(|l| l.memory_bytes()),
+                    max_memory_mb: p.manifest.resources.max_memory_mb,
+                    idle_timeout_secs: p.manifest.resources.idle_timeout_secs,
+                    declared_permissions: declared,
+                    granted_permissions: granted,
+                    bundled_trusted: bundled,
+                }
             })
             .collect();
         list.sort_by(|a, b| a.name.cmp(&b.name));
@@ -156,13 +151,15 @@ impl PluginHost {
         plugin_id: &str,
         req: ExecuteRequest,
     ) -> Result<ExecuteResponse, ProcessError> {
+        let interactive = self.interactive_prompts.load(Ordering::Acquire);
         let (lock, cvar) = &*self.state;
         let mut st = lock.lock().unwrap();
-        let Some(plug) = st.plugins.get_mut(plugin_id) else {
+        let HostState { plugins, perms, .. } = &mut *st;
+        let Some(plug) = plugins.get_mut(plugin_id) else {
             return Err(ProcessError::Spawn(format!("plugin `{plugin_id}` not found")));
         };
         let timeout = Duration::from_millis(plug.manifest.resources.query_timeout_ms.max(2000));
-        if ensure_live(plug)? {
+        if ensure_live(plug, perms, interactive)? {
             cvar.notify_one();
         }
         match plug.live.as_mut() {
@@ -225,13 +222,15 @@ impl PluginHost {
     }
 
     fn query_plugin_ids(&self, ids: &[String], ctx: &QueryContext) -> Vec<ResultItem> {
+        let interactive = self.interactive_prompts.load(Ordering::Acquire);
         let (lock, cvar) = &*self.state;
         let mut st = lock.lock().unwrap();
+        let HostState { plugins, perms, .. } = &mut *st;
         let mut items = Vec::new();
         let mut any_spawned = false;
 
         for id in ids {
-            let Some(plug) = st.plugins.get_mut(id) else {
+            let Some(plug) = plugins.get_mut(id) else {
                 continue;
             };
             if let RuntimeConfig::Webview {
@@ -254,7 +253,7 @@ impl PluginHost {
             }
 
             let timeout = Duration::from_millis(plug.manifest.resources.query_timeout_ms);
-            match ensure_live(plug) {
+            match ensure_live(plug, perms, interactive) {
                 Ok(spawned) => any_spawned |= spawned,
                 Err(err) => {
                     tracing::warn!("Failed to start plugin `{}`: {err}", plug.manifest.id);
@@ -410,40 +409,6 @@ impl ExternalPluginBridge for PluginHost {
                 max_memory_mb: p.max_memory_mb,
             })
             .collect()
-    }
-}
-
-fn ensure_live(plug: &mut RegisteredPlugin) -> Result<bool, ProcessError> {
-    if plug.live.is_some() {
-        return Ok(false);
-    }
-    match &plug.manifest.runtime {
-        RuntimeConfig::StdioJsonrpc { command, args, env } => {
-            let proc = LivePluginProcess::spawn(
-                &plug.dir,
-                command,
-                args,
-                env,
-                plug.manifest.resources.max_memory_mb,
-                plug.manifest.resources.query_timeout_ms,
-            )?;
-            plug.live = Some(LiveRuntime::Stdio(proc));
-            Ok(true)
-        }
-        RuntimeConfig::Wasm { module, max_fuel } => {
-            let mod_path = plug.dir.join(module);
-            let wasm = LiveWasmPlugin::load(
-                &plug.manifest.id,
-                &mod_path,
-                plug.manifest.permissions.clone(),
-                plug.manifest.resources.max_memory_mb,
-                *max_fuel,
-            )
-            .map_err(|e| ProcessError::Spawn(e.to_string()))?;
-            plug.live = Some(LiveRuntime::Wasm(wasm));
-            Ok(true)
-        }
-        RuntimeConfig::Webview { .. } => Ok(false),
     }
 }
 

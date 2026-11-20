@@ -165,7 +165,7 @@ impl AppShell {
     }
 }
 
-pub(super) fn register_configured_hotkey(hwnd: HWND, spec: &str) -> String {
+pub(super) fn register_configured_hotkey(hwnd: HWND, spec: &str) -> (String, Option<String>) {
     if let Some(parsed) = parse_hotkey(spec) {
         unsafe {
             if RegisterHotKey(
@@ -176,19 +176,24 @@ pub(super) fn register_configured_hotkey(hwnd: HWND, spec: &str) -> String {
             )
             .is_ok()
             {
-                return spec.to_string();
+                return (spec.to_string(), None);
             }
         }
     }
-    unsafe {
-        let _ = RegisterHotKey(
+    let fallback_ok = unsafe {
+        RegisterHotKey(
             Some(hwnd),
             HOTKEY_ID,
             HOT_KEY_MODIFIERS(MOD_CONTROL.0 | MOD_SHIFT.0 | MOD_NOREPEAT.0),
             VK_SPACE.0 as u32,
-        );
+        )
+        .is_ok()
+    };
+    if fallback_ok {
+        ("Ctrl+Shift+Space".to_string(), Some(spec.to_string()))
+    } else {
+        ("Unbound".to_string(), Some(spec.to_string()))
     }
-    "Ctrl+Shift+Space".to_string()
 }
 
 pub(super) unsafe extern "system" fn edit_subclass_proc(

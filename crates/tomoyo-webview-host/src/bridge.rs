@@ -20,6 +20,7 @@ pub enum HostMessage {
     SyncTheme { theme: String },
     TogglePinTopmost,
     CheckUpdates { repo: String },
+    InstallUpdate { release: tomoyo_core::ReleaseInfo },
     FetchStore { sources: Vec<String> },
     InstallPlugin {
         plugin_id: String,
@@ -27,6 +28,11 @@ pub enum HostMessage {
         sha256: String,
     },
     UninstallPlugin { plugin_id: String },
+    SetPluginPermission {
+        plugin_id: String,
+        permission: String,
+        allowed: bool,
+    },
     Close,
 }
 
@@ -37,6 +43,7 @@ pub struct HostAction {
     pub toggle_topmost: bool,
     pub reply_json: Option<String>,
     pub async_check_updates: Option<String>,
+    pub async_install_update: Option<tomoyo_core::ReleaseInfo>,
     pub async_fetch_store: Option<Vec<String>>,
 }
 
@@ -94,6 +101,10 @@ pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isi
         },
         HostMessage::CheckUpdates { repo } => HostAction {
             async_check_updates: Some(repo),
+            ..Default::default()
+        },
+        HostMessage::InstallUpdate { release } => HostAction {
+            async_install_update: Some(release),
             ..Default::default()
         },
         HostMessage::FetchStore { sources } => HostAction {
@@ -155,6 +166,40 @@ pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isi
                     "message": e
                 }),
             };
+            HostAction {
+                reply_json: Some(evt.to_string()),
+                ..Default::default()
+            }
+        }
+        HostMessage::SetPluginPermission {
+            plugin_id,
+            permission,
+            allowed,
+        } => {
+            let mut msg = "权限参数无效".to_string();
+            let mut ok = false;
+            if let Some(perm) = tomoyo_core::permission_from_key(&permission) {
+                let mut pstore = tomoyo_core::PermissionStore::load_default();
+                pstore.set_permission(&plugin_id, perm, allowed);
+                if let Err(e) = pstore.save_default() {
+                    msg = format!("保存权限失败: {e}");
+                } else {
+                    if let Some(target) = notify_hwnd {
+                        notify_parent_reload(target);
+                    }
+                    ok = true;
+                    msg = if allowed {
+                        format!("已授予 {plugin_id} 权限 `{permission}`")
+                    } else {
+                        format!("已撤销 {plugin_id} 权限 `{permission}`")
+                    };
+                }
+            }
+            let evt = serde_json::json!({
+                "event": "perm_action_result",
+                "ok": ok,
+                "message": msg,
+            });
             HostAction {
                 reply_json: Some(evt.to_string()),
                 ..Default::default()

@@ -1,7 +1,9 @@
-//! Zero-bloat HTTPS GET helper built directly on Windows native `WinHTTP`.
+//! Zero-bloat HTTPS GET & streaming download helper built directly on Windows native `WinHTTP`.
 //!
-//! Avoids pulling in reqwest/hyper/rustls/tokio (~3+ MB binary overhead & background runtime),
-//! uses the OS certificate store & automatic system proxy, and enforces strict timeouts + size caps.
+//! Uses the OS certificate store & automatic system proxy, follows HTTPS redirects (`GitHub CDN`),
+//! and enforces strict timeouts + size caps without pulling reqwest/hyper/tokio.
+
+use std::path::Path;
 
 #[derive(Debug, Clone)]
 pub struct HttpResponse {
@@ -15,23 +17,44 @@ impl HttpResponse {
     }
 }
 
-/// Performs a bounded HTTPS/HTTP GET request with strict timeout (ms) and byte ceiling.
 #[cfg(windows)]
-pub fn http_get(url: &str, timeout_ms: u32, max_bytes: usize) -> Result<HttpResponse, String> {
+struct WinHttpHandle(*mut std::ffi::c_void);
+
+#[cfg(windows)]
+impl Drop for WinHttpHandle {
+    fn drop(&mut self) {
+        if !self.0.is_null() {
+            unsafe {
+                let _ = windows::Win32::Networking::WinHttp::WinHttpCloseHandle(self.0);
+            }
+        }
+    }
+}
+
+#[cfg(windows)]
+struct OpenHttpStream {
+    _session: WinHttpHandle,
+    _conn: WinHttpHandle,
+    req: WinHttpHandle,
+    status_code: u16,
+}
+
+#[cfg(windows)]
+fn open_http_get_stream(url: &str, timeout_ms: u32) -> Result<OpenHttpStream, String> {
     use std::ffi::c_void;
     use windows::core::{w, PCWSTR};
     use windows::Win32::Networking::WinHttp::{
-        WinHttpCloseHandle, WinHttpConnect, WinHttpCrackUrl, WinHttpOpen, WinHttpOpenRequest,
-        WinHttpQueryDataAvailable, WinHttpQueryHeaders, WinHttpReadData, WinHttpReceiveResponse,
-        WinHttpSendRequest, WinHttpSetTimeouts, URL_COMPONENTS, WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
-        WINHTTP_FLAG_SECURE, WINHTTP_OPEN_REQUEST_FLAGS, WINHTTP_QUERY_FLAG_NUMBER,
+        WinHttpConnect, WinHttpCrackUrl, WinHttpOpen, WinHttpOpenRequest, WinHttpQueryHeaders,
+        WinHttpReceiveResponse, WinHttpSendRequest, WinHttpSetOption, WinHttpSetTimeouts,
+        URL_COMPONENTS, WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY, WINHTTP_FLAG_SECURE,
+        WINHTTP_OPEN_REQUEST_FLAGS, WINHTTP_OPTION_REDIRECT_POLICY,
+        WINHTTP_OPTION_REDIRECT_POLICY_ALWAYS, WINHTTP_QUERY_FLAG_NUMBER,
         WINHTTP_QUERY_STATUS_CODE,
     };
 
     let url_w: Vec<u16> = url.encode_utf16().collect();
     let mut host_buf = [0u16; 256];
     let mut path_buf = [0u16; 2048];
-
     let mut comps = URL_COMPONENTS {
         dwStructSize: std::mem::size_of::<URL_COMPONENTS>() as u32,
         lpszHostName: windows::core::PWSTR(host_buf.as_mut_ptr()),
@@ -65,17 +88,6 @@ pub fn http_get(url: &str, timeout_ms: u32, max_bytes: usize) -> Result<HttpResp
     } else {
         80
     };
-
-    struct WinHttpHandle(*mut c_void);
-    impl Drop for WinHttpHandle {
-        fn drop(&mut self) {
-            if !self.0.is_null() {
-                unsafe {
-                    let _ = WinHttpCloseHandle(self.0);
-                }
-            }
-        }
-    }
 
     unsafe {
         let ua: Vec<u16> = format!("Tomoyo/{} (Windows; OpenSource)", env!("CARGO_PKG_VERSION"))
@@ -122,6 +134,13 @@ pub fn http_get(url: &str, timeout_ms: u32, max_bytes: usize) -> Result<HttpResp
         }
         let req = WinHttpHandle(req_raw);
 
+        let policy_bytes = WINHTTP_OPTION_REDIRECT_POLICY_ALWAYS.to_ne_bytes();
+        let _ = WinHttpSetOption(
+            Some(req.0),
+            WINHTTP_OPTION_REDIRECT_POLICY,
+            Some(&policy_bytes),
+        );
+
         let headers: Vec<u16> = "Accept: application/vnd.github+json, application/json, */*\r\n"
             .encode_utf16()
             .collect();
@@ -142,10 +161,27 @@ pub fn http_get(url: &str, timeout_ms: u32, max_bytes: usize) -> Result<HttpResp
             std::ptr::null_mut(),
         );
 
-        let mut body = Vec::with_capacity(8192);
+        Ok(OpenHttpStream {
+            _session: session,
+            _conn: conn,
+            req,
+            status_code: status_code as u16,
+        })
+    }
+}
+
+/// Performs a bounded HTTPS/HTTP GET request in memory with strict timeout (ms) and byte ceiling.
+#[cfg(windows)]
+pub fn http_get(url: &str, timeout_ms: u32, max_bytes: usize) -> Result<HttpResponse, String> {
+    use std::ffi::c_void;
+    use windows::Win32::Networking::WinHttp::{WinHttpQueryDataAvailable, WinHttpReadData};
+
+    let stream = open_http_get_stream(url, timeout_ms)?;
+    let mut body = Vec::with_capacity(8192);
+    unsafe {
         loop {
             let mut avail: u32 = 0;
-            if WinHttpQueryDataAvailable(req.0, &mut avail).is_err() || avail == 0 {
+            if WinHttpQueryDataAvailable(stream.req.0, &mut avail).is_err() || avail == 0 {
                 break;
             }
             let to_read = (avail as usize).min(max_bytes.saturating_sub(body.len()));
@@ -156,7 +192,7 @@ pub fn http_get(url: &str, timeout_ms: u32, max_bytes: usize) -> Result<HttpResp
             body.resize(old_len + to_read, 0);
             let mut read: u32 = 0;
             if WinHttpReadData(
-                req.0,
+                stream.req.0,
                 body[old_len..].as_mut_ptr() as *mut c_void,
                 to_read as u32,
                 &mut read,
@@ -169,15 +205,81 @@ pub fn http_get(url: &str, timeout_ms: u32, max_bytes: usize) -> Result<HttpResp
             }
             body.truncate(old_len + read as usize);
         }
-
-        Ok(HttpResponse {
-            status_code: status_code as u16,
-            body,
-        })
     }
+    Ok(HttpResponse {
+        status_code: stream.status_code,
+        body,
+    })
+}
+
+/// Streams an HTTPS/HTTP download directly to `dest` using a 16 KB buffer (zero large-RAM spike).
+#[cfg(windows)]
+pub fn http_download_to_file(
+    url: &str,
+    dest: &Path,
+    timeout_ms: u32,
+    max_bytes: u64,
+) -> Result<u64, String> {
+    use std::ffi::c_void;
+    use std::io::{BufWriter, Write};
+    use windows::Win32::Networking::WinHttp::{WinHttpQueryDataAvailable, WinHttpReadData};
+
+    let stream = open_http_get_stream(url, timeout_ms)?;
+    if stream.status_code != 200 {
+        return Err(format!("HTTP download failed: status {}", stream.status_code));
+    }
+    if let Some(parent) = dest.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let file = std::fs::File::create(dest).map_err(|e| format!("create `{}`: {e}", dest.display()))?;
+    let mut writer = BufWriter::with_capacity(16 * 1024, file);
+    let mut buf = [0u8; 16 * 1024];
+    let mut total: u64 = 0;
+
+    unsafe {
+        loop {
+            let mut avail: u32 = 0;
+            if WinHttpQueryDataAvailable(stream.req.0, &mut avail).is_err() || avail == 0 {
+                break;
+            }
+            let rem = max_bytes.saturating_sub(total);
+            if rem == 0 {
+                return Err(format!("Download exceeded safety ceiling ({max_bytes} bytes)"));
+            }
+            let to_read = (avail as usize).min(buf.len()).min(rem as usize);
+            let mut read: u32 = 0;
+            if WinHttpReadData(
+                stream.req.0,
+                buf.as_mut_ptr() as *mut c_void,
+                to_read as u32,
+                &mut read,
+            )
+            .is_err()
+                || read == 0
+            {
+                break;
+            }
+            writer
+                .write_all(&buf[..read as usize])
+                .map_err(|e| format!("write error: {e}"))?;
+            total += read as u64;
+        }
+    }
+    writer.flush().map_err(|e| format!("flush error: {e}"))?;
+    Ok(total)
 }
 
 #[cfg(not(windows))]
 pub fn http_get(_url: &str, _timeout_ms: u32, _max_bytes: usize) -> Result<HttpResponse, String> {
     Err("WinHTTP is only available on Windows".into())
+}
+
+#[cfg(not(windows))]
+pub fn http_download_to_file(
+    _url: &str,
+    _dest: &Path,
+    _timeout_ms: u32,
+    _max_bytes: u64,
+) -> Result<u64, String> {
+    Err("WinHTTP download is only available on Windows".into())
 }

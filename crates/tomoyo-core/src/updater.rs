@@ -6,8 +6,11 @@
 //!   interactive `:update` checks, and Settings Center update UI.
 
 use crate::config::TomoyoConfig;
-use crate::http::http_get;
+use crate::http::{http_download_to_file, http_get};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use std::io::Read;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -23,6 +26,8 @@ pub struct ReleaseInfo {
     pub published_at: String,
     pub download_url: Option<String>,
     pub asset_name: Option<String>,
+    #[serde(default)]
+    pub sha256_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -185,7 +190,17 @@ pub fn fetch_latest_github_release(repo: &str, current_ver: &str) -> UpdateStatu
 
     let mut download_url = None;
     let mut asset_name = None;
+    let mut sha256_url = None;
     if let Some(assets) = json.get("assets").and_then(|v| v.as_array()) {
+        for a in assets {
+            let name = a.get("name").and_then(|v| v.as_str()).unwrap_or("");
+            if name.eq_ignore_ascii_case("SHA256SUMS.txt") {
+                sha256_url = a
+                    .get("browser_download_url")
+                    .and_then(|v| v.as_str())
+                    .map(ToString::to_string);
+            }
+        }
         // Prefer Windows installer (`-setup.exe` / `.exe` / `.msi`), fall back to portable `.zip`.
         for suffix in ["-setup.exe", ".exe", ".msi", ".zip"] {
             for a in assets {
@@ -235,6 +250,7 @@ pub fn fetch_latest_github_release(repo: &str, current_ver: &str) -> UpdateStatu
             .to_string(),
         download_url,
         asset_name,
+        sha256_url,
     };
 
     UpdateStatus::Available {
@@ -274,6 +290,115 @@ fn now_unix() -> u64 {
         .unwrap_or(0)
 }
 
+pub fn parse_sha256_for_asset(sums_txt: &str, asset_name: &str) -> Option<String> {
+    for line in sums_txt.lines() {
+        let mut parts = line.split_whitespace();
+        let Some(hash) = parts.next() else {
+            continue;
+        };
+        let Some(file_part) = parts.next() else {
+            continue;
+        };
+        let clean_name = file_part.trim_start_matches('*');
+        if clean_name.eq_ignore_ascii_case(asset_name)
+            && hash.len() == 64
+            && hash.chars().all(|c| c.is_ascii_hexdigit())
+        {
+            return Some(hash.to_ascii_lowercase());
+        }
+    }
+    None
+}
+
+pub fn compute_file_sha256(path: &Path) -> Result<String, String> {
+    let mut file = std::fs::File::open(path).map_err(|e| format!("open `{}`: {e}", path.display()))?;
+    let mut hasher = Sha256::new();
+    let mut buf = [0u8; 32 * 1024];
+    loop {
+        let n = file.read(&mut buf).map_err(|e| format!("read error: {e}"))?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Ok(hasher.finalize().iter().map(|b| format!("{b:02x}")).collect())
+}
+
+/// Streams a GitHub Release installer/zip to `%TEMP%\tomoyo-update\` and verifies `SHA256SUMS.txt`.
+pub fn download_and_verify_release_asset(release: &ReleaseInfo) -> Result<PathBuf, String> {
+    let url = release
+        .download_url
+        .as_deref()
+        .ok_or_else(|| "Release 不包含可下载的安装包资源".to_string())?;
+    let name = release
+        .asset_name
+        .as_deref()
+        .unwrap_or("Tomoyo-update-setup.exe");
+    let safe_name = Path::new(name)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("Tomoyo-update-setup.exe");
+
+    let expected_sha = if let Some(sums_url) = &release.sha256_url {
+        let resp = http_get(sums_url, 10_000, 128 * 1024)?;
+        if resp.status_code == 200 {
+            parse_sha256_for_asset(&resp.text_lossy(), safe_name)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let dest_dir = std::env::temp_dir().join("tomoyo-update");
+    let _ = std::fs::create_dir_all(&dest_dir);
+    let dest_path = dest_dir.join(safe_name);
+    let _ = http_download_to_file(url, &dest_path, 45_000, 128 * 1024 * 1024)?;
+
+    if let Some(expected) = expected_sha {
+        let actual = compute_file_sha256(&dest_path)?;
+        if !actual.eq_ignore_ascii_case(&expected) {
+            let _ = std::fs::remove_file(&dest_path);
+            return Err(format!(
+                "安装包 SHA-256 校验失败（预期 {}，实际 {}），已阻止运行",
+                &expected[..12],
+                &actual[..12]
+            ));
+        }
+    }
+    Ok(dest_path)
+}
+
+#[cfg(windows)]
+pub fn launch_verified_update_installer(installer_path: &Path) -> Result<bool, String> {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+
+    let ext = installer_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if ext == "exe" {
+        std::process::Command::new(installer_path)
+            .args(["/SP-", "/VERYSILENT", "/NORESTART", "/CLOSEAPPLICATIONS"])
+            .creation_flags(CREATE_NEW_PROCESS_GROUP)
+            .spawn()
+            .map_err(|e| format!("拉起安装程序失败: {e}"))?;
+        Ok(true)
+    } else {
+        let _ = std::process::Command::new("explorer.exe")
+            .arg(format!("/select,{}", installer_path.display()))
+            .spawn();
+        Ok(false)
+    }
+}
+
+#[cfg(not(windows))]
+pub fn launch_verified_update_installer(_installer_path: &Path) -> Result<bool, String> {
+    Err("Self-update installer is only supported on Windows".into())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -285,5 +410,20 @@ mod tests {
         assert!(is_newer_version("0.4.9", "1.0.0"));
         assert!(!is_newer_version("0.4.0", "v0.4.0"));
         assert!(!is_newer_version("0.4.0", "0.3.9"));
+    }
+
+    #[test]
+    fn parses_sha256sums_correctly() {
+        let txt = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef  Tomoyo-v1.0.0-windows-x64-setup.exe\n\
+                   fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210 *Tomoyo-v1.0.0-windows-x64-portable.zip\n";
+        assert_eq!(
+            parse_sha256_for_asset(txt, "Tomoyo-v1.0.0-windows-x64-setup.exe").as_deref(),
+            Some("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+        );
+        assert_eq!(
+            parse_sha256_for_asset(txt, "Tomoyo-v1.0.0-windows-x64-portable.zip").as_deref(),
+            Some("fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210")
+        );
+        assert!(parse_sha256_for_asset(txt, "other.exe").is_none());
     }
 }

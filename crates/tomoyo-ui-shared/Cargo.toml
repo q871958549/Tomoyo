@@ -1,0 +1,10 @@
+[package]
+name = "tomoyo-ui-shared"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Platform-agnostic launcher view model, theme tokens, and OS backend trait shared by Windows/macOS/Linux shells"
+
+[dependencies]
+tomoyo-protocol = { workspace = true }
+tomoyo-core = { workspace = true }

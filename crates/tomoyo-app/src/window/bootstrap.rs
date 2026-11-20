@@ -1,11 +1,10 @@
 //! Win32 window bootstrap, EDIT control creation, and two-phase async query worker setup.
 
 use super::input::{edit_subclass_proc, register_configured_hotkey};
-use super::layout::{apply_cue_banner, apply_dwm_attributes, create_edit_font};
 use super::wndproc::main_wndproc;
 use super::{
     AppShell, InteractionState, QueryJob, QueryOutcome, WindowGeometry, EDIT_CTRL_ID,
-    EDIT_SUBCLASS_ID, WM_APP_RESULTS_READY,
+    EDIT_SUBCLASS_ID, EM_SETCUEBANNER, WM_APP_RESULTS_READY,
 };
 use crate::actions::read_clipboard_text;
 use crate::preview_loader::AsyncPreviewLoader;
@@ -15,24 +14,32 @@ use crate::renderer::{
 use crate::tray::TrayIcon;
 use std::ffi::c_void;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
-use tomoyo_core::{QueryRouter, TomoyoConfig, UpdateManager};
+use tomoyo_core::{Lang, QueryRouter, TomoyoConfig, UpdateManager};
 use tomoyo_plugin_host::PluginHost;
 use tomoyo_protocol::SearchFilter;
 use tomoyo_providers::ClipboardProvider;
-use windows::core::w;
+use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
-use windows::Win32::Graphics::Gdi::CreateSolidBrush;
+use windows::Win32::Graphics::Dwm::{
+    DwmSetWindowAttribute, DWMWA_USE_IMMERSIVE_DARK_MODE, DWMWA_WINDOW_CORNER_PREFERENCE,
+    DWMWCP_ROUND,
+};
+use windows::Win32::Graphics::Gdi::{
+    CreateFontW, CreateSolidBrush, CLEARTYPE_QUALITY, CLIP_DEFAULT_PRECIS, DEFAULT_CHARSET,
+    DEFAULT_PITCH, FF_DONTCARE, FW_NORMAL, HFONT, OUT_DEFAULT_PRECIS,
+};
 use windows::Win32::System::DataExchange::AddClipboardFormatListener;
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::Shell::SetWindowSubclass;
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, LoadCursorW, PostMessageW, RegisterClassW, RegisterWindowMessageW,
-    SendMessageW, SetWindowLongPtrW, CS_DBLCLKS, CW_USEDEFAULT, ES_AUTOHSCROLL, ES_LEFT,
-    GWLP_USERDATA, HMENU, IDC_ARROW, WINDOW_STYLE, WM_SETFONT, WNDCLASSW, WS_CHILD,
-    WS_CLIPCHILDREN, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP, WS_VISIBLE,
+    CreateWindowExW, GetWindowTextLengthW, GetWindowTextW, LoadCursorW, PostMessageW,
+    RegisterClassW, RegisterWindowMessageW, SendMessageW, SetWindowLongPtrW, CS_DBLCLKS,
+    CW_USEDEFAULT, ES_AUTOHSCROLL, ES_LEFT, GWLP_USERDATA, HMENU, IDC_ARROW, WINDOW_STYLE,
+    WM_SETFONT, WNDCLASSW, WS_CHILD, WS_CLIPCHILDREN, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
+    WS_VISIBLE,
 };
 
 impl AppShell {
@@ -134,11 +141,14 @@ impl AppShell {
         }
 
         let mut hotkey_label = cfg_snap.hotkey.clone();
+        let mut hotkey_conflict = None;
         let tray = if install_tray_and_hotkey {
             unsafe {
                 let _ = AddClipboardFormatListener(hwnd);
             }
-            hotkey_label = register_configured_hotkey(hwnd, &cfg_snap.hotkey);
+            let (active, conflict) = register_configured_hotkey(hwnd, &cfg_snap.hotkey);
+            hotkey_label = active;
+            hotkey_conflict = conflict;
             Some(TrayIcon::install(hwnd, &hotkey_label))
         } else {
             None
@@ -186,6 +196,8 @@ impl AppShell {
             toast: None,
             everything_status: detect_everything_label(),
             hotkey_label,
+            hotkey_conflict,
+            pending_update_install: Arc::new(Mutex::new(None)),
             dpi_scale,
             taskbar_created_msg,
             shutting_down: false,
@@ -303,5 +315,75 @@ pub(super) fn detect_everything_label() -> Option<&'static str> {
         Some(tomoyo_everything::EverythingVersion::V15Alpha) => Some("Everything 1.5a"),
         Some(tomoyo_everything::EverythingVersion::V14) => Some("Everything 1.4"),
         None => None,
+    }
+}
+
+pub(super) unsafe fn apply_cue_banner(edit_hwnd: HWND, lang: Lang) {
+    let text = lang.pick(
+        "搜应用(支持拼音)、Everything (f)、@pdf/@excel、代码片段 (snip)、剪贴板 (cb) 或 :settings...",
+        "Search apps, Everything (f), @pdf/@excel, snippets (snip), cb, kill, or :settings...",
+    );
+    let cue: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
+    unsafe {
+        SendMessageW(
+            edit_hwnd,
+            EM_SETCUEBANNER,
+            Some(WPARAM(1)),
+            Some(LPARAM(cue.as_ptr() as isize)),
+        );
+    }
+}
+
+pub(super) fn apply_dwm_attributes(hwnd: HWND, is_dark: bool) {
+    unsafe {
+        let dark: i32 = if is_dark { 1 } else { 0 };
+        let _ = DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_USE_IMMERSIVE_DARK_MODE,
+            &dark as *const _ as *const c_void,
+            std::mem::size_of::<i32>() as u32,
+        );
+        let corner = DWMWCP_ROUND;
+        let _ = DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_WINDOW_CORNER_PREFERENCE,
+            &corner as *const _ as *const c_void,
+            std::mem::size_of_val(&corner) as u32,
+        );
+    }
+}
+
+pub(super) fn create_edit_font(dpi_scale: f32, face: &str) -> HFONT {
+    let height = -(20.5 * dpi_scale).round() as i32;
+    let face_w: Vec<u16> = face.encode_utf16().chain(std::iter::once(0)).collect();
+    unsafe {
+        CreateFontW(
+            height,
+            0,
+            0,
+            0,
+            FW_NORMAL.0 as i32,
+            0,
+            0,
+            0,
+            DEFAULT_CHARSET,
+            OUT_DEFAULT_PRECIS,
+            CLIP_DEFAULT_PRECIS,
+            CLEARTYPE_QUALITY,
+            (DEFAULT_PITCH.0 | FF_DONTCARE.0) as u32,
+            PCWSTR(face_w.as_ptr()),
+        )
+    }
+}
+
+pub(super) fn read_edit_text(edit: HWND) -> String {
+    unsafe {
+        let len = GetWindowTextLengthW(edit);
+        if len <= 0 {
+            return String::new();
+        }
+        let mut buf = vec![0u16; (len + 1) as usize];
+        let copied = GetWindowTextW(edit, &mut buf);
+        String::from_utf16_lossy(&buf[..copied as usize])
     }
 }

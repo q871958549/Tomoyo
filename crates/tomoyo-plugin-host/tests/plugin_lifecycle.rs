@@ -84,3 +84,31 @@ fn all_three_plugin_runtimes_lazy_spawn_query_and_reap() {
     assert!(reaped >= 1);
     assert!(host.list_plugins().iter().all(|p| !p.running));
 }
+
+#[test]
+fn third_party_plugin_sensitive_permissions_blocked_until_approved() {
+    let tmp = std::env::temp_dir().join(format!("tomoyo-perm-test-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    let plug_dir = tmp.join("untrusted-shell");
+    std::fs::create_dir_all(&plug_dir).unwrap();
+    let manifest = r#"
+id = "com.thirdparty.untrusted_shell"
+name = "Untrusted Shell"
+version = "0.1.0"
+permissions = ["shell_exec"]
+
+[triggers]
+keywords = ["utest"]
+
+[runtime]
+kind = "stdio_jsonrpc"
+command = "python"
+"#;
+    std::fs::write(plug_dir.join("tomoyo-plugin.toml"), manifest).unwrap();
+    let host = PluginHost::new(vec![tmp.clone()]);
+    host.set_interactive_prompts(false);
+    let ctx = QueryContext::new("utest hi", 1, 5).with_keyword("utest", "hi");
+    let items = host.query_keyword("utest", &ctx);
+    assert!(items.is_empty(), "unapproved sensitive third-party plugin must not spawn");
+    let _ = std::fs::remove_dir_all(&tmp);
+}

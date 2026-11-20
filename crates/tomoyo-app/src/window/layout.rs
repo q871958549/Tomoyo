@@ -1,30 +1,24 @@
 //! Window geometry, DPI/multi-monitor positioning, edit control layout, divider, filter & row hit-testing.
 
-use super::{AppShell, EM_SETCUEBANNER};
+use super::bootstrap::create_edit_font;
+use super::AppShell;
 use crate::actions::shell_open;
 use crate::renderer::{
     compute_filter_hitboxes, DEFAULT_PREVIEW_WIDTH_DIP, DEFAULT_WINDOW_WIDTH_DIP,
     FILTER_BAR_HEIGHT_DIP, FOOTER_HEIGHT_DIP, HEADER_HEIGHT_DIP, MAX_WINDOW_WIDTH_DIP,
     MIN_WINDOW_WIDTH_DIP, ROW_HEIGHT_DIP,
 };
-use std::ffi::c_void;
 use tomoyo_core::{ExternalPluginBridge, Lang, TomoyoConfig};
 use tomoyo_protocol::{AttachedContext, SearchFilter};
-use windows::core::PCWSTR;
-use windows::Win32::Foundation::{HWND, LPARAM, POINT, RECT, WPARAM};
-use windows::Win32::Graphics::Dwm::{
-    DwmSetWindowAttribute, DWMWA_USE_IMMERSIVE_DARK_MODE, DWMWA_WINDOW_CORNER_PREFERENCE,
-    DWMWCP_ROUND,
-};
+use windows::Win32::Foundation::{LPARAM, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
-    CreateFontW, GetMonitorInfoW, MonitorFromPoint, CLEARTYPE_QUALITY, CLIP_DEFAULT_PRECIS,
-    DEFAULT_CHARSET, DEFAULT_PITCH, FF_DONTCARE, FW_NORMAL, HFONT, MONITORINFO,
-    MONITOR_DEFAULTTONEAREST, MONITOR_DEFAULTTONULL, OUT_DEFAULT_PRECIS,
+    DeleteObject, GetMonitorInfoW, MonitorFromPoint, MONITORINFO, MONITOR_DEFAULTTONEAREST,
+    MONITOR_DEFAULTTONULL,
 };
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetClientRect, GetCursorPos, GetWindowRect, GetWindowTextLengthW, GetWindowTextW, MoveWindow,
-    SendMessageW, SetWindowPos, HWND_TOPMOST, SWP_NOACTIVATE, SWP_SHOWWINDOW,
+    GetClientRect, GetCursorPos, GetWindowRect, MoveWindow, SendMessageW, SetWindowPos,
+    HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOZORDER, SWP_SHOWWINDOW, WM_SETFONT,
 };
 
 impl AppShell {
@@ -62,11 +56,55 @@ impl AppShell {
         }
     }
 
+    pub(super) fn sync_dpi_scale(&mut self, new_scale: f32) {
+        let clamped = new_scale.clamp(1.0, 4.0);
+        if (clamped - self.dpi_scale).abs() < 0.01 {
+            return;
+        }
+        self.dpi_scale = clamped;
+        let new_font = create_edit_font(self.dpi_scale, self.font_regular);
+        unsafe {
+            SendMessageW(
+                self.edit_hwnd,
+                WM_SETFONT,
+                Some(WPARAM(new_font.0 as usize)),
+                Some(LPARAM(1)),
+            );
+            if !self.edit_font.is_invalid() {
+                let _ = DeleteObject(self.edit_font.into());
+            }
+        }
+        self.edit_font = new_font;
+    }
+
+    pub(super) fn handle_dpi_changed(&mut self, new_dpi: u32, suggested: Option<&RECT>) {
+        if new_dpi > 0 {
+            self.sync_dpi_scale(new_dpi as f32 / 96.0);
+        }
+        if let Some(rc) = suggested {
+            let w = (rc.right - rc.left).max(120);
+            let h = (rc.bottom - rc.top).max(64);
+            unsafe {
+                let _ = SetWindowPos(
+                    self.hwnd,
+                    None,
+                    rc.left,
+                    rc.top,
+                    w,
+                    h,
+                    SWP_NOZORDER | SWP_NOACTIVATE,
+                );
+            }
+            self.layout_edit_control(w);
+        }
+        self.invalidate();
+    }
+
     pub(super) fn position_on_active_monitor(&mut self) {
         unsafe {
             let dpi = GetDpiForWindow(self.hwnd);
             if dpi > 0 {
-                self.dpi_scale = dpi as f32 / 96.0;
+                self.sync_dpi_scale(dpi as f32 / 96.0);
             }
             let width = (self.desired_width_dip() as f32 * self.dpi_scale) as i32;
             let height = (self.desired_height_dip() as f32 * self.dpi_scale) as i32;
@@ -314,6 +352,9 @@ impl AppShell {
         if low.starts_with("= ") || low.starts_with("b64 ") || low.starts_with("b64d ") {
             return Some(l.pick("计算", "CALC"));
         }
+        if low == "snip" || low.starts_with("snip ") {
+            return Some(l.pick("片段", "SNIPPET"));
+        }
         if let Some(first) = low.split_whitespace().next() {
             if self.plugin_host.matches_keyword(first) {
                 return Some(l.pick("插件", "PLUGIN"));
@@ -375,75 +416,5 @@ impl AppShell {
             }
         }
         self.invalidate();
-    }
-}
-
-pub(super) unsafe fn apply_cue_banner(edit_hwnd: HWND, lang: Lang) {
-    let text = lang.pick(
-        "搜应用(支持拼音)、Everything (f)、@pdf/@excel 筛选、剪贴板 (cb) 或 :settings...",
-        "Search apps, Everything (f), @pdf/@excel, clipboard (cb), kill, or :settings...",
-    );
-    let cue: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
-    unsafe {
-        SendMessageW(
-            edit_hwnd,
-            EM_SETCUEBANNER,
-            Some(WPARAM(1)),
-            Some(LPARAM(cue.as_ptr() as isize)),
-        );
-    }
-}
-
-pub(super) fn apply_dwm_attributes(hwnd: HWND, is_dark: bool) {
-    unsafe {
-        let dark: i32 = if is_dark { 1 } else { 0 };
-        let _ = DwmSetWindowAttribute(
-            hwnd,
-            DWMWA_USE_IMMERSIVE_DARK_MODE,
-            &dark as *const _ as *const c_void,
-            std::mem::size_of::<i32>() as u32,
-        );
-        let corner = DWMWCP_ROUND;
-        let _ = DwmSetWindowAttribute(
-            hwnd,
-            DWMWA_WINDOW_CORNER_PREFERENCE,
-            &corner as *const _ as *const c_void,
-            std::mem::size_of_val(&corner) as u32,
-        );
-    }
-}
-
-pub(super) fn create_edit_font(dpi_scale: f32, face: &str) -> HFONT {
-    let height = -(20.5 * dpi_scale).round() as i32;
-    let face_w: Vec<u16> = face.encode_utf16().chain(std::iter::once(0)).collect();
-    unsafe {
-        CreateFontW(
-            height,
-            0,
-            0,
-            0,
-            FW_NORMAL.0 as i32,
-            0,
-            0,
-            0,
-            DEFAULT_CHARSET,
-            OUT_DEFAULT_PRECIS,
-            CLIP_DEFAULT_PRECIS,
-            CLEARTYPE_QUALITY,
-            (DEFAULT_PITCH.0 | FF_DONTCARE.0) as u32,
-            PCWSTR(face_w.as_ptr()),
-        )
-    }
-}
-
-pub(super) fn read_edit_text(edit: HWND) -> String {
-    unsafe {
-        let len = GetWindowTextLengthW(edit);
-        if len <= 0 {
-            return String::new();
-        }
-        let mut buf = vec![0u16; (len + 1) as usize];
-        let copied = GetWindowTextW(edit, &mut buf);
-        String::from_utf16_lossy(&buf[..copied as usize])
     }
 }

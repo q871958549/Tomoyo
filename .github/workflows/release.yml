@@ -53,12 +53,13 @@ jobs:
           Copy-Item target/release/tomoyo-webview-host.exe $stage/
           Copy-Item target/release/tomoyo-cli.exe $stage/
           Copy-Item target/release/tomoyo-plugin-hello.exe $stage/
+          Copy-Item target/release/tomoyo-plugin-ocr.exe $stage/
           Copy-Item LICENSE-MIT, LICENSE-APACHE, README.md $stage/
           Copy-Item assets/fonts/*.ttf "$stage/assets/fonts/"
           Copy-Item assets/tomoyo.ico "$stage/assets/"
           Copy-Item registry/index.json "$stage/registry/"
 
-          foreach ($p in @("example-hello", "example-python", "example-wasm", "example-webview-json")) {
+          foreach ($p in @("example-hello", "example-python", "example-wasm", "example-webview-json", "builtin-ocr")) {
             New-Item -ItemType Directory -Force -Path "$stage/plugins/$p" | Out-Null
             Get-ChildItem "plugins/$p" -Exclude "target","__pycache__" | Copy-Item -Destination "$stage/plugins/$p" -Recurse -Force
           }
@@ -75,16 +76,25 @@ jobs:
           & $iscc "/DAppVersion=$ver" "/DStageDir=..\dist\stage" "packaging\tomoyo.iss"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-          # 3. SHA-256 Checksums
+          # 3. SHA-256 Checksums + Winget/Scoop release manifests
           $setupPath = "dist/Tomoyo-$tag-windows-x64-setup.exe"
           $lines = @()
+          $setupSha = ""
+          $zipSha = ""
           foreach ($art in @($setupPath, $zipPath)) {
             $h = (Get-FileHash $art -Algorithm SHA256).Hash.ToLower()
             $name = Split-Path -Leaf $art
             $lines += "$h  $name"
+            if ($art -eq $setupPath) { $setupSha = $h.ToUpper() }
+            if ($art -eq $zipPath) { $zipSha = $h }
           }
           $lines | Out-File -Encoding ascii "dist/SHA256SUMS.txt"
           Get-Content "dist/SHA256SUMS.txt"
+
+          $scoopOut = (Get-Content "packaging/scoop/tomoyo.json" -Raw).Replace("PLACEHOLDER_UPDATED_BY_RELEASE_SHA256SUMS", $zipSha).Replace("1.0.0", $ver)
+          Set-Content -Path "dist/tomoyo.scoop.json" -Value $scoopOut -Encoding UTF8
+          $wingetOut = (Get-Content "packaging/winget/TomoyoContributors.Tomoyo.installer.yaml" -Raw).Replace("PLACEHOLDER_UPDATED_BY_RELEASE_SHA256SUMS", $setupSha).Replace("1.0.0", $ver)
+          Set-Content -Path "dist/TomoyoContributors.Tomoyo.installer.yaml" -Value $wingetOut -Encoding UTF8
 
       - name: Publish GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
@@ -96,3 +106,5 @@ jobs:
             dist/Tomoyo-*-windows-x64-setup.exe
             dist/Tomoyo-*-windows-x64-portable.zip
             dist/SHA256SUMS.txt
+            dist/tomoyo.scoop.json
+            dist/TomoyoContributors.Tomoyo.installer.yaml

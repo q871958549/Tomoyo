@@ -3,8 +3,8 @@
 use super::commands::{dispatch_menu_id, dispatch_wm_command};
 use super::{
     AppShell, HOTKEY_ID, TIMER_CLEAR_TOAST, TIMER_HIBERNATE, WM_APP_CONFIG_SAVED,
-    WM_APP_EDIT_KEY, WM_APP_PASTE_INTERCEPT, WM_APP_RESULTS_READY, WM_APP_UPDATE_READY,
-    WM_APP_WAKE_EXISTING,
+    WM_APP_EDIT_KEY, WM_APP_PASTE_INTERCEPT, WM_APP_RESULTS_READY, WM_APP_UPDATE_INSTALLED,
+    WM_APP_UPDATE_READY, WM_APP_WAKE_EXISTING,
 };
 use crate::actions::{read_clipboard_image_png, read_clipboard_text};
 use crate::drag::start_file_drag;
@@ -31,9 +31,10 @@ use windows::Win32::UI::WindowsAndMessaging::{
     LoadCursorW, PostQuitMessage, SetCursor, GWLP_USERDATA, HTBOTTOM, HTBOTTOMLEFT,
     HTBOTTOMRIGHT, HTCAPTION, HTCLIENT, HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT, IDC_SIZEWE,
     MINMAXINFO, WM_ACTIVATE, WM_CLIPBOARDUPDATE, WM_COMMAND, WM_CTLCOLOREDIT, WM_DESTROY,
-    WM_ENDSESSION, WM_ENTERSIZEMOVE, WM_ERASEBKGND, WM_EXITSIZEMOVE, WM_GETMINMAXINFO, WM_HOTKEY,
-    WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCHITTEST,
-    WM_NCRBUTTONUP, WM_PAINT, WM_RBUTTONUP, WM_SETCURSOR, WM_SIZE, WM_TIMER,
+    WM_DPICHANGED, WM_ENDSESSION, WM_ENTERSIZEMOVE, WM_ERASEBKGND, WM_EXITSIZEMOVE,
+    WM_GETMINMAXINFO, WM_HOTKEY, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE,
+    WM_MOUSEWHEEL, WM_NCHITTEST, WM_NCRBUTTONUP, WM_PAINT, WM_RBUTTONUP, WM_SETCURSOR, WM_SIZE,
+    WM_TIMER,
 };
 
 pub(super) unsafe extern "system" fn main_wndproc(
@@ -190,6 +191,20 @@ pub(super) unsafe extern "system" fn main_wndproc(
         }
         WM_APP_UPDATE_READY => {
             app.on_update_ready();
+            LRESULT(0)
+        }
+        WM_APP_UPDATE_INSTALLED => {
+            app.on_update_installed();
+            LRESULT(0)
+        }
+        WM_DPICHANGED => {
+            let new_dpi = (wparam.0 & 0xFFFF) as u32;
+            let suggested = if lparam.0 != 0 {
+                Some(unsafe { &*(lparam.0 as *const RECT) })
+            } else {
+                None
+            };
+            app.handle_dpi_changed(new_dpi, suggested);
             LRESULT(0)
         }
         WM_APP_WAKE_EXISTING => {

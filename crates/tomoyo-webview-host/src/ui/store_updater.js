@@ -1,5 +1,6 @@
     // --- Plugin Store & GitHub Releases Auto-Updater ---
     let storeItems = [];
+    let latestAvailableRelease = null;
 
     function fetchStore() {
       const st = document.getElementById('store-status');
@@ -80,11 +81,18 @@
       if (!st) return;
       if (st.state === 'available' && st.release) {
         const r = st.release;
+        latestAvailableRelease = r;
         const dl = r.download_url || r.html_url;
+        const installBtn = r.download_url
+          ? `<button class="btn primary" id="btn-install-upd" onclick="installAvailableUpdate()">${esc(t('upd_install_now'))}</button>`
+          : '';
         box.innerHTML = `
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
             <div><b>${esc(t('upd_avail')(r.version))}</b> <span style="color:var(--muted);font-size:12px">${esc(r.name)}</span></div>
-            <button class="btn primary" onclick="post({cmd:'open_external',url:${JSON.stringify(dl)}})">${esc(t('upd_download'))}</button>
+            <div style="display:flex;gap:8px">
+              <button class="btn" onclick="post({cmd:'open_external',url:${JSON.stringify(dl)}})">${esc(t('upd_download'))}</button>
+              ${installBtn}
+            </div>
           </div>
           ${r.notes ? `<div class="update-notes">${esc(r.notes)}</div>` : ''}
         `;
@@ -114,6 +122,23 @@
         } else if (data.event === 'store_action_result') {
           document.getElementById('toast').textContent = (data.ok ? '✓ ' : '✗ ') + data.message;
           if (data.ok) fetchStore();
+        } else if (data.event === 'perm_action_result') {
+          document.getElementById('toast').textContent = (data.ok ? '✓ ' : '✗ ') + data.message;
+        } else if (data.event === 'update_install_result') {
+          const btn = document.getElementById('btn-install-upd');
+          if (btn) btn.disabled = false;
+          document.getElementById('toast').textContent = (data.ok ? '✓ ' : '✗ ') + data.message;
+          if (data.ok && data.launched_installer) {
+            setTimeout(() => post({ cmd: 'close' }), 400);
+          }
         }
       });
+    }
+
+    function installAvailableUpdate() {
+      if (!latestAvailableRelease) return;
+      const btn = document.getElementById('btn-install-upd');
+      if (btn) btn.disabled = true;
+      document.getElementById('toast').textContent = t('upd_downloading');
+      post({ cmd: 'install_update', release: latestAvailableRelease });
     }

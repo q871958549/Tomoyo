@@ -73,6 +73,14 @@ pub fn install_plugin_from_source(
     if plugin_id.is_empty() || plugin_id.contains("..") || plugin_id.contains(['/', '\\']) {
         return Err("无效的插件 ID".into());
     }
+    let slug = plugin_id.replace('.', "-");
+    let target_dir = tomoyo_core::data_dir().join("plugins").join(slug);
+
+    if source.starts_with("https://") || source.starts_with("http://") {
+        tomoyo_core::download_and_install_remote_zip(source, expected_sha256, true, &target_dir)?;
+        return Ok(target_dir.to_string_lossy().into_owned());
+    }
+
     let src_dir = candidate_local_paths(source)
         .into_iter()
         .find(|p| p.is_dir())
@@ -87,8 +95,6 @@ pub fn install_plugin_from_source(
         ));
     }
 
-    let slug = plugin_id.replace('.', "-");
-    let target_dir = tomoyo_core::data_dir().join("plugins").join(slug);
     copy_plugin_files(&src_dir, &target_dir).map_err(|e| format!("复制文件失败: {e}"))?;
     Ok(target_dir.to_string_lossy().into_owned())
 }

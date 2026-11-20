@@ -21,17 +21,22 @@ pub struct PreviewOutcome {
     pub preview: ResolvedPreview,
 }
 
+enum PreviewJob {
+    Resolve(u64, String, PreviewSpec),
+    Purge,
+}
+
 pub struct AsyncPreviewLoader {
     seq: Arc<AtomicU64>,
     in_flight: Arc<AtomicUsize>,
     notify_hwnd: Arc<AtomicIsize>,
-    req_tx: Sender<(u64, String, PreviewSpec)>,
+    req_tx: Sender<PreviewJob>,
     res_rx: Receiver<PreviewOutcome>,
 }
 
 impl AsyncPreviewLoader {
     pub fn new() -> Self {
-        let (req_tx, req_rx) = mpsc::channel::<(u64, String, PreviewSpec)>();
+        let (req_tx, req_rx) = mpsc::channel::<PreviewJob>();
         let (res_tx, res_rx) = mpsc::channel::<PreviewOutcome>();
         let seq = Arc::new(AtomicU64::new(1));
         let in_flight = Arc::new(AtomicUsize::new(0));
@@ -53,40 +58,49 @@ impl AsyncPreviewLoader {
                     if dropped > 0 {
                         w_flight.fetch_sub(dropped, Ordering::Release);
                     }
-                    let (job_seq, item_id, spec) = job;
                     let mut ran_heavy_decode = false;
-                    if job_seq == w_seq.load(Ordering::Acquire) {
-                        let resolved = match spec {
-                            PreviewSpec::FilePreview { path } => Some(read_file_preview(&path)),
-                            PreviewSpec::ImagePreview { path, .. } => {
-                                ran_heavy_decode = true;
-                                Some(read_image_thumbnail(&path, 280, 200))
-                            }
-                            _ => None,
-                        };
-                        if let Some(preview) = resolved {
+                    match job {
+                        PreviewJob::Purge => {
+                            ran_heavy_decode = true;
+                        }
+                        PreviewJob::Resolve(job_seq, item_id, spec) => {
                             if job_seq == w_seq.load(Ordering::Acquire) {
-                                let _ = res_tx.send(PreviewOutcome {
-                                    seq: job_seq,
-                                    item_id,
-                                    preview,
-                                });
-                                let h = w_hwnd.load(Ordering::Acquire);
-                                if h != 0 {
-                                    unsafe {
-                                        let _ = PostMessageW(
-                                            Some(HWND(h as *mut c_void)),
-                                            WM_APP_PREVIEW_READY,
-                                            WPARAM(0),
-                                            LPARAM(0),
-                                        );
+                                let resolved = match spec {
+                                    PreviewSpec::FilePreview { path } => {
+                                        ran_heavy_decode = true;
+                                        Some(read_file_preview(&path))
+                                    }
+                                    PreviewSpec::ImagePreview { path, .. } => {
+                                        ran_heavy_decode = true;
+                                        Some(read_image_thumbnail(&path, 280, 200))
+                                    }
+                                    _ => None,
+                                };
+                                if let Some(preview) = resolved {
+                                    if job_seq == w_seq.load(Ordering::Acquire) {
+                                        let _ = res_tx.send(PreviewOutcome {
+                                            seq: job_seq,
+                                            item_id,
+                                            preview,
+                                        });
+                                        let h = w_hwnd.load(Ordering::Acquire);
+                                        if h != 0 {
+                                            unsafe {
+                                                let _ = PostMessageW(
+                                                    Some(HWND(h as *mut c_void)),
+                                                    WM_APP_PREVIEW_READY,
+                                                    WPARAM(0),
+                                                    LPARAM(0),
+                                                );
+                                            }
+                                        }
                                     }
                                 }
                             }
                         }
                     }
                     if ran_heavy_decode {
-                        // Release temporary PNG decode buffers from this worker thread's mimalloc heap immediately.
+                        // Release temporary file/PNG buffers from this worker thread's mimalloc heap immediately.
                         unsafe {
                             mi_collect(true);
                         }
@@ -111,6 +125,14 @@ impl AsyncPreviewLoader {
     pub fn cancel_all(&self) {
         self.seq.fetch_add(1, Ordering::AcqRel);
         while self.res_rx.try_recv().is_ok() {}
+    }
+
+    pub fn purge_worker(&self) {
+        self.cancel_all();
+        self.in_flight.fetch_add(1, Ordering::AcqRel);
+        if self.req_tx.send(PreviewJob::Purge).is_err() {
+            self.in_flight.fetch_sub(1, Ordering::Release);
+        }
     }
 
     /// Resolves instant in-memory previews synchronously, or dispatches disk/image decoding.
@@ -161,7 +183,7 @@ impl AsyncPreviewLoader {
                 self.in_flight.fetch_add(1, Ordering::AcqRel);
                 if self
                     .req_tx
-                    .send((next_seq, item_id.to_string(), spec.clone()))
+                    .send(PreviewJob::Resolve(next_seq, item_id.to_string(), spec.clone()))
                     .is_err()
                 {
                     self.in_flight.fetch_sub(1, Ordering::Release);

@@ -1,7 +1,8 @@
 mod scanner;
 mod uwp_reg;
+mod watcher;
 
-use scanner::{scan_dir_roots, ScannedApp};
+use scanner::{app_watch_paths, scan_dir_roots, ScannedApp};
 use std::collections::HashSet;
 use std::path::Path;
 use std::sync::{Arc, RwLock};
@@ -10,6 +11,7 @@ use tomoyo_protocol::{
     ActionKind, ActionSpec, IconSpec, QueryContext, ResultCategory, ResultItem, SearchFilter,
 };
 use uwp_reg::{scan_apps_folder, scan_registry_app_paths};
+use watcher::AppDirWatcher;
 
 #[derive(Debug, Clone)]
 pub(super) struct AppEntry {
@@ -27,18 +29,31 @@ pub(super) struct AppEntry {
 /// Organizers (DeskBox, etc.), custom portable tool folders, Registry App Paths, and
 /// Windows `shell:AppsFolder` (Win32 + UWP/MSIX), with Pinyin & target-name matching.
 pub struct AppsProvider {
-    entries: RwLock<Vec<AppEntry>>,
+    entries: Arc<RwLock<Vec<AppEntry>>>,
     config: Arc<RwLock<TomoyoConfig>>,
+    _watcher: Option<AppDirWatcher>,
 }
 
 impl AppsProvider {
     pub fn new(config: Arc<RwLock<TomoyoConfig>>) -> Self {
-        let provider = Self {
-            entries: RwLock::new(Vec::new()),
+        let entries = Arc::new(RwLock::new(Vec::new()));
+        let apps_cfg = config.read().map(|c| c.apps.clone()).unwrap_or_default();
+        reload_entries(&entries, &apps_cfg);
+
+        let watch_dirs = app_watch_paths(&apps_cfg);
+        let w_entries = Arc::clone(&entries);
+        let w_cfg = Arc::clone(&config);
+        let watcher = AppDirWatcher::start(watch_dirs, move || {
+            let cfg = w_cfg.read().map(|c| c.apps.clone()).unwrap_or_default();
+            tracing::info!("Detected app shortcut folder change; incrementally refreshing index");
+            reload_entries(&w_entries, &cfg);
+        });
+
+        Self {
+            entries,
             config,
-        };
-        provider.reload();
-        provider
+            _watcher: watcher,
+        }
     }
 
     pub fn app_count(&self) -> usize {
@@ -101,21 +116,25 @@ impl Provider for AppsProvider {
 
     fn reload(&self) {
         let apps_cfg = self.apps_config();
-        let scanned = scan_all_apps(&apps_cfg);
-        tracing::info!(
-            "Indexed {} applications (Desktop/Organizers + StartMenu + ExtraDirs + Registry + AppsFolder)",
-            scanned.len()
-        );
-        if let Ok(mut guard) = self.entries.write() {
-            *guard = scanned;
-            guard.shrink_to_fit();
-        }
+        reload_entries(&self.entries, &apps_cfg);
     }
 
     fn trim_memory(&self) {
         if let Ok(mut guard) = self.entries.write() {
             guard.shrink_to_fit();
         }
+    }
+}
+
+fn reload_entries(entries: &Arc<RwLock<Vec<AppEntry>>>, apps_cfg: &AppsConfig) {
+    let scanned = scan_all_apps(apps_cfg);
+    tracing::info!(
+        "Indexed {} applications (Desktop/Organizers + StartMenu + ExtraDirs + Registry + AppsFolder)",
+        scanned.len()
+    );
+    if let Ok(mut guard) = entries.write() {
+        *guard = scanned;
+        guard.shrink_to_fit();
     }
 }
 

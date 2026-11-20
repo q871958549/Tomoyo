@@ -203,10 +203,12 @@
         auto_detect_desktop_organizers: document.getElementById('apps_org').checked,
         extra_scan_depth: parseInt(document.getElementById('apps_depth').value, 10) || 2
       };
+      const prevEv = state.everything || {};
       state.everything = {
         max_global_results: parseInt(document.getElementById('ev_global').value, 10) || 6,
         max_dedicated_results: parseInt(document.getElementById('ev_ded').value, 10) || 30,
-        extra_filter: document.getElementById('ev_filter').value.trim()
+        extra_filter: document.getElementById('ev_filter').value.trim(),
+        favorites: prevEv.favorites
       };
       state.clipboard = {
         persist_sqlite: document.getElementById('clip_persist').checked,
@@ -235,7 +237,7 @@
 
     function populate() {
       if (!state.language) state.language = 'zh';
-      document.getElementById('about-ver').textContent = 'v' + (INIT.version || '0.6.0');
+      document.getElementById('about-ver').textContent = 'v' + (INIT.version || '1.0.0');
       document.getElementById('autostart').checked = autostart;
       const hib = state.hibernate_delay_secs || 15;
       document.getElementById('hibernate').value = hib;
@@ -274,10 +276,22 @@
       const ptb = document.getElementById('plugins-tbody');
       ptb.innerHTML = '';
       (INIT.plugins || []).forEach(p => {
+        const declared = p.declared_permissions || [];
+        const granted = new Set(p.granted_permissions || []);
+        const permHtml = declared.length
+          ? declared.map(perm => {
+              const checked = granted.has(perm) ? 'checked' : '';
+              return `<label style="display:inline-flex;align-items:center;gap:4px;margin-right:8px;font-size:11.5px;cursor:pointer">
+                <input type="checkbox" ${checked} onchange="togglePluginPermission(${JSON.stringify(p.id)},${JSON.stringify(perm)},this.checked)" />
+                <span>${esc(perm)}</span>
+              </label>`;
+            }).join('')
+          : `<span style="color:var(--muted);font-size:11.5px">${esc(t('perm_none'))}</span>`;
         const tr = document.createElement('tr');
         tr.innerHTML = `<td><b>${esc(p.name)}</b><br><span style="color:var(--muted);font-size:11px">${esc(p.id)}</span></td>
           <td><span class="pill">${esc(p.runtime)}</span></td>
           <td>${esc((p.keywords || []).join(', '))}</td>
+          <td>${permHtml}</td>
           <td>${p.max_memory_mb} MB</td>`;
         ptb.appendChild(tr);
       });
@@ -285,6 +299,10 @@
       document.getElementById('plug-dir').textContent = INIT.plugins_dir || '';
 
       applyI18n();
+    }
+
+    function togglePluginPermission(pluginId, permission, allowed) {
+      post({ cmd: 'set_plugin_permission', plugin_id: pluginId, permission, allowed });
     }
 
     function openConfigPath() {

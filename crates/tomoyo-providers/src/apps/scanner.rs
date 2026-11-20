@@ -21,15 +21,9 @@ struct ScanRoot {
     label_prefix: &'static str,
 }
 
-pub(super) fn scan_dir_roots(
-    apps_cfg: &AppsConfig,
-    seen: &mut HashSet<String>,
-    out: &mut Vec<ScannedApp>,
-) {
-    let _com = ComApartmentGuard::init();
+fn collect_dir_roots(apps_cfg: &AppsConfig) -> Vec<ScanRoot> {
     let mut roots: Vec<ScanRoot> = Vec::new();
 
-    // 1. User Desktop (including redirected KnownFolder Desktop) & Public Desktop
     if let Some(desktop) = known_desktop_dir() {
         roots.push(ScanRoot {
             path: desktop,
@@ -58,7 +52,6 @@ pub(super) fn scan_dir_roots(
         });
     }
 
-    // 2. Auto-detected Desktop Organizers (DeskBox, Tencent DeskGo, etc.)
     if apps_cfg.auto_detect_desktop_organizers {
         for org_dir in detect_desktop_organizer_dirs() {
             roots.push(ScanRoot {
@@ -70,7 +63,6 @@ pub(super) fn scan_dir_roots(
         }
     }
 
-    // 3. Full Start Menu roots (includes top-level shortcuts outside `\Programs`)
     if let Ok(appdata) = std::env::var("APPDATA") {
         roots.push(ScanRoot {
             path: PathBuf::from(appdata)
@@ -94,7 +86,6 @@ pub(super) fn scan_dir_roots(
         });
     }
 
-    // 4. User-configured custom application / portable tools directories
     let custom_depth = apps_cfg.extra_scan_depth.clamp(1, 4);
     for raw_dir in &apps_cfg.extra_dirs {
         let trimmed = raw_dir.trim();
@@ -111,7 +102,24 @@ pub(super) fn scan_dir_roots(
             });
         }
     }
+    roots
+}
 
+pub(super) fn app_watch_paths(apps_cfg: &AppsConfig) -> Vec<PathBuf> {
+    collect_dir_roots(apps_cfg)
+        .into_iter()
+        .map(|r| r.path)
+        .filter(|p| p.is_dir())
+        .collect()
+}
+
+pub(super) fn scan_dir_roots(
+    apps_cfg: &AppsConfig,
+    seen: &mut HashSet<String>,
+    out: &mut Vec<ScannedApp>,
+) {
+    let _com = ComApartmentGuard::init();
+    let roots = collect_dir_roots(apps_cfg);
     let mut visited_dirs: HashSet<String> = HashSet::new();
     for root in roots {
         scan_dir_recursive(&root, &root.path, 0, &mut visited_dirs, seen, out);

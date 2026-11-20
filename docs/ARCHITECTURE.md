@@ -147,8 +147,10 @@ sequenceDiagram
 | `crates/tomoyo-wasm-sdk` | WebAssembly 插件开发包 | 依赖 `tomoyo-protocol` |
 | `crates/tomoyo-webview-host` | 按需独立 WebView2 宿主（设置中心、插件清单视图、`window.utools` 兼容桥） | 独立短生命周期进程 |
 | `crates/tomoyo-cli` | 插件脚手架、检查、SHA-256 计算与 uTools 导入工具 | 命令行工具 |
-| `crates/tomoyo-app` | Windows 桌面主程序（Win32 + SDF/GDI + 托盘 + 热键 + 休眠 + 自定义菜单） | `windows` crate + `mimalloc` |
-| `plugins/example-*` | Rust / Python / WASM / WebView 参考示例 | 用于插件接口与回归验证 |
+| `crates/tomoyo-app` | Windows 桌面主程序（Win32 + SDF/GDI + DPI + 托盘自愈 + CrashGuard + 休眠） | `windows` crate + `mimalloc` |
+| `crates/tomoyo-plugin-ocr` | 按需 Windows WinRT 离线 OCR 子进程插件 (`tomoyo-plugin-ocr.exe`) | 原生 WinRT `OcrEngine`，0 常驻内存 |
+| `crates/tomoyo-ui-shared` / `macos` / `linux` | 跨平台状态模型及 macOS / Linux 应用与文件后端适配层 | 无 OS 硬依赖 + 平台适配钩子 |
+| `plugins/example-*` & `builtin-ocr` | Rust / Python / WASM / WebView / WinRT OCR 参考示例 | 用于插件接口与回归验证 |
 
 ---
 
@@ -167,5 +169,9 @@ sequenceDiagram
   - 新增自绘主题弹出菜单，替换 Logo、结果行与托盘右键菜单为符合当前配色与字体的统一样式。
   - 增强应用扫描：自动识别 DeskBox 托管桌面目录、公共桌面、完整开始菜单与自定义便携目录，读取 `.lnk` 原生目标可执行文件名，修复 `App Paths` 解析。
   - 新增搜索分组筛选栏（`全部 / 应用 / 文件夹 / PDF / Excel / Word / PPT / 图片 / 压缩`），支持 `@tag` 内联过滤、`Ctrl+Tab` / `Ctrl+1..9` 快捷键与 Everything 下推筛选。
-- **后续计划（v0.7.0+）**
-  - 插件敏感权限首次调用审批与撤权管理、远程插件包一键检验安装、多显示器 `WM_DPICHANGED` 动态重缩放及安装包自更新热替换流程。
+- **v0.6.1 – v1.0.0 — 异常退出治理、自更新闭环、效率工具超越与跨平台分发底座**
+  - **稳定性与生命周期治理**：新增 `crash_guard.rs`（256 KB 滚动日志 + panic/Win32 SEH 捕获 `last_crash.txt`）、`TaskbarCreated` 托盘重建、单实例窗口唤醒、退出时 SQLite WAL checkpoint 与独立任务分离启动。
+  - **v0.6.x 体验闭环**：WinHTTP 流式下载 `setup.exe` + `SHA256SUMS.txt` 校验并自动启动覆盖升级；`WM_DPICHANGED` 多屏 DPI 动态字体与窗口重缩放；全局热键冲突提醒；`FindFirstChangeNotificationW` 零轮询应用目录增量刷新；重定向 KnownFolder 桌面扫描。
+  - **v0.7.0 安全生态**：`PermissionStore`（`permissions.json`）敏感权限首次弹窗审批与设置中心热撤权管理；纯 Rust PKZIP + `flate2` 解析器实现本地/远程社区 `.zip` 一键 SHA-256 校验安装。
+  - **v0.8.0 高频生产力**：`SnippetsProvider` 动态模板片段库（`snippets.toml`）、Everything 最近搜索历史（`ev_history.json`）与收藏筛选器，以及基于系统 WinRT `OcrEngine` 的 0 常驻内存离线 OCR 插件（`tomoyo-plugin-ocr.exe`）。
+  - **v1.0.0 分发与跨平台**：新增 Winget / Scoop / MSIX 分发清单与 `tomoyo-ui-shared` / `tomoyo-ui-macos` / `tomoyo-ui-linux` 适配层（Windows 10/11 x64 全套实机验证通过，macOS/Linux 适配层纳入 CI 跨平台编译测试）。

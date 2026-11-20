@@ -50,4 +50,21 @@ jobs:
           $p2 = Start-Process -FilePath ".\target\release\tomoyo-webview-host.exe" -ArgumentList "--self-test" -Wait -PassThru -RedirectStandardOutput $out2 -NoNewWindow
           Get-Content $out2
           if ($p2.ExitCode -ne 0) { exit $p2.ExitCode }
+          .\target\release\tomoyo-plugin-ocr.exe --self-test
           .\target\release\tomoyo-cli.exe registry list
+
+  cross-platform-core:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Test core & cross-platform UI adapters
+        env:
+          RUSTFLAGS: "-D warnings"
+        run: |
+          cargo test -p tomoyo-protocol -p tomoyo-core -p tomoyo-everything -p tomoyo-providers -p tomoyo-ui-shared -p tomoyo-ui-macos -p tomoyo-ui-linux

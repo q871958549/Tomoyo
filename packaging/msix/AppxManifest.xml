@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap rescap">
+  <Identity
+    Name="TomoyoContributors.Tomoyo"
+    Publisher="CN=TomoyoContributors"
+    Version="1.0.0.0"
+    ProcessorArchitecture="x64" />
+  <Properties>
+    <DisplayName>Tomoyo</DisplayName>
+    <PublisherDisplayName>Tomoyo Open Source Contributors</PublisherDisplayName>
+    <Logo>assets\tomoyo.ico</Logo>
+  </Properties>
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.19041.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+  <Resources>
+    <Resource Language="zh-CN" />
+    <Resource Language="en-US" />
+  </Resources>
+  <Applications>
+    <Application Id="TomoyoApp" Executable="tomoyo.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="Tomoyo"
+        Description="Open-Source Low-Memory Rust Command Launcher"
+        BackgroundColor="#181C28"
+        Square150x150Logo="assets\tomoyo-icon.png"
+        Square44x44Logo="assets\tomoyo-icon.png" />
+    </Application>
+  </Applications>
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+</Package>

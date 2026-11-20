@@ -1,3 +1,4 @@
+use crate::everything_history::recent_everything_queries;
 use std::path::Path;
 use std::sync::{Arc, RwLock};
 use tomoyo_core::{score_match, IndexedText, Lang, Provider, TomoyoConfig};
@@ -56,7 +57,7 @@ impl Provider for EverythingProvider {
 
         if search_text.is_empty() && !filtered_file_mode {
             if dedicated {
-                return vec![hint_item(lang)];
+                return hint_items(lang, &self.config);
             }
             return Vec::new();
         }
@@ -359,7 +360,7 @@ fn everything_syntax_preview() -> PreviewSpec {
     }
 }
 
-fn hint_item(lang: Lang) -> ResultItem {
+fn hint_items(lang: Lang, config: &Arc<RwLock<TomoyoConfig>>) -> Vec<ResultItem> {
     let status = match tomoyo_everything::detect_running() {
         Some(tomoyo_everything::EverythingVersion::V15Alpha) => {
             lang.pick("Everything 1.5a 已连接", "Everything 1.5a Connected")
@@ -369,7 +370,7 @@ fn hint_item(lang: Lang) -> ResultItem {
         }
         None => lang.pick("Everything 未运行", "Everything Offline"),
     };
-    ResultItem {
+    let mut items = vec![ResultItem {
         id: "everything.hint".into(),
         provider_id: "builtin.everything".into(),
         title: lang
@@ -380,16 +381,65 @@ fn hint_item(lang: Lang) -> ResultItem {
             .into(),
         subtitle: lang
             .pick(
-                "支持语法：f Cargo.toml · f ext:rs tomoyo · 点击下方分组胶囊筛选 PDF/Excel/Word/PPT",
-                "Examples: f Cargo.toml · f ext:rs · Use filter chips for PDF/Excel/Word/PPT",
+                "支持语法：f Cargo.toml · f ext:rs tomoyo · 下方为收藏筛选器与历史记录",
+                "Examples: f Cargo.toml · f ext:rs · Favorites & history listed below",
             )
             .into(),
         category: ResultCategory::File,
-        score: 9_000,
+        score: 9_500,
         icon: IconSpec::Monogram("EV".into()),
         badge: Some(status.into()),
         copy_text: None,
         actions: vec![],
         preview: Some(everything_syntax_preview()),
+    }];
+
+    if let Ok(cfg) = config.read() {
+        for (idx, fav) in cfg.everything.favorites.iter().take(6).enumerate() {
+            items.push(ResultItem {
+                id: format!("ev:fav:{}", fav.tag),
+                provider_id: "builtin.everything".into(),
+                title: format!("★ {} · {}", fav.tag, fav.label),
+                subtitle: format!("f {}", fav.expr),
+                category: ResultCategory::File,
+                score: 9_200 - idx as i64 * 10,
+                icon: IconSpec::Monogram("★".into()),
+                badge: Some(fav.tag.clone()),
+                copy_text: Some(fav.expr.clone()),
+                actions: vec![ActionSpec {
+                    id: "fill_fav".into(),
+                    label: lang.pick("一键填入收藏筛选", "Apply Favorite Filter").into(),
+                    shortcut: Some("Enter".into()),
+                    kind: ActionKind::FillQuery {
+                        query: format!("f {} ", fav.expr),
+                    },
+                }],
+                preview: Some(everything_syntax_preview()),
+            });
+        }
     }
+
+    for (idx, prev) in recent_everything_queries(6).into_iter().enumerate() {
+        items.push(ResultItem {
+            id: format!("ev:hist:{idx}"),
+            provider_id: "builtin.everything".into(),
+            title: format!("↺ {prev}"),
+            subtitle: lang.pick("最近 Everything 搜索记录 · 回车直接复用", "Recent Everything search").into(),
+            category: ResultCategory::File,
+            score: 8_800 - idx as i64 * 10,
+            icon: IconSpec::Monogram("HIS".into()),
+            badge: Some(lang.pick("历史", "HIST").into()),
+            copy_text: Some(prev.clone()),
+            actions: vec![ActionSpec {
+                id: "fill_hist".into(),
+                label: lang.pick("重新搜索该记录", "Re-run Query").into(),
+                shortcut: Some("Enter".into()),
+                kind: ActionKind::FillQuery {
+                    query: format!("f {prev}"),
+                },
+            }],
+            preview: None,
+        });
+    }
+    items
 }

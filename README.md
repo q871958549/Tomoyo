@@ -11,7 +11,7 @@
   <a href="https://github.com/q871958549/Tomoyo/actions/workflows/ci.yml"><img src="https://github.com/q871958549/Tomoyo/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="LICENSE-MIT"><img src="https://img.shields.io/badge/license-MIT%20%2F%20Apache--2.0-blue.svg" alt="License" /></a>
   <img src="https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-0078D6.svg" alt="Windows" />
-  <img src="https://img.shields.io/badge/version-v0.6.1-7c6af7.svg" alt="Version" />
+  <img src="https://img.shields.io/badge/version-v1.0.0-7c6af7.svg" alt="Version" />
 </p>
 
 ---
@@ -39,16 +39,17 @@
 
 ---
 
-## 实测数据与自检阈值 (`v0.6.0` Release)
+## 实测数据与自检阈值 (`v1.0.0` Release)
 
 | 指标 | 实测记录 | 自检阈值 (`--strict-budget`) |
 |---|---|---|
-| `tomoyo.exe` 主程序体积 | **4.69 MB** | — |
-| `tomoyo-webview-host.exe` 设置与插件宿主 | **1.21 MB**（关闭即退出） | 0 MB 常驻 |
-| 休眠态 Working Set 内存占用 | **0.37–0.39 MB** | ≤ 2.0 MB |
-| 休眠态 Private Commit（本机含 393 应用索引、SQLite 与字体） | **20.04–20.21 MB** | ≤ 28.0 MB |
-| 100 轮查询 / 绘制 / 预览 / 休眠压测 Delta | **GDI `+0` · USER `+0` · Handles `+0` · Private `-0.40 MB`** | 句柄 0 增长 / 内存 ≤ +0.50 MB |
-| 源码规范检查（[编码规范](docs/CODING_STANDARDS.md)） | **全仓 90 个源码文件均 ≤ 450 行** | ≤ 450 行/文件 |
+| `tomoyo.exe` 主程序体积 | **4.86 MB** (`4977.5 KB`) | — |
+| `tomoyo-webview-host.exe` 设置与插件宿主 | **1.42 MB**（关闭即退出） | 0 MB 常驻 |
+| `tomoyo-plugin-ocr.exe` 离线 WinRT OCR 插件 | **0.31 MB**（空闲 15 秒自动回收） | 0 MB 常驻 |
+| 休眠态 Working Set 内存占用 (`--self-test`) | **1.43–1.45 MB** | ≤ 2.0 MB |
+| 休眠态 Private Commit（含 316 应用索引、SQLite 与字体） | **20.97 MB** | ≤ 28.0 MB |
+| 100 轮查询 / 绘制 / 预览 / 休眠压测 Delta | **GDI `+0` · USER `+0` · Handles `+0` · Private `+0.01 MB`** | 句柄 0 增长 / 内存 ≤ +0.50 MB |
+| 源码规范检查（[编码规范](docs/CODING_STANDARDS.md)） | **全仓 104 个源码文件均 ≤ 450 行** | ≤ 450 行/文件 |
 
 ---
 
@@ -81,7 +82,9 @@ pwsh -File scripts\check_hygiene.ps1
 | *(直接输入)* | 混合检索：本地应用、DeskBox 等桌面整理目录、自定义便携目录与 UWP/MSIX（支持拼音/首字母与 `.lnk` 目标文件名）、计算器、格式识别、窗口列表及 Everything 置顶结果 |
 | `Ctrl+Tab` / `Ctrl+1..9` / `@pdf` | 分组筛选栏：按 `全部 / 应用 / 文件夹 / PDF / Excel / Word / PPT / 图片 / 压缩` 过滤结果并下推至 Everything |
 | `Ctrl+V` *(粘贴截图/文件)* | 粘贴上下文识别：对图片提供看图/Base64/定位目录，对文件提供路径复制/SHA-256 校验/打开终端，按 `Backspace` 清除 |
-| `f <词>` / `ev <词>` | Everything 文件搜索、右侧异步预览/PNG 缩略图及行拖拽导出 |
+| `f <词>` / `ev <词>` | Everything 文件搜索（空参数列出收藏筛选器 `@today/@large/@code` 与最近搜索历史）、异步预览及拖拽导出 |
+| `snip <词>` / `:reload` | 代码片段与动态模板扩展（支持 `{{date}}`/`{{datetime}}`/`{{unix}}`/`{{uuid}}`/`{{clipboard}}`） |
+| `ocr` / 图片粘贴 `Ctrl+V` | 按需拉起原生 WinRT 离线 OCR（中/英文，15s 自动退出释放）或图片 Base64 / 看图 |
 | `cb <词>` | SQLite 剪贴板历史（文本与图片，支持置顶与回车贴回原窗口） |
 | `kill <词>` / `ps <词>` | 进程列表查看与终止进程（按内存占用降序排列） |
 | `g` / `gh` / `crates` / `docs` / `bd` / `zh` / `mdn` | 可在设置中心自定义的快捷网页搜索前缀 |
@@ -105,10 +108,13 @@ pwsh -File scripts\check_hygiene.ps1
 - [`crates/tomoyo-sdk`](crates/tomoyo-sdk) & [`crates/tomoyo-wasm-sdk`](crates/tomoyo-wasm-sdk) — Rust 原生与 WebAssembly 插件开发 SDK
 - [`crates/tomoyo-webview-host`](crates/tomoyo-webview-host) — 按需短生命周期 WebView2 宿主，承载设置中心、插件清单视图、`window.utools` 兼容层与更新检查
 - [`crates/tomoyo-cli`](crates/tomoyo-cli) — 插件脚手架、验证工具、SHA-256 校验、uTools 导入与插件安装 CLI
-- [`crates/tomoyo-app`](crates/tomoyo-app) — Windows 桌面启动器主程序（SDF + GDI 渲染、异步图标/预览加载、自定义弹出菜单、OLE 拖出与休眠调度）
+- [`crates/tomoyo-app`](crates/tomoyo-app) — Windows 桌面启动器主程序（SDF + GDI 渲染、异步图标/预览加载、自定义弹出菜单、DPI 重缩放、`TaskbarCreated` 托盘自愈与崩溃滚动日志守护）
+- [`crates/tomoyo-plugin-ocr`](crates/tomoyo-plugin-ocr) — 基于 Windows 10/11 原生 WinRT `OcrEngine` 的按需离线 OCR 子进程插件（0 常驻内存）
+- [`crates/tomoyo-ui-shared`](crates/tomoyo-ui-shared)、[`crates/tomoyo-ui-macos`](crates/tomoyo-ui-macos)、[`crates/tomoyo-ui-linux`](crates/tomoyo-ui-linux) — 跨平台 UI 状态模型与 macOS (`.app` / Spotlight) / Linux (XDG `.desktop` / `fd`) 适配底座
+- [`packaging/`](packaging) — Inno Setup 安装包、Winget / Scoop 清单与 MSIX 打包脚本
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) & [`docs/PLUGIN_PROTOCOL.md`](docs/PLUGIN_PROTOCOL.md) — 架构说明与插件通信协议文档
-- [`plugins/`](plugins) & [`registry/index.json`](registry/index.json) — 4 个多运行时示例插件与本地插件索引清单
-- [`.github/workflows/`](.github/workflows) — Windows CI 检查与 Tag 触发安装包/便携包构建发布流水线
+- [`plugins/`](plugins) & [`registry/index.json`](registry/index.json) — 5 个多运行时示例与内置 OCR 插件及插件索引清单
+- [`.github/workflows/`](.github/workflows) — Windows 严苛内存门禁 + Linux/macOS 跨平台编译 CI 与 Tag 触发发包流水线
 
 ---
 

@@ -8,7 +8,9 @@
 pub mod discovery;
 pub mod host;
 pub mod job;
+pub mod permissions;
 pub mod process;
+mod runtime;
 pub mod wasm;
 
 pub use discovery::default_plugin_dirs;

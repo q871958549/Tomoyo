@@ -1,0 +1,12 @@
+[package]
+name = "tomoyo-ui-macos"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "macOS AppKit / Spotlight / .app bundle backend adapter for Tomoyo cross-platform launcher"
+
+[dependencies]
+tomoyo-protocol = { workspace = true }
+tomoyo-core = { workspace = true }
+tomoyo-providers = { workspace = true }
+tomoyo-ui-shared = { path = "../tomoyo-ui-shared" }

@@ -25,7 +25,7 @@ use tomoyo_plugin_host::{default_plugin_dirs, PluginHost};
 use tomoyo_protocol::AttachedContext;
 use tomoyo_providers::{
     AppsProvider, CalcProvider, ClipboardProvider, EverythingProvider, ProcessProvider,
-    SystemProvider, WebSearchProvider, WindowsSwitcherProvider,
+    SnippetsProvider, SystemProvider, WebSearchProvider, WindowsSwitcherProvider,
 };
 use window::{AppShell, WM_APP_WAKE_EXISTING};
 use windows::core::{w, PCWSTR};
@@ -109,6 +109,7 @@ fn build_engine() -> (
     ));
     let everything = Arc::new(EverythingProvider::new(config.clone()));
     let calc = Arc::new(CalcProvider::new());
+    let snippets = Arc::new(SnippetsProvider::new(config.clone()));
     let web = Arc::new(WebSearchProvider::new(config.clone()));
     let windows = Arc::new(WindowsSwitcherProvider::new());
     let processes = Arc::new(ProcessProvider::new(config.clone()));
@@ -121,6 +122,7 @@ fn build_engine() -> (
     let providers: Vec<Arc<dyn Provider>> = vec![
         apps.clone(),
         calc,
+        snippets,
         web,
         everything,
         clipboard.clone(),
@@ -158,6 +160,7 @@ fn run_self_test(fonts: &PrivateFonts, strict_budget: bool) {
     );
     log_mem("0. process startup");
     let (config, router, plugin_host, clipboard, apps, updater) = build_engine();
+    plugin_host.set_interactive_prompts(false);
     log_mem("1. after build_engine (UWP+SQLite)");
     println!("Indexed installed apps (incl. UWP): {}", apps.app_count());
     println!("Clipboard SQLite persisted items: {}", clipboard.item_count());
@@ -194,6 +197,7 @@ fn run_self_test(fonts: &PrivateFonts, strict_budget: bool) {
         ":update",
         ":stats",
         ":plugins",
+        "snip iso",
         "cb",
         "@pdf",
         "hi Tomoyo Rust",

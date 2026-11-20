@@ -11,6 +11,10 @@ members = [
     "crates/tomoyo-webview-host",
     "crates/tomoyo-cli",
     "crates/tomoyo-app",
+    "crates/tomoyo-plugin-ocr",
+    "crates/tomoyo-ui-shared",
+    "crates/tomoyo-ui-macos",
+    "crates/tomoyo-ui-linux",
     "plugins/example-hello",
 ]
 exclude = [
@@ -18,7 +22,7 @@ exclude = [
 ]
 
 [workspace.package]
-version = "0.6.1"
+version = "1.0.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/q871958549/Tomoyo"
@@ -48,6 +52,8 @@ rusqlite = { version = "0.43", default-features = false, features = ["bundled"] 
 wasmi = { version = "2.0", default-features = false, features = ["std", "validate", "wat", "auto-dispatch"] }
 sha2 = "0.11"
 png = "0.18"
+flate2 = { version = "1.1", default-features = false, features = ["rust_backend"] }
+crc32fast = "1.5"
 webview2-com = "0.39"
 winresource = "0.1"
 windows = "0.62"

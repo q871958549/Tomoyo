@@ -98,6 +98,35 @@ pub fn build_super_match_items(
             });
 
             items.push(ResultItem {
+                id: "super:img:ocr".into(),
+                provider_id: provider_id.into(),
+                title: lang
+                    .pick("OCR 识别图片中的文字（离线 WinRT · 0 常驻内存）", "Offline OCR Text Recognition (WinRT · 0 Idle RAM)")
+                    .into(),
+                subtitle: lang
+                    .pick("按回车拉起独立 OCR 插件识别中英文文本，15 秒空闲自动销毁", "Launch ephemeral Windows OCR plugin, auto-reaped after 15s")
+                    .into(),
+                category: ResultCategory::Plugin,
+                score: 10_350,
+                icon: IconSpec::Monogram("OCR".into()),
+                badge: Some("OCR".into()),
+                copy_text: None,
+                actions: vec![ActionSpec {
+                    id: "run_ocr".into(),
+                    label: lang.pick("立即识别图片文字", "Recognize Text Now").into(),
+                    shortcut: Some("Enter".into()),
+                    kind: ActionKind::FillQuery {
+                        query: "ocr".into(),
+                    },
+                }],
+                preview: Some(PreviewSpec::ImagePreview {
+                    path: path.clone(),
+                    width: *width,
+                    height: *height,
+                }),
+            });
+
+            items.push(ResultItem {
                 id: "super:img:reveal".into(),
                 provider_id: provider_id.into(),
                 title: lang

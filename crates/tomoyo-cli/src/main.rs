@@ -208,16 +208,23 @@ fn cmd_registry(args: &[String]) -> i32 {
 }
 
 fn cmd_install(args: &[String]) -> i32 {
-    let Some(plugin_id) = args.first().filter(|s| !s.starts_with('-')) else {
-        eprintln!("Usage: tomoyo-cli install <plugin-id> [--index <path-or-https-url>] [--dest <dir>]");
+    let Some(target) = args.first().filter(|s| !s.starts_with('-')) else {
+        eprintln!("Usage: tomoyo-cli install <plugin-id | https-zip-url | local.zip> [--sha256 <hex>] [--index <path-or-https-url>] [--dest <dir>]");
         return 1;
     };
-    let index_source = flag_val(args, "--index").unwrap_or("registry/index.json");
-    let index_path = PathBuf::from(index_source);
     let dest_root = flag_val(args, "--dest")
         .map(PathBuf::from)
         .unwrap_or_else(|| tomoyo_core::data_dir().join("plugins"));
 
+    if target.starts_with("https://")
+        || target.starts_with("http://")
+        || target.to_ascii_lowercase().ends_with(".zip")
+    {
+        return install_direct_zip(target, flag_val(args, "--sha256"), &dest_root);
+    }
+
+    let index_source = flag_val(args, "--index").unwrap_or("registry/index.json");
+    let index_path = PathBuf::from(index_source);
     let index = match load_registry(index_source) {
         Ok(i) => i,
         Err(e) => {
@@ -225,10 +232,36 @@ fn cmd_install(args: &[String]) -> i32 {
             return 1;
         }
     };
-    let Some(entry) = index.plugins.iter().find(|p| p.id == *plugin_id) else {
-        eprintln!("Plugin `{plugin_id}` not found in registry.");
+    let Some(entry) = index.plugins.iter().find(|p| p.id == *target) else {
+        eprintln!("Plugin `{target}` not found in registry.");
         return 1;
     };
+
+    let target_dir = dest_root.join(entry.id.replace('.', "-"));
+    if entry.source.starts_with("https://") || entry.source.starts_with("http://") {
+        match tomoyo_core::download_and_install_remote_zip(
+            &entry.source,
+            &entry.sha256,
+            true,
+            &target_dir,
+        ) {
+            Ok(actual_sha) => {
+                println!(
+                    "[VERIFIED] Remote ZIP SHA-256 matched ({})\n[INSTALLED] `{}` v{} -> {}",
+                    &actual_sha[..16],
+                    entry.name,
+                    entry.version,
+                    target_dir.display()
+                );
+                println!("Run `:reload` inside Tomoyo to activate immediately.");
+                return 0;
+            }
+            Err(e) => {
+                eprintln!("SECURITY/INSTALL ERROR: {e}");
+                return 2;
+            }
+        }
+    }
 
     let base_dir = index_path
         .parent()
@@ -253,13 +286,12 @@ fn cmd_install(args: &[String]) -> i32 {
     };
     if !entry.sha256.eq_ignore_ascii_case(&actual_sha) {
         eprintln!(
-            "SECURITY ERROR: SHA-256 mismatch for `{plugin_id}`!\n  Expected: {}\n  Actual:   {}",
+            "SECURITY ERROR: SHA-256 mismatch for `{target}`!\n  Expected: {}\n  Actual:   {}",
             entry.sha256, actual_sha
         );
         return 2;
     }
 
-    let target_dir = dest_root.join(entry.id.replace('.', "-"));
     if let Err(e) = copy_plugin_files(&src_dir, &target_dir) {
         eprintln!("Installation copy failed: {e}");
         return 1;
@@ -269,6 +301,61 @@ fn cmd_install(args: &[String]) -> i32 {
         &actual_sha[..16],
         entry.name,
         entry.version,
+        target_dir.display()
+    );
+    println!("Run `:reload` inside Tomoyo to activate immediately.");
+    0
+}
+
+fn install_direct_zip(source: &str, sha256_opt: Option<&str>, dest_root: &Path) -> i32 {
+    let stage = std::env::temp_dir().join(format!("tomoyo-cli-stage-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&stage);
+    let res = if source.starts_with("https://") || source.starts_with("http://") {
+        let Some(sha) = sha256_opt else {
+            eprintln!("SECURITY ERROR: Remote ZIP URL installation requires `--sha256 <64-hex>`");
+            return 2;
+        };
+        tomoyo_core::download_and_install_remote_zip(source, sha, true, &stage)
+    } else {
+        tomoyo_core::install_zip_file_verified(Path::new(source), sha256_opt.unwrap_or(""), &stage)
+    };
+    let sha = match res {
+        Ok(s) => s,
+        Err(e) => {
+            let _ = std::fs::remove_dir_all(&stage);
+            eprintln!("Install failed: {e}");
+            return 2;
+        }
+    };
+    let manifest_raw = match std::fs::read_to_string(stage.join("tomoyo-plugin.toml")) {
+        Ok(r) => r,
+        Err(e) => {
+            let _ = std::fs::remove_dir_all(&stage);
+            eprintln!("Missing tomoyo-plugin.toml: {e}");
+            return 1;
+        }
+    };
+    let manifest = match PluginManifest::from_toml_str(&manifest_raw) {
+        Ok(m) => m,
+        Err(e) => {
+            let _ = std::fs::remove_dir_all(&stage);
+            eprintln!("Invalid tomoyo-plugin.toml: {e}");
+            return 1;
+        }
+    };
+    let target_dir = dest_root.join(manifest.id.replace('.', "-"));
+    if let Err(e) = copy_plugin_files(&stage, &target_dir) {
+        let _ = std::fs::remove_dir_all(&stage);
+        eprintln!("Copy failed: {e}");
+        return 1;
+    }
+    let _ = std::fs::remove_dir_all(&stage);
+    println!(
+        "[VERIFIED] ZIP SHA-256 ({})\n[INSTALLED] `{}` ({}) v{} -> {}",
+        &sha[..16],
+        manifest.name,
+        manifest.id,
+        manifest.version,
         target_dir.display()
     );
     println!("Run `:reload` inside Tomoyo to activate immediately.");

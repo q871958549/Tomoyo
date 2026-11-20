@@ -1,0 +1,12 @@
+[package]
+name = "tomoyo-ui-linux"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Linux Wayland/X11, XDG .desktop entry & fd/locate backend adapter for Tomoyo"
+
+[dependencies]
+tomoyo-protocol = { workspace = true }
+tomoyo-core = { workspace = true }
+tomoyo-providers = { workspace = true }
+tomoyo-ui-shared = { path = "../tomoyo-ui-shared" }

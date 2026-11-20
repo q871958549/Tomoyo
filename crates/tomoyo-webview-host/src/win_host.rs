@@ -11,7 +11,9 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::mpsc;
 use tomoyo_core::{
-    fetch_latest_github_release, locate_fonts_dir, TomoyoConfig, UpdateStatus, CURRENT_VERSION,
+    download_and_verify_release_asset, fetch_latest_github_release,
+    launch_verified_update_installer, locate_fonts_dir, ReleaseInfo, TomoyoConfig, UpdateStatus,
+    CURRENT_VERSION,
 };
 use webview2_com::Microsoft::Web::WebView2::Win32::{
     CreateCoreWebView2EnvironmentWithOptions, ICoreWebView2, ICoreWebView2Controller,
@@ -286,6 +288,9 @@ pub fn run_windows_host(opts: LaunchArgs) {
                                             if let Some(repo) = act.async_check_updates {
                                                 spawn_update_worker(repo, tx_cb.clone(), hwnd_raw);
                                             }
+                                            if let Some(rel) = act.async_install_update {
+                                                spawn_install_update_worker(rel, tx_cb.clone(), hwnd_raw);
+                                            }
                                             if let Some(sources) = act.async_fetch_store {
                                                 spawn_store_worker(sources, tx_cb.clone(), hwnd_raw);
                                             }
@@ -368,6 +373,39 @@ fn spawn_update_worker(repo: String, tx: mpsc::Sender<String>, hwnd_raw: usize) 
                 let _ = cfg.save();
             }
             let evt = serde_json::json!({ "event": "update_status", "status": st }).to_string();
+            if tx.send(evt).is_ok() {
+                unsafe {
+                    let _ = PostMessageW(Some(HWND(hwnd_raw as *mut c_void)), WM_APP_WEBVIEW_EVENT, WPARAM(0), LPARAM(0));
+                }
+            }
+        });
+}
+
+fn spawn_install_update_worker(rel: ReleaseInfo, tx: mpsc::Sender<String>, hwnd_raw: usize) {
+    let _ = std::thread::Builder::new()
+        .name("tomoyo-settings-installer".into())
+        .spawn(move || {
+            let res = download_and_verify_release_asset(&rel)
+                .and_then(|path| launch_verified_update_installer(&path));
+            let evt = match res {
+                Ok(started_exe) => serde_json::json!({
+                    "event": "update_install_result",
+                    "ok": true,
+                    "launched_installer": started_exe,
+                    "message": if started_exe {
+                        "SHA-256 校验通过，正在启动静默覆盖安装并重启更新..."
+                    } else {
+                        "SHA-256 校验通过，已在资源管理器选中便携包"
+                    }
+                }),
+                Err(e) => serde_json::json!({
+                    "event": "update_install_result",
+                    "ok": false,
+                    "launched_installer": false,
+                    "message": e
+                }),
+            }
+            .to_string();
             if tx.send(evt).is_ok() {
                 unsafe {
                     let _ = PostMessageW(Some(HWND(hwnd_raw as *mut c_void)), WM_APP_WEBVIEW_EVENT, WPARAM(0), LPARAM(0));
