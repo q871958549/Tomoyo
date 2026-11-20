@@ -39,6 +39,13 @@ pub fn build_init_script(
     }} catch (_) {{}}
   }}
 
+  window.addEventListener('error', (e) => {{
+    post({{ cmd: 'report_js_error', message: String(e.message || 'script error'), source: PLUGIN_ID, line: e.lineno || 0 }});
+  }});
+  window.addEventListener('unhandledrejection', (e) => {{
+    post({{ cmd: 'report_js_error', message: String(e.reason || 'unhandled rejection'), source: PLUGIN_ID, line: 0 }});
+  }});
+
   function ensureSubInput(onChange, placeholder, isFocus) {{
     if (!document.body) {{
       window.addEventListener('DOMContentLoaded', () => ensureSubInput(onChange, placeholder, isFocus), {{ once: true }});

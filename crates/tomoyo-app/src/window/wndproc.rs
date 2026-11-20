@@ -113,7 +113,11 @@ pub(super) unsafe extern "system" fn main_wndproc(
         }
         WM_COMMAND => dispatch_wm_command(hwnd, app, wparam),
         WM_APP_CONFIG_SAVED => {
-            app.reload_config_and_all();
+            if wparam.0 != 0 {
+                app.reload_config_and_all();
+            } else {
+                app.reload_config_from_settings();
+            }
             app.show_toast(app.lang.pick("设置已实时同步生效", "Settings synced live"));
             LRESULT(0)
         }

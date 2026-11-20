@@ -1,10 +1,11 @@
 use crate::job::JobGuard;
 use serde_json::Value;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc::{self, Receiver};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use thiserror::Error;
 use tomoyo_protocol::{
@@ -12,14 +13,16 @@ use tomoyo_protocol::{
     METHOD_SHUTDOWN, PROTOCOL_VERSION,
 };
 
+const MAX_STDERR_LINES: usize = 12;
+
 #[derive(Debug, Error)]
 pub enum ProcessError {
     #[error("failed to spawn plugin process: {0}")]
     Spawn(String),
     #[error("plugin RPC timeout after {0}ms")]
     Timeout(u64),
-    #[error("plugin process exited or closed stdout")]
-    Closed,
+    #[error("plugin process exited or closed stdout ({0})")]
+    Closed(String),
     #[error("plugin JSON-RPC error ({code}): {message}")]
     Rpc { code: i32, message: String },
     #[error("serialization error: {0}")]
@@ -30,6 +33,7 @@ pub struct LivePluginProcess {
     child: Child,
     stdin: ChildStdin,
     responses: Receiver<JsonRpcResponse>,
+    stderr_tail: Arc<Mutex<VecDeque<String>>>,
     _job: Option<JobGuard>,
     next_id: u64,
     last_used: Instant,
@@ -38,6 +42,7 @@ pub struct LivePluginProcess {
 
 impl LivePluginProcess {
     pub fn spawn(
+        plugin_id: &str,
         plugin_dir: &Path,
         command: &str,
         args: &[String],
@@ -51,7 +56,7 @@ impl LivePluginProcess {
             .current_dir(plugin_dir)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null());
+            .stderr(Stdio::piped());
 
         for (k, v) in env {
             cmd.env(k, v);
@@ -72,7 +77,7 @@ impl LivePluginProcess {
         let job = match JobGuard::assign_child(&child, max_memory_mb) {
             Ok(j) => Some(j),
             Err(e) => {
-                tracing::warn!("Job Object assignment skipped for pid {pid}: {e}");
+                tracing::warn!(plugin_id = %plugin_id, pid = pid, "Job Object assignment skipped: {e}");
                 None
             }
         };
@@ -85,6 +90,41 @@ impl LivePluginProcess {
             .stdout
             .take()
             .ok_or_else(|| ProcessError::Spawn("missing child stdout".into()))?;
+        let stderr_tail = Arc::new(Mutex::new(VecDeque::with_capacity(MAX_STDERR_LINES)));
+        if let Some(stderr) = child.stderr.take() {
+            let tail_clone = Arc::clone(&stderr_tail);
+            let pid_label = plugin_id.to_string();
+            let _ = std::thread::Builder::new()
+                .name(format!("tomoyo-err-{pid}"))
+                .spawn(move || {
+                    let mut reader = BufReader::new(stderr);
+                    let mut line = String::new();
+                    loop {
+                        line.clear();
+                        match reader.read_line(&mut line) {
+                            Ok(0) | Err(_) => break,
+                            Ok(_) => {
+                                let clean: String = line.trim().chars().take(512).collect();
+                                if clean.is_empty() {
+                                    continue;
+                                }
+                                tracing::warn!(
+                                    target: "plugin_stderr",
+                                    plugin_id = %pid_label,
+                                    pid = pid,
+                                    "{clean}"
+                                );
+                                if let Ok(mut q) = tail_clone.lock() {
+                                    if q.len() >= MAX_STDERR_LINES {
+                                        q.pop_front();
+                                    }
+                                    q.push_back(clean);
+                                }
+                            }
+                        }
+                    }
+                });
+        }
 
         // Bounded channel prevents memory spikes if a misbehaving plugin spams stdout.
         let (tx, rx) = mpsc::sync_channel::<JsonRpcResponse>(8);
@@ -117,6 +157,7 @@ impl LivePluginProcess {
             child,
             stdin,
             responses: rx,
+            stderr_tail,
             _job: job,
             next_id: 1,
             last_used: Instant::now(),
@@ -151,6 +192,30 @@ impl LivePluginProcess {
         self.last_used
     }
 
+    pub fn recent_stderr(&self) -> Vec<String> {
+        self.stderr_tail
+            .lock()
+            .map(|q| q.iter().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    fn describe_close_reason(&mut self) -> String {
+        let status = self
+            .child
+            .try_wait()
+            .ok()
+            .flatten()
+            .map(|s| format!("exit={s}"))
+            .unwrap_or_else(|| "eof".into());
+        let tail = self.recent_stderr();
+        if tail.is_empty() {
+            status
+        } else {
+            let last = tail.iter().rev().take(2).cloned().collect::<Vec<_>>().into_iter().rev().collect::<Vec<_>>().join(" | ");
+            format!("{status}; stderr: {last}")
+        }
+    }
+
     pub fn call(
         &mut self,
         method: &str,
@@ -163,10 +228,9 @@ impl LivePluginProcess {
         let mut line = serde_json::to_string(&req)?;
         line.push('\n');
 
-        self.stdin
-            .write_all(line.as_bytes())
-            .and_then(|_| self.stdin.flush())
-            .map_err(|_| ProcessError::Closed)?;
+        if self.stdin.write_all(line.as_bytes()).and_then(|_| self.stdin.flush()).is_err() {
+            return Err(ProcessError::Closed(self.describe_close_reason()));
+        }
 
         let deadline = Instant::now() + timeout;
         loop {
@@ -193,7 +257,7 @@ impl LivePluginProcess {
                     return Err(ProcessError::Timeout(timeout.as_millis() as u64));
                 }
                 Err(mpsc::RecvTimeoutError::Disconnected) => {
-                    return Err(ProcessError::Closed);
+                    return Err(ProcessError::Closed(self.describe_close_reason()));
                 }
             }
         }

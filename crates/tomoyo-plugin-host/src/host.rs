@@ -3,13 +3,15 @@
 use crate::discovery::{build_webview_trigger_item, scan_plugin_dirs};
 use crate::permissions::is_bundled_plugin_dir;
 use crate::process::ProcessError;
-use crate::runtime::{ensure_live, LiveRuntime, RegisteredPlugin};
+use crate::runtime::{ensure_live, plugin_error_result_item, LiveRuntime, RegisteredPlugin};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
-use tomoyo_core::{permission_key, ExternalPluginBridge, PermissionStore, PluginSummary};
+use tomoyo_core::{
+    next_trace_id, permission_key, ExternalPluginBridge, PermissionStore, PluginSummary,
+};
 use tomoyo_protocol::{
     ExecuteRequest, ExecuteResponse, QueryContext, QueryResponse, ResultItem, RuntimeConfig,
     METHOD_EXECUTE, METHOD_QUERY,
@@ -158,27 +160,32 @@ impl PluginHost {
         let Some(plug) = plugins.get_mut(plugin_id) else {
             return Err(ProcessError::Spawn(format!("plugin `{plugin_id}` not found")));
         };
+        let trace_id = next_trace_id("EXE");
+        let started = Instant::now();
         let timeout = Duration::from_millis(plug.manifest.resources.query_timeout_ms.max(2000));
         if ensure_live(plug, perms, interactive)? {
             cvar.notify_one();
         }
-        match plug.live.as_mut() {
+        let res = match plug.live.as_mut() {
             Some(LiveRuntime::Stdio(proc)) => {
                 let params = serde_json::to_value(&req)?;
                 match proc.call(METHOD_EXECUTE, params, timeout) {
                     Ok(val) => Ok(serde_json::from_value(val)?),
                     Err(err) => {
+                        tracing::error!(trace_id = %trace_id, plugin_id = %plugin_id, ms = started.elapsed().as_millis(), "Plugin execute failed: {err}");
                         plug.live = None;
                         Err(err)
                     }
                 }
             }
             Some(LiveRuntime::Wasm(wasm)) => wasm.execute(&req).map_err(|e| {
+                tracing::error!(trace_id = %trace_id, plugin_id = %plugin_id, ms = started.elapsed().as_millis(), "WASM execute failed: {e}");
                 plug.live = None;
                 ProcessError::Spawn(e.to_string())
             }),
             None => Ok(ExecuteResponse::default()),
-        }
+        };
+        res
     }
 
     pub fn reap_plugins(&self, force_all: bool) -> usize {
@@ -221,7 +228,7 @@ impl PluginHost {
         cvar.notify_all();
     }
 
-    fn query_plugin_ids(&self, ids: &[String], ctx: &QueryContext) -> Vec<ResultItem> {
+    fn query_plugin_ids(&self, ids: &[String], ctx: &QueryContext, surface_errors: bool) -> Vec<ResultItem> {
         let interactive = self.interactive_prompts.load(Ordering::Acquire);
         let (lock, cvar) = &*self.state;
         let mut st = lock.lock().unwrap();
@@ -252,20 +259,34 @@ impl PluginHost {
                 continue;
             }
 
+            let trace_id = next_trace_id("PLG");
+            let started = Instant::now();
             let timeout = Duration::from_millis(plug.manifest.resources.query_timeout_ms);
             match ensure_live(plug, perms, interactive) {
-                Ok(spawned) => any_spawned |= spawned,
+                Ok(spawned) => {
+                    if spawned {
+                        any_spawned = true;
+                        tracing::info!(
+                            trace_id = %trace_id,
+                            plugin_id = %plug.manifest.id,
+                            pid = ?plug.live.as_ref().and_then(|l| l.pid()),
+                            ms = started.elapsed().as_millis(),
+                            "Spawned plugin runtime"
+                        );
+                    }
+                }
                 Err(err) => {
-                    tracing::warn!("Failed to start plugin `{}`: {err}", plug.manifest.id);
+                    tracing::error!(trace_id = %trace_id, plugin_id = %plug.manifest.id, "Failed to start plugin: {err}");
+                    if surface_errors {
+                        items.push(plugin_error_result_item(&plug.manifest.id, &plug.manifest.name, &trace_id, &err.to_string(), &[]));
+                    }
                     continue;
                 }
             }
 
             let query_res = match plug.live.as_mut() {
                 Some(LiveRuntime::Stdio(proc)) => {
-                    let Ok(params) = serde_json::to_value(ctx) else {
-                        continue;
-                    };
+                    let Ok(params) = serde_json::to_value(ctx) else { continue };
                     proc.call(METHOD_QUERY, params, timeout)
                         .and_then(|val| serde_json::from_value::<QueryResponse>(val).map_err(Into::into))
                 }
@@ -274,9 +295,13 @@ impl PluginHost {
                 }
                 None => continue,
             };
+            let elapsed_ms = started.elapsed().as_millis();
 
             match query_res {
                 Ok(resp) => {
+                    if elapsed_ms >= 800 {
+                        tracing::warn!(trace_id = %trace_id, plugin_id = %plug.manifest.id, ms = elapsed_ms, hits = resp.items.len(), "Slow plugin query");
+                    }
                     for mut item in resp.items {
                         if item.provider_id.is_empty() {
                             item.provider_id = plug.manifest.id.clone();
@@ -285,8 +310,15 @@ impl PluginHost {
                     }
                 }
                 Err(err) => {
-                    tracing::warn!("Plugin `{}` query error: {err}", plug.manifest.id);
+                    let stderr_tail = match plug.live.as_ref() {
+                        Some(LiveRuntime::Stdio(proc)) => proc.recent_stderr(),
+                        _ => Vec::new(),
+                    };
+                    tracing::error!(trace_id = %trace_id, plugin_id = %plug.manifest.id, ms = elapsed_ms, "Plugin query error: {err}");
                     plug.live = None;
+                    if surface_errors {
+                        items.push(plugin_error_result_item(&plug.manifest.id, &plug.manifest.name, &trace_id, &err.to_string(), &stderr_tail));
+                    }
                 }
             }
         }
@@ -366,7 +398,7 @@ impl ExternalPluginBridge for PluginHost {
         if ids.is_empty() {
             Vec::new()
         } else {
-            self.query_plugin_ids(&ids, ctx)
+            self.query_plugin_ids(&ids, ctx, true)
         }
     }
 
@@ -384,7 +416,7 @@ impl ExternalPluginBridge for PluginHost {
         if ids.is_empty() {
             Vec::new()
         } else {
-            self.query_plugin_ids(&ids, ctx)
+            self.query_plugin_ids(&ids, ctx, false)
         }
     }
 

@@ -23,6 +23,7 @@
       <button data-tab="web" data-i18n="nav_web">快捷网页搜索</button>
       <button data-tab="store" data-i18n="nav_store">插件清单</button>
       <button data-tab="plugins" data-i18n="nav_plugins">已安装与路径</button>
+      <button data-tab="logs" data-i18n="nav_logs">诊断与日志</button>
       <button data-tab="updates" data-i18n="nav_updates">检查更新与关于</button>
     </nav>
     <div class="sidebar-foot" data-i18n="sidebar_foot">
@@ -354,6 +355,23 @@
         </div>
       </section>
 
+      <!-- DIAGNOSTICS & LOGS -->
+      <section id="tab-logs">
+        <div class="logs-head">
+          <div><h2 data-i18n="h_logs">诊断与日志溯源</h2><p class="lead" data-i18n="lead_logs">查看主进程、WebView 与崩溃快照日志，支持一键复制完整诊断报告。</p></div>
+          <div style="display:flex;gap:8px"><button class="btn" onclick="openLogsDir()" data-i18n="btn_open_logs">打开日志目录</button><button class="btn primary" onclick="copyDiagBundle()" data-i18n="btn_copy_diag">复制诊断报告</button></div>
+        </div>
+        <div class="card">
+          <div class="logs-toolbar">
+            <div class="seg" id="logs-src-seg"><button class="active" data-src="tomoyo.log" onclick="setLogSource('tomoyo.log')" data-i18n="log_main">主进程日志</button><button data-src="webview.log" onclick="setLogSource('webview.log')" data-i18n="log_wv">WebView 日志</button><button data-src="last_crash.txt" onclick="setLogSource('last_crash.txt')" data-i18n="log_crash">崩溃快照</button></div>
+            <label class="logs-chk"><input id="logs-err-only" type="checkbox" onchange="refreshLogs()" /><span data-i18n="log_err_only">仅 WARN/ERROR</span></label>
+            <button class="btn" onclick="refreshLogs()" data-i18n="btn_refresh_logs">刷新</button>
+          </div>
+          <div id="logs-meta" class="label-desc" style="margin:8px 0"></div>
+          <pre id="logs-pre" class="log-pre"></pre>
+        </div>
+      </section>
+
       <!-- UPDATES & ABOUT -->
       <section id="tab-updates">
         <h2 data-i18n="h_updates">检查更新与关于 Tomoyo</h2>
@@ -361,7 +379,7 @@
         <div class="card">
           <div class="row">
             <div>
-              <div class="label-title">Tomoyo <span id="about-ver" class="pill">v1.1.0</span></div>
+              <div class="label-title">Tomoyo <span id="about-ver" class="pill">v1.2.0</span></div>
               <div class="label-desc" data-i18n="about_desc">MIT / Apache-2.0 开源协议 · Windows Rust 桌面启动器</div>
             </div>
             <div style="display:flex;gap:8px">

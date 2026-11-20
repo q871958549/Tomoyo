@@ -35,6 +35,8 @@
         if (btn.dataset.tab === 'store' && !storeLoadedOnce) {
           storeLoadedOnce = true;
           fetchStore();
+        } else if (btn.dataset.tab === 'logs') {
+          refreshLogs();
         }
       });
     });
@@ -213,7 +215,7 @@
 
     function populate() {
       if (!state.language) state.language = 'zh';
-      document.getElementById('about-ver').textContent = 'v' + (INIT.version || '1.1.0');
+      document.getElementById('about-ver').textContent = 'v' + (INIT.version || '1.2.0');
       document.getElementById('autostart').checked = autostart;
       const hib = state.hibernate_delay_secs || 15;
       document.getElementById('hibernate').value = hib;

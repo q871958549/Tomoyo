@@ -56,6 +56,14 @@ impl AppShell {
     }
 
     pub(super) fn reload_config_and_all(&mut self) {
+        self.reload_config_internal(true);
+    }
+
+    pub(super) fn reload_config_from_settings(&mut self) {
+        self.reload_config_internal(false);
+    }
+
+    fn reload_config_internal(&mut self, force_provider_reload: bool) {
         let fresh = TomoyoConfig::load_or_create();
         let new_lang = fresh.lang();
         let new_theme = fresh.theme.clone();
@@ -66,6 +74,15 @@ impl AppShell {
         self.geom.max_visible_rows = fresh.window.max_visible_rows.clamp(4, 18);
         self.geom.preview_width_dip = fresh.window.preview_width_dip.clamp(220, 620);
         self.geom.custom_pos = fresh.window.custom_x.zip(fresh.window.custom_y);
+        let apps_changed = self
+            .config
+            .read()
+            .map(|old| {
+                old.apps.extra_dirs != fresh.apps.extra_dirs
+                    || old.apps.auto_detect_desktop_organizers != fresh.apps.auto_detect_desktop_organizers
+                    || old.apps.extra_scan_depth != fresh.apps.extra_scan_depth
+            })
+            .unwrap_or(true);
         if let Ok(mut cfg) = self.config.write() {
             *cfg = fresh;
         }
@@ -85,7 +102,9 @@ impl AppShell {
                 tray.update_tooltip(&self.hotkey_label);
             }
         }
-        self.router.reload_all();
+        if force_provider_reload || apps_changed {
+            self.router.reload_all();
+        }
         if unsafe { IsWindowVisible(self.hwnd).as_bool() } {
             self.position_on_active_monitor();
             self.dispatch_query();

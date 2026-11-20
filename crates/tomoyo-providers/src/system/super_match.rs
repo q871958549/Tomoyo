@@ -104,10 +104,10 @@ pub fn build_super_match_items(
                     .pick("OCR 识别图片中的文字（离线 WinRT · 0 常驻内存）", "Offline OCR Text Recognition (WinRT · 0 Idle RAM)")
                     .into(),
                 subtitle: lang
-                    .pick("按回车拉起独立 OCR 插件识别中英文文本，15 秒空闲自动销毁", "Launch ephemeral Windows OCR plugin, auto-reaped after 15s")
+                    .pick("回车立即识别并可打开原图对照审校窗，15 秒空闲自动销毁", "Enter to recognize & inspect text side-by-side, auto-reaped after 15s")
                     .into(),
                 category: ResultCategory::Plugin,
-                score: 10_350,
+                score: 10_550,
                 icon: IconSpec::Monogram("OCR".into()),
                 badge: Some("OCR".into()),
                 copy_text: None,

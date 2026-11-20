@@ -6,7 +6,10 @@ use crate::wasm::LiveWasmPlugin;
 use std::path::PathBuf;
 use std::time::Instant;
 use tomoyo_core::{inspect_pid_working_set, PermissionStore};
-use tomoyo_protocol::{Permission, PluginManifest, RuntimeConfig};
+use tomoyo_protocol::{
+    ActionKind, ActionSpec, IconSpec, Permission, PluginManifest, PreviewSpec, ResultCategory,
+    ResultItem, RuntimeConfig,
+};
 
 pub(crate) enum LiveRuntime {
     Stdio(LivePluginProcess),
@@ -62,6 +65,7 @@ pub(crate) fn ensure_live(
     match &plug.manifest.runtime {
         RuntimeConfig::StdioJsonrpc { command, args, env } => {
             let proc = LivePluginProcess::spawn(
+                &plug.manifest.id,
                 &plug.dir,
                 command,
                 args,
@@ -86,5 +90,56 @@ pub(crate) fn ensure_live(
             Ok(true)
         }
         RuntimeConfig::Webview { .. } => Ok(false),
+    }
+}
+
+pub(crate) fn plugin_error_result_item(
+    plugin_id: &str,
+    plugin_name: &str,
+    trace_id: &str,
+    err_detail: &str,
+    stderr_lines: &[String],
+) -> ResultItem {
+    let stderr_block = if stderr_lines.is_empty() {
+        "(无 stderr 输出)".to_string()
+    } else {
+        stderr_lines.join("\n")
+    };
+    let report = format!(
+        "[Tomoyo Plugin Error #{trace_id}]\nPlugin: {plugin_name} ({plugin_id})\nError: {err_detail}\nStderr:\n{stderr_block}"
+    );
+    ResultItem {
+        id: format!("plugin_err:{plugin_id}:{trace_id}"),
+        provider_id: plugin_id.to_string(),
+        title: format!("[异常 #{trace_id}] {plugin_name} 执行失败"),
+        subtitle: format!("{err_detail} · Enter 复制排障信息 · Ctrl+Enter 查看 :logs"),
+        category: ResultCategory::System,
+        score: 9_400,
+        icon: IconSpec::Monogram("ERR".into()),
+        badge: Some(trace_id.to_string()),
+        copy_text: Some(report.clone()),
+        actions: vec![
+            ActionSpec {
+                id: "copy_err".into(),
+                label: "复制插件异常诊断信息".into(),
+                shortcut: Some("Enter".into()),
+                kind: ActionKind::CopyText {
+                    text: report.clone(),
+                    paste_immediately: false,
+                },
+            },
+            ActionSpec {
+                id: "open_logs".into(),
+                label: "查看 :logs 溯源日志".into(),
+                shortcut: Some("Ctrl+Enter".into()),
+                kind: ActionKind::FillQuery {
+                    query: ":logs".into(),
+                },
+            },
+        ],
+        preview: Some(PreviewSpec::Text {
+            title: format!("插件诊断详情 #{trace_id}"),
+            body: report,
+        }),
     }
 }

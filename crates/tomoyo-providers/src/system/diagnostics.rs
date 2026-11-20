@@ -1,6 +1,6 @@
 //! Built-in `:` diagnostics & administration commands (`:stats`, `:plugins`, `:theme`, `:lang`, `:settings`, `:gc`, `:reload`, `:update`, `:quit`).
 
-use super::updates::build_update_item;
+use super::updates::{build_logs_item, build_update_item};
 use std::sync::{Arc, RwLock};
 use tomoyo_core::{
     current_process_stats, is_autostart_enabled, ExternalPluginBridge, Lang, TomoyoConfig,
@@ -212,9 +212,9 @@ pub fn build_diagnostics_items(
         let arg = cmd.strip_prefix(":theme").unwrap_or("").trim();
         if cmd.starts_with(":theme") {
             for (name, desc, score) in [
-                ("dark", "Fluent Obsidian Dark (default)", 9_700),
-                ("light", "Modern White Porcelain 现代白", 9_680),
-                ("midnight", "Deep Indigo Midnight", 9_660),
+                ("dark", "Dark Obsidian (默认深色)", 9_700),
+                ("light", "Light Neutral (浅色)", 9_680),
+                ("midnight", "Midnight Indigo (午夜蓝)", 9_660),
             ] {
                 if arg.is_empty() || name.starts_with(arg) {
                     let active = cur_theme.eq_ignore_ascii_case(name);
@@ -269,6 +269,10 @@ pub fn build_diagnostics_items(
             "Open Settings Center",
             InternalCommandKind::OpenSettingsWindow,
         ));
+    }
+
+    if cmd == ":logs" || cmd == ":log" || cmd == ":" || ":logs".starts_with(cmd) {
+        items.push(build_logs_item(provider_id, lang));
     }
 
     if cmd == ":config" || cmd == ":" || ":config".starts_with(cmd) {

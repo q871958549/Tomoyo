@@ -182,3 +182,6 @@ sequenceDiagram
 - **v1.1.0 — 查询词绑定记忆、命中字符高亮、多音字与跨源去重**
   - **检索引擎升级**：`FrecencyStore` 新增有界查询词绑定记忆（`query -> item`，上限 400 词 × 8 项，14 天半衰期）；`IndexedText` 支持多音字（`pinyin` `heteronym`）与空格多词跨字段交集匹配；`QueryRouter` 合并 `Apps` 与 `Everything` 时按规范化文件系统路径去重，并在全局零结果时提供默认网页搜索与 `f ` 全盘检索回退项。
   - **可解释高亮与快捷操作**：新增 `highlight_title_ranges` 与 `draw_text_highlighted_gdi`（严格 `FW_NORMAL` 零伪粗体），实时高亮标题中的文本/拼音/多音字/首字母命中区间；筛选栏标签展示分类实时命中数；空输入框按历史高频应用排序；新增 `Shift+Enter` 快捷次动作（文件/目录在此处打开终端，应用复制路径），并建立 `ranking_golden.rs` 排序回归测试集与长期规划 [`docs/ROADMAP.md`](ROADMAP.md)。
+- **v1.2.0 — 统一多进程日志溯源与离线 OCR 根治重构**
+  - **全链路日志与崩溃溯源**：在 `tomoyo-core` 抽离公共 `diagnostics` 模块（1 MB × 3 主进程轮转 `tomoyo.log`、512 KB × 2 宿主轮转 `webview.log`、单调 `trace_id`、`last_crash.txt` panic/SEH 快照与脱敏诊断报告生成）；`tomoyo-plugin-host` 接管全部子进程 `stderr`（12 行环形缓冲）写入主日志，并在插件启动/查询失败时向主列表返回附带 `trace_id` 的错误卡片；`tomoyo-webview-host` 接入独立日志、崩溃守护及前端 JS `error`/`unhandledrejection` 上报；修复设置中心滑块拖动触发全量热重载刷屏日志的问题；新增 `:logs` 指令与设置中心「诊断与日志」面板。
+  - **OCR 死循环修复、精度优化与审校窗口**：修复 `QueryRouter` 粘贴图片胶囊拦截显式 `ocr` 关键词的路由缺陷；`tomoyo-plugin-ocr` 引入 WinRT `BitmapTransform` 自适应 2× Cubic 放大、中文空格清理与数字/IP/时间全角标点规范化，支持 `ocr en`/`zh`/`raw` 及免贴图识别最近剪贴板截图；新增按需启动的「OCR 审校与编辑窗口」（左原图缩放对照 + 右可编辑文本，关闭释放 100% 内存）及主列表单行直拷卡片。

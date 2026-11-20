@@ -2,6 +2,7 @@
 
 use crate::bridge::handle_host_message;
 use crate::db::PluginDb;
+use crate::ocr_view::{assemble_ocr_viewer_html, is_ocr_viewer_entry, load_ocr_viewer_bootstrap};
 use crate::shim_js::build_init_script;
 use crate::single_instance::{
     acquire_or_activate_settings, EPHEMERAL_WINDOW_CLASS, SETTINGS_WINDOW_CLASS,
@@ -248,19 +249,30 @@ pub fn run_windows_host(opts: LaunchArgs) {
 
     let plugin_db = Rc::new(RefCell::new(PluginDb::open(&opts.plugin_id)));
     let settings_mode = opts.settings_mode;
+    let ocr_mode = is_ocr_viewer_entry(&opts.entry);
     let notify_hwnd = opts.notify_hwnd;
-    let init_script = if settings_mode {
-        build_settings_init_script()
+    let (init_script, ocr_img_dir) = if settings_mode {
+        (build_settings_init_script(), None)
+    } else if ocr_mode {
+        let boot = load_ocr_viewer_bootstrap(&opts.theme, &opts.query);
+        (boot.init_script, boot.image_dir)
     } else {
-        build_init_script(
-            &opts.plugin_id,
-            &opts.query,
-            opts.theme != "light",
-            opts.utools_compat,
-            &plugin_db.borrow().snapshot_json(),
+        (
+            build_init_script(
+                &opts.plugin_id,
+                &opts.query,
+                opts.theme != "light",
+                opts.utools_compat,
+                &plugin_db.borrow().snapshot_json(),
+            ),
+            None,
         )
     };
-    let entry_url = if settings_mode { String::new() } else { to_file_url(&opts.entry) };
+    let entry_url = if settings_mode || ocr_mode {
+        String::new()
+    } else {
+        to_file_url(&opts.entry)
+    };
 
     let user_data_dir = tomoyo_core::data_dir().join("webview-cache");
     let _ = std::fs::create_dir_all(&user_data_dir);
@@ -271,17 +283,20 @@ pub fn run_windows_host(opts: LaunchArgs) {
     let env_handler = CreateCoreWebView2EnvironmentCompletedHandler::create(Box::new(
         move |res, env| {
             let Some(env) = env.filter(|_| res.is_ok()) else {
+                tracing::error!("WebView2 environment creation failed: {res:?}");
                 return Ok(());
             };
             let init_script_inner = init_script.clone();
             let entry_url_inner = entry_url.clone();
             let fonts_inner = fonts_dir_opt.clone();
+            let ocr_dir_inner = ocr_img_dir.clone();
             let db_inner = Rc::clone(&db_for_msg);
             let tx_inner = event_tx.clone();
 
             let ctrl_handler = CreateCoreWebView2ControllerCompletedHandler::create(Box::new(
                 move |res, controller| {
                     let Some(controller) = controller.filter(|_| res.is_ok()) else {
+                        tracing::error!("WebView2 controller creation failed: {res:?}");
                         return Ok(());
                     };
                     unsafe {
@@ -291,15 +306,9 @@ pub fn run_windows_host(opts: LaunchArgs) {
                         let _ = controller.SetIsVisible(true);
 
                         if let Ok(webview) = controller.CoreWebView2() {
-                            if let Some(fdir) = &fonts_inner {
-                                if let Ok(wv3) = webview.cast::<ICoreWebView2_3>() {
-                                    let dir_w = HSTRING::from(fdir.to_string_lossy().as_ref());
-                                    let _ = wv3.SetVirtualHostNameToFolderMapping(
-                                        w!("tomoyo-fonts.local"),
-                                        PCWSTR(dir_w.as_ptr()),
-                                        COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_ALLOW,
-                                    );
-                                }
+                            if let Ok(wv3) = webview.cast::<ICoreWebView2_3>() {
+                                map_vdir(&wv3, w!("tomoyo-fonts.local"), fonts_inner.as_ref());
+                                map_vdir(&wv3, w!("tomoyo-ocr-img.local"), ocr_dir_inner.as_ref());
                             }
                             let script_w = HSTRING::from(&init_script_inner);
                             let _ = webview.AddScriptToExecuteOnDocumentCreated(PCWSTR(script_w.as_ptr()), None);
@@ -352,9 +361,11 @@ pub fn run_windows_host(opts: LaunchArgs) {
                             let _ = webview.add_WebMessageReceived(&msg_handler, &mut token);
 
                             if settings_mode {
-                                let html = assemble_settings_html();
-                                let html_w = HSTRING::from(html);
-                                let _ = webview.NavigateToString(PCWSTR(html_w.as_ptr()));
+                                let html = HSTRING::from(assemble_settings_html());
+                                let _ = webview.NavigateToString(PCWSTR(html.as_ptr()));
+                            } else if ocr_mode {
+                                let html = HSTRING::from(assemble_ocr_viewer_html());
+                                let _ = webview.NavigateToString(PCWSTR(html.as_ptr()));
                             } else {
                                 let url_w = HSTRING::from(&entry_url_inner);
                                 let _ = webview.Navigate(PCWSTR(url_w.as_ptr()));
@@ -403,6 +414,19 @@ unsafe fn toggle_pin_topmost(hwnd: HWND, st: &mut HostWindowState) {
         };
         let tw = HSTRING::from(new_title);
         let _ = SetWindowTextW(hwnd, PCWSTR(tw.as_ptr()));
+    }
+}
+
+unsafe fn map_vdir(wv3: &ICoreWebView2_3, host: PCWSTR, dir: Option<&PathBuf>) {
+    if let Some(d) = dir {
+        let dir_w = HSTRING::from(d.to_string_lossy().as_ref());
+        let _ = unsafe {
+            wv3.SetVirtualHostNameToFolderMapping(
+                host,
+                PCWSTR(dir_w.as_ptr()),
+                COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_ALLOW,
+            )
+        };
     }
 }
 

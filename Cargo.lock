@@ -791,7 +791,7 @@ checksum = "009dbb7700f11c55ef83aebbe4c0e9cf1f1ac0844bd8d6f00dc38f302026e13a"
 
 [[package]]
 name = "tomoyo-app"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "base64",
  "chrono",
@@ -813,7 +813,7 @@ dependencies = [
 
 [[package]]
 name = "tomoyo-cli"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -825,7 +825,7 @@ dependencies = [
 
 [[package]]
 name = "tomoyo-core"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "chrono",
  "crc32fast",
@@ -843,7 +843,7 @@ dependencies = [
 
 [[package]]
 name = "tomoyo-everything"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "chrono",
  "thiserror",
@@ -852,7 +852,7 @@ dependencies = [
 
 [[package]]
 name = "tomoyo-plugin-hello"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "serde_json",
  "tomoyo-sdk",
@@ -860,7 +860,7 @@ dependencies = [
 
 [[package]]
 name = "tomoyo-plugin-host"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -874,7 +874,7 @@ dependencies = [
 
 [[package]]
 name = "tomoyo-plugin-ocr"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "serde_json",
  "tomoyo-sdk",
@@ -883,7 +883,7 @@ dependencies = [
 
 [[package]]
 name = "tomoyo-protocol"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -893,7 +893,7 @@ dependencies = [
 
 [[package]]
 name = "tomoyo-providers"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "base64",
  "chrono",
@@ -912,7 +912,7 @@ dependencies = [
 
 [[package]]
 name = "tomoyo-sdk"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "serde_json",
  "tomoyo-protocol",
@@ -920,7 +920,7 @@ dependencies = [
 
 [[package]]
 name = "tomoyo-ui-linux"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "tomoyo-core",
  "tomoyo-protocol",
@@ -930,7 +930,7 @@ dependencies = [
 
 [[package]]
 name = "tomoyo-ui-macos"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "tomoyo-core",
  "tomoyo-protocol",
@@ -940,7 +940,7 @@ dependencies = [
 
 [[package]]
 name = "tomoyo-ui-shared"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "tomoyo-core",
  "tomoyo-protocol",
@@ -948,7 +948,7 @@ dependencies = [
 
 [[package]]
 name = "tomoyo-wasm-sdk"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "serde_json",
  "tomoyo-protocol",
@@ -956,7 +956,7 @@ dependencies = [
 
 [[package]]
 name = "tomoyo-webview-host"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "mimalloc",
  "serde",
@@ -965,6 +965,8 @@ dependencies = [
  "tomoyo-core",
  "tomoyo-plugin-host",
  "tomoyo-protocol",
+ "tracing",
+ "tracing-subscriber",
  "webview2-com",
  "windows",
  "winresource",

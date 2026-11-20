@@ -11,7 +11,7 @@
   <a href="https://github.com/q871958549/Tomoyo/actions/workflows/ci.yml"><img src="https://github.com/q871958549/Tomoyo/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="LICENSE-MIT"><img src="https://img.shields.io/badge/license-MIT%20%2F%20Apache--2.0-blue.svg" alt="License" /></a>
   <img src="https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-0078D6.svg" alt="Windows" />
-  <img src="https://img.shields.io/badge/version-v1.1.0-7c6af7.svg" alt="Version" />
+  <img src="https://img.shields.io/badge/version-v1.2.0-7c6af7.svg" alt="Version" />
 </p>
 
 ---
@@ -39,17 +39,17 @@
 
 ---
 
-## 实测数据与自检阈值 (`v1.1.0` Release)
+## 实测数据与自检阈值 (`v1.2.0` Release)
 
 | 指标 | 实测记录 | 自检阈值 (`--strict-budget`) |
 |---|---|---|
-| `tomoyo.exe` 主程序体积 | **5.18 MB** (`5299.5 KB`) | — |
-| `tomoyo-webview-host.exe` 设置与插件宿主 | **1.45 MB**（关闭即退出） | 0 MB 常驻 |
-| `tomoyo-plugin-ocr.exe` 离线 WinRT OCR 插件 | **0.31 MB**（空闲 15 秒自动回收） | 0 MB 常驻 |
-| 休眠态 Working Set 内存占用 (`--self-test`) | **1.12–1.51 MB** | ≤ 2.0 MB |
-| 休眠态 Private Commit（含 393 应用索引、SQLite 与字体） | **20.43 MB** | ≤ 28.0 MB |
-| 100 轮查询 / 绘制 / 预览 / 休眠压测 Delta | **GDI `+0` · USER `+0` · Handles `+0` · Private `+0.01 MB`** | 句柄 0 增长 / 内存 ≤ +0.50 MB |
-| 源码规范检查（[编码规范](docs/CODING_STANDARDS.md) / [UI 规范](docs/UI_DESIGN_STANDARDS.md)） | **全仓 115 个源码文件均 ≤ 450 行** | ≤ 450 行/文件 |
+| `tomoyo.exe` 主程序体积 | **5.20 MB** (`5328.0 KB`) | — |
+| `tomoyo-webview-host.exe` 设置、OCR 审校与插件宿主 | **1.93 MB**（关闭即退出） | 0 MB 常驻 |
+| `tomoyo-plugin-ocr.exe` 离线 WinRT OCR 插件 | **0.35 MB**（空闲 15 秒自动回收） | 0 MB 常驻 |
+| 休眠态 Working Set 内存占用 (`--self-test`) | **1.09–1.48 MB** | ≤ 2.0 MB |
+| 休眠态 Private Commit（含 392 应用索引、SQLite 与字体） | **19.64 MB** | ≤ 28.0 MB |
+| 100 轮查询 / 绘制 / 预览 / 休眠压测 Delta | **GDI `+0` · USER `+0` · Handles `+0` · Private `+0.00 MB`** | 句柄 0 增长 / 内存 ≤ +0.50 MB |
+| 源码规范检查（[编码规范](docs/CODING_STANDARDS.md) / [UI 规范](docs/UI_DESIGN_STANDARDS.md)） | **全仓 120 个源码文件均 ≤ 450 行** | ≤ 450 行/文件 |
 
 ---
 
@@ -84,14 +84,14 @@ pwsh -File scripts\check_hygiene.ps1
 | `Ctrl+V` *(粘贴截图/文件)* | 粘贴上下文识别：对图片提供看图/Base64/定位目录，对文件提供路径复制/SHA-256 校验/打开终端，按 `Backspace` 清除 |
 | `f <词>` / `ev <词>` | Everything 文件搜索（空参数列出收藏筛选器 `@today/@large/@code` 与最近搜索历史）、异步预览及拖拽导出 |
 | `snip <词>` / `:reload` | 代码片段与动态模板扩展（支持 `{{date}}`/`{{datetime}}`/`{{unix}}`/`{{uuid}}`/`{{clipboard}}`） |
-| `ocr` / 图片粘贴 `Ctrl+V` | 按需拉起原生 WinRT 离线 OCR（中/英文，15s 自动退出释放）或图片 Base64 / 看图 |
+| `ocr` / `ocr en` / `Ctrl+V` 贴图 | 按需拉起原生 WinRT 离线 OCR（自适应 2× 放大与标点清理、支持免贴图直识最近截图、原图对照审校编辑窗与单行复制，15s 自动释放） |
 | `cb <词>` | SQLite 剪贴板历史（文本与图片，支持置顶与回车贴回原窗口） |
 | `kill <词>` / `ps <词>` | 进程列表查看与终止进程（按内存占用降序排列） |
 | `g` / `gh` / `crates` / `docs` / `bd` / `zh` / `mdn` | 可在设置中心自定义的快捷网页搜索前缀 |
 | `w <词>` | 已打开窗口列表筛选与切换 |
 | `:update` | 检查 GitHub Releases 更新、查看更新说明并跳转下载 |
-| `:settings` / `Ctrl+,` | 打开设置中心（快捷键录入、自定义应用目录、分组栏开关、主题与语言、插件管理、更新检查） |
-| `:stats` / `:plugins` / `:gc` | 查看进程内存/句柄/插件状态，或手动执行休眠清理 |
+| `:settings` / `Ctrl+,` | 打开设置中心（快捷键录入、自定义应用目录、分组栏开关、主题与语言、插件管理、诊断日志、更新检查） |
+| `:logs` / `:stats` / `:plugins` / `:gc` | 查看运行/WebView/崩溃日志与诊断报告、进程内存/句柄/插件状态，或手动执行休眠清理 |
 | `:theme dark\|light\|midnight` / `:lang zh\|en` | 切换配色主题或界面语言 |
 | `hi` / `py` / `wasm` / `jwt` / `unit` / `json` | 内置参考插件示例（Rust STDIO / Python STDIO / WASM / WebView） |
 | `双击左键` / `Ctrl+Enter` / `Shift+Enter` / `Ctrl+P` / `Tab` / `Alt+1..8` | 双击打开 / 定位目录 / 终端或复制路径 / 预览面板 / 动作菜单 / 快捷键直达 |

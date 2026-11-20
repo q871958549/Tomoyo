@@ -1,6 +1,9 @@
 //! `:update` GitHub Releases status card builder.
 
-use tomoyo_core::{Lang, UpdateManager, UpdateStatus, CURRENT_VERSION};
+use tomoyo_core::{
+    build_diagnostic_bundle, count_recent_log_issues, logs_dir, read_log_tail, Lang, UpdateManager,
+    UpdateStatus, CURRENT_VERSION,
+};
 use tomoyo_protocol::{
     ActionKind, ActionSpec, IconSpec, InternalCommandKind, PreviewSpec, ResultCategory, ResultItem,
 };
@@ -155,5 +158,69 @@ pub fn build_update_item(
         copy_text: None,
         actions,
         preview,
+    }
+}
+
+pub fn build_logs_item(provider_id: &str, lang: Lang) -> ResultItem {
+    let (warns, errs, has_crash) = count_recent_log_issues();
+    let dir_str = logs_dir().to_string_lossy().into_owned();
+    let tail = read_log_tail("tomoyo.log", 28, false);
+    let bundle = build_diagnostic_bundle();
+    let badge = if has_crash {
+        "CRASH".into()
+    } else if errs > 0 {
+        format!("{errs} ERR")
+    } else if warns > 0 {
+        format!("{warns} WARN")
+    } else {
+        "OK".into()
+    };
+    ResultItem {
+        id: "diag:logs".into(),
+        provider_id: provider_id.into(),
+        title: match lang {
+            Lang::Zh => format!(":logs — 运行日志与异常溯源（{errs} 错误 · {warns} 警告）"),
+            Lang::En => format!(":logs — Runtime Logs & Diagnostics ({errs} err · {warns} warn)"),
+        },
+        subtitle: match lang {
+            Lang::Zh => format!("Enter 打开日志目录 · Ctrl+Enter 复制完整诊断报告 · {dir_str}"),
+            Lang::En => format!("Enter open logs folder · Ctrl+Enter copy diagnostic bundle · {dir_str}"),
+        },
+        category: ResultCategory::System,
+        score: 9_660,
+        icon: IconSpec::Monogram("LOG".into()),
+        badge: Some(badge),
+        copy_text: Some(bundle.clone()),
+        actions: vec![
+            ActionSpec {
+                id: "open_logs_dir".into(),
+                label: lang.pick("打开日志目录", "Open Logs Folder").into(),
+                shortcut: Some("Enter".into()),
+                kind: ActionKind::LaunchPath {
+                    path: dir_str,
+                    args: None,
+                    working_dir: None,
+                },
+            },
+            ActionSpec {
+                id: "copy_diag".into(),
+                label: lang.pick("复制完整诊断报告", "Copy Diagnostic Report").into(),
+                shortcut: Some("Ctrl+Enter".into()),
+                kind: ActionKind::CopyText {
+                    text: bundle,
+                    paste_immediately: false,
+                },
+            },
+        ],
+        preview: Some(PreviewSpec::Text {
+            title: lang
+                .pick("最近运行日志 (tomoyo.log)", "Recent Runtime Logs (tomoyo.log)")
+                .into(),
+            body: if tail.is_empty() {
+                "(日志为空)".into()
+            } else {
+                tail
+            },
+        }),
     }
 }

@@ -165,8 +165,26 @@ impl QueryRouter {
             };
         }
 
-        // 1.5. Super Match pasted capsule short-circuit
+        // 1.5. Super Match pasted capsule routing:
+        // If user typed an explicit plugin keyword (e.g. `ocr`, `ocr en`), invoke that plugin
+        // WITH `ctx.attached` intact instead of short-circuiting back to generic Super Match hints!
         if ctx.attached.is_some() {
+            let (first_token, rest) = split_first_token(trimmed);
+            let first_lower = first_token.to_lowercase();
+            if !first_lower.is_empty() {
+                if let Some(bridge) = &self.plugin_bridge {
+                    if bridge.matches_keyword(&first_lower) {
+                        let p_ctx = ctx.clone().with_keyword(&first_lower, rest);
+                        let results = bridge.query_keyword(&first_lower, &p_ctx);
+                        return FastQueryBatch {
+                            items: self.rank_and_cap_for_query(trimmed, results, limit),
+                            effective_ctx: p_ctx,
+                            is_dedicated_route: true,
+                            run_slow_ipc: false,
+                        };
+                    }
+                }
+            }
             let mut results = Vec::new();
             for p in &self.providers {
                 if p.id() == "builtin.system" {
@@ -383,72 +401,5 @@ fn split_first_token(s: &str) -> (&str, &str) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use tomoyo_protocol::ResultCategory;
-
-    struct StubProvider {
-        id: &'static str,
-        slow: bool,
-    }
-
-    impl Provider for StubProvider {
-        fn id(&self) -> &'static str {
-            self.id
-        }
-        fn name(&self) -> &'static str {
-            self.id
-        }
-        fn is_slow_ipc(&self) -> bool {
-            self.slow
-        }
-        fn query(&self, ctx: &QueryContext) -> Vec<ResultItem> {
-            vec![ResultItem {
-                id: format!("{}:{:?}:{}", self.id, ctx.filter, ctx.trimmed),
-                provider_id: self.id.into(),
-                title: format!("{}:{}", self.id, ctx.trimmed),
-                subtitle: String::new(),
-                category: if self.slow { ResultCategory::File } else { ResultCategory::App },
-                score: 5000,
-                icon: Default::default(),
-                badge: None,
-                copy_text: None,
-                actions: vec![],
-                preview: None,
-            }]
-        }
-    }
-
-    #[test]
-    fn routes_inline_tags_and_group_filters_correctly() {
-        let dir = std::env::temp_dir().join("tomoyo_router_test_frecency.json");
-        let frecency = Arc::new(RwLock::new(FrecencyStore::load_or_default(dir)));
-        let providers: Vec<Arc<dyn Provider>> = vec![
-            Arc::new(StubProvider { id: "builtin.apps", slow: false }),
-            Arc::new(StubProvider { id: "builtin.everything", slow: true }),
-        ];
-        let router = QueryRouter::new(providers, None, frecency);
-
-        let g1 = router.next_generation();
-        let pdf_hits = router.search("@pdf 报价", g1, 20, None, None);
-        assert_eq!(pdf_hits.len(), 1);
-        assert_eq!(pdf_hits[0].id, "builtin.everything:Pdf:报价");
-
-        let g2 = router.next_generation();
-        let app_hits = router.search_with_filter("oc", g2, 20, None, None, SearchFilter::App);
-        assert_eq!(app_hits.len(), 1);
-        assert_eq!(app_hits[0].id, "builtin.apps:App:oc");
-    }
-
-    #[test]
-    fn empty_global_search_falls_back_to_web_and_everything() {
-        let frecency = Arc::new(RwLock::new(FrecencyStore::default()));
-        let router = QueryRouter::new(vec![], None, frecency)
-            .with_config(Arc::new(RwLock::new(TomoyoConfig::default())));
-        let g = router.next_generation();
-        let hits = router.search("zzzz_no_such_local_item", g, 20, None, None);
-        assert_eq!(hits.len(), 2);
-        assert!(hits[0].id.starts_with("fallback:web:"));
-        assert!(hits[1].id.starts_with("fallback:ev:"));
-    }
-}
+#[path = "engine_tests.rs"]
+mod tests;

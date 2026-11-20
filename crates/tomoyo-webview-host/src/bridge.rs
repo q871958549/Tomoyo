@@ -34,6 +34,20 @@ pub enum HostMessage {
         permission: String,
         allowed: bool,
     },
+    ReportJsError {
+        message: String,
+        #[serde(default)]
+        source: String,
+        #[serde(default)]
+        line: u32,
+    },
+    ReadLogs {
+        source: String,
+        #[serde(default)]
+        errors_only: bool,
+    },
+    CopyDiagnosticBundle,
+    OpenLogsDir,
     Close,
 }
 
@@ -50,8 +64,12 @@ pub struct HostAction {
 }
 
 pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isize>) -> HostAction {
-    let Ok(msg) = serde_json::from_str::<HostMessage>(raw) else {
-        return HostAction::default();
+    let msg = match serde_json::from_str::<HostMessage>(raw) {
+        Ok(m) => m,
+        Err(e) => {
+            tracing::warn!("Ignored malformed WebView host message: {e}");
+            return HostAction::default();
+        }
     };
     match msg {
         HostMessage::CopyText { text } => {
@@ -91,7 +109,7 @@ pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isi
             let _ = config.save();
             let _ = tomoyo_core::set_autostart_enabled(autostart);
             if let Some(target) = notify_hwnd {
-                notify_parent_reload(target);
+                notify_parent_reload(target, false);
             }
             let evt = serde_json::json!({
                 "event": "settings_saved",
@@ -144,7 +162,7 @@ pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isi
             let res = install_plugin_from_source(&plugin_id, &source, &sha256);
             if res.is_ok() {
                 if let Some(target) = notify_hwnd {
-                    notify_parent_reload(target);
+                    notify_parent_reload(target, true);
                 }
             }
             let evt = match res {
@@ -172,7 +190,7 @@ pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isi
             let res = uninstall_user_plugin(&plugin_id);
             if res.is_ok() {
                 if let Some(target) = notify_hwnd {
-                    notify_parent_reload(target);
+                    notify_parent_reload(target, true);
                 }
             }
             let evt = match res {
@@ -210,7 +228,7 @@ pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isi
                     msg = format!("保存权限失败: {e}");
                 } else {
                     if let Some(target) = notify_hwnd {
-                        notify_parent_reload(target);
+                        notify_parent_reload(target, true);
                     }
                     ok = true;
                     msg = if allowed {
@@ -230,6 +248,57 @@ pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isi
                 ..Default::default()
             }
         }
+        HostMessage::ReportJsError {
+            message,
+            source,
+            line,
+        } => {
+            tracing::error!(target: "webview_js", source = %source, line = line, "JS error: {message}");
+            HostAction::default()
+        }
+        HostMessage::ReadLogs {
+            source,
+            errors_only,
+        } => {
+            let safe_file = match source.as_str() {
+                "webview.log" => "webview.log",
+                "last_crash.txt" => "last_crash.txt",
+                _ => "tomoyo.log",
+            };
+            let content = tomoyo_core::read_log_tail(safe_file, 260, errors_only);
+            let issues = tomoyo_core::count_recent_log_issues();
+            let evt = serde_json::json!({
+                "event": "logs_loaded",
+                "source": safe_file,
+                "errors_only": errors_only,
+                "content": content,
+                "issues": issues,
+                "logs_dir": tomoyo_core::logs_dir().to_string_lossy(),
+            });
+            HostAction {
+                reply_json: Some(evt.to_string()),
+                ..Default::default()
+            }
+        }
+        HostMessage::CopyDiagnosticBundle => {
+            let bundle = tomoyo_core::build_diagnostic_bundle();
+            set_clipboard_text(&bundle);
+            let evt = serde_json::json!({
+                "event": "diag_bundle_copied",
+                "ok": true,
+                "bytes": bundle.len(),
+            });
+            HostAction {
+                reply_json: Some(evt.to_string()),
+                ..Default::default()
+            }
+        }
+        HostMessage::OpenLogsDir => {
+            let dir = tomoyo_core::logs_dir();
+            let _ = std::fs::create_dir_all(&dir);
+            shell_open(&dir.to_string_lossy());
+            HostAction::default()
+        }
         HostMessage::Close => HostAction {
             should_close: true,
             ..Default::default()
@@ -238,7 +307,7 @@ pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isi
 }
 
 #[cfg(windows)]
-fn notify_parent_reload(raw_hwnd: isize) {
+fn notify_parent_reload(raw_hwnd: isize, reload_plugins: bool) {
     use std::ffi::c_void;
     use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
     use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
@@ -248,7 +317,7 @@ fn notify_parent_reload(raw_hwnd: isize) {
             let _ = PostMessageW(
                 Some(HWND(raw_hwnd as *mut c_void)),
                 WM_APP_CONFIG_SAVED,
-                WPARAM(0),
+                WPARAM(usize::from(reload_plugins)),
                 LPARAM(0),
             );
         }
@@ -256,7 +325,7 @@ fn notify_parent_reload(raw_hwnd: isize) {
 }
 
 #[cfg(not(windows))]
-fn notify_parent_reload(_raw_hwnd: isize) {}
+fn notify_parent_reload(_raw_hwnd: isize, _reload_plugins: bool) {}
 
 #[cfg(windows)]
 fn shell_open(target: &str) {

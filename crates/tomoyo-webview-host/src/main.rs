@@ -12,6 +12,7 @@ mod bridge;
 mod db;
 #[cfg(windows)]
 mod folder_picker;
+mod ocr_view;
 mod shim_js;
 #[cfg(windows)]
 mod single_instance;
@@ -24,11 +25,46 @@ mod win_workers;
 use bridge::handle_host_message;
 use db::PluginDb;
 use shim_js::build_init_script;
+use std::io::{self, Write};
 use store::fetch_store_catalog_json;
 use tomoyo_core::{
-    is_autostart_enabled, locate_fonts_dir, PrivateFonts, TomoyoConfig, CURRENT_VERSION,
+    count_recent_log_issues, init_process_diagnostics, is_autostart_enabled, locate_fonts_dir,
+    logs_dir, write_process_log_bytes, PrivateFonts, TomoyoConfig, CURRENT_VERSION,
+    DEFAULT_SUB_LOG_BYTES,
 };
 use tomoyo_plugin_host::{default_plugin_dirs, PluginHost};
+
+#[derive(Clone, Copy)]
+struct WebviewLogMakeWriter;
+struct WebviewLogSink;
+
+impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for WebviewLogMakeWriter {
+    type Writer = WebviewLogSink;
+    fn make_writer(&'a self) -> Self::Writer {
+        WebviewLogSink
+    }
+}
+
+impl Write for WebviewLogSink {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        write_process_log_bytes(buf, false)
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+fn init_webview_logging() {
+    init_process_diagnostics("webview-host", "webview", DEFAULT_SUB_LOG_BYTES, false);
+    let _ = tracing_subscriber::fmt()
+        .with_writer(WebviewLogMakeWriter)
+        .with_ansi(false)
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+        )
+        .try_init();
+}
 
 const SETTINGS_HTML_TPL: &str = include_str!("ui/settings.html");
 const SETTINGS_CSS: &str = include_str!("ui/settings.css");
@@ -66,7 +102,8 @@ fn parse_args() -> LaunchArgs {
         args.windows(2).find(|w| w[0] == flag).map(|w| w[1].clone())
     };
     let settings_mode = args.iter().any(|a| a == "--settings");
-    let cfg_theme = if settings_mode {
+    let entry = val("--entry").unwrap_or_default();
+    let cfg_theme = if settings_mode || ocr_view::is_ocr_viewer_entry(&entry) {
         TomoyoConfig::load_or_create().theme
     } else if args.iter().any(|a| a == "--light") {
         "light".into()
@@ -84,7 +121,7 @@ fn parse_args() -> LaunchArgs {
                 "Tomoyo 插件".into()
             }
         }),
-        entry: val("--entry").unwrap_or_default(),
+        entry,
         query: val("--query").unwrap_or_default(),
         width: val("--width")
             .and_then(|s| s.parse().ok())
@@ -132,6 +169,8 @@ pub fn build_settings_init_script() -> String {
         "plugins": plugins,
         "config_path": TomoyoConfig::config_path().to_string_lossy(),
         "plugins_dir": plugins_dir.to_string_lossy(),
+        "logs_dir": logs_dir().to_string_lossy(),
+        "log_issues": count_recent_log_issues(),
         "has_bundled_alibaba_font": locate_fonts_dir().is_some(),
     });
     format!(
@@ -179,7 +218,16 @@ fn main() {
         assert!(!html.contains("<textarea"));
         assert!(html.contains("show_filter_bar"));
         assert!(html.contains("tab-store"));
+        assert!(html.contains("tab-logs"));
         assert!(html.contains("tab-updates"));
+        assert!(ocr_view::assemble_ocr_viewer_html().contains("__TOMOYO_OCR_DATA__"));
+        assert!(handle_host_message(
+            r#"{"cmd":"read_logs","source":"tomoyo.log","errors_only":false}"#,
+            &mut pdb,
+            None
+        )
+        .reply_json
+        .is_some());
         assert!(pdb.get("demo").is_some());
         let mut dirty_cfg = TomoyoConfig::default();
         dirty_cfg.apps.extra_scan_depth = 12000;
@@ -216,6 +264,15 @@ fn main() {
     if !opts.settings_mode && opts.entry.is_empty() {
         return;
     }
+
+    init_webview_logging();
+    tracing::info!(
+        settings = opts.settings_mode,
+        plugin_id = %opts.plugin_id,
+        entry = %opts.entry,
+        "Starting tomoyo-webview-host v{}",
+        CURRENT_VERSION
+    );
 
     #[cfg(windows)]
     win_host::run_windows_host(opts);

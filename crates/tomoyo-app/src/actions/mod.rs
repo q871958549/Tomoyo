@@ -52,9 +52,13 @@ pub fn execute_action(
             working_dir,
         } => {
             let ok = shell_open(path, args.as_deref(), working_dir.as_deref());
+            if !ok {
+                let tid = tomoyo_core::next_trace_id("ACT");
+                tracing::warn!(trace_id = %tid, item_id = %item_id, path = %path, "LaunchPath failed");
+            }
             ActionOutcome {
                 hide_window: ok,
-                toast: if ok { None } else { Some(format!("Failed to open: {path}")) },
+                toast: if ok { None } else { Some(format!("打开失败: {path}")) },
                 ..Default::default()
             }
         }
@@ -158,11 +162,15 @@ pub fn execute_action(
                         internal: None,
                     }
                 }
-                Err(e) => ActionOutcome {
-                    hide_window: false,
-                    toast: Some(format!("Plugin error: {e}")),
-                    ..Default::default()
-                },
+                Err(e) => {
+                    let tid = tomoyo_core::next_trace_id("ACT");
+                    tracing::error!(trace_id = %tid, plugin_id = %plugin_id, action_id = %action_id, "PluginExecute failed: {e}");
+                    ActionOutcome {
+                        hide_window: false,
+                        toast: Some(format!("插件执行异常 #{tid}: {e}")),
+                        ..Default::default()
+                    }
+                }
             }
         }
         ActionKind::OpenWebView {
@@ -186,11 +194,15 @@ pub fn execute_action(
             is_dark_theme,
         ) {
             Ok(()) => ActionOutcome { hide_window: true, ..Default::default() },
-            Err(e) => ActionOutcome {
-                hide_window: false,
-                toast: Some(format!("WebView host error: {e}")),
-                ..Default::default()
-            },
+            Err(e) => {
+                let tid = tomoyo_core::next_trace_id("WV");
+                tracing::error!(trace_id = %tid, plugin_id = %plugin_id, entry = %entry_path, "OpenWebView failed: {e}");
+                ActionOutcome {
+                    hide_window: false,
+                    toast: Some(format!("WebView 启动失败 #{tid}: {e}")),
+                    ..Default::default()
+                }
+            }
         },
     }
 }

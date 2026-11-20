@@ -58,11 +58,11 @@ fn all_three_plugin_runtimes_lazy_spawn_query_and_reap() {
         }
     ));
 
-    // 3. Test STDIO Rust SDK plugin if built
+    // 3. Test STDIO Rust SDK plugin if built alongside the test runner
     if host.matches_keyword("hi") {
         let ctx = QueryContext::new("hi Tomoyo", 4, 10).with_keyword("hi", "Tomoyo");
         let items = host.query_keyword("hi", &ctx);
-        if !items.is_empty() {
+        if items.iter().any(|i| !i.id.starts_with("plugin_err:")) {
             assert!(items.iter().any(|i| i.title == "TOMOYO"));
             let exec = host
                 .execute_action(
@@ -109,6 +109,13 @@ command = "python"
     host.set_interactive_prompts(false);
     let ctx = QueryContext::new("utest hi", 1, 5).with_keyword("utest", "hi");
     let items = host.query_keyword("utest", &ctx);
-    assert!(items.is_empty(), "unapproved sensitive third-party plugin must not spawn");
+    assert!(
+        host.list_plugins().iter().all(|p| !p.running),
+        "unapproved sensitive third-party plugin must not spawn"
+    );
+    assert!(
+        items.iter().all(|i| i.id.starts_with("plugin_err:")),
+        "unapproved third-party plugin may only surface a diagnostic error card, got: {items:?}"
+    );
     let _ = std::fs::remove_dir_all(&tmp);
 }

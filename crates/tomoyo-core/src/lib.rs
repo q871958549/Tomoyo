@@ -3,6 +3,7 @@
 //! Pinyin + fuzzy matching, frecency ranking, intent detection, and memory telemetry.
 
 pub mod config;
+pub mod diagnostics;
 pub mod engine;
 mod engine_rank;
 pub mod fonts;
@@ -19,6 +20,7 @@ pub mod telemetry;
 pub mod updater;
 
 pub use config::*;
+pub use diagnostics::*;
 pub use engine::*;
 pub use fonts::*;
 pub use frecency::*;

@@ -98,7 +98,7 @@
         `;
       } else if (st.state === 'up_to_date') {
         const extra = st.note ? `<div class="label-desc" style="margin-top:4px">${esc(st.note)}</div>` : '';
-        box.innerHTML = `<div style="color:var(--ok);font-weight:600">${esc(t('upd_latest')(st.current || INIT.version || '1.1.0'))}</div>${extra}`;
+        box.innerHTML = `<div style="color:var(--ok);font-weight:600">${esc(t('upd_latest')(st.current || INIT.version || '1.2.0'))}</div>${extra}`;
       } else if (st.state === 'error') {
         box.innerHTML = `<div style="color:#ef4444;font-weight:500">${esc(t('upd_err')(st.message || 'Unknown error'))}</div>`;
       }
@@ -128,6 +128,10 @@
           if (data.ok) fetchStore();
         } else if (data.event === 'perm_action_result') {
           document.getElementById('toast').textContent = (data.ok ? '✓ ' : '✗ ') + data.message;
+        } else if (data.event === 'logs_loaded') {
+          renderLogsResult(data);
+        } else if (data.event === 'diag_bundle_copied') {
+          setToast(t('log_copied'), false);
         } else if (data.event === 'update_install_result') {
           const btn = document.getElementById('btn-install-upd');
           if (btn) btn.disabled = false;
@@ -138,6 +142,45 @@
         }
       });
     }
+
+    // --- Diagnostics & Log Traceability Viewer ---
+    let curLogSource = 'tomoyo.log';
+
+    window.addEventListener('error', (e) => {
+      post({ cmd: 'report_js_error', message: String(e.message || 'error'), source: 'settings_ui', line: e.lineno || 0 });
+    });
+    window.addEventListener('unhandledrejection', (e) => {
+      post({ cmd: 'report_js_error', message: String(e.reason || 'unhandledrejection'), source: 'settings_ui', line: 0 });
+    });
+
+    function setLogSource(src) {
+      curLogSource = src;
+      document.querySelectorAll('#logs-src-seg button').forEach(b => {
+        b.classList.toggle('active', b.dataset.src === src);
+      });
+      refreshLogs();
+    }
+
+    function refreshLogs() {
+      const pre = document.getElementById('logs-pre');
+      if (pre) pre.textContent = t('log_loading');
+      const errOnly = !!(document.getElementById('logs-err-only') && document.getElementById('logs-err-only').checked);
+      post({ cmd: 'read_logs', source: curLogSource, errors_only: errOnly });
+    }
+
+    function renderLogsResult(data) {
+      const meta = document.getElementById('logs-meta');
+      const pre = document.getElementById('logs-pre');
+      if (!meta || !pre) return;
+      const iss = data.issues || {};
+      const crashTag = iss.has_crash_report ? ' · 存在崩溃快照' : '';
+      meta.textContent = `${data.source || curLogSource} · 近期 ERROR ${iss.errors || 0} / WARN ${iss.warnings || 0}${crashTag} · 目录：${data.logs_dir || INIT.logs_dir || ''}`;
+      pre.textContent = data.content || '(空)';
+      pre.scrollTop = pre.scrollHeight;
+    }
+
+    function copyDiagBundle() { post({ cmd: 'copy_diagnostic_bundle' }); }
+    function openLogsDir() { post({ cmd: 'open_logs_dir' }); }
 
     function installAvailableUpdate() {
       if (!latestAvailableRelease) return;
