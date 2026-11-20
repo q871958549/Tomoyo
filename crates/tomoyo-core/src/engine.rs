@@ -1,8 +1,8 @@
-use crate::{FrecencyStore, record_hibernation_cycle, trim_working_set};
+use crate::{record_hibernation_cycle, trim_working_set, FrecencyStore};
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
-use tomoyo_protocol::{AttachedContext, ClipboardSnapshot, QueryContext, ResultItem};
+use tomoyo_protocol::{AttachedContext, ClipboardSnapshot, QueryContext, ResultItem, SearchFilter};
 
 /// Trait implemented by all built-in Tier-1 zero-overhead providers.
 pub trait Provider: Send + Sync {
@@ -49,6 +49,14 @@ pub trait ExternalPluginBridge: Send + Sync {
     fn reload(&self);
     fn reap_idle(&self);
     fn summary_lines(&self) -> Vec<PluginSummary>;
+}
+
+/// Result of Phase-1 instant in-memory provider execution before slow IPC merge.
+pub struct FastQueryBatch {
+    pub items: Vec<ResultItem>,
+    pub effective_ctx: QueryContext,
+    pub is_dedicated_route: bool,
+    pub run_slow_ipc: bool,
 }
 
 /// Central orchestrator routing queries across built-in providers and external plugins.
@@ -100,7 +108,7 @@ impl QueryRouter {
         }
     }
 
-    /// Invoked during hibernation (hidden > 15s) or explicit `:gc` command.
+    /// Invoked during hibernation (hidden > delay) or explicit `:gc` command.
     pub fn hibernate_trim(&self) -> u64 {
         for p in &self.providers {
             p.trim_memory();
@@ -115,21 +123,22 @@ impl QueryRouter {
         record_hibernation_cycle()
     }
 
-    /// Executes a synchronous routed search with generation-based cooperative cancellation.
-    pub fn search(
+    /// Runs Phase 1 (instant in-memory providers) so UI renders immediately without waiting on IPC.
+    pub fn search_fast(
         &self,
         raw_input: &str,
         generation: u64,
         limit: usize,
         clipboard: Option<ClipboardSnapshot>,
         attached: Option<AttachedContext>,
-    ) -> Vec<ResultItem> {
+        filter: SearchFilter,
+    ) -> FastQueryBatch {
         let trimmed = raw_input.trim();
-        let mut ctx = QueryContext::new(raw_input, generation, limit);
+        let mut ctx = QueryContext::new(raw_input, generation, limit).with_filter(filter);
         ctx.clipboard = clipboard;
         ctx.attached = attached;
 
-        // 1. Check for dedicated command prefix (`:` commands)
+        // 1. Dedicated `:` system commands
         if trimmed.starts_with(':') {
             let mut results = Vec::new();
             for p in &self.providers {
@@ -137,11 +146,15 @@ impl QueryRouter {
                     results.extend(p.query(&ctx));
                 }
             }
-            return self.rank_and_cap(results, limit);
+            return FastQueryBatch {
+                items: self.rank_and_cap(results, limit),
+                effective_ctx: ctx,
+                is_dedicated_route: true,
+                run_slow_ipc: false,
+            };
         }
 
-        // 1.5. Super Match short-circuit: when an image/file capsule is attached,
-        // focus exclusively on Super Match system actions + matching plugins (zero app icon churn!).
+        // 1.5. Super Match pasted capsule short-circuit
         if ctx.attached.is_some() {
             let mut results = Vec::new();
             for p in &self.providers {
@@ -154,15 +167,27 @@ impl QueryRouter {
                     results.extend(bridge.query_global(&ctx));
                 }
             }
-            return self.rank_and_cap(results, limit);
+            return FastQueryBatch {
+                items: self.rank_and_cap(results, limit),
+                effective_ctx: ctx,
+                is_dedicated_route: true,
+                run_slow_ipc: false,
+            };
         }
 
-        // 2. Check for `<keyword> <args>` or exact `<keyword>` routing
+        // 2. Check `<keyword> <args>` prefix routing (also supports `@pdf`, `@excel`, etc. inline tags)
         let (first_token, rest) = split_first_token(trimmed);
         let first_lower = first_token.to_lowercase();
         let has_space_after = trimmed.len() > first_token.len();
 
-        // Check built-in prefix providers (`f `, `ev `, `cb`, `w`, `kill`, `ps`, `=`, or config web keywords)
+        if filter == SearchFilter::All {
+            if let Some(inline_filter) = SearchFilter::parse_inline_tag(&first_lower) {
+                let mut f_ctx = QueryContext::new(rest, generation, limit).with_filter(inline_filter);
+                f_ctx.clipboard = ctx.clipboard.clone();
+                return self.run_filtered_fast(f_ctx, generation, limit);
+            }
+        }
+
         if !first_lower.is_empty() {
             let mut matched_prefix_providers = Vec::new();
             for p in &self.providers {
@@ -179,59 +204,134 @@ impl QueryRouter {
                 let mut results = Vec::new();
                 for p in matched_prefix_providers {
                     if self.is_stale(generation) {
-                        return Vec::new();
+                        return empty_fast_batch(p_ctx);
                     }
                     results.extend(p.query(&p_ctx));
                 }
-                return self.rank_and_cap(results, limit);
+                return FastQueryBatch {
+                    items: self.rank_and_cap(results, limit),
+                    effective_ctx: p_ctx,
+                    is_dedicated_route: true,
+                    run_slow_ipc: false,
+                };
             }
 
-            // Check external plugin keyword triggers
             if let Some(bridge) = &self.plugin_bridge {
                 if bridge.matches_keyword(&first_lower) {
                     let p_ctx = ctx.clone().with_keyword(&first_lower, rest);
                     let results = bridge.query_keyword(&first_lower, &p_ctx);
-                    return self.rank_and_cap(results, limit);
+                    return FastQueryBatch {
+                        items: self.rank_and_cap(results, limit),
+                        effective_ctx: p_ctx,
+                        is_dedicated_route: true,
+                        run_slow_ipc: false,
+                    };
                 }
             }
         }
 
-        // 3. Global smart hybrid query (fast in-memory providers first, then slow IPC like Everything)
+        self.run_filtered_fast(ctx, generation, limit)
+    }
+
+    fn run_filtered_fast(
+        &self,
+        ctx: QueryContext,
+        generation: u64,
+        limit: usize,
+    ) -> FastQueryBatch {
         let mut results = Vec::new();
         for p in &self.providers {
             if !p.supports_global() || p.is_slow_ipc() {
                 continue;
             }
+            if !provider_allowed_for_filter(p.id(), ctx.filter) {
+                continue;
+            }
             if self.is_stale(generation) {
-                return Vec::new();
+                return empty_fast_batch(ctx);
             }
             results.extend(p.query(&ctx));
         }
 
-        if !trimmed.is_empty() {
-            for p in &self.providers {
-                if !p.supports_global() || !p.is_slow_ipc() {
-                    continue;
-                }
-                if self.is_stale(generation) {
-                    return Vec::new();
-                }
-                let mut sub_ctx = ctx.clone();
-                sub_ctx.limit = sub_ctx.limit.min(8);
-                results.extend(p.query(&sub_ctx));
-            }
+        let run_slow_ipc = ctx.filter != SearchFilter::App
+            && (!ctx.trimmed.is_empty() || ctx.filter.is_file_only());
+        FastQueryBatch {
+            items: self.rank_and_cap(results, limit),
+            effective_ctx: ctx,
+            is_dedicated_route: false,
+            run_slow_ipc,
+        }
+    }
 
+    /// Phase 2: executes slow IPC providers (Everything) and external plugins, then merges & ranks.
+    pub fn search_slow_and_merge(&self, batch: FastQueryBatch, limit: usize) -> Vec<ResultItem> {
+        if batch.is_dedicated_route || !batch.run_slow_ipc {
+            return batch.items;
+        }
+        let ctx = &batch.effective_ctx;
+        let generation = ctx.generation;
+        let mut combined = batch.items;
+
+        for p in &self.providers {
+            if !p.supports_global() || !p.is_slow_ipc() {
+                continue;
+            }
+            if self.is_stale(generation) {
+                return Vec::new();
+            }
+            let mut sub_ctx = ctx.clone();
+            sub_ctx.limit = if ctx.filter.is_file_only() {
+                limit
+            } else {
+                limit.min(10)
+            };
+            combined.extend(p.query(&sub_ctx));
+        }
+
+        if ctx.filter == SearchFilter::All && !ctx.trimmed.is_empty() {
             if let Some(bridge) = &self.plugin_bridge {
                 if !self.is_stale(generation) {
-                    results.extend(bridge.query_global(&ctx));
+                    combined.extend(bridge.query_global(ctx));
                 }
             }
         }
 
-        self.rank_and_cap(results, limit)
+        self.rank_and_cap(combined, limit)
     }
 
-    fn rank_and_cap(&self, mut items: Vec<ResultItem>, limit: usize) -> Vec<ResultItem> {
+    /// Synchronous convenience search combining Phase 1 and Phase 2 (used by tests & self-test).
+    pub fn search(
+        &self,
+        raw_input: &str,
+        generation: u64,
+        limit: usize,
+        clipboard: Option<ClipboardSnapshot>,
+        attached: Option<AttachedContext>,
+    ) -> Vec<ResultItem> {
+        self.search_with_filter(
+            raw_input,
+            generation,
+            limit,
+            clipboard,
+            attached,
+            SearchFilter::All,
+        )
+    }
+
+    pub fn search_with_filter(
+        &self,
+        raw_input: &str,
+        generation: u64,
+        limit: usize,
+        clipboard: Option<ClipboardSnapshot>,
+        attached: Option<AttachedContext>,
+        filter: SearchFilter,
+    ) -> Vec<ResultItem> {
+        let fast = self.search_fast(raw_input, generation, limit, clipboard, attached, filter);
+        self.search_slow_and_merge(fast, limit)
+    }
+
+    pub fn rank_and_cap(&self, mut items: Vec<ResultItem>, limit: usize) -> Vec<ResultItem> {
         let frecency = self.frecency.read().ok();
         for item in &mut items {
             if let Some(store) = frecency.as_ref() {
@@ -254,10 +354,93 @@ impl QueryRouter {
     }
 }
 
+fn empty_fast_batch(ctx: QueryContext) -> FastQueryBatch {
+    FastQueryBatch {
+        items: Vec::new(),
+        effective_ctx: ctx,
+        is_dedicated_route: true,
+        run_slow_ipc: false,
+    }
+}
+
+fn provider_allowed_for_filter(provider_id: &str, filter: SearchFilter) -> bool {
+    match filter {
+        SearchFilter::All => true,
+        SearchFilter::App => matches!(
+            provider_id,
+            "builtin.apps" | "builtin.system" | "builtin.windows"
+        ),
+        _ => false,
+    }
+}
+
 fn split_first_token(s: &str) -> (&str, &str) {
     if let Some(idx) = s.find(char::is_whitespace) {
         (&s[..idx], s[idx..].trim_start())
     } else {
         (s, "")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tomoyo_protocol::ResultCategory;
+
+    struct StubProvider {
+        id: &'static str,
+        slow: bool,
+    }
+
+    impl Provider for StubProvider {
+        fn id(&self) -> &'static str {
+            self.id
+        }
+        fn name(&self) -> &'static str {
+            self.id
+        }
+        fn is_slow_ipc(&self) -> bool {
+            self.slow
+        }
+        fn query(&self, ctx: &QueryContext) -> Vec<ResultItem> {
+            vec![ResultItem {
+                id: format!("{}:{:?}:{}", self.id, ctx.filter, ctx.trimmed),
+                provider_id: self.id.into(),
+                title: format!("{}:{}", self.id, ctx.trimmed),
+                subtitle: String::new(),
+                category: if self.slow {
+                    ResultCategory::File
+                } else {
+                    ResultCategory::App
+                },
+                score: 5000,
+                icon: Default::default(),
+                badge: None,
+                copy_text: None,
+                actions: vec![],
+                preview: None,
+            }]
+        }
+    }
+
+    #[test]
+    fn routes_inline_tags_and_group_filters_correctly() {
+        let dir = std::env::temp_dir().join("tomoyo_router_test_frecency.json");
+        let frecency = Arc::new(RwLock::new(FrecencyStore::load_or_default(dir)));
+        let providers: Vec<Arc<dyn Provider>> = vec![
+            Arc::new(StubProvider { id: "builtin.apps", slow: false }),
+            Arc::new(StubProvider { id: "builtin.everything", slow: true }),
+        ];
+        let router = QueryRouter::new(providers, None, frecency);
+
+        let g1 = router.next_generation();
+        let pdf_hits = router.search("@pdf 报价", g1, 20, None, None);
+        assert_eq!(pdf_hits.len(), 1);
+        assert_eq!(pdf_hits[0].id, "builtin.everything:Pdf:报价");
+
+        let g2 = router.next_generation();
+        let app_hits = router.search_with_filter("oc", g2, 20, None, None, SearchFilter::App);
+        assert_eq!(app_hits.len(), 1);
+        assert_eq!(app_hits[0].id, "builtin.apps:App:oc");
     }
 }

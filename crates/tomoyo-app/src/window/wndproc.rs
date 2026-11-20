@@ -6,6 +6,8 @@ use super::{
 };
 use crate::actions::{read_clipboard_image_png, read_clipboard_text};
 use crate::drag::start_file_drag;
+use crate::icons::WM_APP_ICON_READY;
+use crate::preview_loader::WM_APP_PREVIEW_READY;
 use crate::renderer::{
     FOOTER_HEIGHT_DIP, HEADER_HEIGHT_DIP, MAX_WINDOW_WIDTH_DIP, MIN_WINDOW_WIDTH_DIP,
 };
@@ -22,7 +24,8 @@ use windows::Win32::Graphics::Gdi::{
 use windows::Win32::System::DataExchange::RemoveClipboardFormatListener;
 use windows::Win32::UI::Controls::WM_MOUSELEAVE;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    ReleaseCapture, SetCapture, TrackMouseEvent, UnregisterHotKey, TME_LEAVE, TRACKMOUSEEVENT,
+    ReleaseCapture, SetCapture, SetFocus, TrackMouseEvent, UnregisterHotKey, TME_LEAVE,
+    TRACKMOUSEEVENT,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     DefWindowProcW, DestroyWindow, GetClientRect, GetCursorPos, GetWindowLongPtrW, IsWindowVisible,
@@ -165,9 +168,22 @@ pub(super) unsafe extern "system" fn main_wndproc(
             app.on_results_ready();
             LRESULT(0)
         }
+        WM_APP_ICON_READY => {
+            app.on_icons_ready();
+            LRESULT(0)
+        }
+        WM_APP_PREVIEW_READY => {
+            app.on_preview_ready();
+            LRESULT(0)
+        }
         WM_APP_EDIT_KEY => {
             let vk = (wparam.0 & 0xFFFF) as u16;
-            app.handle_nav_key(vk, (lparam.0 & 1) != 0, (lparam.0 & 2) != 0);
+            app.handle_nav_key(
+                vk,
+                (lparam.0 & 1) != 0,
+                (lparam.0 & 2) != 0,
+                (lparam.0 & 4) != 0,
+            );
             LRESULT(0)
         }
         WM_APP_PASTE_INTERCEPT => {
@@ -204,7 +220,9 @@ pub(super) unsafe extern "system" fn main_wndproc(
         WM_MOUSEMOVE => handle_mouse_move(hwnd, app, lparam),
         WM_MOUSELEAVE => {
             app.inter.mouse_tracked = false;
-            if app.inter.hovered.take().is_some() {
+            let changed = app.inter.hovered.take().is_some()
+                | app.inter.hovered_filter.take().is_some();
+            if changed {
                 app.invalidate();
             }
             LRESULT(0)
@@ -247,9 +265,17 @@ pub(super) unsafe extern "system" fn main_wndproc(
             if ev == WM_LBUTTONUP || ev == WM_LBUTTONDBLCLK {
                 app.toggle_launcher();
             } else if ev == WM_RBUTTONUP {
-                if let Some(tray) = &app.tray {
-                    app.inter.suppress_next_deactivate = true;
-                    tray.show_context_menu(app.lang);
+                let chosen = app.tray.as_ref().and_then(|tray| {
+                    tray.show_context_menu(
+                        app.lang,
+                        app.theme,
+                        app.dpi_scale,
+                        app.font_regular,
+                        app.font_medium,
+                    )
+                });
+                if let Some(id) = chosen {
+                    dispatch_menu_id(hwnd, app, id);
                 }
             }
             LRESULT(0)
@@ -299,12 +325,17 @@ fn hit_test_window_chrome(hwnd: HWND, dpi_scale: f32, lparam: LPARAM) -> LRESULT
 }
 
 fn dispatch_wm_command(hwnd: HWND, app: &mut AppShell, wparam: WPARAM) -> LRESULT {
-    let id = (wparam.0 & 0xFFFF) as usize;
+    let id = (wparam.0 & 0xFFFF) as u32;
     let code = ((wparam.0 >> 16) & 0xFFFF) as u32;
-    if id == EDIT_CTRL_ID && code == EN_CHANGE {
+    if id as usize == EDIT_CTRL_ID && code == EN_CHANGE {
         app.on_edit_changed();
         return LRESULT(0);
     }
+    dispatch_menu_id(hwnd, app, id);
+    LRESULT(0)
+}
+
+fn dispatch_menu_id(hwnd: HWND, app: &mut AppShell, id: u32) {
     match id {
         MENU_ID_SHOW => app.show_launcher(),
         MENU_ID_SETTINGS => app.open_settings_center(),
@@ -334,7 +365,6 @@ fn dispatch_wm_command(hwnd: HWND, app: &mut AppShell, wparam: WPARAM) -> LRESUL
         }
         _ => {}
     }
-    LRESULT(0)
 }
 
 fn handle_mouse_down(hwnd: HWND, app: &mut AppShell, lparam: LPARAM) -> LRESULT {
@@ -344,7 +374,13 @@ fn handle_mouse_down(hwnd: HWND, app: &mut AppShell, lparam: LPARAM) -> LRESULT 
         unsafe { SetCapture(hwnd); }
         return LRESULT(0);
     }
+    if let Some(f) = app.hit_test_filter(x, y) {
+        app.set_active_filter(f);
+        unsafe { let _ = SetFocus(Some(app.edit_hwnd)); }
+        return LRESULT(0);
+    }
     if let Some(idx) = app.hit_test_row(x, y) {
+        app.action_menu_open = false;
         app.selected = idx;
         app.refresh_selected_preview();
         app.resize_to_fit_results();
@@ -392,9 +428,11 @@ fn handle_mouse_move(hwnd: HWND, app: &mut AppShell, lparam: LPARAM) -> LRESULT 
             return LRESULT(0);
         }
     }
-    let new_hover = app.hit_test_row(x, y);
-    if new_hover != app.inter.hovered {
+    let new_filter_hover = app.hit_test_filter(x, y);
+    let new_hover = if new_filter_hover.is_some() { None } else { app.hit_test_row(x, y) };
+    if new_hover != app.inter.hovered || new_filter_hover != app.inter.hovered_filter {
         app.inter.hovered = new_hover;
+        app.inter.hovered_filter = new_filter_hover;
         app.invalidate();
     }
     LRESULT(0)

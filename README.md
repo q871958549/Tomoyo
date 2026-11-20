@@ -11,7 +11,7 @@
   <a href="https://github.com/q871958549/Tomoyo/actions/workflows/ci.yml"><img src="https://github.com/q871958549/Tomoyo/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="LICENSE-MIT"><img src="https://img.shields.io/badge/license-MIT%20%2F%20Apache--2.0-blue.svg" alt="License" /></a>
   <img src="https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-0078D6.svg" alt="Windows" />
-  <img src="https://img.shields.io/badge/version-v0.5.1-7c6af7.svg" alt="Version" />
+  <img src="https://img.shields.io/badge/version-v0.6.0-7c6af7.svg" alt="Version" />
 </p>
 
 ---
@@ -78,19 +78,20 @@ pwsh -File scripts\check_hygiene.ps1
 
 | 前缀 / 快捷键 | 功能说明 |
 |---|---|
-| *(直接输入)* | 混合极速检索：本机应用 + UWP/MSIX（支持中文拼音/首字母 `wx`/`jsq`/`vsc`）、计算器、意图识别（`#hex` 颜色、时间戳、JSON、URL、路径）、窗口、Everything 置顶命中 |
+| *(直接输入)* | 混合极速检索：本机应用 + 桌面整理软件（DeskBox 等）+ 自定义便携目录 + UWP/MSIX（支持拼音/首字母与 `.lnk` 目标英文名）、计算器、意图识别、窗口、Everything 置顶命中 |
+| `Ctrl+Tab` / `Ctrl+1..9` / `@pdf` | **分组筛选栏**：支持按 `全部 / 应用 / 文件夹 / PDF / Excel / Word / PPT / 图片 / 压缩` 一键或 `@标签` 下推筛选 |
 | `Ctrl+V` *(粘贴截图/文件)* | **Super Match 粘贴胶囊**：自动识别图片（看图/转 Base64/定位）与文件（复制路径/SHA-256 校验/在目录开终端），按 `Backspace` 清除 |
-| `f <词>` / `ev <词>` | Everything 毫秒级全盘文件搜索 + 右侧有界预览/PNG 缩略图 + **拖拽行直出文件** |
+| `f <词>` / `ev <词>` | Everything 毫秒级全盘文件搜索 + 右侧异步有界预览/PNG 缩略图 + **拖拽行直出文件** |
 | `cb <词>` | SQLite 持久化剪贴板历史（**文本 + 截图图片**，支持置顶收藏与回车自动贴回原焦点窗口） |
 | `kill <词>` / `ps <词>` | 进程内存巡检与一键结束失控进程（按内存占用降序排列） |
 | `g` / `gh` / `crates` / `docs` / `bd` / `zh` / `mdn` | 可自定义快捷网页搜索（在设置中心即时增删保存） |
 | `w <词>` | 实时打开窗口快速切换 |
 | `:update` | 联网检查 GitHub Releases 最新版本、预览更新日志并直达下载（支持启动静默自动检查） |
-| `:settings` / `Ctrl+,` | 打开图形化设置中心（自动保存、快捷键直按录入、主题实时同步、内置 SHA-256 插件市场、更新检查） |
+| `:settings` / `Ctrl+,` | 打开图形化设置中心（自动保存、快捷键直按录入、自定义应用目录、主题实时同步、内置 SHA-256 插件市场、更新检查） |
 | `:stats` / `:plugins` / `:gc` | 实时内存/句柄/插件监控与手动休眠整理 |
 | `:theme dark\|light\|midnight` / `:lang zh\|en` | 即时切换三套主题或中英文界面 |
 | `hi` / `py` / `wasm` / `jwt` / `unit` / `json` | 四大内置示例插件（Rust STDIO / Python STDIO / WASM 能力沙箱 / WebView uTools 兼容桥） |
-| `Ctrl+P` / `Tab` / `右键` / `Alt+1..8` | 预览面板开关 / 动作菜单 / 原生右键菜单 / 快速直达 |
+| `双击左键` / `Ctrl+P` / `Tab` / `右键` / `Alt+1..8` | 双击直接打开 / 预览面板开关 / 动作菜单 / 主题适配右键菜单 / 快速直达 |
 
 ---
 

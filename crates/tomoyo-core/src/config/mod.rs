@@ -1,5 +1,9 @@
 //! Hot-reloadable `config.toml`, hotkey parser, and Windows login autostart management.
 
+mod hotkey;
+
+pub use hotkey::{is_autostart_enabled, parse_hotkey, set_autostart_enabled, ParsedHotkey};
+
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -20,9 +24,15 @@ pub struct TomoyoConfig {
     /// Show right-side live preview pane automatically when an item supports preview.
     #[serde(default = "default_true")]
     pub auto_preview: bool,
+    /// Show quick category/file-type filter bar below the search input.
+    #[serde(default = "default_true")]
+    pub show_filter_bar: bool,
     /// Persistent window dimensions and optional user-dragged position.
     #[serde(default)]
     pub window: WindowConfig,
+    /// Application indexing & desktop organizer integration.
+    #[serde(default)]
+    pub apps: AppsConfig,
     /// Everything search customization.
     #[serde(default)]
     pub everything: EverythingConfig,
@@ -38,6 +48,33 @@ pub struct TomoyoConfig {
     /// Customizable quick web search engines (`g rust`, `gh tokio`, `crates wasmi`, ...).
     #[serde(default = "default_web_searches")]
     pub web_searches: Vec<WebSearchEngine>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppsConfig {
+    /// Extra directories scanned for `.lnk` / `.exe` applications (e.g. `E:\Tools`).
+    #[serde(default)]
+    pub extra_dirs: Vec<String>,
+    /// Auto-detect desktop organizer folders (DeskBox, Tencent DeskGo, etc.).
+    #[serde(default = "default_true")]
+    pub auto_detect_desktop_organizers: bool,
+    /// Maximum recursion depth for `extra_dirs` (`1..=4`, default `2`).
+    #[serde(default = "default_extra_scan_depth")]
+    pub extra_scan_depth: usize,
+}
+
+fn default_extra_scan_depth() -> usize {
+    2
+}
+
+impl Default for AppsConfig {
+    fn default() -> Self {
+        Self {
+            extra_dirs: Vec::new(),
+            auto_detect_desktop_organizers: true,
+            extra_scan_depth: default_extra_scan_depth(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -126,7 +163,7 @@ pub struct EverythingConfig {
     pub max_global_results: usize,
     #[serde(default = "default_ev_dedicated")]
     pub max_dedicated_results: usize,
-    /// Extra default filter appended to dedicated queries (e.g. `"!*.tmp"`).
+    /// Extra default filter appended to dedicated/file queries (e.g. `"!*.tmp"`).
     #[serde(default)]
     pub extra_filter: String,
 }
@@ -239,7 +276,9 @@ impl Default for TomoyoConfig {
             theme: default_theme(),
             hibernate_delay_secs: default_hibernate_secs(),
             auto_preview: true,
+            show_filter_bar: true,
             window: WindowConfig::default(),
+            apps: AppsConfig::default(),
             everything: EverythingConfig::default(),
             clipboard: ClipboardConfig::default(),
             update: UpdateConfig::default(),
@@ -253,6 +292,7 @@ impl TomoyoConfig {
     pub fn lang(&self) -> crate::Lang {
         crate::Lang::from_code(&self.language)
     }
+
     pub fn config_path() -> PathBuf {
         crate::data_dir().join("config.toml")
     }
@@ -295,152 +335,17 @@ impl TomoyoConfig {
     }
 }
 
-/// Parsed Win32 hotkey descriptor `(mod_flags, vk_code)`.
-/// Bit flags match Win32: ALT=0x0001, CONTROL=0x0002, SHIFT=0x0004, WIN=0x0008, NOREPEAT=0x4000.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ParsedHotkey {
-    pub modifiers: u32,
-    pub vk: u32,
-}
-
-pub fn parse_hotkey(spec: &str) -> Option<ParsedHotkey> {
-    let mut mods = 0x4000u32; // MOD_NOREPEAT
-    let mut vk: Option<u32> = None;
-
-    for raw_part in spec.split('+') {
-        let part = raw_part.trim().to_ascii_lowercase();
-        match part.as_str() {
-            "alt" => mods |= 0x0001,
-            "ctrl" | "control" => mods |= 0x0002,
-            "shift" => mods |= 0x0004,
-            "win" | "super" | "meta" => mods |= 0x0008,
-            "space" => vk = Some(0x20),
-            "tab" => vk = Some(0x09),
-            "enter" | "return" => vk = Some(0x0D),
-            s if s.len() == 1 => {
-                let b = s.as_bytes()[0].to_ascii_uppercase();
-                if b.is_ascii_alphanumeric() {
-                    vk = Some(b as u32);
-                }
-            }
-            s if s.starts_with('f') && s.len() <= 3 => {
-                if let Ok(n) = s[1..].parse::<u32>() {
-                    if (1..=12).contains(&n) {
-                        vk = Some(0x6F + n); // VK_F1 = 0x70
-                    }
-                }
-            }
-            _ => return None,
-        }
-    }
-
-    let vk = vk?;
-    if (mods & 0x000F) == 0 {
-        return None;
-    }
-    Some(ParsedHotkey { modifiers: mods, vk })
-}
-
-/// Checks whether Tomoyo is registered in `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`.
-#[cfg(windows)]
-pub fn is_autostart_enabled() -> bool {
-    use windows::core::{w, PCWSTR};
-    use windows::Win32::System::Registry::{
-        RegCloseKey, RegOpenKeyExW, RegQueryValueExW, HKEY, HKEY_CURRENT_USER, KEY_READ,
-    };
-
-    unsafe {
-        let mut hkey = HKEY::default();
-        if RegOpenKeyExW(
-            HKEY_CURRENT_USER,
-            w!("Software\\Microsoft\\Windows\\CurrentVersion\\Run"),
-            Some(0),
-            KEY_READ,
-            &mut hkey,
-        )
-        .is_err()
-        {
-            return false;
-        }
-        let exists = RegQueryValueExW(hkey, w!("Tomoyo"), None, None, None, None).is_ok();
-        let _ = RegCloseKey(hkey);
-        let _ = PCWSTR::null();
-        exists
-    }
-}
-
-#[cfg(not(windows))]
-pub fn is_autostart_enabled() -> bool {
-    false
-}
-
-/// Enables or disables automatic launch at Windows login (`--silent` mode).
-#[cfg(windows)]
-pub fn set_autostart_enabled(enable: bool) -> Result<(), String> {
-    use windows::core::w;
-    use windows::Win32::System::Registry::{
-        RegCloseKey, RegDeleteValueW, RegOpenKeyExW, RegSetValueExW, HKEY, HKEY_CURRENT_USER,
-        KEY_SET_VALUE, REG_SZ,
-    };
-
-    unsafe {
-        let mut hkey = HKEY::default();
-        RegOpenKeyExW(
-            HKEY_CURRENT_USER,
-            w!("Software\\Microsoft\\Windows\\CurrentVersion\\Run"),
-            Some(0),
-            KEY_SET_VALUE,
-            &mut hkey,
-        )
-        .ok()
-        .map_err(|e| format!("RegOpenKeyExW failed: {e}"))?;
-
-        let res = if enable {
-            let cur = std::env::current_exe().map_err(|e| e.to_string())?;
-            // Ensure toggling autostart from `tomoyo-webview-host.exe` registers `tomoyo.exe`!
-            let sibling_launcher = cur.with_file_name("tomoyo.exe");
-            let exe = if sibling_launcher.is_file() {
-                sibling_launcher
-            } else {
-                cur
-            }
-            .to_string_lossy()
-            .into_owned();
-            let cmd = format!("\"{exe}\" --silent");
-            let wide: Vec<u16> = cmd.encode_utf16().chain(std::iter::once(0)).collect();
-            let bytes = std::slice::from_raw_parts(wide.as_ptr() as *const u8, wide.len() * 2);
-            RegSetValueExW(hkey, w!("Tomoyo"), Some(0), REG_SZ, Some(bytes))
-                .ok()
-                .map_err(|e| format!("RegSetValueExW failed: {e}"))
-        } else {
-            let _ = RegDeleteValueW(hkey, w!("Tomoyo"));
-            Ok(())
-        };
-
-        let _ = RegCloseKey(hkey);
-        res
-    }
-}
-
-#[cfg(not(windows))]
-pub fn set_autostart_enabled(_enable: bool) -> Result<(), String> {
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn parses_hotkeys_accurately() {
-        let h = parse_hotkey("Alt+Space").unwrap();
-        assert_eq!(h.modifiers, 0x4001);
-        assert_eq!(h.vk, 0x20);
-
-        let h2 = parse_hotkey("Ctrl+Shift+K").unwrap();
-        assert_eq!(h2.modifiers, 0x4006);
-        assert_eq!(h2.vk, b'K' as u32);
-
-        assert!(parse_hotkey("Space").is_none());
+    fn loads_defaults_when_apps_section_missing() {
+        let legacy = "language = \"zh\"\nhotkey = \"Alt+Space\"\ntheme = \"light\"\n";
+        let cfg: TomoyoConfig = toml::from_str(legacy).unwrap();
+        assert!(cfg.show_filter_bar);
+        assert!(cfg.apps.auto_detect_desktop_organizers);
+        assert_eq!(cfg.apps.extra_scan_depth, 2);
+        assert!(cfg.apps.extra_dirs.is_empty());
     }
 }

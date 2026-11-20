@@ -1,6 +1,4 @@
-//! Main Win32 launcher shell: orchestrates lifecycle, themes, i18n, hibernation & query loop.
-//!
-//! Cohesively modularized into `bootstrap`, `layout`, `input`, `menus`, `commands`, and `wndproc`.
+//! Main Win32 launcher shell: orchestrates lifecycle, themes, i18n, hibernation & async query loop.
 
 mod bootstrap;
 mod commands;
@@ -10,6 +8,7 @@ mod menus;
 mod wndproc;
 
 use crate::actions::spawn_settings_window;
+use crate::preview_loader::AsyncPreviewLoader;
 use crate::renderer::{FluentRenderer, RenderState, ThemePalette, MIN_WINDOW_WIDTH_DIP};
 use crate::tray::TrayIcon;
 use bootstrap::detect_everything_label;
@@ -19,7 +18,7 @@ use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, RwLock};
 use tomoyo_core::{Lang, QueryRouter, ResolvedPreview, TomoyoConfig, UpdateManager};
 use tomoyo_plugin_host::PluginHost;
-use tomoyo_protocol::{AttachedContext, ClipboardSnapshot, ResultItem};
+use tomoyo_protocol::{AttachedContext, ClipboardSnapshot, ResultItem, SearchFilter};
 use tomoyo_providers::ClipboardProvider;
 use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
@@ -55,11 +54,13 @@ pub(super) struct QueryJob {
     pub query: String,
     pub clipboard: Option<ClipboardSnapshot>,
     pub attached: Option<AttachedContext>,
+    pub filter: SearchFilter,
 }
 
 pub(super) struct QueryOutcome {
     pub generation: u64,
     pub items: Vec<ResultItem>,
+    pub is_partial: bool,
 }
 
 pub(super) struct WindowGeometry {
@@ -72,6 +73,7 @@ pub(super) struct WindowGeometry {
 #[derive(Default)]
 pub(super) struct InteractionState {
     pub hovered: Option<usize>,
+    pub hovered_filter: Option<SearchFilter>,
     pub mouse_tracked: bool,
     pub in_size_move: bool,
     pub dragging_divider: bool,
@@ -88,6 +90,9 @@ pub struct AppShell {
     pub(super) edit_bg_brush: HBRUSH,
     pub(super) tray: Option<TrayIcon>,
     pub(super) renderer: FluentRenderer,
+    pub(super) preview_loader: AsyncPreviewLoader,
+    pub(super) font_regular: &'static str,
+    pub(super) font_medium: &'static str,
     pub(super) config: Arc<RwLock<TomoyoConfig>>,
     pub(super) lang: Lang,
     pub(super) theme: ThemePalette,
@@ -100,6 +105,9 @@ pub struct AppShell {
     pub(super) result_rx: Receiver<QueryOutcome>,
     pub(super) current_query: String,
     pub(super) attached: Option<AttachedContext>,
+    pub(super) active_filter: SearchFilter,
+    pub(super) show_filter_bar: bool,
+    pub(super) last_result_gen: u64,
     pub(super) results: Vec<ResultItem>,
     pub(super) selected: usize,
     pub(super) scroll_offset: usize,
@@ -179,6 +187,7 @@ impl AppShell {
         self.action_menu_open = false;
         self.selected_action = 0;
         self.inter.hovered = None;
+        self.inter.hovered_filter = None;
         self.position_on_active_monitor();
         self.dispatch_query();
         unsafe {
@@ -194,9 +203,11 @@ impl AppShell {
         self.action_menu_open = false;
         self.selected_action = 0;
         self.inter.hovered = None;
+        self.inter.hovered_filter = None;
         self.toast = None;
         self.inter.drag_origin = None;
         self.inter.dragging_divider = false;
+        self.preview_loader.cancel_all();
         let delay_ms = self
             .config
             .read()
@@ -210,6 +221,8 @@ impl AppShell {
         }
         self.current_query.clear();
         self.attached = None;
+        self.active_filter = SearchFilter::All;
+        self.last_result_gen = 0;
         self.results.clear();
         self.cached_preview_id = None;
         self.cached_preview = None;
@@ -227,6 +240,7 @@ impl AppShell {
 
     pub fn run_hibernate(&mut self) -> u64 {
         unsafe { let _ = KillTimer(Some(self.hwnd), TIMER_HIBERNATE); }
+        self.preview_loader.cancel_all();
         self.renderer.hibernate_release();
         self.results.clear();
         self.results.shrink_to_fit();
@@ -234,8 +248,12 @@ impl AppShell {
         self.cached_preview = None;
         let cycles = self.router.hibernate_trim();
         unsafe { mi_collect(true); }
-        tomoyo_core::trim_working_set();
         cycles
+    }
+
+    pub fn wait_background_idle_for_test(&mut self) {
+        self.renderer.wait_icons_idle_for_test();
+        self.preview_loader.wait_idle_and_drain();
     }
 
     pub fn set_query_text(&mut self, text: &str) {
@@ -247,6 +265,17 @@ impl AppShell {
         }
         self.current_query = text.to_string();
         self.dispatch_query();
+    }
+
+    pub fn set_active_filter(&mut self, filter: SearchFilter) {
+        if self.active_filter == filter {
+            return;
+        }
+        self.active_filter = filter;
+        self.selected = 0;
+        self.scroll_offset = 0;
+        self.dispatch_query();
+        self.invalidate();
     }
 
     pub fn run_message_loop(&mut self) {
@@ -262,12 +291,13 @@ impl AppShell {
     pub fn self_test_paint_and_hibernate(&mut self, query: &str) -> usize {
         self.current_query = query.to_string();
         let generation = self.router.next_generation();
-        self.results = self.router.search(
+        self.results = self.router.search_with_filter(
             query,
             generation,
             20,
             self.clipboard.latest_snapshot(),
             self.attached.clone(),
+            self.active_filter,
         );
         self.selected = 0;
         self.inter.hovered = if self.results.len() > 1 { Some(1) } else { None };
@@ -297,6 +327,7 @@ impl AppShell {
         let new_theme = fresh.theme.clone();
         let new_hotkey = fresh.hotkey.clone();
         self.preview_enabled = fresh.auto_preview;
+        self.show_filter_bar = fresh.show_filter_bar;
         self.geom.list_width_dip = fresh.window.width_dip.clamp(MIN_WINDOW_WIDTH_DIP, 1400);
         self.geom.max_visible_rows = fresh.window.max_visible_rows.clamp(4, 18);
         self.geom.preview_width_dip = fresh.window.preview_width_dip.clamp(220, 620);
@@ -326,6 +357,7 @@ impl AppShell {
             query: self.current_query.clone(),
             clipboard: self.clipboard.latest_snapshot(),
             attached: self.attached.clone(),
+            filter: self.active_filter,
         });
     }
 
@@ -338,14 +370,43 @@ impl AppShell {
         if self.router.is_stale(out.generation) {
             return;
         }
+        let prev_sel_id = if self.last_result_gen == out.generation && !out.is_partial {
+            self.results.get(self.selected).map(|i| i.id.clone())
+        } else {
+            None
+        };
+        self.last_result_gen = out.generation;
         self.results = out.items;
-        self.selected = 0;
+        self.selected = prev_sel_id
+            .and_then(|id| self.results.iter().position(|r| r.id == id))
+            .unwrap_or(0);
         self.inter.hovered = None;
         self.scroll_offset = 0;
         self.action_menu_open = false;
         self.selected_action = 0;
         self.cached_preview_id = None;
         self.refresh_selected_preview();
+        if unsafe { IsWindowVisible(self.hwnd).as_bool() } {
+            self.resize_to_fit_results();
+            self.invalidate();
+        }
+    }
+
+    pub(super) fn on_icons_ready(&mut self) {
+        if self.renderer.drain_ready_icons() && unsafe { IsWindowVisible(self.hwnd).as_bool() } {
+            self.invalidate();
+        }
+    }
+
+    pub(super) fn on_preview_ready(&mut self) {
+        let Some(out) = self.preview_loader.drain_latest() else {
+            return;
+        };
+        if self.results.get(self.selected).map(|i| i.id.as_str()) != Some(out.item_id.as_str()) {
+            return;
+        }
+        self.cached_preview_id = Some(out.item_id);
+        self.cached_preview = Some(out.preview);
         if unsafe { IsWindowVisible(self.hwnd).as_bool() } {
             self.resize_to_fit_results();
             self.invalidate();
@@ -374,12 +435,16 @@ impl AppShell {
         let mode = self.active_mode_badge();
         let attached_label = self.attached_capsule_label();
         let update_label = self.updater.available_release().map(|r| format!("↑ v{}", r.version));
+        let filter_vis = self.is_filter_bar_visible();
         let state = RenderState {
             lang: self.lang,
             theme: self.theme,
             mode_badge: mode,
             attached_capsule: attached_label.as_deref(),
             update_badge: update_label.as_deref(),
+            filter_bar_visible: filter_vis,
+            active_filter: self.active_filter,
+            hovered_filter: self.inter.hovered_filter,
             items: &self.results,
             selected: self.selected,
             hovered: self.inter.hovered,
@@ -400,6 +465,7 @@ impl AppShell {
 impl Drop for AppShell {
     fn drop(&mut self) {
         self.plugin_host.shutdown_all();
+        self.preview_loader.cancel_all();
         self.renderer.hibernate_release();
         self.tray = None;
         unsafe {

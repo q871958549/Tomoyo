@@ -1,4 +1,4 @@
-//! Action execution, internal commands, Super Match paste, preview resolution & async updater.
+//! Action execution, internal commands, Super Match paste, async preview & async updater.
 
 use super::{AppShell, WM_APP_UPDATE_READY};
 use crate::actions::{
@@ -8,21 +8,22 @@ use crate::actions::{
 use std::ffi::c_void;
 use std::sync::Arc;
 use tomoyo_core::{
-    is_autostart_enabled, read_file_preview, read_image_thumbnail, set_autostart_enabled, Lang,
-    ResolvedPreview, UpdateStatus,
+    is_autostart_enabled, set_autostart_enabled, Lang, UpdateStatus,
 };
-use tomoyo_protocol::{ActionKind, AttachedContext, InternalCommandKind, PreviewSpec};
+use tomoyo_protocol::{ActionKind, AttachedContext, InternalCommandKind};
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 use windows::Win32::UI::WindowsAndMessaging::{DestroyWindow, PostMessageW};
 
 impl AppShell {
     pub(super) fn refresh_selected_preview(&mut self) {
         if !self.preview_enabled {
+            self.preview_loader.cancel_all();
             self.cached_preview_id = None;
             self.cached_preview = None;
             return;
         }
         let Some(item) = self.results.get(self.selected) else {
+            self.preview_loader.cancel_all();
             self.cached_preview_id = None;
             self.cached_preview = None;
             return;
@@ -30,38 +31,20 @@ impl AppShell {
         if self.cached_preview_id.as_deref() == Some(&item.id) {
             return;
         }
-        self.cached_preview_id = Some(item.id.clone());
-        self.cached_preview = item.preview.as_ref().map(|spec| match spec {
-            PreviewSpec::Text { title, body } => ResolvedPreview {
-                title: title.clone(),
-                meta_line: match self.lang {
-                    Lang::Zh => format!("{} 字符 · {} 行", body.chars().count(), body.lines().count().max(1)),
-                    Lang::En => format!("{} chars · {} lines", body.chars().count(), body.lines().count().max(1)),
-                },
-                body: body.clone(),
-                is_monospace: body.contains('{') || body.contains('\n'),
-                image_rgba: None,
-            },
-            PreviewSpec::KeyValue { title, entries } => {
-                let body = entries
-                    .iter()
-                    .map(|(k, v)| format!("{k:<14} {v}"))
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                ResolvedPreview {
-                    title: title.clone(),
-                    meta_line: match self.lang {
-                        Lang::Zh => format!("{} 项属性", entries.len()),
-                        Lang::En => format!("{} properties", entries.len()),
-                    },
-                    body,
-                    is_monospace: true,
-                    image_rgba: None,
-                }
-            }
-            PreviewSpec::FilePreview { path } => read_file_preview(path),
-            PreviewSpec::ImagePreview { path, .. } => read_image_thumbnail(path, 280, 200),
-        });
+        let Some(spec) = item.preview.as_ref() else {
+            self.preview_loader.cancel_all();
+            self.cached_preview_id = Some(item.id.clone());
+            self.cached_preview = None;
+            return;
+        };
+        if let Some(instant) = self.preview_loader.resolve_or_enqueue(&item.id, spec, self.lang) {
+            self.cached_preview_id = Some(item.id.clone());
+            self.cached_preview = Some(instant);
+        } else {
+            // Disk / image preview resolves asynchronously off the UI thread.
+            self.cached_preview_id = None;
+            self.cached_preview = None;
+        }
     }
 
     pub(super) fn trigger_update_check_async(&mut self) {

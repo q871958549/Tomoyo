@@ -1,13 +1,14 @@
-//! Keyboard navigation, global hotkey registration, and native EDIT control subclassing.
+//! Keyboard navigation, filter shortcuts, global hotkey registration, and EDIT subclassing.
 
 use super::{AppShell, EM_GETSEL, HOTKEY_ID, WM_APP_EDIT_KEY, WM_APP_PASTE_INTERCEPT};
 use crate::actions::{clipboard_has_rich_attachment, set_clipboard_text};
 use std::ffi::c_void;
 use tomoyo_core::parse_hotkey;
+use tomoyo_protocol::SearchFilter;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetKeyState, RegisterHotKey, HOT_KEY_MODIFIERS, MOD_CONTROL, MOD_NOREPEAT, MOD_SHIFT, VK_BACK,
-    VK_CONTROL, VK_DOWN, VK_ESCAPE, VK_RETURN, VK_SPACE, VK_TAB, VK_UP,
+    VK_CONTROL, VK_DOWN, VK_ESCAPE, VK_RETURN, VK_SHIFT, VK_SPACE, VK_TAB, VK_UP,
 };
 use windows::Win32::UI::Shell::DefSubclassProc;
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -15,13 +16,33 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 
 impl AppShell {
-    pub(super) fn handle_nav_key(&mut self, vk: u16, ctrl_down: bool, alt_down: bool) {
+    pub(super) fn handle_nav_key(
+        &mut self,
+        vk: u16,
+        ctrl_down: bool,
+        alt_down: bool,
+        shift_down: bool,
+    ) {
         if alt_down && (b'1' as u16..=b'8' as u16).contains(&vk) {
             let idx = self.scroll_offset + (vk - b'1' as u16) as usize;
             if idx < self.results.len() {
                 self.selected = idx;
                 self.execute_selected(0);
             }
+            return;
+        }
+
+        if ctrl_down && (b'1' as u16..=b'9' as u16).contains(&vk) {
+            let idx = (vk - b'1' as u16) as usize;
+            if let Some(f) = SearchFilter::from_index(idx) {
+                self.set_active_filter(f);
+            }
+            return;
+        }
+
+        if ctrl_down && vk == VK_TAB.0 {
+            let next = self.active_filter.cycle(!shift_down);
+            self.set_active_filter(next);
             return;
         }
 
@@ -81,6 +102,8 @@ impl AppShell {
                     self.attached = None;
                     self.dispatch_query();
                     self.invalidate();
+                } else if self.active_filter != SearchFilter::All {
+                    self.set_active_filter(SearchFilter::All);
                 } else {
                     self.hide_launcher();
                 }
@@ -181,14 +204,16 @@ pub(super) unsafe extern "system" fn edit_subclass_proc(
         WM_KEYDOWN => {
             let vk = wparam.0 as u16;
             let ctrl = unsafe { (GetKeyState(VK_CONTROL.0 as i32) as u16 & 0x8000) != 0 };
+            let shift = unsafe { (GetKeyState(VK_SHIFT.0 as i32) as u16 & 0x8000) != 0 };
+            let mod_flags = (if ctrl { 1isize } else { 0 }) | (if shift { 4isize } else { 0 });
+
             let intercept = matches!(
                 vk,
                 x if x == VK_UP.0 || x == VK_DOWN.0 || x == VK_RETURN.0 || x == VK_ESCAPE.0 || x == VK_TAB.0
             );
-            if intercept {
-                let flags = if ctrl { 1isize } else { 0 };
+            if intercept || (ctrl && (b'1' as u16..=b'9' as u16).contains(&vk)) {
                 unsafe {
-                    let _ = PostMessageW(Some(parent), WM_APP_EDIT_KEY, WPARAM(vk as usize), LPARAM(flags));
+                    let _ = PostMessageW(Some(parent), WM_APP_EDIT_KEY, WPARAM(vk as usize), LPARAM(mod_flags));
                 }
                 return LRESULT(0);
             }

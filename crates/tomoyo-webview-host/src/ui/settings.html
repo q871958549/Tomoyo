@@ -19,7 +19,7 @@
     <nav>
       <button class="active" data-tab="general" data-i18n="nav_general">常规设置</button>
       <button data-tab="appearance" data-i18n="nav_appearance">外观与窗口</button>
-      <button data-tab="search" data-i18n="nav_search">Everything 与剪贴板</button>
+      <button data-tab="search" data-i18n="nav_search">应用、文件与剪贴板</button>
       <button data-tab="web" data-i18n="nav_web">快捷网页搜索</button>
       <button data-tab="store" data-i18n="nav_store">插件市场</button>
       <button data-tab="plugins" data-i18n="nav_plugins">已安装与路径</button>
@@ -87,6 +87,13 @@
               <div class="label-desc" data-i18n="desc_autopreview">选中文件、剪贴板或插件卡片时自动展开右侧预览</div>
             </div>
             <input id="auto_preview" type="checkbox" onchange="scheduleAutoSave(0)" />
+          </div>
+          <div class="row">
+            <div>
+              <div class="label-title" data-i18n="lbl_filter_bar">显示搜索结果分组筛选栏 (Ctrl+Tab)</div>
+              <div class="label-desc" data-i18n="desc_filter_bar">支持一键筛选 应用 / 文件夹 / PDF / Excel / Word / PPT / 图片 / 压缩</div>
+            </div>
+            <input id="show_filter_bar" type="checkbox" onchange="scheduleAutoSave(0)" />
           </div>
         </div>
       </section>
@@ -169,10 +176,33 @@
         </div>
       </section>
 
-      <!-- EVERYTHING & CLIPBOARD -->
+      <!-- APPS, EVERYTHING & CLIPBOARD -->
       <section id="tab-search">
-        <h2 data-i18n="h_search">Everything 与剪贴板</h2>
-        <p class="lead" data-i18n="lead_search">配置 Everything 毫秒检索条数、默认过滤语法与 SQLite 剪贴板历史上限。</p>
+        <h2 data-i18n="h_search">应用扫描、Everything 与剪贴板</h2>
+        <p class="lead" data-i18n="lead_search">配置桌面整理与绿色软件目录、Everything 毫秒检索及 SQLite 剪贴板上限。</p>
+        <div class="card">
+          <div class="row">
+            <div>
+              <div class="label-title" data-i18n="lbl_apps_org">自动识别桌面整理软件目录（DeskBox 等）</div>
+              <div class="label-desc" data-i18n="desc_apps_org">解决桌面图标被整理工具移动后搜不到桌面应用的问题</div>
+            </div>
+            <input id="apps_org" type="checkbox" onchange="scheduleAutoSave(0)" />
+          </div>
+          <div class="row">
+            <div>
+              <div class="label-title" data-i18n="lbl_apps_depth">自定义目录扫描深度</div>
+              <div class="label-desc" data-i18n="desc_apps_depth">扫描自定义绿色软件目录下的子目录层级（推荐 2 层）</div>
+            </div>
+            <input id="apps_depth" type="number" min="1" max="4" style="width:84px" onchange="scheduleAutoSave(120)" />
+          </div>
+          <div class="row" style="align-items:flex-start">
+            <div style="flex:1;padding-right:16px">
+              <div class="label-title" data-i18n="lbl_apps_dirs">自定义应用与绿色软件扫描目录（每行一个路径）</div>
+              <div class="label-desc" data-i18n="desc_apps_dirs">例如 E:\Tools 或 D:\Tools，保存后立即热重载应用索引</div>
+              <textarea id="apps_dirs" rows="3" placeholder="E:\Tools&#10;D:\Tools" oninput="scheduleAutoSave(450)"></textarea>
+            </div>
+          </div>
+        </div>
         <div class="card">
           <div class="row">
             <div>
@@ -294,7 +324,7 @@
         <div class="card">
           <div class="row">
             <div>
-              <div class="label-title">Tomoyo <span id="about-ver" class="pill">v0.4.0</span></div>
+              <div class="label-title">Tomoyo <span id="about-ver" class="pill">v0.6.0</span></div>
               <div class="label-desc" data-i18n="about_desc">MIT / Apache-2.0 双协议开源 · 纯 Rust 超低内存桌面效率启动器</div>
             </div>
             <div style="display:flex;gap:8px">
@@ -344,6 +374,7 @@
 
   <script>
 /*__SETTINGS_I18N__*/
+/*__SETTINGS_STORE_JS__*/
 /*__SETTINGS_JS__*/
   </script>
 </body>

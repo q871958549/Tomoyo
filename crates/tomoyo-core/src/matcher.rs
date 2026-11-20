@@ -46,6 +46,21 @@ impl IndexedText {
     }
 }
 
+/// Scores `query` against `primary` text, falling back to an optional `alias`
+/// (e.g., resolved `.lnk` target executable name) with a small tie-breaker penalty.
+pub fn score_match_with_alias(
+    query: &str,
+    primary: &IndexedText,
+    alias: Option<&IndexedText>,
+) -> Option<i64> {
+    if let Some(s) = score_match(query, primary) {
+        return Some(s);
+    }
+    alias
+        .and_then(|a| score_match(query, a))
+        .map(|s| (s - 250).max(1_000))
+}
+
 /// Scores how well `query` matches `indexed`. Returns `None` if there is no match.
 pub fn score_match(query: &str, indexed: &IndexedText) -> Option<i64> {
     let q = query.trim().to_lowercase();
@@ -89,7 +104,7 @@ pub fn score_match(query: &str, indexed: &IndexedText) -> Option<i64> {
         return Some(6_900);
     }
 
-    // 7. Word-boundary substring match on original text
+    // 7. Word-boundary vs mid-word substring match on original text
     if let Some(pos) = indexed.lower.find(&q) {
         let is_word_start = pos == 0
             || indexed.lower[..pos]
@@ -97,26 +112,26 @@ pub fn score_match(query: &str, indexed: &IndexedText) -> Option<i64> {
                 .next_back()
                 .map(|c| !c.is_alphanumeric())
                 .unwrap_or(true);
-        let base = if is_word_start { 6_200 } else { 5_300 };
-        return Some((base - (pos as i64 * 12)).max(4_000));
+        let base = if is_word_start { 6_200 } else { 4_400 };
+        return Some((base - (pos as i64 * 12)).max(3_200));
     }
 
     // 8. Substring match in pinyin full
     if let Some(pos) = compact_py.find(&q) {
-        return Some((5_000 - pos as i64 * 10).max(3_800));
+        return Some((4_300 - pos as i64 * 10).max(3_100));
     }
 
-    // 9. Subsequence fuzzy match on original text
+    // 9. Subsequence fuzzy match on original text (kept below high-confidence file hits)
     if let Some(s) = subsequence_score(&q, &indexed.lower) {
-        return Some(3_400 + s);
+        return Some(2_400 + s);
     }
 
     // 10. Subsequence fuzzy match on pinyin initials or compact pinyin
     if let Some(s) = subsequence_score(&q, &indexed.pinyin_initials) {
-        return Some(3_200 + s);
+        return Some(2_200 + s);
     }
     if let Some(s) = subsequence_score(&q, &compact_py) {
-        return Some(2_800 + s);
+        return Some(2_000 + s);
     }
 
     None
@@ -169,5 +184,9 @@ mod tests {
         assert!(score_match("vsc", &vsc).unwrap() >= 8_000);
         assert!(score_match("code", &vsc).unwrap() >= 5_500);
         assert!(score_match("vscd", &vsc).is_some());
+
+        let cn = IndexedText::new("微信");
+        let alias = IndexedText::new("WeChat");
+        assert!(score_match_with_alias("wechat", &cn, Some(&alias)).unwrap() >= 8_000);
     }
 }

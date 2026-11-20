@@ -9,6 +9,8 @@ mod actions;
 mod brand;
 mod drag;
 mod icons;
+mod popup_menu;
+mod preview_loader;
 mod renderer;
 mod tray;
 mod window;
@@ -226,7 +228,9 @@ fn run_self_test(fonts: &PrivateFonts, strict_budget: bool) {
 
     let reaped = plugin_host.reap_plugins(true);
     println!("Reaped active STDIO + WASM plugins: {reaped}");
+    shell.wait_background_idle_for_test();
     let _ = shell.run_hibernate();
+    shell.wait_background_idle_for_test();
     assert!(
         shell.is_renderer_hibernated(),
         "renderer should release surfaces on hibernate"
@@ -234,11 +238,13 @@ fn run_self_test(fonts: &PrivateFonts, strict_budget: bool) {
     let baseline = current_process_stats();
     log_mem("3. baseline (hibernated+mi_purge)");
 
-    let soak_queries = ["jsq", "f Cargo.toml", "2^16", ":stats", "g rust", "cb"];
+    let soak_queries = ["jsq", "f Cargo.toml", "2^16", ":stats", "g rust", "cb", "@pdf"];
     for cycle in 0..100 {
         let q = soak_queries[cycle % soak_queries.len()];
         let _ = shell.self_test_paint_and_hibernate(q);
+        shell.wait_background_idle_for_test();
         let _ = shell.run_hibernate();
+        shell.wait_background_idle_for_test();
     }
 
     let after = current_process_stats();

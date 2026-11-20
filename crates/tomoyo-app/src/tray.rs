@@ -1,32 +1,31 @@
-//! System tray icon & localized context menu using the embedded Modern White `.ico`
-//! (falling back seamlessly to the procedural SDF Modern White icon) with RAII cleanup.
+//! System tray icon & theme-matched context menu with RAII cleanup.
 
 use crate::brand::generate_icon_bgra;
+use crate::popup_menu::{show_themed_popup_menu, PopupEntry};
+use crate::renderer::ThemePalette;
 use tomoyo_core::Lang;
 use windows::core::PCWSTR;
-use windows::Win32::Foundation::{HWND, POINT};
+use windows::Win32::Foundation::HWND;
 use windows::Win32::Graphics::Gdi::{CreateBitmap, DeleteObject, HBITMAP};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Shell::{
     Shell_NotifyIconW, NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE, NOTIFYICONDATAW,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    AppendMenuW, CreateIconIndirect, CreatePopupMenu, DestroyIcon, DestroyMenu, GetCursorPos,
-    LoadImageW, SendMessageW, SetForegroundWindow, TrackPopupMenu, HICON, ICONINFO, ICON_BIG,
-    ICON_SMALL, IMAGE_ICON, LR_DEFAULTSIZE, MF_SEPARATOR, MF_STRING, TPM_BOTTOMALIGN,
-    TPM_LEFTALIGN, WM_APP, WM_SETICON,
+    CreateIconIndirect, DestroyIcon, LoadImageW, SendMessageW, HICON, ICONINFO, ICON_BIG,
+    ICON_SMALL, IMAGE_ICON, LR_DEFAULTSIZE, WM_APP, WM_SETICON,
 };
 
 pub const WM_TRAY_CALLBACK: u32 = WM_APP + 10;
 
-pub const MENU_ID_SHOW: usize = 2001;
-pub const MENU_ID_SETTINGS: usize = 2002;
-pub const MENU_ID_UPDATE: usize = 2008;
-pub const MENU_ID_STATS: usize = 2003;
-pub const MENU_ID_CONFIG: usize = 2004;
-pub const MENU_ID_RELOAD: usize = 2005;
-pub const MENU_ID_GC: usize = 2006;
-pub const MENU_ID_QUIT: usize = 2007;
+pub const MENU_ID_SHOW: u32 = 2001;
+pub const MENU_ID_SETTINGS: u32 = 2002;
+pub const MENU_ID_UPDATE: u32 = 2008;
+pub const MENU_ID_STATS: u32 = 2003;
+pub const MENU_ID_CONFIG: u32 = 2004;
+pub const MENU_ID_RELOAD: u32 = 2005;
+pub const MENU_ID_GC: u32 = 2006;
+pub const MENU_ID_QUIT: u32 = 2007;
 
 pub struct TrayIcon {
     hwnd: HWND,
@@ -84,55 +83,57 @@ impl TrayIcon {
         }
     }
 
-    pub fn show_context_menu(&self, lang: Lang) {
-        unsafe {
-            let Ok(menu) = CreatePopupMenu() else {
-                return;
-            };
-            append_str(menu, MENU_ID_SHOW, lang.pick("显示 Tomoyo", "Show Tomoyo"));
-            append_str(menu, MENU_ID_SETTINGS, lang.pick("设置中心...", "Settings..."));
-            append_str(
-                menu,
+    pub fn show_context_menu(
+        &self,
+        lang: Lang,
+        pal: ThemePalette,
+        dpi_scale: f32,
+        font_regular: &str,
+        font_medium: &str,
+    ) -> Option<u32> {
+        let entries = vec![
+            PopupEntry::item(MENU_ID_SHOW, lang.pick("显示 Tomoyo", "Show Tomoyo"), None, false),
+            PopupEntry::item(
+                MENU_ID_SETTINGS,
+                lang.pick("设置中心...", "Settings..."),
+                Some("Ctrl+,"),
+                false,
+            ),
+            PopupEntry::Separator,
+            PopupEntry::item(
                 MENU_ID_UPDATE,
-                lang.pick("检查更新 (:update)", "Check for Updates (:update)"),
-            );
-            append_str(
-                menu,
+                lang.pick("检查更新 (:update)", "Check for Updates"),
+                None,
+                false,
+            ),
+            PopupEntry::item(
                 MENU_ID_STATS,
-                lang.pick("内存与插件监控 (:stats)", "Memory & Plugin Stats (:stats)"),
-            );
-            append_str(
-                menu,
+                lang.pick("内存与插件监控 (:stats)", "Memory & Plugin Stats"),
+                None,
+                false,
+            ),
+            PopupEntry::item(
                 MENU_ID_CONFIG,
                 lang.pick("打开 config.toml", "Open config.toml"),
-            );
-            append_str(
-                menu,
-                MENU_ID_RELOAD,
-                lang.pick("热重载配置与插件 (:reload)", "Hot-Reload All (:reload)"),
-            );
-            append_str(
-                menu,
-                MENU_ID_GC,
-                lang.pick("立即休眠整理内存 (:gc)", "Hibernate & Trim RAM (:gc)"),
-            );
-            let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
-            append_str(menu, MENU_ID_QUIT, lang.pick("退出 Tomoyo", "Exit Tomoyo"));
-
-            let mut pt = POINT::default();
-            let _ = GetCursorPos(&mut pt);
-            let _ = SetForegroundWindow(self.hwnd);
-            let _ = TrackPopupMenu(
-                menu,
-                TPM_LEFTALIGN | TPM_BOTTOMALIGN,
-                pt.x,
-                pt.y,
-                Some(0),
-                self.hwnd,
                 None,
-            );
-            let _ = DestroyMenu(menu);
-        }
+                false,
+            ),
+            PopupEntry::item(
+                MENU_ID_RELOAD,
+                lang.pick("热重载配置与应用 (:reload)", "Hot-Reload All"),
+                None,
+                false,
+            ),
+            PopupEntry::item(
+                MENU_ID_GC,
+                lang.pick("立即休眠整理内存 (:gc)", "Hibernate & Trim RAM"),
+                None,
+                false,
+            ),
+            PopupEntry::Separator,
+            PopupEntry::item(MENU_ID_QUIT, lang.pick("退出 Tomoyo", "Exit Tomoyo"), None, false),
+        ];
+        show_themed_popup_menu(pal, dpi_scale, font_regular, font_medium, &entries, true)
     }
 }
 
@@ -153,15 +154,6 @@ impl Drop for TrayIcon {
             }
         }
     }
-}
-
-unsafe fn append_str(
-    menu: windows::Win32::UI::WindowsAndMessaging::HMENU,
-    id: usize,
-    text: &str,
-) {
-    let w: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
-    let _ = unsafe { AppendMenuW(menu, MF_STRING, id, PCWSTR(w.as_ptr())) };
 }
 
 fn load_embedded_hicon() -> Option<HICON> {

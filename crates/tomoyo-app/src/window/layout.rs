@@ -1,14 +1,15 @@
-//! Window geometry, DPI/multi-monitor positioning, edit control layout, divider & row hit-testing.
+//! Window geometry, DPI/multi-monitor positioning, edit control layout, divider, filter & row hit-testing.
 
 use super::{AppShell, EM_SETCUEBANNER};
 use crate::actions::shell_open;
 use crate::renderer::{
-    DEFAULT_PREVIEW_WIDTH_DIP, DEFAULT_WINDOW_WIDTH_DIP, FOOTER_HEIGHT_DIP, HEADER_HEIGHT_DIP,
-    MAX_WINDOW_WIDTH_DIP, MIN_WINDOW_WIDTH_DIP, ROW_HEIGHT_DIP,
+    compute_filter_hitboxes, DEFAULT_PREVIEW_WIDTH_DIP, DEFAULT_WINDOW_WIDTH_DIP,
+    FILTER_BAR_HEIGHT_DIP, FOOTER_HEIGHT_DIP, HEADER_HEIGHT_DIP, MAX_WINDOW_WIDTH_DIP,
+    MIN_WINDOW_WIDTH_DIP, ROW_HEIGHT_DIP,
 };
 use std::ffi::c_void;
 use tomoyo_core::{ExternalPluginBridge, Lang, TomoyoConfig};
-use tomoyo_protocol::AttachedContext;
+use tomoyo_protocol::{AttachedContext, SearchFilter};
 use windows::core::PCWSTR;
 use windows::Win32::Foundation::{HWND, LPARAM, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Dwm::{
@@ -154,6 +155,32 @@ impl AppShell {
         self.cached_preview.is_some() && !self.results.is_empty()
     }
 
+    pub(super) fn is_filter_bar_visible(&self) -> bool {
+        if !self.show_filter_bar || self.attached.is_some() {
+            return false;
+        }
+        let t = self.current_query.trim();
+        if t.starts_with(':') {
+            return false;
+        }
+        let low = t.to_lowercase();
+        let is_non_file_kw = low == "cb"
+            || low.starts_with("cb ")
+            || low == "w"
+            || low.starts_with("w ")
+            || low == "kill"
+            || low.starts_with("kill ")
+            || low == "ps"
+            || low.starts_with("ps ")
+            || low.starts_with("= ")
+            || low.starts_with("b64 ")
+            || low.starts_with("b64d ");
+        if is_non_file_kw {
+            return false;
+        }
+        !t.is_empty() || self.active_filter != SearchFilter::All
+    }
+
     pub(super) fn desired_width_dip(&self) -> i32 {
         if self.is_preview_visible() {
             (self.geom.list_width_dip + self.geom.preview_width_dip).min(MAX_WINDOW_WIDTH_DIP)
@@ -163,13 +190,18 @@ impl AppShell {
     }
 
     pub(super) fn desired_height_dip(&self) -> i32 {
+        let filter_h = if self.is_filter_bar_visible() {
+            FILTER_BAR_HEIGHT_DIP
+        } else {
+            0
+        };
         let rows = self.results.len().min(self.geom.max_visible_rows) as i32;
         if rows == 0 {
-            HEADER_HEIGHT_DIP + FOOTER_HEIGHT_DIP
+            HEADER_HEIGHT_DIP + filter_h + FOOTER_HEIGHT_DIP
         } else {
             let min_preview_rows = if self.cached_preview.is_some() { 5 } else { 0 };
             let eff_rows = rows.max(min_preview_rows);
-            HEADER_HEIGHT_DIP + 8 + eff_rows * ROW_HEIGHT_DIP + FOOTER_HEIGHT_DIP
+            HEADER_HEIGHT_DIP + filter_h + 8 + eff_rows * ROW_HEIGHT_DIP + FOOTER_HEIGHT_DIP
         }
     }
 
@@ -179,6 +211,21 @@ impl AppShell {
             self.scroll_offset = self.selected;
         } else if self.selected >= self.scroll_offset + cap {
             self.scroll_offset = self.selected + 1 - cap;
+        }
+    }
+
+    fn current_list_width_dip(&self) -> f32 {
+        let mut rc = RECT::default();
+        unsafe {
+            let _ = GetClientRect(self.hwnd, &mut rc);
+        }
+        let scale = self.dpi_scale.max(1.0);
+        let w_dip = (rc.right - rc.left) as f32 / scale;
+        if self.is_preview_visible() && w_dip >= 680.0 {
+            let pw = (self.geom.preview_width_dip as f32).clamp(220.0, (w_dip * 0.48).max(220.0));
+            (w_dip - pw).max(380.0)
+        } else {
+            w_dip
         }
     }
 
@@ -205,26 +252,35 @@ impl AppShell {
         (x_px as f32 / scale - div_x_dip).abs() <= 5.0
     }
 
-    pub(super) fn hit_test_row(&self, x_px: i32, y_px: i32) -> Option<usize> {
-        let mut rc = RECT::default();
-        unsafe {
-            let _ = GetClientRect(self.hwnd, &mut rc);
-        }
-        let scale = self.dpi_scale.max(1.0);
-        let w_dip = (rc.right - rc.left) as f32 / scale;
-        let x_dip = x_px as f32 / scale;
-        let y_dip = y_px as f32 / scale;
-
-        let list_w_dip = if self.is_preview_visible() && w_dip >= 680.0 {
-            let pw = (self.geom.preview_width_dip as f32).clamp(220.0, (w_dip * 0.48).max(220.0));
-            (w_dip - pw).max(380.0)
-        } else {
-            w_dip
-        };
-        if x_dip > list_w_dip {
+    pub(super) fn hit_test_filter(&self, x_px: i32, y_px: i32) -> Option<SearchFilter> {
+        if !self.is_filter_bar_visible() {
             return None;
         }
-        let list_top = HEADER_HEIGHT_DIP as f32 + 4.0;
+        let scale = self.dpi_scale.max(1.0);
+        let x_dip = x_px as f32 / scale;
+        let y_dip = y_px as f32 / scale;
+        let list_w_dip = self.current_list_width_dip();
+        for hb in compute_filter_hitboxes(list_w_dip, HEADER_HEIGHT_DIP as f32, self.lang) {
+            if x_dip >= hb.x0 && x_dip <= hb.x1 && y_dip >= hb.y0 && y_dip <= hb.y1 {
+                return Some(hb.filter);
+            }
+        }
+        None
+    }
+
+    pub(super) fn hit_test_row(&self, x_px: i32, y_px: i32) -> Option<usize> {
+        let scale = self.dpi_scale.max(1.0);
+        let x_dip = x_px as f32 / scale;
+        let y_dip = y_px as f32 / scale;
+        if x_dip > self.current_list_width_dip() {
+            return None;
+        }
+        let filter_h = if self.is_filter_bar_visible() {
+            FILTER_BAR_HEIGHT_DIP as f32
+        } else {
+            0.0
+        };
+        let list_top = HEADER_HEIGHT_DIP as f32 + filter_h + 4.0;
         if y_dip < list_top {
             return None;
         }
@@ -272,6 +328,9 @@ impl AppShell {
                 return Some(l.pick("网页搜索", "WEB"));
             }
         }
+        if self.active_filter != SearchFilter::All {
+            return Some(self.active_filter.label(l == Lang::Zh));
+        }
         None
     }
 
@@ -306,7 +365,12 @@ impl AppShell {
                 w_dip.clamp(MIN_WINDOW_WIDTH_DIP, 1400)
             };
             if !self.results.is_empty() {
-                let avail_h = (h_dip - HEADER_HEIGHT_DIP - FOOTER_HEIGHT_DIP - 8).max(0);
+                let filter_h = if self.is_filter_bar_visible() {
+                    FILTER_BAR_HEIGHT_DIP
+                } else {
+                    0
+                };
+                let avail_h = (h_dip - HEADER_HEIGHT_DIP - filter_h - FOOTER_HEIGHT_DIP - 8).max(0);
                 self.geom.max_visible_rows = (avail_h / ROW_HEIGHT_DIP).clamp(4, 18) as usize;
             }
         }
@@ -316,8 +380,8 @@ impl AppShell {
 
 pub(super) unsafe fn apply_cue_banner(edit_hwnd: HWND, lang: Lang) {
     let text = lang.pick(
-        "搜索应用(支持拼音)、Everything 文件 (f)、剪贴板 (cb)、进程 (kill)、插件或 :settings...",
-        "Search apps, Everything (f), clipboard (cb), process (kill), wasm, :settings...",
+        "搜应用(支持拼音)、Everything (f)、@pdf/@excel 筛选、剪贴板 (cb) 或 :settings...",
+        "Search apps, Everything (f), @pdf/@excel, clipboard (cb), kill, or :settings...",
     );
     let cue: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
     unsafe {

@@ -1,3 +1,4 @@
+use crate::SearchFilter;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -96,6 +97,9 @@ pub struct QueryContext {
     /// Optional pasted image or file capsule attached directly into the search bar.
     #[serde(default)]
     pub attached: Option<AttachedContext>,
+    /// Active group filter chip (`All`, `App`, `Folder`, `Pdf`, `Excel`, `Word`, `Ppt`, ...).
+    #[serde(default)]
+    pub filter: SearchFilter,
 }
 
 fn default_limit() -> usize {
@@ -115,12 +119,18 @@ impl QueryContext {
             limit,
             clipboard: None,
             attached: None,
+            filter: SearchFilter::All,
         }
     }
 
     pub fn with_keyword(mut self, keyword: impl Into<String>, args: impl Into<String>) -> Self {
         self.keyword = Some(keyword.into());
         self.args = args.into();
+        self
+    }
+
+    pub fn with_filter(mut self, filter: SearchFilter) -> Self {
+        self.filter = filter;
         self
     }
 }

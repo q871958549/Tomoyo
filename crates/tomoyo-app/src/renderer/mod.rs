@@ -1,18 +1,22 @@
-//! Ultra-low-memory Fluent renderer orchestrator (SDF 32-bit DIB + ClearType GDI + Shell Icons).
+//! Ultra-low-memory Fluent renderer orchestrator (SDF 32-bit DIB + ClearType GDI + Async Shell Icons).
 
 mod canvas;
+pub(crate) mod filter_bar;
 mod gdi;
 mod theme;
 
-pub use theme::{Rgb, ThemePalette};
+pub use canvas::Canvas;
+pub use filter_bar::{compute_filter_hitboxes, FILTER_BAR_HEIGHT_DIP};
+pub use gdi::{dip_rect, draw_text_gdi, DibSurface, FontPack};
+pub use theme::{category_rgb, Rgb, ThemePalette};
 
 use crate::brand::paint_modern_white_emblem;
 use crate::icons::IconCache;
-use canvas::Canvas;
-use gdi::{dip_rect, draw_multiline_gdi, draw_text_gdi, DibSurface, FontPack};
-use theme::category_rgb;
+use filter_bar::{paint_filter_bar_gdi, paint_filter_bar_sdf};
+use gdi::draw_multiline_gdi;
+use std::path::Path;
 use tomoyo_core::{current_process_stats, Lang, ResolvedPreview};
-use tomoyo_protocol::{IconSpec, ResultItem};
+use tomoyo_protocol::{extension_short_tag, IconSpec, ResultCategory, ResultItem, SearchFilter};
 use windows::Win32::Graphics::Gdi::{BitBlt, GdiFlush, HDC, SRCCOPY, DT_CENTER, DT_LEFT, DT_RIGHT};
 use windows::Win32::UI::WindowsAndMessaging::{DrawIconEx, DI_NORMAL};
 
@@ -30,6 +34,9 @@ pub struct RenderState<'a> {
     pub mode_badge: Option<&'a str>,
     pub attached_capsule: Option<&'a str>,
     pub update_badge: Option<&'a str>,
+    pub filter_bar_visible: bool,
+    pub active_filter: SearchFilter,
+    pub hovered_filter: Option<SearchFilter>,
     pub items: &'a [ResultItem],
     pub selected: usize,
     pub hovered: Option<usize>,
@@ -76,6 +83,18 @@ impl FluentRenderer {
         })
     }
 
+    pub fn set_notify_hwnd(&self, hwnd: isize) {
+        self.icons.set_notify_hwnd(hwnd);
+    }
+
+    pub fn drain_ready_icons(&mut self) -> bool {
+        self.icons.drain_ready()
+    }
+
+    pub fn wait_icons_idle_for_test(&mut self) {
+        self.icons.wait_idle_and_drain();
+    }
+
     pub fn hibernate_release(&mut self) {
         self.icons.clear();
         self.surface = None;
@@ -115,8 +134,13 @@ fn compute_layout(width: i32, height: i32, scale: f32, state: &RenderState<'_>) 
     let header_h = HEADER_HEIGHT_DIP as f32;
     let footer_h = FOOTER_HEIGHT_DIP as f32;
     let row_h = ROW_HEIGHT_DIP as f32;
-    let list_top = header_h + 4.0;
-    let max_rows_by_h = ((h_dip - header_h - footer_h - 4.0).max(0.0) / row_h).floor() as usize;
+    let filter_h = if state.filter_bar_visible {
+        FILTER_BAR_HEIGHT_DIP as f32
+    } else {
+        0.0
+    };
+    let list_top = header_h + filter_h + 4.0;
+    let max_rows_by_h = ((h_dip - list_top - footer_h).max(0.0) / row_h).floor() as usize;
     let visible_cap = state.max_visible_rows.max(1).min(max_rows_by_h.max(1));
     let visible_count = state.items.len().min(visible_cap);
     let has_preview = state.preview.is_some() && !state.items.is_empty() && w_dip >= 680.0;
@@ -184,6 +208,20 @@ fn paint_sdf_pass(
         canvas.stroke_rounded_rect(cx0, 18.0, header_right_x, 44.0, 8.0, pal.accent);
     }
 
+    if state.filter_bar_visible {
+        paint_filter_bar_sdf(
+            &mut canvas,
+            pal,
+            lay.list_w_dip,
+            lay.header_h,
+            state.lang,
+            state.active_filter,
+            state.hovered_filter,
+        );
+    } else if !state.items.is_empty() {
+        canvas.fill_rect_dip(12.0, lay.header_h, lay.w_dip - 12.0, lay.header_h + 1.0, pal.divider);
+    }
+
     if lay.has_preview {
         if let Some(prev) = state.preview {
             if let Some((iw, ih, rgba)) = &prev.image_rgba {
@@ -198,10 +236,6 @@ fn paint_sdf_pass(
                 canvas.stroke_rounded_rect(dx - 3.0, dy - 3.0, dx + dw + 3.0, dy + dh + 3.0, 6.0, pal.border);
             }
         }
-    }
-
-    if !state.items.is_empty() {
-        canvas.fill_rect_dip(12.0, lay.header_h, lay.w_dip - 12.0, lay.header_h + 1.0, pal.divider);
     }
 
     for slot in 0..lay.visible_count {
@@ -254,7 +288,7 @@ fn paint_sdf_pass(
             if !sel.actions.is_empty() {
                 let n = sel.actions.len().min(6);
                 let (mx1, my1) = (lay.list_w_dip - 14.0, lay.fy0 - 10.0);
-                let (mx0, my0) = (mx1 - 240.0, (my1 - (n as f32 * 30.0 + 16.0)).max(lay.header_h + 8.0));
+                let (mx0, my0) = (mx1 - 240.0, (my1 - (n as f32 * 30.0 + 16.0)).max(lay.list_top + 4.0));
                 canvas.fill_rounded_rect(mx0, my0, mx1, my1, 8.0, pal.pop_bg);
                 canvas.stroke_rounded_rect(mx0, my0, mx1, my1, 8.0, pal.accent);
                 if state.selected_action < n {
@@ -305,6 +339,20 @@ fn paint_gdi_pass(
             draw_text_gdi(dc, fonts.badge, pal.text_primary, cap, dip_rect(cx0 + 6.0, 18.0, header_right_x - 6.0, 44.0, scale), DT_CENTER);
         }
 
+        if state.filter_bar_visible {
+            paint_filter_bar_gdi(
+                dc,
+                fonts,
+                pal,
+                lay.list_w_dip,
+                lay.header_h,
+                scale,
+                state.lang,
+                state.active_filter,
+                state.hovered_filter,
+            );
+        }
+
         for slot in 0..lay.visible_count {
             let idx = state.scroll_offset + slot;
             let Some(item) = state.items.get(idx) else { break };
@@ -314,7 +362,7 @@ fn paint_gdi_pass(
 
             let mut drew_shell_icon = false;
             if let IconSpec::ShellPath(path) = &item.icon {
-                if let Some(hicon) = icons.get_or_load(path) {
+                if let Some(hicon) = icons.get_or_enqueue(path) {
                     let isize = (30.0 * scale).round() as i32;
                     let _ = DrawIconEx(dc, (22.0 * scale).round() as i32, ((y0 + 11.0) * scale).round() as i32, hicon, isize, isize, 0, None, DI_NORMAL);
                     drew_shell_icon = true;
@@ -326,11 +374,7 @@ fn paint_gdi_pass(
                     c.fill_rounded_rect(22.0, y0 + 11.0, 52.0, y0 + 41.0, 7.0, category_rgb(item.category));
                     let _ = GdiFlush();
                 }
-                let label = match &item.icon {
-                    IconSpec::Monogram(m) => m.as_str(),
-                    IconSpec::Symbol(s) => s.as_str(),
-                    _ => item.category.short_label(),
-                };
+                let label = fallback_badge_label(item);
                 draw_text_gdi(dc, fonts.badge, Rgb(0xFF, 0xFF, 0xFF), label, dip_rect(22.0, y0 + 11.0, 52.0, y0 + 41.0, scale), DT_CENTER);
             }
 
@@ -372,7 +416,7 @@ fn paint_gdi_pass(
             if let Some(sel) = state.items.get(state.selected) {
                 let n = sel.actions.len().min(6);
                 let (mx1, my1) = (lay.list_w_dip - 14.0, lay.fy0 - 10.0);
-                let (mx0, my0) = (mx1 - 240.0, (my1 - (n as f32 * 30.0 + 16.0)).max(lay.header_h + 8.0));
+                let (mx0, my0) = (mx1 - 240.0, (my1 - (n as f32 * 30.0 + 16.0)).max(lay.list_top + 4.0));
                 for (ai, act) in sel.actions.iter().take(n).enumerate() {
                     let ay0 = my0 + 8.0 + (ai as f32) * 30.0;
                     let col = if ai == state.selected_action { pal.on_accent } else { pal.text_primary };
@@ -388,8 +432,8 @@ fn paint_gdi_pass(
         } else {
             let ev = state.everything_status.unwrap_or_else(|| state.lang.pick("Everything 未运行", "Everything offline"));
             match state.lang {
-                Lang::Zh => format!("{ev} · f 文件 · cb 剪贴板 · kill 进程 · Ctrl+, 设置 · Ctrl+P 预览"),
-                Lang::En => format!("{ev} · f Files · cb Clip · kill Proc · Ctrl+, Settings · Ctrl+P Preview"),
+                Lang::Zh => format!("{ev} · Ctrl+Tab 分组 · 双击打开 · Ctrl+, 设置 · Ctrl+P 预览"),
+                Lang::En => format!("{ev} · Ctrl+Tab Filter · DblClick Open · Ctrl+, Settings"),
             }
         };
 
@@ -415,5 +459,21 @@ fn paint_gdi_pass(
         draw_text_gdi(dc, fonts.footer, pal.text_muted, &mem_text, dip_rect(lay.w_dip - 180.0, lay.fy0, lay.w_dip - 14.0, lay.h_dip, scale), DT_RIGHT);
 
         let _ = BitBlt(screen_hdc, 0, 0, width, height, Some(dc), 0, 0, SRCCOPY);
+    }
+}
+
+fn fallback_badge_label(item: &ResultItem) -> &str {
+    match &item.icon {
+        IconSpec::Monogram(m) => m.as_str(),
+        IconSpec::Symbol(s) => s.as_str(),
+        IconSpec::ShellPath(p) => {
+            if item.category == ResultCategory::File {
+                let ext = Path::new(p).extension().and_then(|e| e.to_str()).unwrap_or("");
+                if !ext.is_empty() {
+                    return extension_short_tag(&ext.to_ascii_lowercase());
+                }
+            }
+            item.category.short_label()
+        }
     }
 }

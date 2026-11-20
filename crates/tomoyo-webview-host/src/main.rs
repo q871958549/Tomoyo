@@ -27,12 +27,14 @@ use tomoyo_plugin_host::{default_plugin_dirs, PluginHost};
 const SETTINGS_HTML_TPL: &str = include_str!("ui/settings.html");
 const SETTINGS_CSS: &str = include_str!("ui/settings.css");
 const SETTINGS_I18N_JS: &str = include_str!("ui/i18n.js");
+const SETTINGS_STORE_JS: &str = include_str!("ui/store_updater.js");
 const SETTINGS_APP_JS: &str = include_str!("ui/settings.js");
 
 pub fn assemble_settings_html() -> String {
     SETTINGS_HTML_TPL
         .replace("/*__SETTINGS_CSS__*/", SETTINGS_CSS)
         .replace("/*__SETTINGS_I18N__*/", SETTINGS_I18N_JS)
+        .replace("/*__SETTINGS_STORE_JS__*/", SETTINGS_STORE_JS)
         .replace("/*__SETTINGS_JS__*/", SETTINGS_APP_JS)
 }
 
@@ -159,6 +161,8 @@ fn main() {
         assert!(settings_js.contains("__TOMOYO_SETTINGS_INIT__"));
         assert!(html.contains("AlibabaPuHuiTi-3-55-Regular.ttf"));
         assert!(html.contains("hotkey-recorder"));
+        assert!(html.contains("apps_dirs"));
+        assert!(html.contains("show_filter_bar"));
         assert!(html.contains("tab-store"));
         assert!(html.contains("tab-updates"));
         assert!(pdb.get("demo").is_some());
