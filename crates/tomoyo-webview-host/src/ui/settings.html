@@ -20,6 +20,7 @@
       <button class="active" data-tab="general" data-i18n="nav_general">常规设置</button>
       <button data-tab="appearance" data-i18n="nav_appearance">外观与窗口</button>
       <button data-tab="search" data-i18n="nav_search">应用、文件与剪贴板</button>
+      <button data-tab="translate" data-i18n="nav_translate">翻译引擎</button>
       <button data-tab="web" data-i18n="nav_web">快捷网页搜索</button>
       <button data-tab="store" data-i18n="nav_store">插件清单</button>
       <button data-tab="plugins" data-i18n="nav_plugins">已安装与路径</button>
@@ -250,27 +251,18 @@
         <div class="card">
           <div id="clip-advanced-mount"></div>
           <div class="row">
-            <div>
-              <div class="label-title" data-i18n="lbl_clip_persist">SQLite 磁盘持久化剪贴板历史</div>
-              <div class="label-desc" data-i18n="desc_clip_persist">限制 256 KB 页缓存，休眠自动收缩，支持置顶与贴回原窗口</div>
-            </div>
+            <div><div class="label-title" data-i18n="lbl_clip_persist">SQLite 磁盘持久化剪贴板历史</div><div class="label-desc" data-i18n="desc_clip_persist">限制 256 KB 页缓存，休眠自动收缩，支持置顶与贴回原窗口</div></div>
             <input id="clip_persist" type="checkbox" onchange="scheduleAutoSave(0)" />
           </div>
           <div class="row">
-            <div>
-              <div class="label-title" data-i18n="lbl_clip_max">最多保留非置顶记录条数</div>
-              <div class="label-desc" data-i18n="desc_clip_max">超过上限自动淘汰最旧的非置顶记录</div>
-            </div>
-            <select id="clip_max" onchange="scheduleAutoSave(0)">
-              <option value="100">100</option>
-              <option value="200">200</option>
-              <option value="500">500 (推荐)</option>
-              <option value="1000">1000</option>
-              <option value="2000">2000</option>
-            </select>
+            <div><div class="label-title" data-i18n="lbl_clip_max">最多保留非置顶记录条数</div><div class="label-desc" data-i18n="desc_clip_max">超过上限自动淘汰最旧的非置顶记录</div></div>
+            <select id="clip_max" onchange="scheduleAutoSave(0)"><option value="100">100</option><option value="200">200</option><option value="500">500 (推荐)</option><option value="1000">1000</option><option value="2000">2000</option></select>
           </div>
         </div>
       </section>
+
+      <!-- TRANSLATION ENGINES -->
+      <section id="tab-translate"><div id="translate-mount"></div></section>
 
       <!-- WEB SEARCH -->
       <section id="tab-web">
@@ -380,7 +372,7 @@
         <div class="card">
           <div class="row">
             <div>
-              <div class="label-title">Tomoyo <span id="about-ver" class="pill">v1.3.0</span></div>
+              <div class="label-title">Tomoyo <span id="about-ver" class="pill">v1.4.0</span></div>
               <div class="label-desc" data-i18n="about_desc">MIT / Apache-2.0 开源协议 · Windows Rust 桌面启动器</div>
             </div>
             <div style="display:flex;gap:8px">
@@ -442,6 +434,7 @@
 /*__SETTINGS_STORE_JS__*/
 /*__SETTINGS_CONTROLS_JS__*/
 /*__SETTINGS_CLIP_JS__*/
+/*__SETTINGS_TRANSLATE_JS__*/
 /*__SETTINGS_JS__*/
   </script>
 </body>

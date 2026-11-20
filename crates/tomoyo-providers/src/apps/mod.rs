@@ -1,3 +1,4 @@
+mod organizers;
 mod scanner;
 mod uwp_reg;
 mod watcher;
@@ -10,9 +11,10 @@ use tomoyo_core::{
     score_match_with_alias, AppsConfig, FrecencyStore, IndexedText, Lang, Provider, TomoyoConfig,
 };
 use tomoyo_protocol::{
-    ActionKind, ActionSpec, IconSpec, QueryContext, ResultCategory, ResultItem, SearchFilter,
+    ActionKind, ActionSpec, IconSpec, PreviewSpec, QueryContext, ResultCategory, ResultItem,
+    SearchFilter,
 };
-use uwp_reg::{scan_apps_folder, scan_registry_app_paths};
+use uwp_reg::{scan_apps_folder, scan_registry_app_paths, scan_registry_uninstall};
 use watcher::AppDirWatcher;
 
 #[derive(Debug, Clone)]
@@ -23,6 +25,7 @@ pub(super) struct AppEntry {
     pub launch_args: Option<String>,
     pub subtitle: String,
     pub is_uwp: bool,
+    pub is_folder: bool,
     pub indexed: IndexedText,
     pub alias_indexed: Option<IndexedText>,
 }
@@ -102,7 +105,7 @@ impl Provider for AppsProvider {
     fn query(&self, ctx: &QueryContext) -> Vec<ResultItem> {
         let q = ctx.trimmed.as_str();
         let lang = self.lang();
-        let cap = if ctx.filter == SearchFilter::App {
+        let cap = if matches!(ctx.filter, SearchFilter::App | SearchFilter::Folder) {
             ctx.limit.min(25)
         } else {
             ctx.limit.min(12)
@@ -110,11 +113,21 @@ impl Provider for AppsProvider {
         let Ok(entries) = self.entries.read() else {
             return Vec::new();
         };
+        let allow_entry = |app: &AppEntry| match ctx.filter {
+            SearchFilter::App => !app.is_folder,
+            SearchFilter::Folder => app.is_folder,
+            _ => true,
+        };
 
         if q.is_empty() {
-            let empty_cap = if ctx.filter == SearchFilter::App { cap } else { cap.min(8) };
+            let empty_cap = if matches!(ctx.filter, SearchFilter::App | SearchFilter::Folder) {
+                cap
+            } else {
+                cap.min(8)
+            };
             let mut ranked_empty: Vec<(&AppEntry, i64)> = entries
                 .iter()
+                .filter(|app| allow_entry(app) && (ctx.filter == SearchFilter::Folder || !app.is_folder))
                 .map(|app| {
                     let bonus = self
                         .frecency
@@ -141,6 +154,7 @@ impl Provider for AppsProvider {
 
         let mut matched: Vec<ResultItem> = entries
             .iter()
+            .filter(|app| allow_entry(app))
             .filter_map(|app| {
                 let s = score_match_with_alias(q, &app.indexed, app.alias_indexed.as_ref())?;
                 Some(to_result_item(app, s, lang))
@@ -177,12 +191,14 @@ fn reload_entries(entries: &Arc<RwLock<Vec<AppEntry>>>, apps_cfg: &AppsConfig) {
 }
 
 fn scan_all_apps(apps_cfg: &AppsConfig) -> Vec<AppEntry> {
-    let mut raw_entries: Vec<ScannedApp> = Vec::with_capacity(400);
-    let mut seen_names: HashSet<String> = HashSet::with_capacity(400);
+    let mut raw_entries: Vec<ScannedApp> = Vec::with_capacity(480);
+    let mut seen_names: HashSet<String> = HashSet::with_capacity(480);
+    let mut seen_targets: HashSet<String> = HashSet::with_capacity(480);
 
-    scan_dir_roots(apps_cfg, &mut seen_names, &mut raw_entries);
-    scan_registry_app_paths(&mut seen_names, &mut raw_entries);
-    scan_apps_folder(&mut seen_names, &mut raw_entries);
+    scan_dir_roots(apps_cfg, &mut seen_names, &mut seen_targets, &mut raw_entries);
+    scan_registry_app_paths(&mut seen_names, &mut seen_targets, &mut raw_entries);
+    scan_apps_folder(&mut seen_names, &mut seen_targets, &mut raw_entries);
+    scan_registry_uninstall(&mut seen_names, &mut seen_targets, &mut raw_entries);
 
     for (name, exe, desc) in [
         ("记事本 Notepad", "notepad.exe", "Windows 记事本"),
@@ -203,6 +219,7 @@ fn scan_all_apps(apps_cfg: &AppsConfig) -> Vec<AppEntry> {
                 launch_args: None,
                 subtitle: desc.to_string(),
                 is_uwp: false,
+                is_folder: false,
                 alias_text: None,
             });
         }
@@ -219,6 +236,7 @@ fn scan_all_apps(apps_cfg: &AppsConfig) -> Vec<AppEntry> {
             launch_args: s.launch_args,
             subtitle: s.subtitle,
             is_uwp: s.is_uwp,
+            is_folder: s.is_folder,
         })
         .collect();
 
@@ -227,6 +245,51 @@ fn scan_all_apps(apps_cfg: &AppsConfig) -> Vec<AppEntry> {
 }
 
 fn to_result_item(app: &AppEntry, score: i64, lang: Lang) -> ResultItem {
+    if app.is_folder {
+        return ResultItem {
+            id: app.id.clone(),
+            provider_id: "builtin.apps".into(),
+            title: app.name.clone(),
+            subtitle: app.subtitle.clone(),
+            category: ResultCategory::Folder,
+            score,
+            icon: IconSpec::ShellPath(app.path.clone()),
+            badge: Some(lang.pick("文件夹", "Folder").into()),
+            copy_text: Some(app.path.clone()),
+            actions: vec![
+                ActionSpec {
+                    id: "open".into(),
+                    label: lang.pick("打开文件夹", "Open Folder").into(),
+                    shortcut: Some("Enter".into()),
+                    kind: ActionKind::LaunchPath {
+                        path: app.path.clone(),
+                        args: None,
+                        working_dir: Some(app.path.clone()),
+                    },
+                },
+                ActionSpec {
+                    id: "reveal".into(),
+                    label: lang.pick("在资源管理器中定位", "Reveal in Explorer").into(),
+                    shortcut: Some("Ctrl+Enter".into()),
+                    kind: ActionKind::RevealInExplorer { path: app.path.clone() },
+                },
+                ActionSpec {
+                    id: "terminal".into(),
+                    label: lang.pick("在此处打开终端", "Open Terminal Here").into(),
+                    shortcut: Some("Shift+Enter".into()),
+                    kind: ActionKind::OpenTerminalAt { dir: app.path.clone() },
+                },
+                ActionSpec {
+                    id: "copy_path".into(),
+                    label: lang.pick("复制完整路径", "Copy Full Path").into(),
+                    shortcut: Some("Ctrl+C".into()),
+                    kind: ActionKind::CopyText { text: app.path.clone(), paste_immediately: false },
+                },
+            ],
+            preview: Some(PreviewSpec::FilePreview { path: app.path.clone() }),
+        };
+    }
+
     let parent = if app.is_uwp {
         String::new()
     } else {
@@ -236,6 +299,7 @@ fn to_result_item(app: &AppEntry, score: i64, lang: Lang) -> ResultItem {
             .unwrap_or_default()
     };
 
+    let work_dir = if parent.is_empty() { None } else { Some(parent) };
     let mut actions = vec![ActionSpec {
         id: "launch".into(),
         label: lang.pick("启动应用", "Launch Application").into(),
@@ -243,7 +307,7 @@ fn to_result_item(app: &AppEntry, score: i64, lang: Lang) -> ResultItem {
         kind: ActionKind::LaunchPath {
             path: app.path.clone(),
             args: app.launch_args.clone(),
-            working_dir: if parent.is_empty() { None } else { Some(parent) },
+            working_dir: work_dir.clone(),
         },
     }];
 
@@ -263,6 +327,16 @@ fn to_result_item(app: &AppEntry, score: i64, lang: Lang) -> ResultItem {
             kind: ActionKind::CopyText {
                 text: app.path.clone(),
                 paste_immediately: false,
+            },
+        });
+        actions.push(ActionSpec {
+            id: "run_admin".into(),
+            label: lang.pick("以管理员身份运行", "Run as Administrator").into(),
+            shortcut: Some("Ctrl+Shift+Enter".into()),
+            kind: ActionKind::LaunchAsAdmin {
+                path: app.path.clone(),
+                args: app.launch_args.clone(),
+                working_dir: work_dir,
             },
         });
     }
@@ -294,18 +368,74 @@ fn to_result_item(app: &AppEntry, score: i64, lang: Lang) -> ResultItem {
     }
 }
 
+/// Word-boundary aware Start Menu noise filter: skips app uninstallers/docs/website links
+/// without falsely dropping real utilities like `HiBit Uninstaller`, `Geek Uninstaller`,
+/// `HelpDesk`, or `License Manager`.
 pub(super) fn is_noisy_shortcut(lower: &str) -> bool {
-    const NOISE: [&str; 10] = [
-        "uninstall",
-        "卸载",
-        "readme",
-        "help",
-        "manual",
-        "license",
-        "documentation",
-        "release notes",
-        "website",
-        "访问主页",
-    ];
-    NOISE.iter().any(|n| lower.contains(n))
+    let s = lower.trim();
+    if s.contains("卸载") || s.contains("访问主页") || s.contains("release notes") || s.contains("readme") {
+        return true;
+    }
+    let words: Vec<&str> = s
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .collect();
+    if words.iter().any(|&w| matches!(w, "uninstall" | "documentation")) {
+        return true;
+    }
+    matches!(
+        words.last().copied(),
+        Some("help" | "manual" | "manuals" | "documentation" | "website" | "license")
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_noisy_shortcut;
+
+    #[test]
+    fn noise_filter_keeps_real_uninstaller_apps_and_drops_uninstall_links() {
+        assert!(!is_noisy_shortcut("hibit uninstaller"));
+        assert!(!is_noisy_shortcut("geek uninstaller"));
+        assert!(!is_noisy_shortcut("revo uninstaller pro"));
+        assert!(!is_noisy_shortcut("bcuninstaller"));
+        assert!(!is_noisy_shortcut("helpdesk client"));
+        assert!(!is_noisy_shortcut("license manager"));
+
+        assert!(is_noisy_shortcut("uninstall node.js"));
+        assert!(is_noisy_shortcut("xyplorer uninstall"));
+        assert!(is_noisy_shortcut("卸载hibit uninstaller"));
+        assert!(is_noisy_shortcut("卸载微信"));
+        assert!(is_noisy_shortcut("7-zip help"));
+        assert!(is_noisy_shortcut("git release notes"));
+        assert!(is_noisy_shortcut("node.js documentation"));
+    }
+
+    #[test]
+    #[ignore]
+    fn live_desktop_apps_completeness_smoke() {
+        use super::*;
+        let cfg = Arc::new(RwLock::new(TomoyoConfig::load_or_create()));
+        let provider = AppsProvider::new(cfg);
+        eprintln!("TOTAL INDEXED APPS/DESKTOP ITEMS: {}", provider.app_count());
+        for q in ["hibit", "1118", "rdp", "peco", "hatch", "vsc"] {
+            let ctx = QueryContext::new(q, 1, 10);
+            let hits = provider.query(&ctx);
+            let names: Vec<String> = hits
+                .iter()
+                .map(|i| format!("{} [{:?}] (score={})", i.title, i.category, i.score))
+                .collect();
+            eprintln!("QUERY `{q}` => {names:?}");
+        }
+        let hibit = provider.query(&QueryContext::new("hibit", 1, 10));
+        assert!(
+            hibit.first().map(|i| i.title.to_lowercase().contains("hibit")).unwrap_or(false),
+            "Expected HiBit Uninstaller first, got: {:?}",
+            hibit.iter().map(|i| &i.title).collect::<Vec<_>>()
+        );
+        assert!(
+            hibit.iter().all(|i| !i.title.contains("W168") && !i.title.contains("Regedit")),
+            "Unexpected false positives for `hibit`"
+        );
+    }
 }

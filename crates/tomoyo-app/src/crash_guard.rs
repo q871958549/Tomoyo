@@ -2,9 +2,18 @@
 
 use std::io::{self, Write};
 use tomoyo_core::{
-    append_crash_record, init_process_diagnostics, logs_dir, write_process_log_bytes,
-    DEFAULT_MAIN_LOG_BYTES,
+    append_crash_record, format_beijing_now, init_process_diagnostics, logs_dir,
+    write_process_log_bytes, DEFAULT_MAIN_LOG_BYTES,
 };
+
+#[derive(Clone, Copy)]
+pub struct BeijingTimer;
+
+impl tracing_subscriber::fmt::time::FormatTime for BeijingTimer {
+    fn format_time(&self, w: &mut tracing_subscriber::fmt::format::Writer<'_>) -> std::fmt::Result {
+        w.write_str(&format_beijing_now())
+    }
+}
 
 #[derive(Clone, Copy)]
 pub struct RollingMakeWriter {

@@ -8,7 +8,11 @@ use std::path::Path;
 /// Native COM enumeration of `FOLDERID_AppsFolder` indexing Windows Store UWP/MSIX apps
 /// AND desktop Win32 entries registered in Shell AppsFolder.
 #[cfg(windows)]
-pub(super) fn scan_apps_folder(seen: &mut HashSet<String>, out: &mut Vec<ScannedApp>) {
+pub(super) fn scan_apps_folder(
+    seen: &mut HashSet<String>,
+    seen_targets: &mut HashSet<String>,
+    out: &mut Vec<ScannedApp>,
+) {
     use windows::Win32::System::Com::CoTaskMemFree;
     use windows::Win32::UI::Shell::{
         BHID_EnumItems, FOLDERID_AppsFolder, IEnumShellItems, IShellItem, SHGetKnownFolderItem,
@@ -72,14 +76,17 @@ pub(super) fn scan_apps_folder(seen: &mut HashSet<String>, out: &mut Vec<Scanned
                 if !ext.eq_ignore_ascii_case("exe") && !ext.eq_ignore_ascii_case("lnk") {
                     continue;
                 }
+                let target_low = parse_id.to_lowercase();
                 if seen.insert(lower) {
+                    seen_targets.insert(target_low.clone());
                     out.push(ScannedApp {
-                        id: format!("app:af:{}", parse_id.to_lowercase()),
+                        id: format!("app:af:{target_low}"),
                         name,
                         path: parse_id.clone(),
                         launch_args: None,
                         subtitle: format!("应用 · {parse_id}"),
                         is_uwp: false,
+                        is_folder: false,
                         alias_text: None,
                     });
                 }
@@ -100,6 +107,7 @@ pub(super) fn scan_apps_folder(seen: &mut HashSet<String>, out: &mut Vec<Scanned
                         format!("系统应用 · {parse_id}")
                     },
                     is_uwp: true,
+                    is_folder: false,
                     alias_text: None,
                 });
             }
@@ -108,10 +116,19 @@ pub(super) fn scan_apps_folder(seen: &mut HashSet<String>, out: &mut Vec<Scanned
 }
 
 #[cfg(not(windows))]
-pub(super) fn scan_apps_folder(_seen: &mut HashSet<String>, _out: &mut Vec<ScannedApp>) {}
+pub(super) fn scan_apps_folder(
+    _seen: &mut HashSet<String>,
+    _seen_targets: &mut HashSet<String>,
+    _out: &mut Vec<ScannedApp>,
+) {
+}
 
 #[cfg(windows)]
-pub(super) fn scan_registry_app_paths(seen: &mut HashSet<String>, out: &mut Vec<ScannedApp>) {
+pub(super) fn scan_registry_app_paths(
+    seen: &mut HashSet<String>,
+    seen_targets: &mut HashSet<String>,
+    out: &mut Vec<ScannedApp>,
+) {
     use windows::core::PCWSTR;
     use windows::Win32::System::Registry::{
         RegCloseKey, RegEnumKeyExW, RegOpenKeyExW, RegQueryValueExW, HKEY, HKEY_CURRENT_USER,
@@ -178,23 +195,25 @@ pub(super) fn scan_registry_app_paths(seen: &mut HashSet<String>, out: &mut Vec<
                             .map(|c| u16::from_le_bytes([c[0], c[1]]))
                             .take_while(|&c| c != 0)
                             .collect();
-                        // Trim outer whitespace BEFORE stripping quotes (e.g. `"C:\...\app.exe" `)
                         let raw_path = String::from_utf16_lossy(&u16s)
                             .trim()
                             .trim_matches('"')
                             .trim()
                             .to_string();
+                        let target_low = raw_path.to_lowercase();
                         if !raw_path.is_empty()
                             && Path::new(&raw_path).exists()
                             && seen.insert(lower)
                         {
+                            seen_targets.insert(target_low.clone());
                             out.push(ScannedApp {
-                                id: format!("app:reg:{}", raw_path.to_lowercase()),
+                                id: format!("app:reg:{target_low}"),
                                 name: stem.to_string(),
                                 path: raw_path.clone(),
                                 launch_args: None,
                                 subtitle: format!("系统注册应用 · {raw_path}"),
                                 is_uwp: false,
+                                is_folder: false,
                                 alias_text: None,
                             });
                         }
@@ -208,4 +227,171 @@ pub(super) fn scan_registry_app_paths(seen: &mut HashSet<String>, out: &mut Vec<
 }
 
 #[cfg(not(windows))]
-pub(super) fn scan_registry_app_paths(_seen: &mut HashSet<String>, _out: &mut Vec<ScannedApp>) {}
+pub(super) fn scan_registry_app_paths(
+    _seen: &mut HashSet<String>,
+    _seen_targets: &mut HashSet<String>,
+    _out: &mut Vec<ScannedApp>,
+) {
+}
+
+/// Fallback scan of installed applications in Windows `Uninstall` registry keys whose executables
+/// were not already indexed via Desktop, Start Menu, App Paths, or AppsFolder.
+#[cfg(windows)]
+pub(super) fn scan_registry_uninstall(
+    seen: &mut HashSet<String>,
+    seen_targets: &mut HashSet<String>,
+    out: &mut Vec<ScannedApp>,
+) {
+    use windows::core::PCWSTR;
+    use windows::Win32::System::Registry::{
+        RegCloseKey, RegEnumKeyExW, RegOpenKeyExW, HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE,
+        KEY_READ,
+    };
+
+    let hives: [(HKEY, &str); 3] = [
+        (HKEY_LOCAL_MACHINE, "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall"),
+        (HKEY_LOCAL_MACHINE, "SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall"),
+        (HKEY_CURRENT_USER, "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall"),
+    ];
+    for (root, path_str) in hives {
+        let subkey: Vec<u16> = path_str.encode_utf16().chain(std::iter::once(0)).collect();
+        unsafe {
+            let mut hkey = HKEY::default();
+            if RegOpenKeyExW(root, PCWSTR(subkey.as_ptr()), Some(0), KEY_READ, &mut hkey).is_err() {
+                continue;
+            }
+            let mut idx = 0u32;
+            let mut name_buf = [0u16; 260];
+            loop {
+                let mut name_len = name_buf.len() as u32;
+                if RegEnumKeyExW(
+                    hkey,
+                    idx,
+                    Some(windows::core::PWSTR(name_buf.as_mut_ptr())),
+                    &mut name_len,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .is_err()
+                {
+                    break;
+                }
+                idx += 1;
+                let sub = String::from_utf16_lossy(&name_buf[..name_len as usize]);
+                let sub_w: Vec<u16> = sub.encode_utf16().chain(std::iter::once(0)).collect();
+                let mut item_key = HKEY::default();
+                if RegOpenKeyExW(hkey, PCWSTR(sub_w.as_ptr()), Some(0), KEY_READ, &mut item_key).is_err() {
+                    continue;
+                }
+                if reg_read_dword(item_key, "SystemComponent") == Some(1)
+                    || reg_read_string(item_key, "ParentKeyName").is_some()
+                {
+                    let _ = RegCloseKey(item_key);
+                    continue;
+                }
+                let disp = reg_read_string(item_key, "DisplayName").unwrap_or_default();
+                let icon = reg_read_string(item_key, "DisplayIcon").unwrap_or_default();
+                let _ = RegCloseKey(item_key);
+                if let Some((clean_name, exe_path)) = parse_uninstall_candidate(&disp, &icon) {
+                    let name_low = clean_name.to_lowercase();
+                    let exe_low = exe_path.to_lowercase();
+                    if !seen_targets.contains(&exe_low) && !seen.contains(&name_low) && Path::new(&exe_path).is_file() {
+                        seen.insert(name_low);
+                        seen_targets.insert(exe_low.clone());
+                        let stem = Path::new(&exe_path).file_stem().and_then(|s| s.to_str()).map(String::from);
+                        out.push(ScannedApp {
+                            id: format!("app:uninst:{exe_low}"),
+                            name: clean_name,
+                            path: exe_path.clone(),
+                            launch_args: None,
+                            subtitle: format!("已安装应用 · {exe_path}"),
+                            is_uwp: false,
+                            is_folder: false,
+                            alias_text: stem,
+                        });
+                    }
+                }
+            }
+            let _ = RegCloseKey(hkey);
+        }
+    }
+}
+
+#[cfg(not(windows))]
+pub(super) fn scan_registry_uninstall(
+    _seen: &mut HashSet<String>,
+    _seen_targets: &mut HashSet<String>,
+    _out: &mut Vec<ScannedApp>,
+) {
+}
+
+#[cfg(windows)]
+fn parse_uninstall_candidate(display_name: &str, display_icon: &str) -> Option<(String, String)> {
+    let name = display_name.trim();
+    if name.is_empty() {
+        return None;
+    }
+    let name_low = name.to_lowercase();
+    for skip in ["runtime", "redistributable", "sdk", "driver", "update for", "hotfix", "语言包"] {
+        if name_low.contains(skip) {
+            return None;
+        }
+    }
+    let raw_icon = display_icon.trim();
+    let no_idx = raw_icon.rsplit_once(',').map(|(l, _)| l).unwrap_or(raw_icon);
+    let exe = no_idx.trim().trim_matches('"').trim();
+    let exe_low = exe.to_lowercase();
+    if !exe_low.ends_with(".exe")
+        || exe_low.contains("package cache")
+        || exe_low.contains("\\windows\\installer\\")
+        || exe_low.contains("msiexec")
+    {
+        return None;
+    }
+    let stem = Path::new(exe).file_stem().and_then(|s| s.to_str())?.to_lowercase();
+    for bad in ["unins", "setup", "install", "update", "crash", "helper", "redist"] {
+        if stem.starts_with(bad) || stem.ends_with("installer") && !name_low.contains("uninstaller") {
+            return None;
+        }
+    }
+    Some((name.to_string(), exe.to_string()))
+}
+
+#[cfg(windows)]
+unsafe fn reg_read_string(hkey: windows::Win32::System::Registry::HKEY, name: &str) -> Option<String> {
+    use windows::core::PCWSTR;
+    use windows::Win32::System::Registry::{RegQueryValueExW, REG_VALUE_TYPE};
+    let name_w: Vec<u16> = name.encode_utf16().chain(std::iter::once(0)).collect();
+    let mut data = [0u8; 1024];
+    let mut len = data.len() as u32;
+    let mut kind = REG_VALUE_TYPE::default();
+    unsafe {
+        RegQueryValueExW(hkey, PCWSTR(name_w.as_ptr()), None, Some(&mut kind), Some(data.as_mut_ptr()), Some(&mut len)).ok().ok()?;
+    }
+    if len < 2 {
+        return None;
+    }
+    let u16s: Vec<u16> = data[..len as usize]
+        .chunks_exact(2)
+        .map(|c| u16::from_le_bytes([c[0], c[1]]))
+        .take_while(|&c| c != 0)
+        .collect();
+    let s = String::from_utf16_lossy(&u16s).trim().to_string();
+    (!s.is_empty()).then_some(s)
+}
+
+#[cfg(windows)]
+unsafe fn reg_read_dword(hkey: windows::Win32::System::Registry::HKEY, name: &str) -> Option<u32> {
+    use windows::core::PCWSTR;
+    use windows::Win32::System::Registry::{RegQueryValueExW, REG_DWORD, REG_VALUE_TYPE};
+    let name_w: Vec<u16> = name.encode_utf16().chain(std::iter::once(0)).collect();
+    let mut val = 0u32;
+    let mut len = 4u32;
+    let mut kind = REG_VALUE_TYPE::default();
+    unsafe {
+        RegQueryValueExW(hkey, PCWSTR(name_w.as_ptr()), None, Some(&mut kind), Some(&mut val as *mut u32 as *mut u8), Some(&mut len)).ok().ok()?;
+    }
+    (kind == REG_DWORD).then_some(val)
+}

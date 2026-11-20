@@ -2,9 +2,9 @@
 
 use super::commands::{dispatch_menu_id, dispatch_wm_command};
 use super::{
-    AppShell, HOTKEY_CLIPBOARD_ID, HOTKEY_ID, TIMER_CLEAR_TOAST, TIMER_HIBERNATE,
-    WM_APP_CONFIG_SAVED, WM_APP_EDIT_KEY, WM_APP_PASTE_INTERCEPT, WM_APP_RESULTS_READY,
-    WM_APP_UPDATE_INSTALLED, WM_APP_UPDATE_READY, WM_APP_WAKE_EXISTING,
+    AppShell, HOTKEY_CLIPBOARD_ID, HOTKEY_ID, HOTKEY_TRANSLATE_ID, TIMER_CLEAR_TOAST,
+    TIMER_HIBERNATE, WM_APP_CONFIG_SAVED, WM_APP_EDIT_KEY, WM_APP_PASTE_INTERCEPT,
+    WM_APP_RESULTS_READY, WM_APP_UPDATE_INSTALLED, WM_APP_UPDATE_READY, WM_APP_WAKE_EXISTING,
 };
 use crate::drag::start_file_drag;
 use crate::icons::WM_APP_ICON_READY;
@@ -126,10 +126,11 @@ pub(super) unsafe extern "system" fn main_wndproc(
             LRESULT(0)
         }
         WM_HOTKEY => {
-            if wparam.0 as i32 == HOTKEY_ID {
-                app.toggle_launcher();
-            } else if wparam.0 as i32 == HOTKEY_CLIPBOARD_ID {
-                app.toggle_clipboard_launcher();
+            match wparam.0 as i32 {
+                HOTKEY_ID => app.toggle_launcher(),
+                HOTKEY_CLIPBOARD_ID => app.toggle_clipboard_launcher(),
+                HOTKEY_TRANSLATE_ID => app.trigger_selection_translate(),
+                _ => {}
             }
             LRESULT(0)
         }
@@ -312,6 +313,7 @@ pub(super) unsafe extern "system" fn main_wndproc(
             unsafe {
                 let _ = UnregisterHotKey(Some(hwnd), HOTKEY_ID);
                 let _ = UnregisterHotKey(Some(hwnd), HOTKEY_CLIPBOARD_ID);
+                let _ = UnregisterHotKey(Some(hwnd), HOTKEY_TRANSLATE_ID);
                 let _ = RemoveClipboardFormatListener(hwnd);
                 PostQuitMessage(0);
             }

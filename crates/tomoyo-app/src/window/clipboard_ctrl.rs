@@ -42,6 +42,9 @@ impl AppShell {
     }
 
     pub(super) fn on_clipboard_update(&mut self) {
+        if self.suppress_clipboard_capture.load(std::sync::atomic::Ordering::Acquire) {
+            return;
+        }
         let (capture_enabled, capture_images, excluded) = self
             .config
             .read()

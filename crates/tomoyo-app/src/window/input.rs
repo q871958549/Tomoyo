@@ -139,6 +139,16 @@ impl AppShell {
             x if x == VK_RETURN.0 => {
                 if self.action_menu_open {
                     self.execute_selected(self.selected_action);
+                } else if ctrl_down && shift_down {
+                    if let Some(admin_idx) = self
+                        .results
+                        .get(self.selected)
+                        .and_then(|it| it.actions.iter().position(|a| a.id == "run_admin"))
+                    {
+                        self.execute_selected(admin_idx);
+                    } else {
+                        self.execute_selected(0);
+                    }
                 } else if ctrl_down {
                     self.execute_selected(1);
                 } else if shift_down {

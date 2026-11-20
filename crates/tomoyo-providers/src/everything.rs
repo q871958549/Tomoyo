@@ -213,68 +213,84 @@ fn build_entry_item(
         }
     };
 
+    let mut actions = vec![
+        ActionSpec {
+            id: "open".into(),
+            label: if entry.is_folder {
+                lang.pick("打开文件夹", "Open Folder").into()
+            } else {
+                lang.pick("打开文件", "Open File").into()
+            },
+            shortcut: Some("Enter".into()),
+            kind: ActionKind::LaunchPath {
+                path: entry.full_path.clone(),
+                args: None,
+                working_dir: Some(parent_dir.clone()),
+            },
+        },
+        ActionSpec {
+            id: "reveal".into(),
+            label: lang.pick("在资源管理器中定位", "Reveal in Explorer").into(),
+            shortcut: Some("Ctrl+Enter".into()),
+            kind: ActionKind::RevealInExplorer {
+                path: entry.full_path.clone(),
+            },
+        },
+        ActionSpec {
+            id: "terminal".into(),
+            label: lang.pick("在此处打开终端", "Open Terminal Here").into(),
+            shortcut: Some("Shift+Enter".into()),
+            kind: ActionKind::OpenTerminalAt { dir: parent_dir.clone() },
+        },
+        ActionSpec {
+            id: "copy_path".into(),
+            label: lang.pick("复制完整路径", "Copy Full Path").into(),
+            shortcut: Some("Ctrl+C".into()),
+            kind: ActionKind::CopyText {
+                text: entry.full_path.clone(),
+                paste_immediately: false,
+            },
+        },
+        ActionSpec {
+            id: "copy_name".into(),
+            label: lang.pick("复制文件名", "Copy File Name").into(),
+            shortcut: None,
+            kind: ActionKind::CopyText {
+                text: entry.name.clone(),
+                paste_immediately: false,
+            },
+        },
+    ];
+    if !entry.is_folder {
+        let ext = Path::new(&entry.full_path)
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        if matches!(ext.as_str(), "exe" | "lnk" | "bat" | "cmd" | "msi" | "msc" | "ps1") {
+            actions.push(ActionSpec {
+                id: "run_admin".into(),
+                label: lang.pick("以管理员身份运行", "Run as Administrator").into(),
+                shortcut: Some("Ctrl+Shift+Enter".into()),
+                kind: ActionKind::LaunchAsAdmin {
+                    path: entry.full_path.clone(),
+                    args: None,
+                    working_dir: Some(parent_dir),
+                },
+            });
+        }
+    }
     ResultItem {
         id: format!("ev:{}", entry.full_path),
         provider_id: provider_id.into(),
-        title: entry.name.clone(),
+        title: entry.name,
         subtitle,
-        category: if entry.is_folder {
-            ResultCategory::Folder
-        } else {
-            ResultCategory::File
-        },
+        category: if entry.is_folder { ResultCategory::Folder } else { ResultCategory::File },
         score,
         icon: IconSpec::ShellPath(entry.full_path.clone()),
         badge,
         copy_text: Some(entry.full_path.clone()),
-        actions: vec![
-            ActionSpec {
-                id: "open".into(),
-                label: if entry.is_folder {
-                    lang.pick("打开文件夹", "Open Folder").into()
-                } else {
-                    lang.pick("打开文件", "Open File").into()
-                },
-                shortcut: Some("Enter".into()),
-                kind: ActionKind::LaunchPath {
-                    path: entry.full_path.clone(),
-                    args: None,
-                    working_dir: Some(parent_dir.clone()),
-                },
-            },
-            ActionSpec {
-                id: "reveal".into(),
-                label: lang.pick("在资源管理器中定位", "Reveal in Explorer").into(),
-                shortcut: Some("Ctrl+Enter".into()),
-                kind: ActionKind::RevealInExplorer {
-                    path: entry.full_path.clone(),
-                },
-            },
-            ActionSpec {
-                id: "terminal".into(),
-                label: lang.pick("在此处打开终端", "Open Terminal Here").into(),
-                shortcut: Some("Shift+Enter".into()),
-                kind: ActionKind::OpenTerminalAt { dir: parent_dir },
-            },
-            ActionSpec {
-                id: "copy_path".into(),
-                label: lang.pick("复制完整路径", "Copy Full Path").into(),
-                shortcut: Some("Ctrl+C".into()),
-                kind: ActionKind::CopyText {
-                    text: entry.full_path.clone(),
-                    paste_immediately: false,
-                },
-            },
-            ActionSpec {
-                id: "copy_name".into(),
-                label: lang.pick("复制文件名", "Copy File Name").into(),
-                shortcut: None,
-                kind: ActionKind::CopyText {
-                    text: entry.name,
-                    paste_immediately: false,
-                },
-            },
-        ],
+        actions,
         preview: Some(PreviewSpec::FilePreview {
             path: entry.full_path,
         }),
@@ -315,7 +331,7 @@ fn offline_item(provider_id: &str) -> ResultItem {
         subtitle: "Start Voidtools Everything (1.4 or 1.5a) to unlock instant sub-ms file search"
             .into(),
         category: ResultCategory::System,
-        score: 9_000,
+        score: 200,
         icon: IconSpec::Monogram("EV".into()),
         badge: Some("Offline".into()),
         copy_text: None,

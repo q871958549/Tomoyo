@@ -127,9 +127,11 @@
       const img = document.getElementById('d-img');
       const imgBar = document.getElementById('d-img-bar');
       const singleBtn = document.getElementById('btn-single');
+      const trBtn = document.getElementById('btn-tr');
       if (it.kind === 'image') {
         ta.style.display = 'none';
         singleBtn.style.display = 'none';
+        if (trBtn) trBtn.style.display = 'none';
         img.style.display = 'block';
         imgBar.style.display = 'flex';
         img.src = it.image_url || '';
@@ -138,6 +140,7 @@
         ta.readOnly = it.kind === 'files';
         ta.value = it.text || '';
         singleBtn.style.display = 'inline-block';
+        if (trBtn) trBtn.style.display = it.kind === 'text' ? 'inline-block' : 'none';
         img.style.display = 'none';
         imgBar.style.display = 'none';
       }
@@ -189,6 +192,14 @@
     function openCurrentImage() {
       const it = currentItem();
       if (it && it.image_path) post({ cmd: 'open_path', path: it.image_path });
+    }
+    function translateCurrent() {
+      const it = currentItem();
+      if (!it || it.kind !== 'text') return;
+      const txt = (document.getElementById('d-text').value || it.text || '').trim();
+      if (!txt) return;
+      post({ cmd: 'open_translator', text: txt, target_lang: '' });
+      setToast(`已发送 ${txt.length} 字到 Tomoyo 多源翻译`);
     }
 
     function clearUnpinned() {

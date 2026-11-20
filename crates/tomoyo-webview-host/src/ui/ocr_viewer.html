@@ -210,6 +210,7 @@
     <div class="actions">
       <button class="btn primary" onclick="copyAll()">复制全文</button>
       <button class="btn" onclick="copySelection()">复制选中</button>
+      <button class="btn" onclick="translateOcr()">一键翻译</button>
       <button class="btn" onclick="mergeSingleLine()">合并单行</button>
       <button class="btn" onclick="stripBlankLines()">去除空行</button>
       <button id="btn-raw" class="btn" onclick="toggleRaw()">查看原始输出</button>
@@ -327,6 +328,15 @@
 
     function togglePin() {
       post({ cmd: 'toggle_pin_topmost' });
+    }
+
+    function translateOcr() {
+      const ta = document.getElementById('ocr-text');
+      const sel = ta.value.substring(ta.selectionStart, ta.selectionEnd).trim();
+      const text = sel || ta.value.trim();
+      if (!text) { setToast('当前没有可翻译的识别文本'); return; }
+      post({ cmd: 'open_translator', text, target_lang: '' });
+      setToast(`已发送 ${text.length} 字到 Tomoyo 多源翻译`);
     }
 
     (function init() {

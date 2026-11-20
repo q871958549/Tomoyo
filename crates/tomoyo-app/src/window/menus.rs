@@ -38,19 +38,19 @@ impl AppShell {
             PopupEntry::Separator,
             PopupEntry::item(
                 CMD_THEME_LIGHT,
-                l.pick("主题：现代白瓷光", "Theme: Modern White"),
+                l.pick("主题：浅色 (Light)", "Theme: Light"),
                 None,
                 is_light,
             ),
             PopupEntry::item(
                 CMD_THEME_DARK,
-                l.pick("主题：深空黑曜石", "Theme: Obsidian Dark"),
+                l.pick("主题：深色 (Dark)", "Theme: Dark"),
                 None,
                 is_dark,
             ),
             PopupEntry::item(
                 CMD_THEME_MIDNIGHT,
-                l.pick("主题：深邃午夜蓝", "Theme: Deep Midnight"),
+                l.pick("主题：午夜蓝 (Midnight)", "Theme: Midnight"),
                 None,
                 is_midnight,
             ),

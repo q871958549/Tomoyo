@@ -1,6 +1,6 @@
-//! Zero-bloat HTTPS GET & streaming download helper built directly on Windows native `WinHTTP`.
+//! Zero-bloat HTTPS GET/POST & streaming download helper built directly on Windows native `WinHTTP`.
 //!
-//! Uses the OS certificate store & automatic system proxy, follows HTTPS redirects (`GitHub CDN`),
+//! Uses the OS certificate store & automatic system proxy, follows HTTPS redirects,
 //! and enforces strict timeouts + size caps without pulling reqwest/hyper/tokio.
 
 use std::path::Path;
@@ -40,9 +40,15 @@ struct OpenHttpStream {
 }
 
 #[cfg(windows)]
-fn open_http_get_stream(url: &str, timeout_ms: u32) -> Result<OpenHttpStream, String> {
+fn open_http_stream(
+    method: &str,
+    url: &str,
+    extra_headers: &[(&str, &str)],
+    body_opt: Option<&[u8]>,
+    timeout_ms: u32,
+) -> Result<OpenHttpStream, String> {
     use std::ffi::c_void;
-    use windows::core::{w, PCWSTR};
+    use windows::core::PCWSTR;
     use windows::Win32::Networking::WinHttp::{
         WinHttpConnect, WinHttpCrackUrl, WinHttpOpen, WinHttpOpenRequest, WinHttpQueryHeaders,
         WinHttpReceiveResponse, WinHttpSendRequest, WinHttpSetOption, WinHttpSetTimeouts,
@@ -54,7 +60,7 @@ fn open_http_get_stream(url: &str, timeout_ms: u32) -> Result<OpenHttpStream, St
 
     let url_w: Vec<u16> = url.encode_utf16().collect();
     let mut host_buf = [0u16; 256];
-    let mut path_buf = [0u16; 2048];
+    let mut path_buf = [0u16; 4096];
     let mut comps = URL_COMPONENTS {
         dwStructSize: std::mem::size_of::<URL_COMPONENTS>() as u32,
         lpszHostName: windows::core::PWSTR(host_buf.as_mut_ptr()),
@@ -88,9 +94,16 @@ fn open_http_get_stream(url: &str, timeout_ms: u32) -> Result<OpenHttpStream, St
     } else {
         80
     };
+    let method_w: Vec<u16> = method.encode_utf16().chain(std::iter::once(0)).collect();
 
     unsafe {
-        let ua: Vec<u16> = format!("Tomoyo/{} (Windows; OpenSource)", env!("CARGO_PKG_VERSION"))
+        let custom_ua = extra_headers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case("user-agent"))
+            .map(|(_, v)| *v);
+        let default_ua = format!("Tomoyo/{} (Windows; OpenSource)", env!("CARGO_PKG_VERSION"));
+        let ua: Vec<u16> = custom_ua
+            .unwrap_or(&default_ua)
             .encode_utf16()
             .chain(std::iter::once(0))
             .collect();
@@ -105,7 +118,6 @@ fn open_http_get_stream(url: &str, timeout_ms: u32) -> Result<OpenHttpStream, St
             return Err("WinHttpOpen failed".into());
         }
         let session = WinHttpHandle(session_raw);
-
         let t = timeout_ms as i32;
         let _ = WinHttpSetTimeouts(session.0, t, t, t, t);
 
@@ -115,14 +127,10 @@ fn open_http_get_stream(url: &str, timeout_ms: u32) -> Result<OpenHttpStream, St
         }
         let conn = WinHttpHandle(conn_raw);
 
-        let flags = if is_https {
-            WINHTTP_FLAG_SECURE
-        } else {
-            WINHTTP_OPEN_REQUEST_FLAGS(0)
-        };
+        let flags = if is_https { WINHTTP_FLAG_SECURE } else { WINHTTP_OPEN_REQUEST_FLAGS(0) };
         let req_raw = WinHttpOpenRequest(
             conn.0,
-            w!("GET"),
+            PCWSTR(method_w.as_ptr()),
             PCWSTR(path_w.as_ptr()),
             PCWSTR::null(),
             PCWSTR::null(),
@@ -135,17 +143,25 @@ fn open_http_get_stream(url: &str, timeout_ms: u32) -> Result<OpenHttpStream, St
         let req = WinHttpHandle(req_raw);
 
         let policy_bytes = WINHTTP_OPTION_REDIRECT_POLICY_ALWAYS.to_ne_bytes();
-        let _ = WinHttpSetOption(
-            Some(req.0),
-            WINHTTP_OPTION_REDIRECT_POLICY,
-            Some(&policy_bytes),
-        );
+        let _ = WinHttpSetOption(Some(req.0), WINHTTP_OPTION_REDIRECT_POLICY, Some(&policy_bytes));
 
-        let headers: Vec<u16> = "Accept: application/vnd.github+json, application/json, */*\r\n"
-            .encode_utf16()
-            .collect();
+        let mut hdr_str = String::from("Accept: application/vnd.github+json, application/json, */*\r\n");
+        for (k, v) in extra_headers {
+            if k.eq_ignore_ascii_case("user-agent") {
+                continue;
+            }
+            hdr_str.push_str(k);
+            hdr_str.push_str(": ");
+            hdr_str.push_str(v);
+            hdr_str.push_str("\r\n");
+        }
+        let headers_w: Vec<u16> = hdr_str.encode_utf16().collect();
+        let (opt_ptr, opt_len) = match body_opt {
+            Some(b) if !b.is_empty() => (Some(b.as_ptr() as *const c_void), b.len() as u32),
+            _ => (None, 0u32),
+        };
 
-        WinHttpSendRequest(req.0, Some(&headers), None, 0, 0, 0)
+        WinHttpSendRequest(req.0, Some(&headers_w), opt_ptr, opt_len, opt_len, 0)
             .map_err(|e| format!("HTTP request failed: {e}"))?;
         WinHttpReceiveResponse(req.0, std::ptr::null_mut())
             .map_err(|e| format!("HTTP receive failed: {e}"))?;
@@ -170,14 +186,12 @@ fn open_http_get_stream(url: &str, timeout_ms: u32) -> Result<OpenHttpStream, St
     }
 }
 
-/// Performs a bounded HTTPS/HTTP GET request in memory with strict timeout (ms) and byte ceiling.
 #[cfg(windows)]
-pub fn http_get(url: &str, timeout_ms: u32, max_bytes: usize) -> Result<HttpResponse, String> {
+fn read_stream_bounded(stream: OpenHttpStream, max_bytes: usize) -> HttpResponse {
     use std::ffi::c_void;
     use windows::Win32::Networking::WinHttp::{WinHttpQueryDataAvailable, WinHttpReadData};
 
-    let stream = open_http_get_stream(url, timeout_ms)?;
-    let mut body = Vec::with_capacity(8192);
+    let mut body = Vec::with_capacity(4096);
     unsafe {
         loop {
             let mut avail: u32 = 0;
@@ -206,13 +220,41 @@ pub fn http_get(url: &str, timeout_ms: u32, max_bytes: usize) -> Result<HttpResp
             body.truncate(old_len + read as usize);
         }
     }
-    Ok(HttpResponse {
-        status_code: stream.status_code,
-        body,
-    })
+    HttpResponse { status_code: stream.status_code, body }
 }
 
-/// Streams an HTTPS/HTTP download directly to `dest` using a 16 KB buffer (zero large-RAM spike).
+/// Performs a bounded HTTPS/HTTP GET request in memory.
+#[cfg(windows)]
+pub fn http_get(url: &str, timeout_ms: u32, max_bytes: usize) -> Result<HttpResponse, String> {
+    http_get_with_headers(url, &[], timeout_ms, max_bytes)
+}
+
+/// Performs a bounded HTTPS/HTTP GET request with custom headers.
+#[cfg(windows)]
+pub fn http_get_with_headers(
+    url: &str,
+    headers: &[(&str, &str)],
+    timeout_ms: u32,
+    max_bytes: usize,
+) -> Result<HttpResponse, String> {
+    let stream = open_http_stream("GET", url, headers, None, timeout_ms)?;
+    Ok(read_stream_bounded(stream, max_bytes))
+}
+
+/// Performs a bounded HTTPS/HTTP POST request with custom headers and request body.
+#[cfg(windows)]
+pub fn http_post_bytes(
+    url: &str,
+    headers: &[(&str, &str)],
+    body: &[u8],
+    timeout_ms: u32,
+    max_bytes: usize,
+) -> Result<HttpResponse, String> {
+    let stream = open_http_stream("POST", url, headers, Some(body), timeout_ms)?;
+    Ok(read_stream_bounded(stream, max_bytes))
+}
+
+/// Streams an HTTPS/HTTP download directly to `dest` using a 16 KB buffer.
 #[cfg(windows)]
 pub fn http_download_to_file(
     url: &str,
@@ -224,7 +266,7 @@ pub fn http_download_to_file(
     use std::io::{BufWriter, Write};
     use windows::Win32::Networking::WinHttp::{WinHttpQueryDataAvailable, WinHttpReadData};
 
-    let stream = open_http_get_stream(url, timeout_ms)?;
+    let stream = open_http_stream("GET", url, &[], None, timeout_ms)?;
     if stream.status_code != 200 {
         return Err(format!("HTTP download failed: status {}", stream.status_code));
     }
@@ -259,9 +301,7 @@ pub fn http_download_to_file(
             {
                 break;
             }
-            writer
-                .write_all(&buf[..read as usize])
-                .map_err(|e| format!("write error: {e}"))?;
+            writer.write_all(&buf[..read as usize]).map_err(|e| format!("write error: {e}"))?;
             total += read as u64;
         }
     }
@@ -271,6 +311,27 @@ pub fn http_download_to_file(
 
 #[cfg(not(windows))]
 pub fn http_get(_url: &str, _timeout_ms: u32, _max_bytes: usize) -> Result<HttpResponse, String> {
+    Err("WinHTTP is only available on Windows".into())
+}
+
+#[cfg(not(windows))]
+pub fn http_get_with_headers(
+    _url: &str,
+    _headers: &[(&str, &str)],
+    _timeout_ms: u32,
+    _max_bytes: usize,
+) -> Result<HttpResponse, String> {
+    Err("WinHTTP is only available on Windows".into())
+}
+
+#[cfg(not(windows))]
+pub fn http_post_bytes(
+    _url: &str,
+    _headers: &[(&str, &str)],
+    _body: &[u8],
+    _timeout_ms: u32,
+    _max_bytes: usize,
+) -> Result<HttpResponse, String> {
     Err("WinHTTP is only available on Windows".into())
 }
 

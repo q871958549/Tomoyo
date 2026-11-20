@@ -98,7 +98,7 @@
         `;
       } else if (st.state === 'up_to_date') {
         const extra = st.note ? `<div class="label-desc" style="margin-top:4px">${esc(st.note)}</div>` : '';
-        box.innerHTML = `<div style="color:var(--ok);font-weight:600">${esc(t('upd_latest')(st.current || INIT.version || '1.3.0'))}</div>${extra}`;
+        box.innerHTML = `<div style="color:var(--ok);font-weight:600">${esc(t('upd_latest')(st.current || INIT.version || '1.4.0'))}</div>${extra}`;
       } else if (st.state === 'error') {
         box.innerHTML = `<div style="color:#ef4444;font-weight:500">${esc(t('upd_err')(st.message || 'Unknown error'))}</div>`;
       }
@@ -132,6 +132,8 @@
           renderLogsResult(data);
         } else if (data.event === 'diag_bundle_copied') {
           setToast(t('log_copied'), false);
+        } else if (data.event === 'secrets_status') {
+          if (typeof onSecretsStatusEvent === 'function') onSecretsStatusEvent(data);
         } else if (data.event === 'update_install_result') {
           const btn = document.getElementById('btn-install-upd');
           if (btn) btn.disabled = false;

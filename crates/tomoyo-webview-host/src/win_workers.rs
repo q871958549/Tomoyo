@@ -107,3 +107,44 @@ pub fn spawn_store_worker(
             }
         });
 }
+
+pub fn spawn_translate_worker(
+    text: String,
+    source_lang: String,
+    target_lang: String,
+    tx: mpsc::Sender<String>,
+    hwnd_raw: usize,
+    notify_msg: u32,
+) {
+    let _ = std::thread::Builder::new()
+        .name("tomoyo-translator-worker".into())
+        .spawn(move || {
+            let cfg = TomoyoConfig::load_or_create();
+            let batch = tomoyo_core::translate::translate_parallel(
+                &cfg.translate,
+                &text,
+                &source_lang,
+                &target_lang,
+            );
+            let store = tomoyo_core::translate::TranslateStore::load_default();
+            let evt = serde_json::json!({
+                "event": "translate_result",
+                "data": batch,
+                "store": {
+                    "history": store.history,
+                    "wordbook": store.wordbook,
+                }
+            })
+            .to_string();
+            if tx.send(evt).is_ok() {
+                unsafe {
+                    let _ = PostMessageW(
+                        Some(HWND(hwnd_raw as *mut c_void)),
+                        notify_msg,
+                        WPARAM(0),
+                        LPARAM(0),
+                    );
+                }
+            }
+        });
+}

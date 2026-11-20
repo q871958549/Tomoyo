@@ -7,6 +7,7 @@ mod input;
 mod layout;
 mod menus;
 mod selftest;
+mod translate_ctrl;
 mod wndproc;
 
 use crate::actions::spawn_settings_window;
@@ -14,6 +15,7 @@ use crate::preview_loader::AsyncPreviewLoader;
 use crate::renderer::{compute_filter_counts, FilterCounts, FluentRenderer, RenderState, ThemePalette};
 use crate::tray::TrayIcon;
 use bootstrap::{apply_cue_banner, apply_dwm_attributes, detect_everything_label, read_edit_text};
+use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex, RwLock};
 use tomoyo_core::{Lang, QueryRouter, ResolvedPreview, TomoyoConfig, UpdateManager};
@@ -32,6 +34,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 pub(super) const HOTKEY_ID: i32 = 1;
 pub(super) const HOTKEY_CLIPBOARD_ID: i32 = 2;
+pub(super) const HOTKEY_TRANSLATE_ID: i32 = 3;
 pub(super) const EDIT_CTRL_ID: usize = 101;
 pub(super) const EDIT_SUBCLASS_ID: usize = 1;
 pub(super) const WM_APP_RESULTS_READY: u32 = WM_APP + 1;
@@ -129,13 +132,12 @@ pub struct AppShell {
     pub(super) pending_update_install: Arc<Mutex<Option<Result<bool, String>>>>,
     pub(super) dpi_scale: f32,
     pub(super) taskbar_created_msg: u32,
+    pub(super) suppress_clipboard_capture: Arc<AtomicBool>,
     pub(super) shutting_down: bool,
 }
 
 impl AppShell {
-    pub fn hotkey_label(&self) -> &str {
-        &self.hotkey_label
-    }
+    pub fn hotkey_label(&self) -> &str { &self.hotkey_label }
 
     pub fn apply_theme(&mut self, theme_name: &str, persist: bool) {
         let new_theme = ThemePalette::from_name(theme_name);

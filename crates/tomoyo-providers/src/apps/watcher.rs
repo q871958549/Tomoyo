@@ -58,7 +58,7 @@ mod win_impl {
                     let flags = FILE_NOTIFY_CHANGE_FILE_NAME
                         | FILE_NOTIFY_CHANGE_LAST_WRITE
                         | FILE_NOTIFY_CHANGE_DIR_NAME;
-                    for dir in dirs.into_iter().take(8) {
+                    for dir in dirs.into_iter().take(32) {
                         if !dir.is_dir() {
                             continue;
                         }

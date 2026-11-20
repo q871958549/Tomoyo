@@ -188,6 +188,13 @@ pub enum ActionKind {
         #[serde(default)]
         working_dir: Option<String>,
     },
+    LaunchAsAdmin {
+        path: String,
+        #[serde(default)]
+        args: Option<String>,
+        #[serde(default)]
+        working_dir: Option<String>,
+    },
     RevealInExplorer {
         path: String,
     },
@@ -281,6 +288,7 @@ pub enum InternalCommandKind {
     ClearUnpinnedClipboard,
     OpenClipboardManager { focus_key: Option<String> },
     ToggleClipboardCapture,
+    OpenTranslator { text: String, target_lang: Option<String> },
     CheckForUpdates,
     InstallUpdate,
     ClearAttachedContext,

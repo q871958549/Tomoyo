@@ -388,6 +388,7 @@ fn provider_allowed_for_filter(provider_id: &str, filter: SearchFilter) -> bool 
             provider_id,
             "builtin.apps" | "builtin.system" | "builtin.windows"
         ),
+        SearchFilter::Folder => provider_id == "builtin.apps",
         _ => false,
     }
 }

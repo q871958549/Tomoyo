@@ -3,6 +3,7 @@
 mod hotkey;
 mod sanitize;
 
+pub use crate::translate::TranslateConfig;
 pub use hotkey::{is_autostart_enabled, parse_hotkey, set_autostart_enabled, ParsedHotkey};
 pub use sanitize::{
     is_safe_http_url, is_valid_github_repo, normalize_exe_name, sanitize_config, validate_scan_dir,
@@ -44,6 +45,9 @@ pub struct TomoyoConfig {
     /// Clipboard persistence settings.
     #[serde(default)]
     pub clipboard: ClipboardConfig,
+    /// Multi-engine translation settings (Pot replacement).
+    #[serde(default)]
+    pub translate: TranslateConfig,
     /// Auto-update check settings (GitHub Releases).
     #[serde(default)]
     pub update: UpdateConfig,
@@ -347,6 +351,7 @@ impl Default for TomoyoConfig {
             apps: AppsConfig::default(),
             everything: EverythingConfig::default(),
             clipboard: ClipboardConfig::default(),
+            translate: TranslateConfig::default(),
             update: UpdateConfig::default(),
             plugin_registries: default_plugin_registries(),
             web_searches: default_web_searches(),

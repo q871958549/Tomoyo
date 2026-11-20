@@ -41,7 +41,7 @@ pub fn normalize_exe_name(raw: &str) -> Option<String> {
 }
 
 const RESERVED_KEYWORDS: &[&str] = &[
-    "f", "ev", "cb", "w", "kill", "ps", "snip", "=", "b64", "b64d",
+    "f", "ev", "cb", "tr", "fy", "w", "kill", "ps", "snip", "=", "b64", "b64d",
 ];
 
 /// Validates a candidate custom scan directory path.
@@ -305,6 +305,12 @@ pub fn sanitize_config(cfg: &mut TomoyoConfig) -> Vec<String> {
         }
     }
     cfg.clipboard.excluded_apps = clean_apps;
+    crate::translate::sanitize_translate_config(
+        &mut cfg.translate,
+        &cfg.hotkey,
+        &cfg.clipboard.hotkey,
+        &mut notes,
+    );
 
     cfg.update.check_interval_hours = cfg.update.check_interval_hours.clamp(6, 720);
     if !is_valid_github_repo(&cfg.update.repo) {

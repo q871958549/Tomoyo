@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>Tomoyo 多源翻译</title>
+  <style>
+    @font-face {
+      font-family: "Alibaba PuHuiTi 3.0";
+      src: url("https://tomoyo-fonts.local/AlibabaPuHuiTi-3-55-Regular.ttf") format("truetype");
+      font-weight: 400; font-style: normal;
+    }
+    @font-face {
+      font-family: "Alibaba PuHuiTi 3.0";
+      src: url("https://tomoyo-fonts.local/AlibabaPuHuiTi-3-65-Medium.ttf") format("truetype");
+      font-weight: 500 700; font-style: normal;
+    }
+    :root {
+      color-scheme: light;
+      --bg: #f6f7fb; --panel: #ffffff; --border: #dfe4ef; --text: #111827; --muted: #525d70;
+      --accent: #3b5bdb; --accent-fg: #ffffff; --pill: #eef1f7; --ok: #059669; --err: #dc2626;
+      --dict-bg: #f8fafc;
+    }
+    body.theme-dark {
+      color-scheme: dark;
+      --bg: #13141c; --panel: #1b1c28; --border: #2c2e40; --text: #f3f4f8; --muted: #9096ad;
+      --accent: #7c83fd; --accent-fg: #ffffff; --pill: #26283a; --ok: #34d399; --err: #f87171;
+      --dict-bg: #161722;
+    }
+    body.theme-midnight {
+      color-scheme: dark;
+      --bg: #0e101a; --panel: #15192b; --border: #27304b; --text: #f1f5f9; --muted: #8b97b4;
+      --accent: #6366f1; --accent-fg: #ffffff; --pill: #1f2640; --ok: #34d399; --err: #f87171;
+      --dict-bg: #111524;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; height: 100vh; display: flex; flex-direction: column; overflow: hidden;
+      background: var(--bg); color: var(--text);
+      font-family: "Alibaba PuHuiTi 3.0", "Microsoft YaHei UI", "Segoe UI", sans-serif; font-size: 13px;
+    }
+    header {
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      padding: 9px 14px; background: var(--panel); border-bottom: 1px solid var(--border); flex-wrap: wrap;
+    }
+    .lang-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .h-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    select, .btn {
+      background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 7px;
+      padding: 5px 10px; font-family: inherit; font-size: 12px; font-weight: 500; cursor: pointer; outline: none;
+    }
+    select:focus, .btn:hover { border-color: var(--accent); }
+    .btn.primary { background: var(--accent); color: var(--accent-fg); border-color: transparent; }
+    .btn.active { border-color: var(--accent); color: var(--accent); }
+    .btn.sm { padding: 3px 8px; font-size: 11.5px; }
+    .btn.danger { color: var(--err); }
+    .workspace { flex: 1; display: flex; min-height: 0; overflow: hidden; }
+    .main-col { flex: 1; display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; overflow-y: auto; min-width: 0; }
+    .card {
+      background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px;
+    }
+    .src-card textarea {
+      width: 100%; min-height: 92px; max-height: 190px; border: 0; outline: none; resize: vertical;
+      background: transparent; color: var(--text); font-family: inherit; font-size: 14px; line-height: 1.6;
+    }
+    .src-foot {
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      margin-top: 6px; padding-top: 7px; border-top: 1px solid var(--border); font-size: 11.5px; color: var(--muted);
+    }
+    .results-stack { display: flex; flex-direction: column; gap: 9px; }
+    .eng-head {
+      display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 7px;
+    }
+    .eng-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .eng-name { font-weight: 600; font-size: 13px; }
+    .pill {
+      display: inline-block; padding: 2px 7px; border-radius: 999px;
+      background: var(--pill); color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums;
+    }
+    .eng-text {
+      white-space: pre-wrap; word-break: break-word; font-size: 14px; line-height: 1.65;
+      user-select: text;
+    }
+    .eng-err { color: var(--err); font-size: 12.5px; line-height: 1.5; }
+    .dict-box {
+      margin-top: 8px; padding: 7px 10px; border-radius: 7px;
+      background: var(--dict-bg); border: 1px solid var(--border); font-size: 12px; line-height: 1.55;
+    }
+    .phonetic { color: var(--accent); font-weight: 500; margin-bottom: 3px; }
+    .drawer {
+      width: 280px; border-left: 1px solid var(--border); background: var(--panel);
+      display: none; flex-direction: column; min-height: 0;
+    }
+    .drawer.open { display: flex; }
+    .drawer-head {
+      padding: 9px 11px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between; gap: 6px;
+    }
+    .drawer-search { padding: 8px 10px; border-bottom: 1px solid var(--border); }
+    .drawer-search input {
+      width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--border);
+      border-radius: 7px; padding: 5px 9px; font-family: inherit; font-size: 12px; outline: none;
+    }
+    .drawer-list { flex: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+    .d-item {
+      background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 7px 9px; cursor: pointer;
+    }
+    .d-item:hover { border-color: var(--accent); }
+    .d-src { font-weight: 600; font-size: 12.5px; word-break: break-word; }
+    .d-tr { color: var(--muted); font-size: 12px; margin-top: 3px; word-break: break-word; }
+    .d-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; font-size: 11px; color: var(--muted); }
+    .loading-row { text-align: center; padding: 24px 12px; color: var(--muted); }
+    footer {
+      display: flex; align-items: center; justify-content: space-between; padding: 6px 14px;
+      background: var(--panel); border-top: 1px solid var(--border); font-size: 11.5px; color: var(--muted);
+    }
+    #toast { color: var(--ok); font-weight: 500; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="lang-bar">
+      <select id="src-lang" onchange="onLangChanged()">
+        <option value="auto">源语言：自动检测</option>
+        <option value="zh-Hans">中文</option>
+        <option value="en">English</option>
+        <option value="ja">日本語</option>
+        <option value="ko">한국어</option>
+        <option value="fr">Français</option>
+        <option value="de">Deutsch</option>
+      </select>
+      <button class="btn sm" onclick="swapLangs()" title="切换目标语言">⇄</button>
+      <select id="tgt-lang" onchange="onLangChanged()">
+        <option value="auto">目标：中英自动互译</option>
+        <option value="zh-Hans">简体中文</option>
+        <option value="en">English</option>
+        <option value="ja">日本語</option>
+        <option value="ko">한국어</option>
+        <option value="fr">Français</option>
+        <option value="de">Deutsch</option>
+      </select>
+      <button id="btn-run" class="btn primary" onclick="runTranslate()">翻译</button>
+    </div>
+    <div class="h-actions">
+      <button id="btn-wb" class="btn" onclick="toggleDrawer('wordbook')">生词本</button>
+      <button id="btn-hist" class="btn" onclick="toggleDrawer('history')">历史</button>
+      <button class="btn" onclick="post({cmd:'toggle_pin_topmost'})">置顶</button>
+      <button class="btn" onclick="post({cmd:'close'})">关闭</button>
+    </div>
+  </header>
+
+  <div class="workspace">
+    <div class="main-col">
+      <div class="card src-card">
+        <textarea id="src-text" spellcheck="false" placeholder="输入或粘贴待翻译文本，按 Ctrl+Enter 立即多引擎并行翻译..."></textarea>
+        <div class="src-foot">
+          <span id="char-count">0 字符</span>
+          <div style="display:flex;gap:6px">
+            <button class="btn sm" onclick="speakText(document.getElementById('src-text').value, '')">朗读</button>
+            <button class="btn sm" onclick="copyText(document.getElementById('src-text').value, '原文')">复制原文</button>
+            <button class="btn sm" onclick="clearSource()">清空</button>
+          </div>
+        </div>
+      </div>
+      <div id="results-box" class="results-stack"></div>
+    </div>
+
+    <aside id="drawer" class="drawer">
+      <div class="drawer-head">
+        <strong id="drawer-title">生词本</strong>
+        <div style="display:flex;gap:6px">
+          <button id="btn-clear-hist" class="btn sm danger" style="display:none" onclick="clearHistory()">清空历史</button>
+          <button class="btn sm" onclick="closeDrawer()">收起</button>
+        </div>
+      </div>
+      <div class="drawer-search">
+        <input id="drawer-q" type="text" placeholder="筛选单词或译文..." oninput="renderDrawer()" />
+      </div>
+      <div id="drawer-list" class="drawer-list"></div>
+    </aside>
+  </div>
+
+  <footer>
+    <span id="toast">已就绪 · 多源并行翻译</span>
+    <span>Ctrl+Enter 翻译 · Ctrl+Shift+T 置顶 · Esc 关闭并释放 100% WebView 内存</span>
+  </footer>
+  <script>
+/*__TRANSLATOR_JS__*/
+  </script>
+</body>
+</html>

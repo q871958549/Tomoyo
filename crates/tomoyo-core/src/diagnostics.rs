@@ -7,7 +7,7 @@
 //! - `last_crash.txt` (durable panic / Win32 SEH fault snapshot with stack backtrace)
 
 use crate::{current_process_stats, data_dir, CURRENT_VERSION};
-use chrono::Local;
+use chrono::{FixedOffset, Utc};
 use std::backtrace::Backtrace;
 use std::fs::{File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
@@ -22,6 +22,15 @@ const MAX_TAIL_READ_BYTES: u64 = 64 * 1024;
 static TRACE_SEQ: AtomicU64 = AtomicU64::new(1);
 static PROCESS_LOG: OnceLock<Mutex<RollingLogState>> = OnceLock::new();
 static PROCESS_COMPONENT: OnceLock<&'static str> = OnceLock::new();
+
+/// Formats the current wall-clock time in Beijing Standard Time (`UTC+08:00`).
+pub fn format_beijing_now() -> String {
+    let bj = FixedOffset::east_opt(8 * 3600).unwrap();
+    Utc::now()
+        .with_timezone(&bj)
+        .format("%Y-%m-%d %H:%M:%S%.3f +08:00")
+        .to_string()
+}
 
 /// Generates a compact, greppable per-operation correlation trace ID (e.g. `PLG-00012`).
 pub fn next_trace_id(prefix: &str) -> String {
@@ -137,7 +146,7 @@ pub fn write_process_log_bytes(buf: &[u8], mirror_stderr: bool) -> io::Result<us
 
 /// Appends a durable crash/fatal record to both the process rolling log and `last_crash.txt`.
 pub fn append_crash_record(summary: &str) {
-    let ts = Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
+    let ts = format_beijing_now();
     let comp = PROCESS_COMPONENT.get().copied().unwrap_or("tomoyo");
     let pid = std::process::id();
     let block = format!(
@@ -213,7 +222,7 @@ pub fn count_recent_log_issues() -> (usize, usize, bool) {
 /// Builds a concise, copyable diagnostic bundle for troubleshooting & bug reports.
 pub fn build_diagnostic_bundle() -> String {
     let stats = current_process_stats();
-    let ts = Local::now().format("%Y-%m-%d %H:%M:%S");
+    let ts = format_beijing_now();
     let log_dir = logs_dir();
     let main_issues = read_log_tail("tomoyo.log", 45, true);
     let main_recent = read_log_tail("tomoyo.log", 20, false);
@@ -343,5 +352,12 @@ mod tests {
         let b = next_trace_id("PLG");
         assert!(a.starts_with("PLG-"));
         assert_ne!(a, b);
+    }
+
+    #[test]
+    fn beijing_timestamp_uses_utc_plus_8_format() {
+        let ts = format_beijing_now();
+        assert!(ts.ends_with(" +08:00"), "unexpected timestamp: {ts}");
+        assert_eq!(ts.len(), 30, "expected YYYY-MM-DD HH:MM:SS.mmm +08:00, got: {ts}");
     }
 }

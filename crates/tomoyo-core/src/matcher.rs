@@ -236,13 +236,14 @@ fn score_single_token(q: &str, indexed: &IndexedText) -> Option<i64> {
         return Some(6_900);
     }
 
-    // 7. Word-boundary vs mid-word substring match on original text
+    // 7. Word-boundary vs mid-word substring match on original text (also treats CJK<->ASCII as boundary)
     if let Some(pos) = indexed.lower.find(q) {
+        let q_ascii = q.chars().next().map(|c| c.is_ascii_alphanumeric()).unwrap_or(false);
         let is_word_start = pos == 0
             || indexed.lower[..pos]
                 .chars()
                 .next_back()
-                .map(|c| !c.is_alphanumeric())
+                .map(|c| !c.is_alphanumeric() || (q_ascii && !c.is_ascii()))
                 .unwrap_or(true);
         let base = if is_word_start { 6_200 } else { 4_400 };
         return Some((base - (pos as i64 * 12)).max(3_200));
@@ -258,24 +259,18 @@ fn score_single_token(q: &str, indexed: &IndexedText) -> Option<i64> {
         }
     }
 
-    // 9. Subsequence fuzzy match on original text (kept below high-confidence file hits)
+    // 9. Tight subsequence fuzzy match on original text (kept below high-confidence file hits)
     if let Some(s) = subsequence_score(q, &indexed.lower) {
         return Some(2_400 + s);
     }
 
-    // 10. Subsequence fuzzy match on pinyin initials or compact pinyin
+    // 10. Tight subsequence fuzzy match on pinyin initials only (avoid spurious mid-pinyin scatter)
     if let Some(s) = subsequence_score(q, &indexed.pinyin_initials) {
         return Some(2_200 + s);
     }
-    if let Some(s) = subsequence_score(q, &compact_py) {
-        return Some(2_000 + s);
-    }
-    for (full, init) in &indexed.alt_variants {
+    for (_, init) in &indexed.alt_variants {
         if let Some(s) = subsequence_score(q, init) {
             return Some(2_150 + s);
-        }
-        if let Some(s) = subsequence_score(q, full) {
-            return Some(1_950 + s);
         }
     }
 
@@ -283,32 +278,50 @@ fn score_single_token(q: &str, indexed: &IndexedText) -> Option<i64> {
 }
 
 fn subsequence_score(needle: &str, haystack: &str) -> Option<i64> {
-    let mut h_chars = haystack.char_indices().peekable();
+    let n_chars = needle.chars().count();
+    if n_chars < 2 {
+        return None;
+    }
+    let h_chars: Vec<char> = haystack.chars().collect();
+    let mut hi = 0usize;
     let mut gaps = 0i64;
+    let mut max_gap = 0usize;
     let mut last_idx: Option<usize> = None;
     let mut consecutive = 0i64;
+    let mut word_starts = 0i64;
 
     for nc in needle.chars() {
         let mut found = None;
-        for (idx, hc) in h_chars.by_ref() {
-            if hc == nc {
-                found = Some(idx);
+        while hi < h_chars.len() {
+            if h_chars[hi] == nc {
+                found = Some(hi);
+                hi += 1;
                 break;
             }
+            hi += 1;
         }
         let idx = found?;
+        if idx == 0 || !h_chars[idx - 1].is_alphanumeric() {
+            word_starts += 1;
+        }
         if let Some(prev) = last_idx {
             let delta = idx.saturating_sub(prev + 1);
             if delta == 0 {
                 consecutive += 1;
             } else {
                 gaps += delta as i64;
+                max_gap = max_gap.max(delta);
             }
         }
         last_idx = Some(idx);
     }
 
-    Some((500 + consecutive * 45 - gaps * 12).clamp(0, 900))
+    // Reject loose scattered matches across unrelated titles unless aligned on word starts.
+    let raw = 500 + consecutive * 55 + word_starts * 60 - gaps * 28;
+    if raw < 120 || (word_starts < 2 && max_gap > 6) {
+        return None;
+    }
+    Some(raw.clamp(120, 900))
 }
 
 #[cfg(test)]
@@ -347,5 +360,13 @@ mod tests {
         let alias = IndexedText::new("WeChat");
         assert!(score_match_with_alias("wechat", &cn, Some(&alias)).unwrap() >= 8_000);
         assert!(score_match_with_alias("wx wechat", &cn, Some(&alias)).unwrap() >= 7_500);
+
+        // Regression: unrelated Chinese titles must NOT false-match English words via scattered pinyin.
+        let face = IndexedText::new("W168人脸识别系统");
+        let reg = IndexedText::new("注册表编辑器 Regedit");
+        assert!(score_match("hibit", &face).is_none());
+        assert!(score_match("hibit", &reg).is_none());
+        let hibit = IndexedText::new("HiBit Uninstaller");
+        assert!(score_match("hibit", &hibit).unwrap() >= 8_500);
     }
 }

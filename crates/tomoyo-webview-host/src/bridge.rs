@@ -55,6 +55,13 @@ pub enum HostMessage {
     ClipClearUnpinned,
     ClipExport,
     ClipImport { json: String },
+    OpenTranslator { text: String, #[serde(default)] target_lang: String },
+    RunTranslate { text: String, #[serde(default)] source_lang: String, #[serde(default)] target_lang: String },
+    TrSaveWord { word: String, translation: String, #[serde(default)] phonetic: String, #[serde(default)] note: String },
+    TrDeleteWord { word: String },
+    TrClearHistory,
+    SetSecret { key: String, value: String },
+    DeleteSecret { key: String },
     Close,
 }
 
@@ -68,6 +75,7 @@ pub struct HostAction {
     pub async_check_updates: Option<String>,
     pub async_install_update: Option<tomoyo_core::ReleaseInfo>,
     pub async_fetch_store: Option<Vec<String>>,
+    pub async_translate: Option<(String, String, String)>,
 }
 
 pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isize>) -> HostAction {
@@ -273,13 +281,17 @@ pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isi
                 _ => "tomoyo.log",
             };
             let content = tomoyo_core::read_log_tail(safe_file, 260, errors_only);
-            let issues = tomoyo_core::count_recent_log_issues();
+            let (warnings, errors, has_crash_report) = tomoyo_core::count_recent_log_issues();
             let evt = serde_json::json!({
                 "event": "logs_loaded",
                 "source": safe_file,
                 "errors_only": errors_only,
                 "content": content,
-                "issues": issues,
+                "issues": {
+                    "warnings": warnings,
+                    "errors": errors,
+                    "has_crash_report": has_crash_report,
+                },
                 "logs_dir": tomoyo_core::logs_dir().to_string_lossy(),
             });
             HostAction {
@@ -357,6 +369,34 @@ pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isi
             if mutated { if let Some(t) = notify_hwnd { notify_parent_mode(t, 2); } }
             HostAction { reply_json: Some(reply), ..Default::default() }
         }
+        HostMessage::OpenTranslator { text, target_lang } => {
+            crate::tr_view::open_or_spawn_translator(&text, &target_lang, notify_hwnd);
+            HostAction::default()
+        }
+        HostMessage::RunTranslate { text, source_lang, target_lang } => HostAction {
+            async_translate: Some((text, source_lang, target_lang)),
+            ..Default::default()
+        },
+        HostMessage::TrSaveWord { word, translation, phonetic, note } => HostAction {
+            reply_json: Some(crate::tr_view::handle_tr_word_save(&word, &translation, &phonetic, &note)),
+            ..Default::default()
+        },
+        HostMessage::TrDeleteWord { word } => HostAction {
+            reply_json: Some(crate::tr_view::handle_tr_word_delete(&word)),
+            ..Default::default()
+        },
+        HostMessage::TrClearHistory => HostAction {
+            reply_json: Some(crate::tr_view::handle_tr_history_clear()),
+            ..Default::default()
+        },
+        HostMessage::SetSecret { key, value } => HostAction {
+            reply_json: Some(crate::tr_view::handle_set_secret(&key, &value)),
+            ..Default::default()
+        },
+        HostMessage::DeleteSecret { key } => HostAction {
+            reply_json: Some(crate::tr_view::handle_delete_secret(&key)),
+            ..Default::default()
+        },
         HostMessage::Close => HostAction {
             should_close: true,
             ..Default::default()
@@ -381,5 +421,21 @@ mod tests {
         assert!(script.contains("setSubInput"));
         assert!(script.contains("hideMainWindowPasteText"));
         assert!(script.contains("dbStorage"));
+    }
+
+    #[test]
+    fn read_logs_returns_structured_issue_counts() {
+        let tmp = std::env::temp_dir().join(format!("tomoyo_bridge_test_{}.json", std::process::id()));
+        let mut db = crate::db::PluginDb::open_at(tmp.clone());
+        let act = super::handle_host_message(
+            r#"{"cmd":"read_logs","source":"tomoyo.log","errors_only":false}"#,
+            &mut db,
+            None,
+        );
+        let v: serde_json::Value = serde_json::from_str(act.reply_json.as_deref().unwrap()).unwrap();
+        assert!(v["issues"]["warnings"].is_u64());
+        assert!(v["issues"]["errors"].is_u64());
+        assert!(v["issues"]["has_crash_report"].is_boolean());
+        let _ = std::fs::remove_file(&tmp);
     }
 }

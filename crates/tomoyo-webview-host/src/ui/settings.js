@@ -63,6 +63,9 @@
       renderWebRows();
       if (!recordingHotkey) renderHotkeyDisplay();
       if (!recordingClipHotkey) renderClipHotkeyDisplay();
+      if (!recordingTrHotkey) renderTrHotkeyDisplay();
+      renderTrEngineChips();
+      renderSecretBadges();
       setToast(t('toast_ready'), false);
     }
 
@@ -133,12 +136,13 @@
     }
 
     window.addEventListener('keydown', (e) => {
-      if (recordingHotkey || recordingClipHotkey) {
+      if (recordingHotkey || recordingClipHotkey || recordingTrHotkey) {
         e.preventDefault();
         e.stopPropagation();
         if (e.key === 'Escape') {
           if (recordingHotkey) stopHotkeyRecording();
           if (recordingClipHotkey) stopClipHotkeyRecording();
+          if (recordingTrHotkey) stopTrHotkeyRecording();
           return;
         }
         const mainKey = keyEventToName(e);
@@ -149,13 +153,14 @@
         if (e.shiftKey) mods.push('Shift');
         if (e.metaKey) mods.push('Win');
         if (mods.length === 0) {
-          const target = recordingHotkey ? recEl : document.getElementById('clip-hotkey-recorder');
+          const target = recordingHotkey ? recEl : (recordingClipHotkey ? document.getElementById('clip-hotkey-recorder') : document.getElementById('tr-hotkey-recorder'));
           if (target) target.textContent = t('rec_need_mod');
           return;
         }
         const combo = mods.concat([mainKey]).join('+');
         if (recordingHotkey) applyHotkey(combo);
-        else applyClipHotkey(combo);
+        else if (recordingClipHotkey) applyClipHotkey(combo);
+        else applyTrHotkey(combo);
         return;
       }
       if (e.key === 'Escape') closeWin();
@@ -200,6 +205,16 @@
         capture_images: document.getElementById('clip_images') ? document.getElementById('clip_images').checked : true,
         excluded_apps: Array.isArray(prevCb.excluded_apps) ? prevCb.excluded_apps : []
       };
+      const prevTr = state.translate || {};
+      state.translate = {
+        hotkey: String(prevTr.hotkey || '').trim(),
+        target_lang: document.getElementById('tr_target_lang') ? document.getElementById('tr_target_lang').value : 'auto',
+        engines: Array.isArray(prevTr.engines) && prevTr.engines.length ? prevTr.engines : ['google', 'mymemory'],
+        openai_base_url: document.getElementById('tr_openai_url') ? document.getElementById('tr_openai_url').value.trim() : 'https://api.openai.com/v1',
+        openai_model: document.getElementById('tr_openai_model') ? document.getElementById('tr_openai_model').value.trim() : 'gpt-4o-mini',
+        ollama_url: document.getElementById('tr_ollama_url') ? document.getElementById('tr_ollama_url').value.trim() : 'http://127.0.0.1:11434',
+        ollama_model: document.getElementById('tr_ollama_model') ? document.getElementById('tr_ollama_model').value.trim() : 'qwen2.5:7b'
+      };
       const prevUpd = state.update || {};
       state.update = {
         auto_check: document.getElementById('upd_auto').checked,
@@ -221,6 +236,7 @@
         renderEvFilterChips();
         renderClipHotkeyDisplay();
         renderClipExclChips();
+        syncTranslateControlsFromState();
         syncRepoUi();
         setToast('⚠ ' + data.notes[0], true);
       } else {
@@ -236,8 +252,9 @@
 
     function populate() {
       mountClipSettingsControls();
+      mountTranslateSettingsControls();
       if (!state.language) state.language = 'zh';
-      document.getElementById('about-ver').textContent = 'v' + (INIT.version || '1.3.0');
+      document.getElementById('about-ver').textContent = 'v' + (INIT.version || '1.4.0');
       document.getElementById('autostart').checked = autostart;
       const hib = state.hibernate_delay_secs || 15;
       document.getElementById('hibernate').value = hib;
@@ -272,6 +289,8 @@
       if (!state.clipboard) state.clipboard = {};
       state.clipboard.hotkey = typeof cb.hotkey === 'string' ? cb.hotkey : 'Alt+V';
       state.clipboard.excluded_apps = Array.isArray(cb.excluded_apps) ? cb.excluded_apps : [];
+      if (!state.translate) state.translate = { hotkey: 'Alt+T', target_lang: 'auto', engines: ['google', 'mymemory'] };
+      syncTranslateControlsFromState();
 
       const upd = state.update || {};
       document.getElementById('upd_auto').checked = upd.auto_check !== false;

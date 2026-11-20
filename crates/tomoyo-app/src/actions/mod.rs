@@ -9,8 +9,8 @@ pub use clipboard_win::{
     read_clipboard_text, set_clipboard_image_from_png, set_clipboard_text,
 };
 pub use shell_win::{
-    kill_process_by_pid, paste_into_previous_window_async, shell_open,
-    spawn_clipboard_manager_window, spawn_settings_window,
+    kill_process_by_pid, paste_into_previous_window_async, shell_open, shell_open_as_admin,
+    spawn_clipboard_manager_window, spawn_settings_window, spawn_translator_window,
 };
 
 use shell_win::{focus_window, run_system_command, spawn_ephemeral_webview};
@@ -60,6 +60,26 @@ pub fn execute_action(
             ActionOutcome {
                 hide_window: ok,
                 toast: if ok { None } else { Some(format!("打开失败: {path}")) },
+                ..Default::default()
+            }
+        }
+        ActionKind::LaunchAsAdmin {
+            path,
+            args,
+            working_dir,
+        } => {
+            let ok = shell_open_as_admin(path, args.as_deref(), working_dir.as_deref());
+            if !ok {
+                let tid = tomoyo_core::next_trace_id("ACT");
+                tracing::warn!(trace_id = %tid, item_id = %item_id, path = %path, "LaunchAsAdmin failed or UAC cancelled");
+            }
+            ActionOutcome {
+                hide_window: ok,
+                toast: if ok {
+                    Some("已请求以管理员身份启动".into())
+                } else {
+                    Some(format!("管理员启动已取消或失败: {path}"))
+                },
                 ..Default::default()
             }
         }

@@ -1,4 +1,5 @@
 use super::is_noisy_shortcut;
+use super::organizers::detect_desktop_organizer_dirs;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use tomoyo_core::AppsConfig;
@@ -11,6 +12,7 @@ pub(super) struct ScannedApp {
     pub launch_args: Option<String>,
     pub subtitle: String,
     pub is_uwp: bool,
+    pub is_folder: bool,
     pub alias_text: Option<String>,
 }
 
@@ -18,6 +20,9 @@ struct ScanRoot {
     path: PathBuf,
     max_depth: usize,
     allow_exe: bool,
+    allow_scripts: bool,
+    include_top_folders: bool,
+    filter_noise: bool,
     label_prefix: &'static str,
 }
 
@@ -29,6 +34,9 @@ fn collect_dir_roots(apps_cfg: &AppsConfig) -> Vec<ScanRoot> {
             path: desktop,
             max_depth: 3,
             allow_exe: true,
+            allow_scripts: true,
+            include_top_folders: true,
+            filter_noise: false,
             label_prefix: "桌面",
         });
     }
@@ -39,6 +47,9 @@ fn collect_dir_roots(apps_cfg: &AppsConfig) -> Vec<ScanRoot> {
                 path: fallback_desk,
                 max_depth: 3,
                 allow_exe: true,
+                allow_scripts: true,
+                include_top_folders: true,
+                filter_noise: false,
                 label_prefix: "桌面",
             });
         }
@@ -48,6 +59,9 @@ fn collect_dir_roots(apps_cfg: &AppsConfig) -> Vec<ScanRoot> {
             path: PathBuf::from(public_dir).join("Desktop"),
             max_depth: 3,
             allow_exe: true,
+            allow_scripts: true,
+            include_top_folders: true,
+            filter_noise: false,
             label_prefix: "公共桌面",
         });
     }
@@ -57,7 +71,10 @@ fn collect_dir_roots(apps_cfg: &AppsConfig) -> Vec<ScanRoot> {
             roots.push(ScanRoot {
                 path: org_dir,
                 max_depth: 3,
-                allow_exe: false,
+                allow_exe: true,
+                allow_scripts: true,
+                include_top_folders: true,
+                filter_noise: false,
                 label_prefix: "桌面整理",
             });
         }
@@ -71,6 +88,9 @@ fn collect_dir_roots(apps_cfg: &AppsConfig) -> Vec<ScanRoot> {
                 .join("Start Menu"),
             max_depth: 5,
             allow_exe: true,
+            allow_scripts: false,
+            include_top_folders: false,
+            filter_noise: true,
             label_prefix: "应用",
         });
     }
@@ -82,6 +102,9 @@ fn collect_dir_roots(apps_cfg: &AppsConfig) -> Vec<ScanRoot> {
                 .join("Start Menu"),
             max_depth: 5,
             allow_exe: true,
+            allow_scripts: false,
+            include_top_folders: false,
+            filter_noise: true,
             label_prefix: "应用",
         });
     }
@@ -98,6 +121,9 @@ fn collect_dir_roots(apps_cfg: &AppsConfig) -> Vec<ScanRoot> {
                 path: pb,
                 max_depth: custom_depth,
                 allow_exe: true,
+                allow_scripts: true,
+                include_top_folders: false,
+                filter_noise: false,
                 label_prefix: "工具",
             });
         }
@@ -116,13 +142,14 @@ pub(super) fn app_watch_paths(apps_cfg: &AppsConfig) -> Vec<PathBuf> {
 pub(super) fn scan_dir_roots(
     apps_cfg: &AppsConfig,
     seen: &mut HashSet<String>,
+    seen_targets: &mut HashSet<String>,
     out: &mut Vec<ScannedApp>,
 ) {
     let _com = ComApartmentGuard::init();
     let roots = collect_dir_roots(apps_cfg);
     let mut visited_dirs: HashSet<String> = HashSet::new();
     for root in roots {
-        scan_dir_recursive(&root, &root.path, 0, &mut visited_dirs, seen, out);
+        scan_dir_recursive(&root, &root.path, 0, &mut visited_dirs, seen, seen_targets, out);
     }
 }
 
@@ -132,9 +159,10 @@ fn scan_dir_recursive(
     depth: usize,
     visited_dirs: &mut HashSet<String>,
     seen: &mut HashSet<String>,
+    seen_targets: &mut HashSet<String>,
     out: &mut Vec<ScannedApp>,
 ) {
-    if depth > cfg.max_depth || out.len() >= 2200 {
+    if depth > cfg.max_depth || out.len() >= 2500 {
         return;
     }
     let dir_key = dir.to_string_lossy().to_lowercase();
@@ -149,15 +177,30 @@ fn scan_dir_recursive(
     for entry in rd.flatten() {
         let path = entry.path();
         if path.is_dir() {
-            let dir_name = path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("")
-                .to_ascii_lowercase();
-            if is_skipped_subdir(&dir_name) {
+            let Some(dir_name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            let dir_lower = dir_name.to_ascii_lowercase();
+            if dir_name.starts_with('.') || dir_name.starts_with('$') || is_skipped_subdir(&dir_lower) {
                 continue;
             }
-            scan_dir_recursive(cfg, &path, depth + 1, visited_dirs, seen, out);
+            if cfg.include_top_folders && depth == 0 {
+                let full = path.to_string_lossy().into_owned();
+                let dedup = format!("dir:{}", full.to_lowercase());
+                if seen.insert(dedup) {
+                    out.push(ScannedApp {
+                        id: format!("dir:{}", full.to_lowercase()),
+                        name: dir_name.to_string(),
+                        path: full,
+                        launch_args: None,
+                        subtitle: format!("{} · 文件夹", cfg.label_prefix),
+                        is_uwp: false,
+                        is_folder: true,
+                        alias_text: None,
+                    });
+                }
+            }
+            scan_dir_recursive(cfg, &path, depth + 1, visited_dirs, seen, seen_targets, out);
             continue;
         }
 
@@ -166,7 +209,12 @@ fn scan_dir_recursive(
         };
         let is_lnk = ext.eq_ignore_ascii_case("lnk");
         let is_exe = ext.eq_ignore_ascii_case("exe");
-        if !is_lnk && !(cfg.allow_exe && is_exe) {
+        let is_appref = ext.eq_ignore_ascii_case("appref-ms");
+        let is_script = matches!(
+            ext.to_ascii_lowercase().as_str(),
+            "bat" | "cmd" | "ps1" | "msc" | "url"
+        );
+        if !is_lnk && !is_appref && !(cfg.allow_exe && is_exe) && !(cfg.allow_scripts && is_script) {
             continue;
         }
 
@@ -174,18 +222,23 @@ fn scan_dir_recursive(
             continue;
         };
         let lower_name = stem.to_lowercase();
-        if is_noisy_shortcut(&lower_name) || (is_exe && is_noisy_portable_exe(&lower_name)) {
+        if (cfg.filter_noise && is_noisy_shortcut(&lower_name))
+            || (is_exe && is_noisy_portable_exe(&lower_name))
+        {
             continue;
         }
         if !seen.insert(lower_name.clone()) {
             continue;
         }
 
-        let alias_text = if is_lnk {
-            resolve_lnk_target_stem(&path, &lower_name)
+        let (alias_text, target_lower) = if is_lnk {
+            resolve_lnk_target_info(&path, &lower_name)
         } else {
-            None
+            (None, is_exe.then(|| path.to_string_lossy().to_lowercase()))
         };
+        if let Some(t) = target_lower {
+            seen_targets.insert(t);
+        }
 
         let full = path.to_string_lossy().into_owned();
         let subtitle = path
@@ -201,6 +254,7 @@ fn scan_dir_recursive(
             launch_args: None,
             subtitle,
             is_uwp: false,
+            is_folder: false,
             alias_text,
         });
     }
@@ -242,63 +296,10 @@ fn is_noisy_portable_exe(lower: &str) -> bool {
     PREFIXES.iter().any(|p| lower.starts_with(p)) || lower.ends_with("_helper")
 }
 
-/// Auto-discovers managed folders of popular Windows desktop organizers (e.g. DeskBox).
-fn detect_desktop_organizer_dirs() -> Vec<PathBuf> {
-    let mut dirs = Vec::new();
-    let Ok(local_app) = std::env::var("LOCALAPPDATA") else {
-        return dirs;
-    };
-    let deskbox_data = PathBuf::from(&local_app).join("DeskBox").join("data");
-
-    if let Ok(raw) = std::fs::read_to_string(deskbox_data.join("settings.json")) {
-        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&raw) {
-            if let Some(root) = json
-                .get("defaultManagedStorageRootPath")
-                .and_then(|v| v.as_str())
-            {
-                push_existing_dir(&mut dirs, PathBuf::from(root));
-            }
-        }
-    }
-
-    if let Ok(raw) = std::fs::read_to_string(deskbox_data.join("widget-layout.json")) {
-        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&raw) {
-            if let Some(widgets) = json
-                .get("layout")
-                .and_then(|l| l.get("widgets"))
-                .and_then(|w| w.as_array())
-            {
-                for w in widgets {
-                    if let Some(mapped) = w.get("mappedFolderPath").and_then(|v| v.as_str()) {
-                        push_existing_dir(&mut dirs, PathBuf::from(mapped));
-                    }
-                }
-            }
-        }
-    }
-
-    if let Ok(userprofile) = std::env::var("USERPROFILE") {
-        let fallback = PathBuf::from(userprofile).join("DeskBox");
-        push_existing_dir(&mut dirs, fallback);
-    }
-
-    dirs
-}
-
-fn push_existing_dir(dirs: &mut Vec<PathBuf>, dir: PathBuf) {
-    if !dir.is_dir() {
-        return;
-    }
-    let key = dir.to_string_lossy().to_lowercase();
-    if !dirs.iter().any(|d| d.to_string_lossy().to_lowercase() == key) {
-        dirs.push(dir);
-    }
-}
-
 /// Reads the `.lnk` target path header (`SLGP_RAWPATH`, zero disk/network resolve)
-/// and returns its executable stem if different from the shortcut display name.
+/// and returns `(alias_stem, lowercased_full_target_path)`.
 #[cfg(windows)]
-fn resolve_lnk_target_stem(lnk_path: &Path, shortcut_lower: &str) -> Option<String> {
+fn resolve_lnk_target_info(lnk_path: &Path, shortcut_lower: &str) -> (Option<String>, Option<String>) {
     use windows::core::{Interface, PCWSTR};
     use windows::Win32::System::Com::{CoCreateInstance, IPersistFile, CLSCTX_INPROC_SERVER, STGM};
     use windows::Win32::UI::Shell::{IShellLinkW, ShellLink, SLGP_RAWPATH};
@@ -310,37 +311,50 @@ fn resolve_lnk_target_stem(lnk_path: &Path, shortcut_lower: &str) -> Option<Stri
         .collect();
 
     unsafe {
-        let link: IShellLinkW = CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER).ok()?;
-        let persist: IPersistFile = link.cast().ok()?;
-        persist.Load(PCWSTR(wide.as_ptr()), STGM(0)).ok()?; // STGM_READ = 0
+        let Ok(link): windows::core::Result<IShellLinkW> =
+            CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER)
+        else {
+            return (None, None);
+        };
+        let Ok(persist): windows::core::Result<IPersistFile> = link.cast() else {
+            return (None, None);
+        };
+        if persist.Load(PCWSTR(wide.as_ptr()), STGM(0)).is_err() {
+            return (None, None);
+        }
 
         let mut target_buf = [0u16; 260];
         if link
             .GetPath(&mut target_buf, std::ptr::null_mut(), SLGP_RAWPATH.0 as u32)
             .is_err()
         {
-            return None;
+            return (None, None);
         }
         let len = target_buf
             .iter()
             .position(|&c| c == 0)
             .unwrap_or(target_buf.len());
-        let target_str = String::from_utf16_lossy(&target_buf[..len]);
-        let stem = Path::new(target_str.trim())
+        let target_str = String::from_utf16_lossy(&target_buf[..len]).trim().to_string();
+        if target_str.is_empty() {
+            return (None, None);
+        }
+        let stem = Path::new(&target_str)
             .file_stem()
-            .and_then(|s| s.to_str())?
-            .trim();
-        if stem.is_empty() || stem.to_lowercase() == shortcut_lower {
+            .and_then(|s| s.to_str())
+            .map(str::trim)
+            .unwrap_or("");
+        let alias = if stem.is_empty() || stem.to_lowercase() == shortcut_lower {
             None
         } else {
             Some(stem.to_string())
-        }
+        };
+        (alias, Some(target_str.to_lowercase()))
     }
 }
 
 #[cfg(not(windows))]
-fn resolve_lnk_target_stem(_lnk_path: &Path, _shortcut_lower: &str) -> Option<String> {
-    None
+fn resolve_lnk_target_info(_lnk_path: &Path, _shortcut_lower: &str) -> (Option<String>, Option<String>) {
+    (None, None)
 }
 
 #[cfg(windows)]

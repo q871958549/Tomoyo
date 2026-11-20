@@ -6,13 +6,17 @@ use crate::db::PluginDb;
 use crate::ocr_view::{assemble_ocr_viewer_html, is_ocr_viewer_entry, load_ocr_viewer_bootstrap};
 use crate::shim_js::build_init_script;
 use crate::single_instance::{
-    acquire_or_activate_clipboard, acquire_or_activate_settings, CLIPBOARD_WINDOW_CLASS,
-    EPHEMERAL_WINDOW_CLASS, SETTINGS_WINDOW_CLASS, WM_APP_ACTIVATE_CLIPBOARD,
-    WM_APP_ACTIVATE_SETTINGS,
+    acquire_or_activate_clipboard, acquire_or_activate_settings, acquire_or_activate_translator,
+    CLIPBOARD_WINDOW_CLASS, EPHEMERAL_WINDOW_CLASS, SETTINGS_WINDOW_CLASS, TRANSLATOR_WINDOW_CLASS,
+    WM_APP_ACTIVATE_CLIPBOARD, WM_APP_ACTIVATE_SETTINGS, WM_APP_ACTIVATE_TRANSLATOR,
+};
+use crate::tr_view::{
+    assemble_translator_html, is_translator_entry, load_translator_bootstrap,
+    read_latest_translate_req_event,
 };
 use crate::win_theme::{apply_host_window_theme, map_vdir, to_file_url};
 use crate::win_workers::{
-    spawn_install_update_worker, spawn_store_worker, spawn_update_worker,
+    spawn_install_update_worker, spawn_store_worker, spawn_translate_worker, spawn_update_worker,
 };
 use crate::{assemble_settings_html, build_settings_init_script, LaunchArgs};
 use std::cell::RefCell;
@@ -98,13 +102,20 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             }
             LRESULT(0)
         }
-        WM_APP_ACTIVATE_SETTINGS | WM_APP_ACTIVATE_CLIPBOARD => {
+        WM_APP_ACTIVATE_SETTINGS | WM_APP_ACTIVATE_CLIPBOARD | WM_APP_ACTIVATE_TRANSLATOR => {
             unsafe {
                 if IsIconic(hwnd).as_bool() {
                     let _ = ShowWindow(hwnd, SW_RESTORE);
                 }
                 let _ = ShowWindow(hwnd, SW_SHOW);
                 let _ = SetForegroundWindow(hwnd);
+                if msg == WM_APP_ACTIVATE_TRANSLATOR && !ptr.is_null() {
+                    let st = &*ptr;
+                    if let Some(wv) = &st.webview {
+                        let evt = HSTRING::from(read_latest_translate_req_event());
+                        let _ = wv.PostWebMessageAsJson(PCWSTR(evt.as_ptr()));
+                    }
+                }
             }
             LRESULT(0)
         }
@@ -129,6 +140,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
 
 pub fn run_windows_host(opts: LaunchArgs) {
     let clip_mode = is_clip_manager_entry(&opts.entry);
+    let tr_mode = is_translator_entry(&opts.entry);
     let _singleton_guard = if opts.settings_mode {
         match acquire_or_activate_settings() {
             Some(guard) => Some(guard),
@@ -136,6 +148,11 @@ pub fn run_windows_host(opts: LaunchArgs) {
         }
     } else if clip_mode {
         match acquire_or_activate_clipboard() {
+            Some(guard) => Some(guard),
+            None => return,
+        }
+    } else if tr_mode {
+        match acquire_or_activate_translator() {
             Some(guard) => Some(guard),
             None => return,
         }
@@ -154,6 +171,8 @@ pub fn run_windows_host(opts: LaunchArgs) {
         SETTINGS_WINDOW_CLASS
     } else if clip_mode {
         CLIPBOARD_WINDOW_CLASS
+    } else if tr_mode {
+        TRANSLATOR_WINDOW_CLASS
     } else {
         EPHEMERAL_WINDOW_CLASS
     };
@@ -228,6 +247,8 @@ pub fn run_windows_host(opts: LaunchArgs) {
     } else if clip_mode {
         let boot = load_clip_manager_bootstrap(&opts.theme, &opts.query);
         (boot.init_script, None, Some(boot.images_dir))
+    } else if tr_mode {
+        (load_translator_bootstrap(&opts.theme), None, None)
     } else {
         (
             build_init_script(
@@ -241,7 +262,7 @@ pub fn run_windows_host(opts: LaunchArgs) {
             None,
         )
     };
-    let entry_url = if settings_mode || ocr_mode || clip_mode {
+    let entry_url = if settings_mode || ocr_mode || clip_mode || tr_mode {
         String::new()
     } else {
         to_file_url(&opts.entry)
@@ -325,6 +346,9 @@ pub fn run_windows_host(opts: LaunchArgs) {
                                             if let Some(sources) = act.async_fetch_store {
                                                 spawn_store_worker(sources, tx_cb.clone(), hwnd_raw, WM_APP_WEBVIEW_EVENT);
                                             }
+                                            if let Some((txt, src, tgt)) = act.async_translate {
+                                                spawn_translate_worker(txt, src, tgt, tx_cb.clone(), hwnd_raw, WM_APP_WEBVIEW_EVENT);
+                                            }
                                             if act.should_close {
                                                 let _ = PostMessageW(Some(hwnd), WM_CLOSE, WPARAM(0), LPARAM(0));
                                             }
@@ -343,6 +367,9 @@ pub fn run_windows_host(opts: LaunchArgs) {
                                 let _ = webview.NavigateToString(PCWSTR(html.as_ptr()));
                             } else if clip_mode {
                                 let html = HSTRING::from(assemble_clip_manager_html());
+                                let _ = webview.NavigateToString(PCWSTR(html.as_ptr()));
+                            } else if tr_mode {
+                                let html = HSTRING::from(assemble_translator_html());
                                 let _ = webview.NavigateToString(PCWSTR(html.as_ptr()));
                             } else {
                                 let url_w = HSTRING::from(&entry_url_inner);

@@ -17,6 +17,7 @@ pub mod permissions;
 pub mod pkg_zip;
 pub mod preview;
 pub mod telemetry;
+pub mod translate;
 pub mod updater;
 pub mod wic_thumb;
 

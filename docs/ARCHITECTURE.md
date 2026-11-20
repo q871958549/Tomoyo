@@ -188,3 +188,7 @@ sequenceDiagram
 - **v1.3.0 — 增强剪贴板管理中心（替代 CopyQ）与 Win32 WIC 全图预览**
   - **剪贴板存储与筛选引擎**：`ClipboardStore` 升级 SQLite v2 模式（`subtype`、`tag`、`note`、`source_app`、`file_paths` 与联合索引），支持文本语义分类（链接/色值/路径/代码/文本）、截图图片与复制文件（`CF_HDROP`）、`@pin/@img/@text/@link/@file/@code/@color/#标签` 过滤、拼音多词匹配、单条编辑/删除、清空非置顶与 JSON 备份导出/导入。
   - **专属热键、隐私保护与工作台**：新增独立剪贴板全局快捷键（默认 `Alt+V`）与 `cb` 模式快捷键（`Shift+Enter` 单行纯文本贴回 / 图片一键 OCR、`Ctrl+E` 工作台、`Ctrl+D` 删除、`Ctrl+Shift+P` 置顶）；新增 Windows 机密剪贴板格式自动拦截与来源应用隐私屏蔽名单（设置中心落盘「下拉搜索框」组件）；新增按需单实例三栏「剪贴板工作台」（`__tomoyo_clipboard_manager__`，关闭即释放 100% WebView 内存）以及 `tomoyo-core::wic_thumb` Win32 WIC 全格式图片缩略图解码。
+- **v1.4.0 — 多引擎划词/输入/OCR 联动翻译（替代 Pot）、搜索完整性治理与管理员运行**
+  - **多引擎并行翻译与 DPAPI 密钥存储**：新增 `tomoyo-core::translate`（Google、MyMemory + 有道英汉音标词典、DeepL、OpenAI 兼容、本地 Ollama）及 `CryptProtectData` 加密凭证库（`secrets.json`），支持 `Alt+T` 无损划词翻译（不污染剪贴板历史）、`tr` / `fy` 命令、OCR 审校/剪贴板工作台一键联动与按需单实例双语浮窗（`__tomoyo_translator__`，内置生词本与历史）。
+  - **检索完整性与精度治理**：将 Start Menu 噪声过滤升级为词边界识别（避免误杀 `HiBit Uninstaller` 等工具），桌面/公共桌面/DeskBox/PecoFence 启用零噪声策略并补充顶层文件夹及 `.bat/.cmd/.ps1/.url/.appref-ms/.msc` 索引；新增 Windows `Uninstall` 注册表兜底扫描（按目标可执行路径去重）；收敛拼音散乱子序列误匹配并支持中英文边界权重。
+  - **管理员运行与北京时间日志**：应用与可执行文件右键菜单及 `Ctrl+Shift+Enter` 支持「以管理员身份运行」（`ShellExecuteW("runas")`）；主进程、WebView 宿主与崩溃报告时间戳统一为北京时间（`+08:00`），并修复设置中心诊断面板的 WARN/ERROR 统计展示。

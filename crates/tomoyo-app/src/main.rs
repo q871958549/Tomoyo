@@ -25,7 +25,7 @@ use tomoyo_plugin_host::{default_plugin_dirs, PluginHost};
 use tomoyo_protocol::AttachedContext;
 use tomoyo_providers::{
     AppsProvider, CalcProvider, ClipboardProvider, EverythingProvider, ProcessProvider,
-    SnippetsProvider, SystemProvider, WebSearchProvider, WindowsSwitcherProvider,
+    SnippetsProvider, SystemProvider, TranslateProvider, WebSearchProvider, WindowsSwitcherProvider,
 };
 use window::{AppShell, WM_APP_WAKE_EXISTING};
 use windows::core::{w, PCWSTR};
@@ -112,6 +112,7 @@ fn build_engine() -> (
     ));
     let everything = Arc::new(EverythingProvider::new(config.clone()));
     let calc = Arc::new(CalcProvider::new());
+    let translate = Arc::new(TranslateProvider::new(config.clone()));
     let snippets = Arc::new(SnippetsProvider::new(config.clone()));
     let web = Arc::new(WebSearchProvider::new(config.clone()));
     let windows = Arc::new(WindowsSwitcherProvider::new());
@@ -129,6 +130,7 @@ fn build_engine() -> (
         web,
         everything,
         clipboard.clone(),
+        translate,
         windows,
         processes,
         system,
@@ -306,6 +308,7 @@ fn main() {
 
     let log_writer = crash_guard::init_logging_and_crash_guards(is_self_test);
     let _ = tracing_subscriber::fmt()
+        .with_timer(crash_guard::BeijingTimer)
         .with_writer(log_writer)
         .with_ansi(false)
         .with_env_filter(

@@ -19,6 +19,7 @@ mod shim_js;
 #[cfg(windows)]
 mod single_instance;
 mod store;
+mod tr_view;
 #[cfg(windows)]
 mod win_host;
 #[cfg(windows)]
@@ -32,9 +33,9 @@ use shim_js::build_init_script;
 use std::io::{self, Write};
 use store::fetch_store_catalog_json;
 use tomoyo_core::{
-    count_recent_log_issues, init_process_diagnostics, is_autostart_enabled, locate_fonts_dir,
-    logs_dir, write_process_log_bytes, PrivateFonts, TomoyoConfig, CURRENT_VERSION,
-    DEFAULT_SUB_LOG_BYTES,
+    count_recent_log_issues, format_beijing_now, init_process_diagnostics, is_autostart_enabled,
+    locate_fonts_dir, logs_dir, write_process_log_bytes, PrivateFonts, TomoyoConfig,
+    CURRENT_VERSION, DEFAULT_SUB_LOG_BYTES,
 };
 use tomoyo_plugin_host::{default_plugin_dirs, PluginHost};
 
@@ -58,9 +59,19 @@ impl Write for WebviewLogSink {
     }
 }
 
+#[derive(Clone, Copy)]
+struct BeijingTimer;
+
+impl tracing_subscriber::fmt::time::FormatTime for BeijingTimer {
+    fn format_time(&self, w: &mut tracing_subscriber::fmt::format::Writer<'_>) -> std::fmt::Result {
+        w.write_str(&format_beijing_now())
+    }
+}
+
 fn init_webview_logging() {
     init_process_diagnostics("webview-host", "webview", DEFAULT_SUB_LOG_BYTES, false);
     let _ = tracing_subscriber::fmt()
+        .with_timer(BeijingTimer)
         .with_writer(WebviewLogMakeWriter)
         .with_ansi(false)
         .with_env_filter(
@@ -76,6 +87,7 @@ const SETTINGS_I18N_JS: &str = include_str!("ui/i18n.js");
 const SETTINGS_STORE_JS: &str = include_str!("ui/store_updater.js");
 const SETTINGS_CONTROLS_JS: &str = include_str!("ui/controls.js");
 const SETTINGS_CLIP_JS: &str = include_str!("ui/clip_controls.js");
+const SETTINGS_TRANSLATE_JS: &str = include_str!("ui/translate_controls.js");
 const SETTINGS_APP_JS: &str = include_str!("ui/settings.js");
 
 pub fn assemble_settings_html() -> String {
@@ -85,6 +97,7 @@ pub fn assemble_settings_html() -> String {
         .replace("/*__SETTINGS_STORE_JS__*/", SETTINGS_STORE_JS)
         .replace("/*__SETTINGS_CONTROLS_JS__*/", SETTINGS_CONTROLS_JS)
         .replace("/*__SETTINGS_CLIP_JS__*/", SETTINGS_CLIP_JS)
+        .replace("/*__SETTINGS_TRANSLATE_JS__*/", SETTINGS_TRANSLATE_JS)
         .replace("/*__SETTINGS_JS__*/", SETTINGS_APP_JS)
 }
 
@@ -112,6 +125,7 @@ fn parse_args() -> LaunchArgs {
     let cfg_theme = if settings_mode
         || ocr_view::is_ocr_viewer_entry(&entry)
         || clip_view::is_clip_manager_entry(&entry)
+        || tr_view::is_translator_entry(&entry)
     {
         TomoyoConfig::load_or_create().theme
     } else if args.iter().any(|a| a == "--light") {
@@ -171,6 +185,7 @@ pub fn build_settings_init_script() -> String {
     let plugins_dir = tomoyo_core::data_dir().join("plugins");
     let _ = std::fs::create_dir_all(&plugins_dir);
 
+    let (log_warns, log_errs, log_crash) = count_recent_log_issues();
     let payload = serde_json::json!({
         "version": CURRENT_VERSION,
         "config": cfg,
@@ -179,8 +194,9 @@ pub fn build_settings_init_script() -> String {
         "config_path": TomoyoConfig::config_path().to_string_lossy(),
         "plugins_dir": plugins_dir.to_string_lossy(),
         "logs_dir": logs_dir().to_string_lossy(),
-        "log_issues": count_recent_log_issues(),
+        "log_issues": { "warnings": log_warns, "errors": log_errs, "has_crash_report": log_crash },
         "running_apps": clip_view::enumerate_running_app_exes(),
+        "secrets_status": tr_view::secrets_status_json(),
         "has_bundled_alibaba_font": locate_fonts_dir().is_some(),
     });
     format!(
@@ -231,9 +247,12 @@ fn main() {
         assert!(html.contains("tab-logs"));
         assert!(html.contains("clip-advanced-mount"));
         assert!(html.contains("clip-excl-search"));
+        assert!(html.contains("tab-translate"));
+        assert!(html.contains("tr-hotkey-recorder"));
         assert!(html.contains("tab-updates"));
         assert!(ocr_view::assemble_ocr_viewer_html().contains("__TOMOYO_OCR_DATA__"));
         assert!(clip_view::assemble_clip_manager_html().contains("__TOMOYO_CLIP_INIT__"));
+        assert!(tr_view::assemble_translator_html().contains("__TOMOYO_TR_INIT__"));
         assert!(handle_host_message(
             r#"{"cmd":"clip_list","query":""}"#,
             &mut pdb,
