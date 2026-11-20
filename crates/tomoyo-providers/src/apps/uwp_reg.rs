@@ -1,6 +1,8 @@
+#[cfg(windows)]
 use super::is_noisy_shortcut;
 use super::scanner::ScannedApp;
 use std::collections::HashSet;
+#[cfg(windows)]
 use std::path::Path;
 
 /// Native COM enumeration of `FOLDERID_AppsFolder` indexing Windows Store UWP/MSIX apps

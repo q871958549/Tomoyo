@@ -1,9 +1,14 @@
 use tomoyo_everything::wire::{
-    parse_list2_buffer, EVERYTHING_IPC_COPYDATA_QUERY2W, EVERYTHING_IPC_QUERY2_REQUEST_DATE_MODIFIED,
-    EVERYTHING_IPC_QUERY2_REQUEST_NAME, EVERYTHING_IPC_QUERY2_REQUEST_PATH,
+    parse_list2_buffer, EVERYTHING_IPC_QUERY2_REQUEST_NAME, EVERYTHING_IPC_QUERY2_REQUEST_PATH,
     EVERYTHING_IPC_QUERY2_REQUEST_SIZE,
 };
-use tomoyo_everything::{detect_running, query, EverythingQueryOptions, EverythingVersion};
+#[cfg(windows)]
+use tomoyo_everything::wire::{
+    EVERYTHING_IPC_COPYDATA_QUERY2W, EVERYTHING_IPC_QUERY2_REQUEST_DATE_MODIFIED,
+};
+use tomoyo_everything::{detect_running, query, EverythingQueryOptions};
+#[cfg(windows)]
+use tomoyo_everything::EverythingVersion;
 
 #[test]
 fn parses_synthetic_list2_buffer() {

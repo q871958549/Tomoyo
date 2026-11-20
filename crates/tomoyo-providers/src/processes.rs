@@ -1,5 +1,7 @@
 use std::sync::{Arc, RwLock};
-use tomoyo_core::{inspect_pid_working_set, Lang, Provider, TomoyoConfig};
+#[cfg(windows)]
+use tomoyo_core::inspect_pid_working_set;
+use tomoyo_core::{Lang, Provider, TomoyoConfig};
 use tomoyo_protocol::{
     ActionKind, ActionSpec, IconSpec, InternalCommandKind, PreviewSpec, QueryContext,
     ResultCategory, ResultItem,
