@@ -180,8 +180,8 @@ fn apply_mosaic(bgra: &mut [u8], w: i32, h: i32, r: ScreenRect, block: i32) {
                     sb += bgra[off] as u64; sg += bgra[off + 1] as u64; sr += bgra[off + 2] as u64; n += 1;
                 }
             }
-            if n > 0 {
-                let (ab, ag, ar) = ((sb / n) as u8, (sg / n) as u8, (sr / n) as u8);
+            if let (Some(ab), Some(ag), Some(ar)) = (sb.checked_div(n), sg.checked_div(n), sr.checked_div(n)) {
+                let (ab, ag, ar) = (ab as u8, ag as u8, ar as u8);
                 for py in y..y_end {
                     for px in x..x_end {
                         let off = ((py as usize) * (w as usize) + (px as usize)) * 4;
