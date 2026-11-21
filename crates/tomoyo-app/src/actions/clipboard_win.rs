@@ -237,7 +237,7 @@ fn decode_dib_slice(slice: &[u8], hdr_size: usize) -> Option<(u32, u32, Vec<u8>)
         }
     }
     if bpp == 32 && !any_alpha {
-        for px in rgba.chunks_exact_mut(4) {
+        for px in rgba.as_chunks_mut::<4>().0 {
             px[3] = 255;
         }
     }

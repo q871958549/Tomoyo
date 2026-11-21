@@ -102,8 +102,8 @@ pub fn parse_list2_buffer(buf: &[u8]) -> Result<EverythingResponse, EverythingEr
             .get(*cursor..*cursor + byte_len)
             .ok_or_else(|| EverythingError::Ipc("unexpected EOF reading utf16 string".into()))?;
         let mut units = Vec::with_capacity(len_chars);
-        for chunk in bytes.chunks_exact(2) {
-            units.push(u16::from_le_bytes([chunk[0], chunk[1]]));
+        for &chunk in bytes.as_chunks::<2>().0 {
+            units.push(u16::from_le_bytes(chunk));
         }
         *cursor = cursor
             .checked_add(byte_len)

@@ -91,7 +91,7 @@ pub(crate) fn paint_hud_canvas(
     hovered: Option<HudCmd>,
 ) {
     let dst = unsafe { std::slice::from_raw_parts_mut(dib_bits, (HUD_W * HUD_H * 4) as usize) };
-    for px in dst.chunks_exact_mut(4) { px[0] = 0x20; px[1] = 0x18; px[2] = 0x16; px[3] = 255; }
+    for px in dst.as_chunks_mut::<4>().0 { px[0] = 0x20; px[1] = 0x18; px[2] = 0x16; px[3] = 255; }
     draw_capsule(dst, HUD_W, HUD_H, ScreenRect { x: 0, y: 0, w: HUD_W, h: HUD_H }, 10.0);
     for b in btns {
         let hov = hovered == Some(b.cmd);
@@ -161,7 +161,7 @@ pub(crate) fn capture_region_bgra(x: i32, y: i32, w: i32, h: i32) -> Option<Vec<
             || BitBlt(mem_dc, 0, 0, w, h, Some(screen_dc), x, y, SRCCOPY).is_ok();
         let out = if ok {
             let mut v = std::slice::from_raw_parts(bits as *const u8, (w as usize) * (h as usize) * 4).to_vec();
-            for px in v.chunks_exact_mut(4) { px[3] = 255; }
+            for px in v.as_chunks_mut::<4>().0 { px[3] = 255; }
             Some(v)
         } else { None };
         let _ = SelectObject(mem_dc, old);

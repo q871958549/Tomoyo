@@ -191,8 +191,9 @@ pub(super) fn scan_registry_app_paths(
                         && data_len >= 2
                     {
                         let u16s: Vec<u16> = data[..data_len as usize]
-                            .chunks_exact(2)
-                            .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                            .as_chunks::<2>().0
+                            .iter()
+                            .map(|&c| u16::from_le_bytes(c))
                             .take_while(|&c| c != 0)
                             .collect();
                         let raw_path = String::from_utf16_lossy(&u16s)
@@ -374,8 +375,9 @@ unsafe fn reg_read_string(hkey: windows::Win32::System::Registry::HKEY, name: &s
         return None;
     }
     let u16s: Vec<u16> = data[..len as usize]
-        .chunks_exact(2)
-        .map(|c| u16::from_le_bytes([c[0], c[1]]))
+        .as_chunks::<2>().0
+        .iter()
+        .map(|&c| u16::from_le_bytes(c))
         .take_while(|&c| c != 0)
         .collect();
     let s = String::from_utf16_lossy(&u16s).trim().to_string();

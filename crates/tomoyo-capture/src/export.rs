@@ -21,7 +21,7 @@ pub fn save_bgra_as_png(path: &Path, width: u32, height: u32, bgra: &[u8]) -> Re
         let _ = std::fs::create_dir_all(parent);
     }
     let mut rgba = Vec::with_capacity((width as usize) * (height as usize) * 4);
-    for px in bgra.chunks_exact(4) {
+    for px in bgra.as_chunks::<4>().0 {
         rgba.push(px[2]);
         rgba.push(px[1]);
         rgba.push(px[0]);
@@ -48,17 +48,17 @@ pub fn load_png_as_bgra(path: &Path) -> Result<(u32, u32, Vec<u8>), String> {
     let mut bgra = Vec::with_capacity((w as usize) * (h as usize) * 4);
     match info.color_type {
         png::ColorType::Rgba => {
-            for px in buf[..info.buffer_size()].chunks_exact(4) {
+            for px in buf[..info.buffer_size()].as_chunks::<4>().0 {
                 bgra.extend_from_slice(&[px[2], px[1], px[0], 255]);
             }
         }
         png::ColorType::Rgb => {
-            for px in buf[..info.buffer_size()].chunks_exact(3) {
+            for px in buf[..info.buffer_size()].as_chunks::<3>().0 {
                 bgra.extend_from_slice(&[px[2], px[1], px[0], 255]);
             }
         }
         png::ColorType::GrayscaleAlpha => {
-            for px in buf[..info.buffer_size()].chunks_exact(2) {
+            for px in buf[..info.buffer_size()].as_chunks::<2>().0 {
                 bgra.extend_from_slice(&[px[0], px[0], px[0], 255]);
             }
         }

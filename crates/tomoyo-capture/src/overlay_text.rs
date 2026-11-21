@@ -102,7 +102,7 @@ pub fn bake_text_annotations_into_bgra(
             render_text_annotations_gdi(mem_dc, offset_x, offset_y, annotations);
             let _ = GdiFlush();
             bgra.copy_from_slice(slice);
-            for px in bgra.chunks_exact_mut(4) { px[3] = 255; }
+            for px in bgra.as_chunks_mut::<4>().0 { px[3] = 255; }
             let _ = SelectObject(mem_dc, old);
             let _ = DeleteObject(bmp.into());
         }

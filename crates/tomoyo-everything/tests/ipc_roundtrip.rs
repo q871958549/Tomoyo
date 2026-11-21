@@ -76,8 +76,9 @@ fn loopback_wm_copydata_roundtrip() {
                 let reply_id = u32::from_le_bytes(req[4..8].try_into().unwrap());
                 let req_flags = u32::from_le_bytes(req[20..24].try_into().unwrap());
                 let query_u16: Vec<u16> = req[28..]
-                    .chunks_exact(2)
-                    .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                    .as_chunks::<2>().0
+                    .iter()
+                    .map(|&c| u16::from_le_bytes(c))
                     .take_while(|&u| u != 0)
                     .collect();
                 let query_str = String::from_utf16_lossy(&query_u16);

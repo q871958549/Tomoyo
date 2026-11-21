@@ -103,7 +103,7 @@ impl LivePreviewStrip {
     pub fn redraw(&mut self, canvas: &StitchCanvas, font: HFONT) {
         let (pw, ph) = (self.width, self.height);
         let dst = unsafe { std::slice::from_raw_parts_mut(self.dib_bits, (pw * ph * 4) as usize) };
-        for px in dst.chunks_exact_mut(4) { px[0] = 0x20; px[1] = 0x18; px[2] = 0x16; px[3] = 255; }
+        for px in dst.as_chunks_mut::<4>().0 { px[0] = 0x20; px[1] = 0x18; px[2] = 0x16; px[3] = 255; }
         draw_capsule(dst, pw, ph, ScreenRect { x: 0, y: 0, w: pw, h: ph }, 10.0);
 
         let pad = 8;

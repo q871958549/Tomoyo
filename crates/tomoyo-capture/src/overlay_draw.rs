@@ -331,7 +331,7 @@ pub fn wheel_hud_rect(cursor: (i32, i32), w: i32, h: i32) -> ScreenRect {
 
 pub fn precompute_dimmed(bgra: &[u8]) -> Vec<u8> {
     let mut out = bgra.to_vec();
-    for px in out.chunks_exact_mut(4) {
+    for px in out.as_chunks_mut::<4>().0 {
         px[0] = ((px[0] as u16 * 112) >> 8) as u8;
         px[1] = ((px[1] as u16 * 112) >> 8) as u8;
         px[2] = ((px[2] as u16 * 112) >> 8) as u8;

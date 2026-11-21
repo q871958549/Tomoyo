@@ -13,7 +13,7 @@ impl<'a> Canvas<'a> {
     pub fn clear(&mut self, c: Rgb) {
         let px_u32 = u32::from_le_bytes([c.2, c.1, c.0, 255]);
         // Fast aligned fill for clear background pass
-        for chunk in self.buf.chunks_exact_mut(4) {
+        for chunk in self.buf.as_chunks_mut::<4>().0 {
             chunk.copy_from_slice(&px_u32.to_le_bytes());
         }
     }
@@ -39,7 +39,7 @@ impl<'a> Canvas<'a> {
             let row = (y * self.w) as usize * 4;
             let start = row + (x0 as usize) * 4;
             let end = row + (x1 as usize) * 4;
-            for cell in self.buf[start..end].chunks_exact_mut(4) {
+            for cell in self.buf[start..end].as_chunks_mut::<4>().0 {
                 cell.copy_from_slice(&px);
             }
         }

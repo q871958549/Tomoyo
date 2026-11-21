@@ -174,7 +174,7 @@ pub fn capture_virtual_desktop() -> Result<DesktopSnapshot, String> {
         let byte_len = (width as usize) * (height as usize) * 4;
         let bgra = if blit_ok {
             let mut buf = std::slice::from_raw_parts(bits as *const u8, byte_len).to_vec();
-            for px in buf.chunks_exact_mut(4) {
+            for px in buf.as_chunks_mut::<4>().0 {
                 px[3] = 255;
             }
             buf
