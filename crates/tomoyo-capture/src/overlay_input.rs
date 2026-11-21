@@ -15,7 +15,8 @@ use windows::core::PCWSTR;
 use windows::Win32::Foundation::HWND;
 use windows::Win32::Graphics::Gdi::InvalidateRect;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    GetKeyState, SetCapture, VK_BACK, VK_CONTROL, VK_DELETE, VK_ESCAPE, VK_RETURN, VK_SHIFT,
+    GetKeyState, SetCapture, VK_BACK, VK_CONTROL, VK_DELETE, VK_ESCAPE, VK_MENU, VK_RETURN,
+    VK_SHIFT,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     IDC_CROSS, IDC_HAND, IDC_SIZEALL, IDC_SIZENESW, IDC_SIZENS, IDC_SIZENWSE, IDC_SIZEWE,
@@ -270,46 +271,51 @@ pub fn handle_mouse_move(st: &mut OverlayState, hwnd: HWND, x: i32, y: i32) {
 
 pub fn handle_key_down(st: &mut OverlayState, hwnd: HWND, vk: u16) {
     let ctrl = unsafe { (GetKeyState(VK_CONTROL.0 as i32) as u16 & 0x8000) != 0 };
+    let alt = unsafe { (GetKeyState(VK_MENU.0 as i32) as u16 & 0x8000) != 0 };
+    let shift = unsafe { (GetKeyState(VK_SHIFT.0 as i32) as u16 & 0x8000) != 0 };
     if vk == VK_ESCAPE.0 {
         st.execute_action(hwnd, ToolbarCmd::Cancel);
     } else if (vk == VK_DELETE.0 || vk == VK_BACK.0) && st.stack.selected.is_some() {
         st.stack.delete_selected();
         unsafe { let _ = InvalidateRect(Some(hwnd), None, false); }
-    } else if vk == VK_RETURN.0 || (ctrl && vk == b'C' as u16 && st.sel.is_some()) {
+    } else if vk == VK_RETURN.0 || (ctrl && !shift && !alt && vk == b'C' as u16 && st.sel.is_some()) {
         st.execute_action(hwnd, ToolbarCmd::Copy);
-    } else if ctrl && vk == b'Z' as u16 {
+    } else if ctrl && !shift && !alt && vk == b'Z' as u16 {
         st.stack.undo();
         unsafe { let _ = InvalidateRect(Some(hwnd), None, false); }
-    } else if ctrl && vk == b'Y' as u16 {
+    } else if ctrl && !shift && !alt && vk == b'Y' as u16 {
         st.stack.redo();
         unsafe { let _ = InvalidateRect(Some(hwnd), None, false); }
-    } else if ctrl && vk == b'S' as u16 {
+    } else if ctrl && !shift && !alt && vk == b'S' as u16 {
         st.execute_action(hwnd, ToolbarCmd::Save);
     } else if vk == VK_SHIFT.0 && st.sel.is_none() {
         st.rgb_mode = !st.rgb_mode;
         unsafe { let _ = InvalidateRect(Some(hwnd), None, false); }
-    } else if vk == b'C' as u16 && st.sel.is_none() {
+    } else if !ctrl && !alt && !shift && vk == b'C' as u16 && st.sel.is_none() {
         let (r, g, b) = st.snap.pixel_rgb(st.cursor.0, st.cursor.1);
         let txt = if st.rgb_mode { format!("rgb({r}, {g}, {b})") }
             else if st.hex_lower { format!("#{r:02x}{g:02x}{b:02x}") }
             else { format!("#{r:02X}{g:02X}{b:02X}") };
         copy_text_to_clipboard(&txt);
         st.execute_action(hwnd, ToolbarCmd::Cancel);
-    } else if !ctrl && st.sel.is_some() {
+    } else if st.sel.is_some() {
         let b = vk as u8;
         let hk = &st.tool_hotkeys;
-        let cmd = if CaptureToolHotkeys::matches_vk(&hk.rect, b) || b == b'1' { Some(ToolbarCmd::Tool(ToolKind::Rect)) }
-            else if CaptureToolHotkeys::matches_vk(&hk.ellipse, b) || b == b'2' { Some(ToolbarCmd::Tool(ToolKind::Ellipse)) }
-            else if CaptureToolHotkeys::matches_vk(&hk.arrow, b) || b == b'3' { Some(ToolbarCmd::Tool(ToolKind::Arrow)) }
-            else if CaptureToolHotkeys::matches_vk(&hk.pen, b) || b == b'4' { Some(ToolbarCmd::Tool(ToolKind::Pen)) }
-            else if CaptureToolHotkeys::matches_vk(&hk.highlighter, b) { Some(ToolbarCmd::Tool(ToolKind::Highlighter)) }
-            else if CaptureToolHotkeys::matches_vk(&hk.mosaic, b) || b == b'5' { Some(ToolbarCmd::Tool(ToolKind::Mosaic)) }
-            else if CaptureToolHotkeys::matches_vk(&hk.step, b) || b == b'6' { Some(ToolbarCmd::Tool(ToolKind::StepNumber)) }
-            else if CaptureToolHotkeys::matches_vk(&hk.text, b) { Some(ToolbarCmd::Tool(ToolKind::Text)) }
-            else if CaptureToolHotkeys::matches_vk(&hk.scroll, b) { Some(ToolbarCmd::ScrollLong) }
-            else if CaptureToolHotkeys::matches_vk(&hk.pin, b) { Some(ToolbarCmd::Pin) }
-            else if CaptureToolHotkeys::matches_vk(&hk.ocr, b) { Some(ToolbarCmd::Ocr) }
-            else if CaptureToolHotkeys::matches_vk(&hk.translate, b) { Some(ToolbarCmd::Translate) }
+        let m = |spec: &str| CaptureToolHotkeys::matches_combo(spec, b, ctrl, alt, shift);
+        let plain = !ctrl && !alt && !shift;
+        let cmd = if m(&hk.ocr_copy) { Some(ToolbarCmd::OcrCopy) }
+            else if m(&hk.ocr) { Some(ToolbarCmd::Ocr) }
+            else if m(&hk.translate) { Some(ToolbarCmd::Translate) }
+            else if m(&hk.pin) { Some(ToolbarCmd::Pin) }
+            else if m(&hk.scroll) { Some(ToolbarCmd::ScrollLong) }
+            else if m(&hk.rect) || (plain && b == b'1') { Some(ToolbarCmd::Tool(ToolKind::Rect)) }
+            else if m(&hk.ellipse) || (plain && b == b'2') { Some(ToolbarCmd::Tool(ToolKind::Ellipse)) }
+            else if m(&hk.arrow) || (plain && b == b'3') { Some(ToolbarCmd::Tool(ToolKind::Arrow)) }
+            else if m(&hk.pen) || (plain && b == b'4') { Some(ToolbarCmd::Tool(ToolKind::Pen)) }
+            else if m(&hk.highlighter) { Some(ToolbarCmd::Tool(ToolKind::Highlighter)) }
+            else if m(&hk.mosaic) || (plain && b == b'5') { Some(ToolbarCmd::Tool(ToolKind::Mosaic)) }
+            else if m(&hk.step) || (plain && b == b'6') { Some(ToolbarCmd::Tool(ToolKind::StepNumber)) }
+            else if m(&hk.text) { Some(ToolbarCmd::Tool(ToolKind::Text)) }
             else { None };
         if let Some(c) = cmd {
             st.execute_action(hwnd, c);

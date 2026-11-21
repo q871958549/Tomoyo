@@ -54,5 +54,9 @@ export function buildComboFromEvent(e: KeyboardEvent): { combo?: string; needMod
     if (STANDALONE_KEYS.has(mainKey)) return { combo: mainKey };
     return { needMod: true };
   }
+  // Never bind bare Shift + printable globally (would block typing uppercase letters system-wide).
+  if (mods.length === 1 && mods[0] === 'Shift' && !STANDALONE_KEYS.has(mainKey)) {
+    return { needMod: true };
+  }
   return { combo: [...mods, mainKey].join('+') };
 }

@@ -5,6 +5,7 @@
 //! and an ephemeral split-pane OCR Inspector/Editor view.
 
 mod ocr_engine;
+mod ocr_preprocess;
 
 use ocr_engine::{
     available_ocr_languages, find_latest_clipboard_image, is_image_ext, recognize_image,
@@ -359,6 +360,7 @@ fn main() {
     }
     if args.len() >= 2 && args[0] == "--recognize" {
         let raw_mode = args.iter().any(|a| a == "--raw");
+        let json_mode = args.iter().any(|a| a == "--json");
         let pref = if args.iter().any(|a| a == "--en") {
             LangPref::En
         } else if args.iter().any(|a| a == "--zh") {
@@ -366,19 +368,37 @@ fn main() {
         } else {
             LangPref::Auto
         };
-        match recognize_image(Path::new(&args[1]), pref, raw_mode) {
+        let img_path = Path::new(&args[1]);
+        match recognize_image(img_path, pref, raw_mode) {
             Ok(out) => {
-                println!(
-                    "[OCR {} | {} line(s) | {}x{}->{}x{} | {} ms]\n{}",
-                    out.lang_tag,
-                    out.lines.len(),
-                    out.src_dims.0,
-                    out.src_dims.1,
-                    out.proc_dims.0,
-                    out.proc_dims.1,
-                    out.elapsed_ms,
-                    out.text
-                );
+                persist_last_ocr_snapshot(img_path, &out);
+                if json_mode {
+                    let snap = serde_json::json!({
+                        "image_path": img_path.to_string_lossy(),
+                        "text": out.text,
+                        "raw_text": out.raw_text,
+                        "lang_tag": out.lang_tag,
+                        "lang_note": out.lang_note,
+                        "lines_count": out.lines.len(),
+                        "chars_count": out.text.chars().count(),
+                        "src_dims": [out.src_dims.0, out.src_dims.1],
+                        "proc_dims": [out.proc_dims.0, out.proc_dims.1],
+                        "elapsed_ms": out.elapsed_ms,
+                    });
+                    println!("{snap}");
+                } else {
+                    println!(
+                        "[OCR {} | {} line(s) | {}x{}->{}x{} | {} ms]\n{}",
+                        out.lang_tag,
+                        out.lines.len(),
+                        out.src_dims.0,
+                        out.src_dims.1,
+                        out.proc_dims.0,
+                        out.proc_dims.1,
+                        out.elapsed_ms,
+                        out.text
+                    );
+                }
             }
             Err(e) => {
                 eprintln!("[OCR ERROR] {e}");

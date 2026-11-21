@@ -1,7 +1,9 @@
 //! Pure Win32 `main_wndproc` message dispatcher delegating into cohesive `AppShell` methods.
 
 use super::commands::{dispatch_menu_id, dispatch_wm_command};
-use super::input::{register_all_hotkeys, unregister_all_hotkeys, HOTKEY_CAPTURE_ID, HOTKEY_PIN_ID};
+use super::input::{
+    register_all_hotkeys, unregister_all_hotkeys, HOTKEY_CAPTURE_ID, HOTKEY_OCR_ID, HOTKEY_PIN_ID,
+};
 use super::updater_ctrl::WM_APP_UPDATE_PROGRESS;
 use super::wndproc_mouse::{
     handle_lbutton_dblclk, handle_lbutton_up, handle_mouse_down, handle_mouse_leave,
@@ -134,6 +136,7 @@ pub(super) unsafe extern "system" fn main_wndproc(
                 HOTKEY_TRANSLATE_ID => app.trigger_selection_translate(),
                 HOTKEY_CAPTURE_ID => app.trigger_capture("region"),
                 HOTKEY_PIN_ID => app.trigger_capture("pin_clipboard"),
+                HOTKEY_OCR_ID => app.trigger_capture("ocr"),
                 id if id >= super::plugin_hotkeys::FLOW_HOTKEY_BASE => {
                     super::plugin_hotkeys::handle_flow_hotkey(app, id);
                 }

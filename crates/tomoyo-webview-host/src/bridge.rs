@@ -58,6 +58,7 @@ pub enum HostMessage {
     StopHotkeyCapture,
     AuditHotkeys,
     ProbeHotkeyOwner { spec: String },
+    TerminateConflictProcess { pid: u32, process_name: String },
     RevealPath { path: String },
     ExportConfigBackup,
     ImportConfigBackup { json: String },
@@ -220,6 +221,18 @@ pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isi
         HostMessage::StopHotkeyCapture => HostAction { hotkey_capture_cmd: -1, ..Default::default() },
         HostMessage::AuditHotkeys => HostAction { async_audit_hotkeys: true, ..Default::default() },
         HostMessage::ProbeHotkeyOwner { spec } => HostAction { async_probe_hotkey: Some(spec), ..Default::default() },
+        HostMessage::TerminateConflictProcess { pid, process_name } => {
+            #[cfg(windows)]
+            let res = crate::hotkey_doctor::terminate_conflict_process(pid, &process_name);
+            #[cfg(not(windows))]
+            let res: Result<String, String> = Err(format!("Unsupported platform ({pid} {process_name})"));
+            let (ok, msg) = match res { Ok(m) => (true, m), Err(e) => (false, e) };
+            let reply = serde_json::json!({
+                "event": "conflict_process_terminated",
+                "ok": ok, "pid": pid, "process_name": process_name, "message": msg
+            }).to_string();
+            HostAction { reply_json: Some(reply), async_audit_hotkeys: ok, ..Default::default() }
+        }
         HostMessage::RevealPath { path } => {
             #[cfg(windows)]
             crate::hotkey_doctor::reveal_file_in_explorer(&path);

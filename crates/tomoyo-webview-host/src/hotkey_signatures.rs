@@ -136,6 +136,8 @@ pub(crate) fn guess_suspects(
                         exe_path: p.exe_path.clone(),
                         reason: format!("{label}命中 {spec}（配置文件实锤）"),
                         confidence: "high",
+                        remediation: remediation_for_app(&p.name_lower, spec),
+                        can_terminate: is_safe_to_terminate(&p.name_lower),
                     });
                 }
     }
@@ -151,8 +153,111 @@ pub(crate) fn guess_suspects(
                     exe_path: p.exe_path.clone(),
                     reason: format!("{label} 常见默认键参考"),
                     confidence: "medium",
+                    remediation: remediation_for_app(&p.name_lower, spec),
+                    can_terminate: is_safe_to_terminate(&p.name_lower),
                 });
             }
     }
     out
+}
+
+pub(crate) fn remediation_for_app(name_lower: &str, spec: &str) -> String {
+    if name_lower.contains("wetype") {
+        format!("打开微信输入法「设置 → 快捷键」，取消或修改 {spec}（如剪贴板/常用语快捷键），保存后点击「重新扫描热键」即可彻底释放系统占位。")
+    } else if name_lower.contains("wechat") || name_lower.contains("weixin") {
+        format!("打开微信「设置 → 快捷键」，修改或清空 {spec} 绑定。")
+    } else if name_lower.contains("qq.exe") {
+        format!("打开 QQ「设置 → 热键 → 设置热键」，取消或更换 {spec}。")
+    } else if name_lower.contains("nvdisplay") || name_lower.contains("nvcontainer") || name_lower.contains("nvidia") {
+        format!("按 Alt+Z 打开 NVIDIA 浮层 → 设置 → 快捷键，解绑 {spec} 或关闭游戏内覆盖。")
+    } else if name_lower.contains("powertoys") {
+        format!("打开 Microsoft PowerToys，关闭对应模块的 {spec} 激活快捷键。")
+    } else if name_lower.contains("pixpin") || name_lower.contains("snipaste") || name_lower.contains("sharex") {
+        format!("打开该截图工具的「偏好设置 → 快捷键」，取消或更改 {spec}。")
+    } else if name_lower.contains("copyq") || name_lower.contains("ditto") {
+        format!("打开该剪贴板软件的全局快捷键设置，解绑 {spec} 或退出该进程。")
+    } else if name_lower.contains("dingtalk") || name_lower.contains("feishu") || name_lower.contains("lark") {
+        format!("打开该办公软件「设置 → 快捷键」，关闭或修改 {spec}。")
+    } else {
+        format!("请在 {name_lower} 的偏好设置中修改/关闭 {spec} 快捷键，或点击下方「结束进程」临时释放并重扫。")
+    }
+}
+
+pub(crate) fn is_safe_to_terminate(name_lower: &str) -> bool {
+    !is_background_noise_process(name_lower)
+        && !matches!(
+            name_lower,
+            "lsass.exe" | "winlogon.exe" | "wininit.exe" | "services.exe" | "ctfmon.exe" | "sihost.exe"
+        )
+}
+
+/// Reveals and selects `path` in File Explorer via native `SHOpenFolderAndSelectItems`,
+/// eliminating `explorer.exe /select,` quoting bugs on paths containing spaces (`Program Files`).
+pub(crate) fn reveal_path_native(path: &str) {
+    use windows::core::{HSTRING, PCWSTR};
+    use windows::Win32::UI::Shell::{ILCreateFromPathW, ILFree, SHOpenFolderAndSelectItems};
+
+    let p = std::path::Path::new(path);
+    if path.is_empty() || !p.exists() {
+        return;
+    }
+    let normalized = path.replace('/', "\\");
+    let wide = HSTRING::from(&normalized);
+    unsafe {
+        let pidl = ILCreateFromPathW(PCWSTR(wide.as_ptr()));
+        if !pidl.is_null() {
+            let hr = SHOpenFolderAndSelectItems(pidl, None, 0);
+            ILFree(Some(pidl));
+            if hr.is_ok() {
+                return;
+            }
+        }
+    }
+    if let Some(parent) = p.parent().filter(|d| d.is_dir()) {
+        crate::bridge_os::shell_open(&parent.to_string_lossy());
+    }
+}
+
+/// Safely terminates a user-space process holding a conflicted shortcut after verifying PID + exe basename.
+pub(crate) fn terminate_conflict_process_safe(pid: u32, expected_name: &str) -> Result<String, String> {
+    use windows::core::PWSTR;
+    use windows::Win32::Foundation::CloseHandle;
+    use windows::Win32::System::Threading::{
+        OpenProcess, QueryFullProcessImageNameW, TerminateProcess, PROCESS_NAME_WIN32,
+        PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE,
+    };
+
+    if pid <= 4 || pid == std::process::id() {
+        return Err("拒绝结束系统关键进程或自身进程".into());
+    }
+    let lower_expected = expected_name.trim().to_ascii_lowercase();
+    if lower_expected.is_empty() || !is_safe_to_terminate(&lower_expected) {
+        return Err(format!("安全保护：禁止结束受保护进程 {expected_name}"));
+    }
+    unsafe {
+        let h_q = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid)
+            .map_err(|_| format!("进程 {expected_name} (PID {pid}) 已退出或无权访问"))?;
+        let mut buf = vec![0u16; 520];
+        let mut len = buf.len() as u32;
+        let ok = QueryFullProcessImageNameW(h_q, PROCESS_NAME_WIN32, PWSTR(buf.as_mut_ptr()), &mut len).is_ok();
+        let _ = CloseHandle(h_q);
+        let actual_path = if ok && len > 0 { String::from_utf16_lossy(&buf[..len as usize]) } else { String::new() };
+        let actual_name = std::path::Path::new(&actual_path)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        if actual_name != lower_expected {
+            return Err(format!("PID {pid} 对应进程已变化（{actual_name}），已取消操作"));
+        }
+        let h_t = OpenProcess(PROCESS_TERMINATE, false, pid)
+            .map_err(|_| format!("权限不足，无法结束 {expected_name}（可能需要管理员权限或在软件内关闭快捷键）"))?;
+        let res = TerminateProcess(h_t, 0);
+        let _ = CloseHandle(h_t);
+        if res.is_err() {
+            return Err(format!("结束 {expected_name} (PID {pid}) 失败"));
+        }
+    }
+    std::thread::sleep(std::time::Duration::from_millis(140));
+    Ok(format!("已结束进程 {expected_name} (PID {pid})，正在重新扫描热键…"))
 }

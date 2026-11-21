@@ -15,11 +15,12 @@
     lang: Lang;
     capHotkeyStatus?: HotkeySlotStatus;
     pinHotkeyStatus?: HotkeySlotStatus;
+    ocrHotkeyStatus?: HotkeySlotStatus;
     onJumpDoctor?: () => void;
     onSave: (delayMs?: number) => void;
   }
 
-  let { cfg, lang, capHotkeyStatus, pinHotkeyStatus, onJumpDoctor, onSave }: Props = $props();
+  let { cfg, lang, capHotkeyStatus, pinHotkeyStatus, ocrHotkeyStatus, onJumpDoctor, onSave }: Props = $props();
   let isEn = $derived(lang === 'en');
   let editingToolKey = $state<keyof CaptureToolHotkeys | null>(null);
   let toolKeyHint = $state('');
@@ -42,6 +43,14 @@
     { value: 'Alt+2', label: 'Alt+2' },
   ];
 
+  const ocrPresets = [
+    { value: 'Alt+Shift+C', label: 'Alt+Shift+C（推荐）' },
+    { value: 'Ctrl+Shift+O', label: 'Ctrl+Shift+O' },
+    { value: 'Alt+O', label: 'Alt+O' },
+    { value: 'F4', label: 'F4' },
+    { value: 'Alt+2', label: 'Alt+2' },
+  ];
+
   const toolKeyItems: Array<{ key: keyof CaptureToolHotkeys; zh: string; en: string }> = [
     { key: 'rect', zh: '矩形框', en: 'Rect' },
     { key: 'ellipse', zh: '椭圆圈', en: 'Ellipse' },
@@ -53,7 +62,8 @@
     { key: 'text', zh: '文字批注', en: 'Text' },
     { key: 'scroll', zh: '纵/横向长截图', en: 'Long Scroll' },
     { key: 'pin', zh: '桌面贴图', en: 'Pin' },
-    { key: 'ocr', zh: '截图识字 OCR', en: 'OCR' },
+    { key: 'ocr', zh: 'OCR 审校窗口', en: 'OCR Inspector' },
+    { key: 'ocr_copy', zh: '直接提取文字', en: 'Extract Text' },
     { key: 'translate', zh: '截图翻译', en: 'Translate' },
   ];
 
@@ -69,23 +79,35 @@
       toolKeyHint = '';
       return;
     }
+    if (['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) {
+      return;
+    }
     if (/^F([1-9]|1[0-2])$/i.test(e.key) || e.key === 'PrintScreen') {
       editingToolKey = null;
       toolKeyHint = isEn
-        ? `${e.key} is a global shortcut — set it in "Global Screenshot / Pin-Clipboard Hotkey" above.`
-        : `「${e.key}」属于全局快捷键，请在上方「全局截图 / 全局一键贴图快捷键」录入框中设置。`;
+        ? `${e.key} is a global shortcut — set it in the Global Hotkey recorders above.`
+        : `「${e.key}」属于全局快捷键，请在上方「全局截图 / 贴图 / 识字快捷键」录入框中设置。`;
       return;
     }
-    const ch = (e.key || '').trim().toUpperCase();
-    if (/^[A-Z0-9]$/.test(ch)) {
-      // Swap cleanly if another tool already holds this single key
+    const code = e.code || '';
+    let main = '';
+    if (code.startsWith('Key') && code.length === 4) main = code.slice(3).toUpperCase();
+    else if (code.startsWith('Digit') && code.length === 6) main = code.slice(5);
+    else if (/^[A-Za-z0-9]$/.test(e.key)) main = e.key.toUpperCase();
+    if (main) {
+      const parts: string[] = [];
+      if (e.ctrlKey) parts.push('Ctrl');
+      if (e.altKey) parts.push('Alt');
+      if (e.shiftKey) parts.push('Shift');
+      parts.push(main);
+      const combo = parts.join('+');
       const prev = cfg.capture.tool_hotkeys[k];
       for (const item of toolKeyItems) {
-        if (item.key !== k && cfg.capture.tool_hotkeys[item.key].toUpperCase() === ch) {
+        if (item.key !== k && cfg.capture.tool_hotkeys[item.key].toUpperCase() === combo.toUpperCase()) {
           cfg.capture.tool_hotkeys[item.key] = prev;
         }
       }
-      cfg.capture.tool_hotkeys[k] = ch;
+      cfg.capture.tool_hotkeys[k] = combo;
       editingToolKey = null;
       toolKeyHint = '';
       onSave(0);
@@ -169,6 +191,27 @@
 
   <div class="t-row">
     <div>
+      <div class="t-label">{tr(lang, 'lbl_ocr_hk')}</div>
+      <div class="t-desc">{tr(lang, 'desc_ocr_hk')}</div>
+    </div>
+    <HotkeyRecorder
+      value={cfg.capture.ocr_hotkey}
+      presets={ocrPresets}
+      allowDisable={true}
+      status={ocrHotkeyStatus}
+      presetPlaceholder={tr(lang, 'preset_opt')}
+      disabledLabel={tr(lang, 'hk_off')}
+      okLabel={tr(lang, 'hk_ok')}
+      conflictLabel={tr(lang, 'hk_conflict')}
+      recordPrompt={tr(lang, 'rec_prompt')}
+      needModPrompt={tr(lang, 'rec_need_mod')}
+      {onJumpDoctor}
+      onchange={(v) => { cfg.capture.ocr_hotkey = v; onSave(0); }}
+    />
+  </div>
+
+  <div class="t-row">
+    <div>
       <div class="t-label">{tr(lang, 'lbl_cap_opacity')}</div>
       <div class="t-desc">{tr(lang, 'desc_cap_opacity')}</div>
     </div>
@@ -205,8 +248,8 @@
 <div class="t-card hk-card" style="margin-top:14px">
   <div class="hk-head">
     <div>
-      <div class="t-label">{isEn ? 'In-Capture Canvas Tool Keys (Overlay Only · A–Z / 0–9)' : '截图画布内小工具快捷键（仅截图选区时生效 · A–Z / 0–9）'}</div>
-      <div class="t-desc">{isEn ? 'Duplicate keys swap automatically; to bind global F1/F3 capture or pin hotkeys, use the Global Hotkey recorders above.' : '冲突键自动互换；如需绑定全局 F1/F3 截图或贴图热键，请使用上方「全局快捷键」录入框。'}</div>
+      <div class="t-label">{isEn ? 'In-Capture Canvas Tool Keys (A–Z / 0–9 or Shift/Ctrl/Alt Combos)' : '截图画布内小工具快捷键（支持单键或 Shift+C 等组合键）'}</div>
+      <div class="t-desc">{isEn ? 'Works inside screenshot selection (e.g. Shift+C extracts & copies text directly); duplicate keys swap automatically.' : '仅截图框选后生效（默认 Shift+C 直接提取文字并复制，O 打开审校窗）；冲突键自动互换。'}</div>
     </div>
     <Button variant="ghost" size="sm" onclick={resetToolHotkeys}>
       <RotateCcw size={12} />

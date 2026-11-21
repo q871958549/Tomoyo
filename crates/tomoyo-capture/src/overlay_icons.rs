@@ -359,6 +359,7 @@ pub fn draw_toolbar_icon(
             ln(dst, -1.4, 4.0, 5.4, -3.8, 2.0);
         }
         ToolbarCmd::Tool(ToolKind::Select)
+        | ToolbarCmd::OcrCopy
         | ToolbarCmd::Color(_)
         | ToolbarCmd::Thickness(_)
         | ToolbarCmd::ShapeFilled(_)

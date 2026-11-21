@@ -78,6 +78,7 @@ export function defaultCaptureToolHotkeys(): CaptureToolHotkeys {
     scroll: 'L',
     pin: 'P',
     ocr: 'O',
+    ocr_copy: 'Shift+C',
     translate: 'T',
   };
 }
@@ -119,6 +120,7 @@ export function makeDefaultConfig(): TomoyoConfig {
     capture: {
       hotkey: 'Alt+S',
       pin_hotkey: 'F3',
+      ocr_hotkey: '',
       save_dir: '',
       pin_opacity: 100,
       copy_hex_lowercase: false,
@@ -136,7 +138,7 @@ export function hydrateSettingsInit(): SettingsInitPayload {
   const def = makeDefaultConfig();
   const rc = (raw.config ?? {}) as Partial<TomoyoConfig>;
   return {
-    version: raw.version || '2.2.5',
+    version: raw.version || '2.2.6',
     autostart: !!raw.autostart,
     plugins: Array.isArray(raw.plugins) ? raw.plugins : [],
     flows: Array.isArray(raw.flows) ? raw.flows : [],

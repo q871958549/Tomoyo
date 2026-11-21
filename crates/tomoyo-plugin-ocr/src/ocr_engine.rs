@@ -1,6 +1,9 @@
 //! Offline Windows WinRT `OcrEngine` wrapper with adaptive Cubic upscaling,
 //! language selection, CJK inter-character space cleanup, and latest clipboard image lookup.
 
+use crate::ocr_preprocess::{
+    build_high_contrast_bgra, compute_ocr_layout, estimate_bg_rgb, pad_bgra, score_ocr_lines,
+};
 use std::path::{Path, PathBuf};
 use std::time::{Instant, SystemTime};
 
@@ -154,9 +157,10 @@ pub fn recognize_image(
     use windows::Globalization::Language;
     use windows::Graphics::Imaging::{
         BitmapAlphaMode, BitmapDecoder, BitmapInterpolationMode, BitmapPixelFormat,
-        BitmapTransform, ColorManagementMode, ExifOrientationMode,
+        BitmapTransform, ColorManagementMode, ExifOrientationMode, SoftwareBitmap,
     };
     use windows::Media::Ocr::OcrEngine;
+    use windows::Storage::Streams::DataWriter;
     use windows::Storage::{FileAccessMode, StorageFile};
     use windows::Win32::System::WinRT::{RoInitialize, RO_INIT_MULTITHREADED};
 
@@ -188,32 +192,29 @@ pub fn recognize_image(
     let src_h = decoder.PixelHeight().unwrap_or(0);
     let max_dim = OcrEngine::MaxImageDimension().unwrap_or(2600).max(1024);
 
-    // Upscale low-DPI / small-font screenshots up to 2x (bounded by WinRT MaxImageDimension)
-    // and downscale oversized multi-monitor captures so OcrEngine stays accurate and never fails.
-    let (proc_w, proc_h, use_transform) = compute_ocr_dimensions(src_w, src_h, max_dim, raw_mode);
-    let bitmap = if use_transform {
-        let transform = BitmapTransform::new().map_err(|e| format!("BitmapTransform 失败: {e}"))?;
-        let _ = transform.SetScaledWidth(proc_w);
-        let _ = transform.SetScaledHeight(proc_h);
-        let _ = transform.SetInterpolationMode(BitmapInterpolationMode::Cubic);
-        decoder
-            .GetSoftwareBitmapTransformedAsync(
-                BitmapPixelFormat::Bgra8,
-                BitmapAlphaMode::Premultiplied,
-                &transform,
-                ExifOrientationMode::RespectExifOrientation,
-                ColorManagementMode::DoNotColorManage,
-            )
-            .map_err(|e| format!("图像缩放解码调用失败: {e}"))?
-            .join()
-            .map_err(|e| format!("图像缩放解码失败: {e}"))?
-    } else {
-        decoder
-            .GetSoftwareBitmapAsync()
-            .map_err(|e| format!("获取位图失败: {e}"))?
-            .join()
-            .map_err(|e| format!("获取 SoftwareBitmap 失败: {e}"))?
-    };
+    let (scaled_w, scaled_h, pad, use_transform) =
+        compute_ocr_layout(src_w, src_h, max_dim, raw_mode);
+    let transform = BitmapTransform::new().map_err(|e| format!("BitmapTransform 失败: {e}"))?;
+    if use_transform {
+        let _ = transform.SetScaledWidth(scaled_w);
+        let _ = transform.SetScaledHeight(scaled_h);
+        let _ = transform.SetInterpolationMode(BitmapInterpolationMode::Fant);
+    }
+    let px_provider = decoder
+        .GetPixelDataTransformedAsync(
+            BitmapPixelFormat::Bgra8,
+            BitmapAlphaMode::Straight,
+            &transform,
+            ExifOrientationMode::RespectExifOrientation,
+            ColorManagementMode::DoNotColorManage,
+        )
+        .map_err(|e| format!("图像像素解码调用失败: {e}"))?
+        .join()
+        .map_err(|e| format!("图像像素解码失败: {e}"))?;
+    let base_bgra = px_provider
+        .DetachPixelData()
+        .map_err(|e| format!("提取像素缓冲失败: {e}"))?
+        .to_vec();
 
     let installed = available_ocr_languages();
     let mut lang_note = None;
@@ -263,33 +264,66 @@ pub fn recognize_image(
         .map(|s| s.to_string())
         .unwrap_or_else(|_| "OCR".into());
 
-    let res = engine
-        .RecognizeAsync(&bitmap)
-        .map_err(|e| format!("OCR 识别调用失败: {e}"))?
-        .join()
-        .map_err(|e| format!("OCR 识别失败: {e}"))?;
-
-    let mut raw_lines = Vec::new();
-    if let Ok(line_list) = res.Lines() {
-        let n = line_list.Size().unwrap_or(0);
-        raw_lines.reserve(n as usize);
-        for i in 0..n {
-            if let Ok(ln) = line_list.GetAt(i)
-                && let Ok(txt) = ln.Text() {
+    let run_pass = |w: u32, h: u32, bytes: &[u8]| -> Result<Vec<String>, String> {
+        let writer = DataWriter::new().map_err(|e| format!("DataWriter 失败: {e}"))?;
+        writer.WriteBytes(bytes).map_err(|e| format!("写入位图缓冲失败: {e}"))?;
+        let ibuf = writer.DetachBuffer().map_err(|e| format!("DetachBuffer 失败: {e}"))?;
+        let bmp = SoftwareBitmap::CreateCopyFromBuffer(
+            &ibuf,
+            BitmapPixelFormat::Bgra8,
+            w as i32,
+            h as i32,
+        )
+        .map_err(|e| format!("创建 SoftwareBitmap 失败: {e}"))?;
+        let res = engine
+            .RecognizeAsync(&bmp)
+            .map_err(|e| format!("OCR 识别调用失败: {e}"))?
+            .join()
+            .map_err(|e| format!("OCR 识别失败: {e}"))?;
+        let mut out_lines = Vec::new();
+        if let Ok(line_list) = res.Lines() {
+            let n = line_list.Size().unwrap_or(0);
+            out_lines.reserve(n as usize);
+            for i in 0..n {
+                if let Ok(ln) = line_list.GetAt(i)
+                    && let Ok(txt) = ln.Text()
+                {
                     let s = txt.to_string();
                     if !s.trim().is_empty() {
-                        raw_lines.push(s);
+                        out_lines.push(s);
                     }
                 }
-        }
-    }
-    if raw_lines.is_empty()
-        && let Ok(full) = res.Text() {
-            let s = full.to_string();
-            if !s.trim().is_empty() {
-                raw_lines.push(s);
             }
         }
+        if out_lines.is_empty()
+            && let Ok(full) = res.Text()
+        {
+            let s = full.to_string();
+            if !s.trim().is_empty() {
+                out_lines.push(s);
+            }
+        }
+        Ok(out_lines)
+    };
+
+    let bg_rgb = estimate_bg_rgb(&base_bgra, scaled_w, scaled_h);
+    let (pass_a_w, pass_a_h, pass_a_buf) = pad_bgra(&base_bgra, scaled_w, scaled_h, pad, bg_rgb);
+    let mut best_lines = run_pass(pass_a_w, pass_a_h, &pass_a_buf)?;
+    let (proc_w, proc_h) = (pass_a_w, pass_a_h);
+
+    if !raw_mode && (src_w as u64) * (src_h as u64) <= 1_600_000 {
+        let (hc_w, hc_h, hc_buf) =
+            build_high_contrast_bgra(&base_bgra, scaled_w, scaled_h, pad, bg_rgb);
+        if let Ok(hc_lines) = run_pass(hc_w, hc_h, &hc_buf) {
+            let score_a = score_ocr_lines(&best_lines);
+            let score_b = score_ocr_lines(&hc_lines);
+            if score_b >= score_a {
+                best_lines = hc_lines;
+            }
+        }
+    }
+
+    let raw_lines = best_lines;
 
     let raw_text = raw_lines.join("\r\n");
     let lines: Vec<String> = if raw_mode {
@@ -321,37 +355,10 @@ pub fn recognize_image(
     Err("Windows.Media.Ocr is only available on Windows 10/11".into())
 }
 
-pub fn compute_ocr_dimensions(src_w: u32, src_h: u32, max_dim: u32, raw_mode: bool) -> (u32, u32, bool) {
-    if src_w == 0 || src_h == 0 || max_dim == 0 {
-        return (src_w, src_h, false);
-    }
-    let max_side = src_w.max(src_h);
-    if max_side > max_dim {
-        let scale = max_dim as f64 / max_side as f64;
-        return (
-            ((src_w as f64 * scale).round() as u32).max(1),
-            ((src_h as f64 * scale).round() as u32).max(1),
-            true,
-        );
-    }
-    if raw_mode {
-        return (src_w, src_h, false);
-    }
-    let scale = (max_dim as f64 / max_side as f64).min(2.0);
-    if scale >= 1.2 {
-        (
-            ((src_w as f64 * scale).round() as u32).min(max_dim).max(1),
-            ((src_h as f64 * scale).round() as u32).min(max_dim).max(1),
-            true,
-        )
-    } else {
-        (src_w, src_h, false)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ocr_preprocess::compute_ocr_layout;
 
     #[test]
     fn cleans_spurious_cjk_spaces_while_preserving_english_words() {
@@ -365,9 +372,9 @@ mod tests {
 
     #[test]
     fn computes_bounded_upscale_and_downscale_dimensions() {
-        assert_eq!(compute_ocr_dimensions(1920, 953, 4096, false), (3840, 1906, true));
-        assert_eq!(compute_ocr_dimensions(1920, 953, 2600, false), (2600, 1291, true));
-        assert_eq!(compute_ocr_dimensions(1920, 953, 4096, true), (1920, 953, false));
-        assert_eq!(compute_ocr_dimensions(5120, 2160, 4096, false), (4096, 1728, true));
+        assert_eq!(compute_ocr_layout(305, 57, 2600, false), (1220, 228, 48, true));
+        assert_eq!(compute_ocr_layout(1200, 600, 4096, false), (2400, 1200, 24, true));
+        assert_eq!(compute_ocr_layout(1920, 953, 4096, true), (1920, 953, 0, false));
+        assert_eq!(compute_ocr_layout(5120, 2160, 4096, false), (4096, 1728, 0, true));
     }
 }

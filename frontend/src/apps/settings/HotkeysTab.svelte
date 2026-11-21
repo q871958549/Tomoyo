@@ -7,12 +7,14 @@
     HotkeyAuditReport,
     HotkeyHealthReport,
     LiveProbeResult,
+    SuspectProcess,
     TomoyoConfig,
   } from '../../lib/types';
   import Button from '../../lib/ui/Button.svelte';
   import Combobox from '../../lib/ui/Combobox.svelte';
   import Segmented from '../../lib/ui/Segmented.svelte';
   import Switch from '../../lib/ui/Switch.svelte';
+  import SuspectDetailCard from './SuspectDetailCard.svelte';
 
   interface Props {
     cfg: TomoyoConfig;
@@ -25,7 +27,7 @@
     probeResult: LiveProbeResult | null;
     onRunAudit: () => void;
     onProbe: (spec: string) => void;
-    onApplyFreeKey: (slot: 'main' | 'clipboard' | 'translate' | 'capture' | 'pin', key: string) => void;
+    onApplyFreeKey: (slot: 'main' | 'clipboard' | 'translate' | 'capture' | 'pin' | 'ocr', key: string) => void;
     onToggleOverride: (v: boolean) => void;
     onUpdateAvoidance: (fullscreen: boolean, excluded: string[]) => void;
   }
@@ -45,6 +47,7 @@
 
   let filter = $state('all');
   let customSpec = $state('');
+  let selectedSuspect = $state<{ spec: string; suspect: SuspectProcess } | null>(null);
   let isEn = $derived(lang === 'en');
 
   let slots = $derived([
@@ -53,7 +56,13 @@
     { id: 'translate' as const, label: isEn ? 'Selection Translate' : '全局划词翻译', spec: cfg.translate.hotkey, st: health.translate, on: isPluginEnabled(cfg, PLUGIN_TRANSLATE) },
     { id: 'capture' as const, label: isEn ? 'Region Screenshot' : '全局区域截图', spec: cfg.capture.hotkey, st: health.capture, on: isPluginEnabled(cfg, PLUGIN_CAPTURE) },
     { id: 'pin' as const, label: isEn ? 'Pin Latest Clipboard' : '全局一键贴图', spec: cfg.capture.pin_hotkey, st: health.pin, on: isPluginEnabled(cfg, PLUGIN_CAPTURE) },
+    { id: 'ocr' as const, label: isEn ? 'Screenshot OCR' : '全局截图识字', spec: cfg.capture.ocr_hotkey, st: health.ocr, on: isPluginEnabled(cfg, PLUGIN_CAPTURE) },
   ].filter((s) => s.on));
+
+  function suspectsForSpec(spec: string): SuspectProcess[] {
+    if (!spec || !audit) return [];
+    return audit.items.find((it) => it.spec.toLowerCase() === spec.toLowerCase())?.suspects || [];
+  }
 
   let filteredMatrix = $derived.by(() => {
     const list = audit?.items || [];
@@ -133,6 +142,16 @@
             <span class="pill is-ok"><CheckCircle2 size={11} /> {tr(lang, 'hk_ok')}</span>
           {/if}
         </div>
+        {#if (isBad || isOv) && suspectsForSpec(s.spec).length > 0}
+          <div class="rec-line">
+            <span class="rec-hint">{isEn ? 'Suspected holder:' : '疑似外部占用：'}</span>
+            {#each suspectsForSpec(s.spec) as sus}
+              <button type="button" class="sus-tag" onclick={() => (selectedSuspect = { spec: s.spec, suspect: sus })}>
+                {sus.process_name} · {isEn ? 'How to fix' : '查看解除方案'}
+              </button>
+            {/each}
+          </div>
+        {/if}
         {#if (isBad || isOv) && freeList.length > 0}
           <div class="rec-line">
             <span class="rec-hint">{isEn ? 'Zero-conflict free keys:' : '实测空闲可一键换无冲突键：'}</span>
@@ -281,6 +300,15 @@
     </Button>
   </div>
 
+  {#if selectedSuspect}
+    <SuspectDetailCard
+      spec={selectedSuspect.spec}
+      suspect={selectedSuspect.suspect}
+      {isEn}
+      onClose={() => (selectedSuspect = null)}
+    />
+  {/if}
+
   {#if auditing && !audit}
     <div class="t-skeleton" style="height:120px"></div>
   {:else}
@@ -295,8 +323,8 @@
                 <button
                   type="button"
                   class="sus-tag"
-                  title={sus.exe_path || sus.reason}
-                  onclick={() => sus.exe_path && postHost({ cmd: 'reveal_path', path: sus.exe_path })}
+                  title={isEn ? 'Click to view remediation & process actions' : '点击查看解除冲突指引、定位程序或结束进程'}
+                  onclick={() => (selectedSuspect = { spec: item.spec, suspect: sus })}
                 >
                   {sus.process_name} · {sus.reason}
                 </button>

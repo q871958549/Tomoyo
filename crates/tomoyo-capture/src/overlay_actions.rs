@@ -5,7 +5,8 @@
 use crate::annotate::{Annotation, ToolKind, COLOR_PRESETS};
 use crate::annotate_render::render_annotations;
 use crate::export::{
-    copy_bgra_to_clipboard, default_save_path, handoff_to_ocr_or_translate, save_bgra_as_png,
+    copy_bgra_to_clipboard, default_save_path, handoff_ocr_copy_direct,
+    handoff_to_ocr_or_translate, save_bgra_as_png,
 };
 use crate::overlay::{CaptureOutcome, OverlayState, TIMER_WHEEL_HUD};
 use crate::overlay_draw::ToolbarCmd;
@@ -159,6 +160,17 @@ impl OverlayState {
                 } else {
                     CaptureOutcome::Done
                 });
+                unsafe { let _ = DestroyWindow(hwnd); }
+                return;
+            }
+            ToolbarCmd::OcrCopy => {
+                if let Some((w, h, buf, _)) = self.finalize_cropped(hwnd) {
+                    unsafe { let _ = DestroyWindow(hwnd); }
+                    let _ = handoff_ocr_copy_direct(w, h, &buf);
+                    self.outcome = Some(CaptureOutcome::Done);
+                    return;
+                }
+                self.outcome = Some(CaptureOutcome::Done);
                 unsafe { let _ = DestroyWindow(hwnd); }
                 return;
             }

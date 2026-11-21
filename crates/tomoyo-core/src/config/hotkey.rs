@@ -30,6 +30,8 @@ pub struct HotkeyHealthReport {
     pub capture: HotkeySlotStatus,
     #[serde(default)]
     pub pin: HotkeySlotStatus,
+    #[serde(default)]
+    pub ocr: HotkeySlotStatus,
     pub updated_at_unix: u64,
 }
 
@@ -37,7 +39,7 @@ impl HotkeyHealthReport {
     /// Returns `true` only when at least one enabled core hotkey slot is currently failing (`!ok`).
     /// Auto-rescued slots (`ok == true, overridden == true`) are working and do not require tear-down churn.
     pub fn has_unresolved_conflicts(&self) -> bool {
-        [&self.main, &self.clipboard, &self.translate, &self.capture, &self.pin]
+        [&self.main, &self.clipboard, &self.translate, &self.capture, &self.pin, &self.ocr]
             .into_iter()
             .any(|s| !s.disabled && !s.spec.is_empty() && !s.ok)
     }

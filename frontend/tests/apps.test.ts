@@ -64,10 +64,11 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
         capture: {
           hotkey: 'Alt+1',
           pin_hotkey: 'F3',
+          ocr_hotkey: '',
           save_dir: '',
           pin_opacity: 100,
           copy_hex_lowercase: false,
-          tool_hotkeys: { rect: 'R', ellipse: 'E', arrow: 'A', pen: 'B', highlighter: 'H', mosaic: 'M', step: 'N', text: 'X', scroll: 'L', pin: 'P', ocr: 'O', translate: 'T' },
+          tool_hotkeys: { rect: 'R', ellipse: 'E', arrow: 'A', pen: 'B', highlighter: 'H', mosaic: 'M', step: 'N', text: 'X', scroll: 'L', pin: 'P', ocr: 'O', ocr_copy: 'Shift+C', translate: 'T' },
         },
         update: { auto_check: true, check_interval_hours: 24, repo: 'q871958549/Tomoyo', last_checked_unix: 0 },
         web_searches: [{ keyword: 'g', name: 'Google', url: 'https://www.google.com/search?q={q}' }],
@@ -151,6 +152,8 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
       }
       if (btn.dataset.tab === 'capture') {
         expect(document.body.textContent).toContain('全局一键贴图快捷键');
+        expect(document.body.textContent).toContain('全局截图提取文字快捷键');
+        expect(document.body.textContent).toContain('Shift+C');
         expect(document.body.textContent).toContain('F3');
       }
       if (btn.dataset.tab === 'web') {

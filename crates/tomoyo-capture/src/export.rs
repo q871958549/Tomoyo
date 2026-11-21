@@ -243,10 +243,8 @@ fn find_sibling_exe(name: &str) -> Option<PathBuf> {
     None
 }
 
-/// Saves screenshot PNG, invokes `tomoyo-plugin-ocr.exe` offline, and opens either
-/// `__tomoyo_ocr_viewer__` (OCR inspection) or `__tomoyo_translator__` (Screenshot Translate).
 #[cfg(windows)]
-pub fn handoff_to_ocr_or_translate(width: u32, height: u32, bgra: &[u8], translate: bool) -> Result<(), String> {
+fn run_offline_ocr_json(width: u32, height: u32, bgra: &[u8]) -> Result<(PathBuf, serde_json::Value), String> {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
@@ -259,11 +257,64 @@ pub fn handoff_to_ocr_or_translate(width: u32, height: u32, bgra: &[u8], transla
     let ocr_exe = find_sibling_exe("tomoyo-plugin-ocr.exe")
         .ok_or_else(|| "未找到 tomoyo-plugin-ocr.exe".to_string())?;
     let out = std::process::Command::new(&ocr_exe)
-        .args(["--recognize", &img_path.to_string_lossy()])
+        .args(["--recognize", &img_path.to_string_lossy(), "--json"])
         .creation_flags(CREATE_NO_WINDOW)
         .output()
         .map_err(|e| format!("运行 OCR 失败: {e}"))?;
-    let recognized = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let parsed = serde_json::from_str::<serde_json::Value>(stdout.trim()).unwrap_or_else(|_| {
+        let fallback = stdout
+            .lines()
+            .skip_while(|l| l.trim_start().starts_with("[OCR "))
+            .collect::<Vec<_>>()
+            .join("\r\n");
+        serde_json::json!({
+            "image_path": img_path.to_string_lossy(),
+            "text": fallback.trim(),
+            "raw_text": fallback.trim(),
+            "lang_tag": "WinRT",
+            "src_dims": [width, height],
+            "proc_dims": [width, height],
+            "elapsed_ms": 0,
+        })
+    });
+    let _ = std::fs::write(logs_dir().join("last_ocr.json"), parsed.to_string());
+    Ok((img_path, parsed))
+}
+
+/// Runs offline OCR and directly copies clean extracted text to clipboard (for `Shift+C` direct extract).
+/// Falls back to opening OCR Inspector if no readable text was detected.
+#[cfg(windows)]
+pub fn handoff_ocr_copy_direct(width: u32, height: u32, bgra: &[u8]) -> Result<(), String> {
+    let (img_path, parsed) = run_offline_ocr_json(width, height, bgra)?;
+    let text = parsed.get("text").and_then(|v| v.as_str()).unwrap_or("").trim();
+    if !text.is_empty() {
+        copy_text_to_clipboard(text);
+        return Ok(());
+    }
+    let cfg = TomoyoConfig::load_or_create();
+    let host_exe = find_sibling_exe("tomoyo-webview-host.exe")
+        .ok_or_else(|| "未找到 tomoyo-webview-host.exe".to_string())?;
+    std::process::Command::new(host_exe)
+        .args([
+            "--entry", "__tomoyo_ocr_viewer__",
+            "--title", "Tomoyo OCR 审校",
+            "--theme", &cfg.theme,
+            "--query", &img_path.to_string_lossy(),
+            "--width", "980",
+            "--height", "660",
+        ])
+        .spawn()
+        .map_err(|e| format!("拉起 OCR 审校窗口失败: {e}"))?;
+    Ok(())
+}
+
+/// Saves screenshot PNG, invokes `tomoyo-plugin-ocr.exe --json` offline, and opens either
+/// `__tomoyo_ocr_viewer__` (OCR inspection) or `__tomoyo_translator__` (Screenshot Translate).
+#[cfg(windows)]
+pub fn handoff_to_ocr_or_translate(width: u32, height: u32, bgra: &[u8], translate: bool) -> Result<(), String> {
+    let (img_path, parsed) = run_offline_ocr_json(width, height, bgra)?;
+    let recognized = parsed.get("text").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
 
     let cfg = TomoyoConfig::load_or_create();
     let host_exe = find_sibling_exe("tomoyo-webview-host.exe")
@@ -287,14 +338,6 @@ pub fn handoff_to_ocr_or_translate(width: u32, height: u32, bgra: &[u8], transla
             .spawn()
             .map_err(|e| format!("拉起翻译窗口失败: {e}"))?;
     } else {
-        let snap = serde_json::json!({
-            "image_path": img_path.to_string_lossy(),
-            "text": recognized,
-            "raw_text": recognized,
-            "lang": "auto",
-            "elapsed_ms": 0,
-        });
-        let _ = std::fs::write(logs_dir().join("last_ocr.json"), snap.to_string());
         std::process::Command::new(host_exe)
             .args([
                 "--entry", "__tomoyo_ocr_viewer__",

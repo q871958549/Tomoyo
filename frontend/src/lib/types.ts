@@ -13,6 +13,7 @@ export interface HotkeyHealthReport {
   translate?: HotkeySlotStatus;
   capture?: HotkeySlotStatus;
   pin?: HotkeySlotStatus;
+  ocr?: HotkeySlotStatus;
   updated_at_unix?: number;
 }
 
@@ -22,6 +23,8 @@ export interface SuspectProcess {
   exe_path: string;
   reason: string;
   confidence: 'high' | 'medium' | string;
+  remediation?: string;
+  can_terminate?: boolean;
 }
 
 export interface HotkeyAuditItem {
@@ -79,6 +82,7 @@ export interface CaptureToolHotkeys {
   scroll: string;
   pin: string;
   ocr: string;
+  ocr_copy: string;
   translate: string;
 }
 
@@ -133,6 +137,7 @@ export interface TomoyoConfig {
   capture: {
     hotkey: string;
     pin_hotkey: string;
+    ocr_hotkey: string;
     save_dir: string;
     pin_opacity: number;
     copy_hex_lowercase: boolean;

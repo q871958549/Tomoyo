@@ -11,7 +11,7 @@
   <a href="https://github.com/q871958549/Tomoyo/actions/workflows/ci.yml"><img src="https://github.com/q871958549/Tomoyo/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="LICENSE-MIT"><img src="https://img.shields.io/badge/license-MIT%20%2F%20Apache--2.0-blue.svg" alt="License" /></a>
   <img src="https://img.shields.io/badge/platform-Windows%2010%2F11%20x64%20%2F%20ARM64-0078D6.svg" alt="Windows" />
-  <img src="https://img.shields.io/badge/version-v2.2.5-7c6af7.svg" alt="Version" />
+  <img src="https://img.shields.io/badge/version-v2.2.6-7c6af7.svg" alt="Version" />
 </p>
 
 ---
@@ -39,18 +39,18 @@
 
 ---
 
-## 实测数据与自检阈值 (`v2.2.5` Release)
+## 实测数据与自检阈值 (`v2.2.6` Release)
 
 | 指标 | 实测记录 | 自检阈值 (`--strict-budget` / `-CheckBinaries`) |
 |---|---|---|
-| `tomoyo.exe` 微内核主程序体积（含静默两段式 `Esc`、全局 `F3` 一键贴图热键、脏位差量热键重载零抖动、真实内嵌应用 Logo 托盘/窗口图标与 0ms 非阻塞双击异步启动反馈） | **5.79 MB** | ≤ 6.50 MB |
-| `tomoyo-webview-host.exe` Svelte 5 设置中心（12 页签，统一应用 Logo + 仅冲突重探 + 窗口早关竞态防护）与 3 大工作台（构建期 Gzip 压缩嵌入） | **4.39 MB**（关闭即退出） | ≤ 5.50 MB / 0 MB 常驻 |
-| `tomoyo-capture.exe` 极简矢量标注 + 白底长截图实时预览 + 全格式万能贴图（图片/文件/色值/ClearType 文本卡片） | **1.13 MB**（关闭即退出） | ≤ 1.50 MB / 0 MB 常驻 |
-| `tomoyo-plugin-ocr.exe` / `tomoyo-plugin-notes.exe` 官方 Protocol v2 独立按需 STDIO 插件（离线 OCR / 本地 Markdown 备忘录） | **0.37 MB** / **0.33 MB**（空闲自动回收） | ≤ 0.80 MB / 0 MB 常驻 |
-| 休眠态 Working Set 内存占用 (`--self-test`) | **1.47–1.50 MB** | ≤ 2.0 MB |
-| 休眠态 Private Commit（含 343 应用/桌面条目索引、SQLite、工作流与字体） | **21.00 MB** | ≤ 28.0 MB |
+| `tomoyo.exe` 微内核主程序体积（含 6 槽位全局热键含截图识字、静默两段式 `Esc`、全局 `F3` 贴图、脏位差量重载、应用 Logo 图标与 0ms 非阻塞双击反馈） | **5.80 MB** | ≤ 6.50 MB |
+| `tomoyo-webview-host.exe` Svelte 5 设置中心（12 页签 + 热键治理 v2 原生 `SHOpenFolderAndSelectItems` 精准定位与二次确认进程治理）与 3 大工作台（Gzip 压缩嵌入） | **4.41 MB**（关闭即退出） | ≤ 5.50 MB / 0 MB 常驻 |
+| `tomoyo-capture.exe` 极简矢量标注 + 白底长截图 + 全格式贴图 + 画布内 `Shift+C`（可自定义）一键提取文字到剪贴板 + 结构化 JSON OCR 交接 | **1.15 MB**（关闭即退出） | ≤ 1.50 MB / 0 MB 常驻 |
+| `tomoyo-plugin-ocr.exe` / `tomoyo-plugin-notes.exe` 官方 Protocol v2 独立按需 STDIO 插件（自适应 4× 放大 + 边框抑制双路高精度离线 OCR / Markdown 备忘录） | **0.38 MB** / **0.33 MB**（空闲自动回收） | ≤ 0.80 MB / 0 MB 常驻 |
+| 休眠态 Working Set 内存占用 (`--self-test`) | **1.50–1.52 MB** | ≤ 2.0 MB |
+| 休眠态 Private Commit（含 343 应用/桌面条目索引、SQLite、工作流与字体） | **22.03 MB** | ≤ 28.0 MB |
 | 100 轮查询 / 绘制 / 预览 / 休眠压测 Delta | **GDI `+0` · USER `+0` · Handles `+0` · Private `+0.08 MB`** | 句柄 0 增长 / 内存 ≤ +0.50 MB |
-| 7 道防膨胀卫生门禁与静态质量（[编码规范](docs/CODING_STANDARDS.md) / [分发与信任指南](docs/DISTRIBUTION.md)） | **全仓 224 源码文件 100% ≤ 450 行（双水位 380/450）· 前后端双向 IPC 1:1 契约对齐（46 指令 + 26 事件）· `cargo clippy --workspace --all-targets -- -D warnings` 0 警告 · Rust 全仓单测 + 前端 10 用例 + `happy-dom` 4 产物全绿 · SLSA Provenance + ARM64 构建** | ≤ 450 行/文件 · 0 警告 · 0 JS 异常 |
+| 7 道防膨胀卫生门禁与静态质量（[编码规范](docs/CODING_STANDARDS.md) / [分发与信任指南](docs/DISTRIBUTION.md)） | **全仓 226 源码文件 100% ≤ 450 行（双水位 380/450）· 前后端双向 IPC 1:1 契约对齐（47 指令 + 27 事件）· `cargo clippy --workspace --all-targets -- -D warnings` 0 警告 · Rust 全仓单测 + 前端 10 用例 + `happy-dom` 4 产物全绿 · SLSA Provenance + ARM64 构建** | ≤ 450 行/文件 · 0 警告 · 0 JS 异常 |
 
 ---
 

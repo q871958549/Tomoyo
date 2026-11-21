@@ -73,6 +73,7 @@
       { label: lang === 'en' ? 'Translate' : '划词翻译', st: hotkeyHealth.translate, on: isPluginEnabled(cfg, PLUGIN_TRANSLATE) },
       { label: lang === 'en' ? 'Capture' : '截图', st: hotkeyHealth.capture, on: isPluginEnabled(cfg, PLUGIN_CAPTURE) },
       { label: lang === 'en' ? 'Pin' : '全局贴图', st: hotkeyHealth.pin, on: isPluginEnabled(cfg, PLUGIN_CAPTURE) },
+      { label: lang === 'en' ? 'Screenshot OCR' : '截图识字', st: hotkeyHealth.ocr, on: isPluginEnabled(cfg, PLUGIN_CAPTURE) },
     ];
     return entries.filter((e) => e.on && e.st && !e.st.disabled && !e.st.ok && e.st.spec);
   });
@@ -120,10 +121,11 @@
   function scheduleSave(delayMs = 0) { if (saveTimer) clearTimeout(saveTimer); if (delayMs <= 0) saveNow(); else saveTimer = setTimeout(saveNow, delayMs); }
   function runHotkeyAudit() { auditingHotkeys = true; postHost({ cmd: 'audit_hotkeys' }); }
   function probeHotkeyOwner(spec: string) { probingSpec = spec; probeResult = null; postHost({ cmd: 'probe_hotkey_owner', spec }); }
-  function applyFreeKey(slot: 'main' | 'clipboard' | 'translate' | 'capture' | 'pin', key: string) {
+  function applyFreeKey(slot: 'main' | 'clipboard' | 'translate' | 'capture' | 'pin' | 'ocr', key: string) {
     if (slot === 'main') cfg.hotkey = key; else if (slot === 'clipboard') cfg.clipboard.hotkey = key;
     else if (slot === 'translate') cfg.translate.hotkey = key;
-    else if (slot === 'pin') cfg.capture.pin_hotkey = key; else cfg.capture.hotkey = key;
+    else if (slot === 'pin') cfg.capture.pin_hotkey = key;
+    else if (slot === 'ocr') cfg.capture.ocr_hotkey = key; else cfg.capture.hotkey = key;
     scheduleSave(0); setTimeout(runHotkeyAudit, 260);
   }
   function switchTab(id: string) {
@@ -144,7 +146,7 @@
   function onLanguageChange(code: Lang) { cfg.language = code; document.documentElement.lang = code === 'en' ? 'en' : 'zh-CN'; scheduleSave(0); }
   function onAutostartChange(v: boolean) { autostart = v; scheduleSave(0); }
   function checkHotkeyConflictsToast(h: HotkeyHealthReport) {
-    const bad = [h.main, h.clipboard, h.translate, h.capture, h.pin].filter((s) => s && !s.disabled && !s.ok && s.spec);
+    const bad = [h.main, h.clipboard, h.translate, h.capture, h.pin, h.ocr].filter((s) => s && !s.disabled && !s.ok && s.spec);
     if (bad.length === 0 && toastWarn) setToast(lang === 'en' ? '✓ All global hotkeys active' : '✓ 所有快捷键已实时生效', false);
   }
 
@@ -170,6 +172,9 @@
       } else if (ev === 'hotkey_probe_result' && data.result) {
         probingSpec = '';
         probeResult = data.result as LiveProbeResult;
+      } else if (ev === 'conflict_process_terminated') {
+        setToast(`${data.ok ? '✓ ' : '✗ '}${data.message || ''}`, !data.ok);
+        if (data.ok) auditingHotkeys = true;
       } else if (ev === 'folder_picked') {
         if (data.cancelled) return;
         if (data.ok && typeof data.path === 'string') {
@@ -325,7 +330,7 @@
           />
         {:else if activeTab === 'capture'}
           <CaptureTab
-            {cfg} {lang} capHotkeyStatus={hotkeyHealth.capture} pinHotkeyStatus={hotkeyHealth.pin}
+            {cfg} {lang} capHotkeyStatus={hotkeyHealth.capture} pinHotkeyStatus={hotkeyHealth.pin} ocrHotkeyStatus={hotkeyHealth.ocr}
             onJumpDoctor={() => switchTab('hotkeys')} onSave={scheduleSave}
           />
         {:else if activeTab === 'web'}
