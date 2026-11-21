@@ -1,6 +1,6 @@
 //! Pure-Rust BGRA compositing + contextual AA SDF capsule chrome + ClearType GDI labels.
 
-use crate::annotate::{AnnotColor, Annotation, ArrowStyle, ShapeStyle, ToolKind, COLOR_PRESETS};
+use crate::annotate::{AnnotColor, Annotation, ToolKind, COLOR_PRESETS};
 use crate::annotate_render::{draw_selection_handles, render_annotations, render_single};
 use crate::overlay_icons::{
     draw_capsule, draw_toolbar_icon, fill_box, fill_box_alpha, fill_circle_aa,
@@ -14,8 +14,7 @@ pub enum ToolbarCmd {
     Tool(ToolKind),
     Color(usize),
     Thickness(i32),
-    ShapeStyle(ShapeStyle),
-    ArrowStyle(ArrowStyle),
+    ShapeFilled(bool),
     MosaicBlur(bool),
     Undo,
     ScrollLong,
@@ -52,8 +51,7 @@ pub struct ToolbarStyleState {
     pub active_tool: ToolKind,
     pub active_color: usize,
     pub active_thickness: i32,
-    pub shape_style: ShapeStyle,
-    pub arrow_style: ArrowStyle,
+    pub shape_filled: bool,
     pub mosaic_blur: bool,
 }
 
@@ -75,7 +73,7 @@ pub fn build_toolbar_layout(
     let slots = vec![
         Slot::Btn(ToolbarCmd::Tool(ToolKind::Rect), tip_with_key("矩形", &hk.rect), 30, st.active_tool == ToolKind::Rect, false, false),
         Slot::Btn(ToolbarCmd::Tool(ToolKind::Ellipse), tip_with_key("椭圆", &hk.ellipse), 30, st.active_tool == ToolKind::Ellipse, false, false),
-        Slot::Btn(ToolbarCmd::Tool(ToolKind::Arrow), tip_with_key("箭头", &hk.arrow), 30, st.active_tool == ToolKind::Arrow, false, false),
+        Slot::Btn(ToolbarCmd::Tool(ToolKind::Arrow), tip_with_key("箭头 · 拖中点自由弯折", &hk.arrow), 30, st.active_tool == ToolKind::Arrow, false, false),
         Slot::Btn(ToolbarCmd::Tool(ToolKind::Pen), tip_with_key("画笔", &hk.pen), 30, st.active_tool == ToolKind::Pen, false, false),
         Slot::Btn(ToolbarCmd::Tool(ToolKind::Highlighter), tip_with_key("荧光笔", &hk.highlighter), 30, st.active_tool == ToolKind::Highlighter, false, false),
         Slot::Btn(ToolbarCmd::Tool(ToolKind::Mosaic), tip_with_key("马赛克/模糊", &hk.mosaic), 30, st.active_tool == ToolKind::Mosaic, false, false),
@@ -136,14 +134,7 @@ pub fn build_toolbar_layout(
     let sub_bar = if show_sub {
         let style_pills: Vec<(ToolbarCmd, &'static str, bool)> = match st.active_tool {
             ToolKind::Rect | ToolKind::Ellipse => vec![
-                (ToolbarCmd::ShapeStyle(ShapeStyle::Outline), "框线", st.shape_style == ShapeStyle::Outline),
-                (ToolbarCmd::ShapeStyle(ShapeStyle::Rounded), "圆角", st.shape_style == ShapeStyle::Rounded),
-                (ToolbarCmd::ShapeStyle(ShapeStyle::Filled), "填充", st.shape_style == ShapeStyle::Filled),
-            ],
-            ToolKind::Arrow => vec![
-                (ToolbarCmd::ArrowStyle(ArrowStyle::Solid), "实心", st.arrow_style == ArrowStyle::Solid),
-                (ToolbarCmd::ArrowStyle(ArrowStyle::Thin), "细线", st.arrow_style == ArrowStyle::Thin),
-                (ToolbarCmd::ArrowStyle(ArrowStyle::Curved), "弯曲", st.arrow_style == ArrowStyle::Curved),
+                (ToolbarCmd::ShapeFilled(!st.shape_filled), "填充", st.shape_filled),
             ],
             ToolKind::Mosaic => vec![
                 (ToolbarCmd::MosaicBlur(false), "马赛克", !st.mosaic_blur),
@@ -224,6 +215,7 @@ pub fn compose_overlay_pixels(
     hover_snap: Option<ScreenRect>,
     annotations: &[Annotation],
     selected_ann: Option<usize>,
+    hovered_ann: Option<usize>,
     live_ann: Option<&Annotation>,
     cursor: (i32, i32),
     show_loupe: bool,
@@ -246,8 +238,11 @@ pub fn compose_overlay_pixels(
             if sel.is_some() {
                 render_annotations(dst, w, h, 0, 0, annotations);
                 if let Some(a) = live_ann { render_single(dst, w, h, 0, 0, a); }
+                if let Some(idx) = hovered_ann.filter(|&i| Some(i) != selected_ann) {
+                    if let Some(a) = annotations.get(idx) { draw_selection_handles(dst, w, h, a, true); }
+                }
                 if let Some(idx) = selected_ann {
-                    if let Some(a) = annotations.get(idx) { draw_selection_handles(dst, w, h, a); }
+                    if let Some(a) = annotations.get(idx) { draw_selection_handles(dst, w, h, a, false); }
                 }
             }
             let border_col = if sel.is_some() { AnnotColor(0x3B, 0x82, 0xF6) } else { AnnotColor(0x60, 0xA5, 0xFA) };
@@ -405,10 +400,10 @@ pub fn resize_rect_by_handle(orig: ScreenRect, idx: usize, x: i32, y: i32) -> Sc
 mod tests {
     use super::*;
     #[test]
-    fn toolbar_and_contextual_subbar_stay_inside_viewport() {
+    fn toolbar_and_minimalist_subbar_stay_inside_viewport() {
         let st = ToolbarStyleState {
             active_tool: ToolKind::Arrow, active_color: 0, active_thickness: 4,
-            shape_style: ShapeStyle::Rounded, arrow_style: ArrowStyle::Curved, mosaic_blur: false,
+            shape_filled: false, mosaic_blur: false,
         };
         let lay = build_toolbar_layout(ScreenRect { x: 50, y: 1050, w: 200, h: 20 }, 1920, 1080, &st, &CaptureToolHotkeys::default());
         let bar = lay.main_bar.expect("main bar");
@@ -416,6 +411,7 @@ mod tests {
         let sub = lay.sub_bar.expect("sub bar");
         assert!(sub.x >= 0 && sub.right() <= 1920 && sub.y >= 0 && sub.bottom() <= 1080);
         assert!(lay.hits.iter().any(|h| h.cmd == ToolbarCmd::ScrollLong));
-        assert!(lay.hits.iter().any(|h| h.cmd == ToolbarCmd::ArrowStyle(ArrowStyle::Curved)));
+        // Arrow sub-bar stays ultra-minimalist: only 3 thickness dots + 6 color swatches (zero style-button bloat)
+        assert!(lay.hits.iter().filter(|h| !h.pill_text.is_empty()).count() == 0);
     }
 }

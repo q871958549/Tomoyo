@@ -1,4 +1,4 @@
-//! Pointer, wheel, and customizable hotkey input handlers for `tomoyo-capture`'s interactive overlay.
+//! Pointer, wheel, cursor feedback & customizable hotkey handlers for `tomoyo-capture`'s overlay.
 
 #![cfg(windows)]
 
@@ -11,20 +11,90 @@ use crate::overlay_draw::{hit_test_handle, resize_rect_by_handle, ToolbarCmd};
 use crate::overlay_text::InlineTextEditor;
 use crate::screen::ScreenRect;
 use tomoyo_core::CaptureToolHotkeys;
+use windows::core::PCWSTR;
 use windows::Win32::Foundation::HWND;
 use windows::Win32::Graphics::Gdi::InvalidateRect;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetKeyState, SetCapture, VK_BACK, VK_CONTROL, VK_DELETE, VK_ESCAPE, VK_RETURN, VK_SHIFT,
 };
+use windows::Win32::UI::WindowsAndMessaging::{
+    IDC_CROSS, IDC_HAND, IDC_SIZEALL, IDC_SIZENESW, IDC_SIZENS, IDC_SIZENWSE, IDC_SIZEWE,
+};
+
+fn box_handle_cursor(h_idx: usize) -> PCWSTR {
+    match h_idx {
+        0 | 7 => IDC_SIZENWSE,
+        2 | 5 => IDC_SIZENESW,
+        1 | 6 => IDC_SIZENS,
+        3 | 4 => IDC_SIZEWE,
+        _ => IDC_SIZEALL,
+    }
+}
+
+pub fn cursor_for_hover(st: &OverlayState) -> PCWSTR {
+    if st.hovered_cmd.is_some() {
+        return IDC_HAND;
+    }
+    if let DragMode::EditControl(idx, h_idx) = st.drag {
+        return match st.stack.items().get(idx) {
+            Some(Annotation::Rect { .. } | Annotation::Ellipse { .. } | Annotation::Mosaic { .. }) => {
+                box_handle_cursor(h_idx)
+            }
+            Some(Annotation::Arrow { .. }) => IDC_HAND,
+            _ => IDC_SIZEALL,
+        };
+    }
+    if matches!(st.drag, DragMode::MoveAnnot(..)) {
+        return IDC_SIZEALL;
+    }
+    if let DragMode::Resizing(h_idx, _) = st.drag {
+        return box_handle_cursor(h_idx);
+    }
+    if matches!(st.drag, DragMode::Moving(..)) {
+        return IDC_SIZEALL;
+    }
+    if st.drag == DragMode::None && st.sel.is_some() {
+        if let Some((idx, h_idx)) = st.hovered_ctrl {
+            return match st.stack.items().get(idx) {
+                Some(Annotation::Rect { .. } | Annotation::Ellipse { .. } | Annotation::Mosaic { .. }) => {
+                    box_handle_cursor(h_idx)
+                }
+                Some(Annotation::Arrow { .. }) => IDC_HAND,
+                _ => IDC_SIZEALL,
+            };
+        }
+        if st.hovered_annot.is_some() {
+            return IDC_SIZEALL;
+        }
+        if st.tool == ToolKind::Select {
+            if let Some(s) = st.sel {
+                if let Some(h_idx) = hit_test_handle(s, st.cursor.0, st.cursor.1) {
+                    return box_handle_cursor(h_idx);
+                }
+                if s.contains(st.cursor.0, st.cursor.1) {
+                    return IDC_SIZEALL;
+                }
+            }
+        }
+    }
+    IDC_CROSS
+}
 
 pub fn handle_mouse_wheel(st: &mut OverlayState, hwnd: HWND, wheel_delta: i32) {
     let step = if wheel_delta > 0 { 1 } else { -1 };
-    if let Some(idx) = st.stack.selected {
-        if idx < st.stack.items().len() {
-            let sz = st.stack.items_mut()[idx].adjust_size(step);
-            st.show_wheel_hud(hwnd, format!("尺寸 {sz} px"));
-            return;
+    let target = st.hovered_annot.or(st.stack.selected);
+    if let Some(idx) = target.filter(|&i| i < st.stack.items().len()) {
+        let sz = st.stack.items_mut()[idx].adjust_size(step);
+        match st.stack.items()[idx] {
+            Annotation::Rect { .. } | Annotation::Ellipse { .. } | Annotation::Arrow { .. } => {
+                st.thickness = sz.clamp(1, 20);
+            }
+            Annotation::StepNumber { .. } => st.step_radius = sz,
+            Annotation::Text { .. } => st.text_size = sz,
+            _ => {}
         }
+        st.show_wheel_hud(hwnd, format!("尺寸 {sz} px"));
+        return;
     }
     match st.tool {
         ToolKind::Select => {}
@@ -51,26 +121,24 @@ pub fn handle_lbutton_down(st: &mut OverlayState, hwnd: HWND, x: i32, y: i32) {
         st.execute_action(hwnd, cmd);
         return;
     }
-    if let Some(idx) = st.stack.selected {
-        if let Some(h_idx) = st.stack.items().get(idx).and_then(|a| a.hit_test_control(x, y)) {
+    // Always-on direct manipulation: grab ANY existing annotation's control handle or body directly
+    // without needing to switch back to a separate Select tool!
+    if st.sel.is_some() {
+        if let Some((idx, h_idx)) = st.stack.hit_test_any_control(x, y) {
+            st.stack.selected = Some(idx);
             st.stack.save_undo_snapshot();
             st.drag = DragMode::EditControl(idx, h_idx);
-            unsafe { SetCapture(hwnd); }
+            unsafe { SetCapture(hwnd); let _ = InvalidateRect(Some(hwnd), None, false); }
             return;
         }
-    }
-    if st.sel.is_some() {
         if let Some(hit_idx) = st.stack.hit_test_top(x, y) {
-            if st.tool == ToolKind::Select || st.stack.selected == Some(hit_idx) {
-                st.stack.selected = Some(hit_idx);
-                st.stack.save_undo_snapshot();
-                st.drag = DragMode::MoveAnnot(hit_idx, x, y);
-                unsafe { SetCapture(hwnd); let _ = InvalidateRect(Some(hwnd), None, false); }
-                return;
-            }
-        } else {
-            st.stack.selected = None;
+            st.stack.selected = Some(hit_idx);
+            st.stack.save_undo_snapshot();
+            st.drag = DragMode::MoveAnnot(hit_idx, x, y);
+            unsafe { SetCapture(hwnd); let _ = InvalidateRect(Some(hwnd), None, false); }
+            return;
         }
+        st.stack.selected = None;
     }
     if st.sel.is_some() && st.tool != ToolKind::Select {
         if st.tool == ToolKind::StepNumber {
@@ -106,13 +174,40 @@ pub fn handle_lbutton_down(st: &mut OverlayState, hwnd: HWND, x: i32, y: i32) {
     unsafe { SetCapture(hwnd); }
 }
 
+pub fn handle_lbutton_dblclk(st: &mut OverlayState, hwnd: HWND, x: i32, y: i32) {
+    if let Some((idx, 1)) = st.stack.hit_test_any_control(x, y) {
+        if matches!(st.stack.items().get(idx), Some(Annotation::Arrow { .. })) {
+            st.stack.save_undo_snapshot();
+            st.stack.items_mut()[idx].straighten_arrow();
+            st.stack.selected = Some(idx);
+            unsafe { let _ = InvalidateRect(Some(hwnd), None, false); }
+            return;
+        }
+    }
+    if st.sel.is_some_and(ScreenRect::is_valid)
+        && st.tool == ToolKind::Select
+        && st.stack.hit_test_top(x, y).is_none()
+    {
+        st.execute_action(hwnd, ToolbarCmd::Copy);
+    }
+}
+
 pub fn handle_mouse_move(st: &mut OverlayState, hwnd: HWND, x: i32, y: i32) {
     st.cursor = (x, y);
-    st.hovered_cmd = if st.drag == DragMode::None {
-        st.layout.hits.iter().find(|h| h.rect.contains(x, y)).map(|h| h.cmd)
+    if st.drag == DragMode::None {
+        st.hovered_cmd = st.layout.hits.iter().find(|h| h.rect.contains(x, y)).map(|h| h.cmd);
+        if st.hovered_cmd.is_none() && st.sel.is_some() {
+            st.hovered_ctrl = st.stack.hit_test_any_control(x, y);
+            st.hovered_annot = st.hovered_ctrl.map(|(i, _)| i).or_else(|| st.stack.hit_test_top(x, y));
+        } else {
+            st.hovered_ctrl = None;
+            st.hovered_annot = None;
+        }
     } else {
-        None
-    };
+        st.hovered_cmd = None;
+        st.hovered_ctrl = None;
+        st.hovered_annot = None;
+    }
     let shift = unsafe { (GetKeyState(VK_SHIFT.0 as i32) as u16 & 0x8000) != 0 };
     match st.drag {
         DragMode::None => {
@@ -151,15 +246,13 @@ pub fn handle_mouse_move(st: &mut OverlayState, hwnd: HWND, x: i32, y: i32) {
             st.live_ann = match st.tool {
                 ToolKind::Rect => Some(Annotation::Rect {
                     rect: ScreenRect::from_points(sx, sy, ex, ey),
-                    color: col, thickness: st.thickness, style: st.shape_style,
+                    color: col, thickness: st.thickness, filled: st.shape_filled,
                 }),
                 ToolKind::Ellipse => Some(Annotation::Ellipse {
                     rect: ScreenRect::from_points(sx, sy, ex, ey),
-                    color: col, thickness: st.thickness, style: st.shape_style,
+                    color: col, thickness: st.thickness, filled: st.shape_filled,
                 }),
-                ToolKind::Arrow => Some(Annotation::straight_arrow(
-                    sx, sy, ex, ey, col, st.thickness, st.arrow_style,
-                )),
+                ToolKind::Arrow => Some(Annotation::arrow(sx, sy, ex, ey, col, st.thickness)),
                 ToolKind::Mosaic => Some(Annotation::Mosaic {
                     rect: ScreenRect::from_points(sx, sy, ex, ey),
                     block: mosaic_blk, blur: st.mosaic_blur,

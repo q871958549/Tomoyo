@@ -208,6 +208,18 @@ pub fn spawn_hotkey_audit_worker(
                 notify_msg,
                 serde_json::json!({ "event": "hotkey_audit", "report": report }).to_string(),
             );
+            // Wait briefly for tomoyo.exe to finish restoring hotkeys (mode 4) & push fresh health!
+            std::thread::sleep(std::time::Duration::from_millis(160));
+            push_evt(
+                &tx,
+                hwnd_raw,
+                notify_msg,
+                serde_json::json!({
+                    "event": "hotkey_health",
+                    "health": tomoyo_core::load_hotkey_health(),
+                })
+                .to_string(),
+            );
         });
 }
 
@@ -227,6 +239,17 @@ pub fn spawn_hotkey_probe_worker(
                 hwnd_raw,
                 notify_msg,
                 serde_json::json!({ "event": "hotkey_probe_result", "result": result }).to_string(),
+            );
+            std::thread::sleep(std::time::Duration::from_millis(160));
+            push_evt(
+                &tx,
+                hwnd_raw,
+                notify_msg,
+                serde_json::json!({
+                    "event": "hotkey_health",
+                    "health": tomoyo_core::load_hotkey_health(),
+                })
+                .to_string(),
             );
         });
 }

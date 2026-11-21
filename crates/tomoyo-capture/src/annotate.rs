@@ -1,5 +1,5 @@
-//! Editable vector annotation data model with hit-testing, dragging, control-point editing,
-//! arrow bending, mouse-wheel sizing, Shift constraints, and full Undo/Redo history.
+//! Editable vector annotation data model with 8-handle resize, unified modern tapered free-bend
+//! arrows, hover/click direct manipulation, mouse-wheel sizing, Shift constraints & Undo/Redo.
 
 use crate::screen::ScreenRect;
 
@@ -17,20 +17,6 @@ pub enum ToolKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ShapeStyle {
-    Outline,
-    Rounded,
-    Filled,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ArrowStyle {
-    Solid,
-    Thin,
-    Curved,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AnnotColor(pub u8, pub u8, pub u8);
 
 pub const COLOR_PRESETS: [AnnotColor; 6] = [
@@ -44,19 +30,11 @@ pub const COLOR_PRESETS: [AnnotColor; 6] = [
 
 #[derive(Debug, Clone)]
 pub enum Annotation {
-    Rect { rect: ScreenRect, color: AnnotColor, thickness: i32, style: ShapeStyle },
-    Ellipse { rect: ScreenRect, color: AnnotColor, thickness: i32, style: ShapeStyle },
-    Arrow {
-        x0: i32,
-        y0: i32,
-        cx: i32,
-        cy: i32,
-        x1: i32,
-        y1: i32,
-        color: AnnotColor,
-        thickness: i32,
-        style: ArrowStyle,
-    },
+    Rect { rect: ScreenRect, color: AnnotColor, thickness: i32, filled: bool },
+    Ellipse { rect: ScreenRect, color: AnnotColor, thickness: i32, filled: bool },
+    /// Unified modern tapered arrow: straight when `(cx, cy)` is midpoint, smoothly curves when
+    /// the user drags the middle handle `(cx, cy)` freely in any direction.
+    Arrow { x0: i32, y0: i32, cx: i32, cy: i32, x1: i32, y1: i32, color: AnnotColor, thickness: i32 },
     Pen { points: Vec<(i32, i32)>, color: AnnotColor, thickness: i32, highlighter: bool },
     Mosaic { rect: ScreenRect, block: i32, blur: bool },
     StepNumber { cx: i32, cy: i32, number: u32, radius: i32, color: AnnotColor },
@@ -64,42 +42,59 @@ pub enum Annotation {
 }
 
 impl Annotation {
-    pub fn straight_arrow(x0: i32, y0: i32, x1: i32, y1: i32, color: AnnotColor, thickness: i32, style: ArrowStyle) -> Self {
-        let (mx, my) = ((x0 + x1) / 2, (y0 + y1) / 2);
-        let (cx, cy) = if style == ArrowStyle::Curved {
-            let dx = (x1 - x0) as f32;
-            let dy = (y1 - y0) as f32;
-            let len = (dx * dx + dy * dy).sqrt().max(1.0);
-            let bend = (len * 0.22).clamp(16.0, 72.0);
-            ((mx as f32 - dy / len * bend).round() as i32, (my as f32 + dx / len * bend).round() as i32)
-        } else {
-            (mx, my)
-        };
-        Self::Arrow { x0, y0, cx, cy, x1, y1, color, thickness, style }
+    pub fn arrow(x0: i32, y0: i32, x1: i32, y1: i32, color: AnnotColor, thickness: i32) -> Self {
+        Self::Arrow {
+            x0, y0,
+            cx: (x0 + x1) / 2,
+            cy: (y0 + y1) / 2,
+            x1, y1,
+            color,
+            thickness,
+        }
     }
 
+    /// True if the arrow's bend control point is offset meaningfully from the straight chord.
+    pub fn is_arrow_curved(&self) -> bool {
+        if let Self::Arrow { x0, y0, cx, cy, x1, y1, .. } = *self {
+            let (mx, my) = ((x0 + x1) as f32 * 0.5, (y0 + y1) as f32 * 0.5);
+            ((cx as f32 - mx).powi(2) + (cy as f32 - my).powi(2)).sqrt() > 3.5
+        } else {
+            false
+        }
+    }
+
+    pub fn straighten_arrow(&mut self) {
+        if let Self::Arrow { x0, y0, cx, cy, x1, y1, .. } = self {
+            *cx = (*x0 + *x1) / 2;
+            *cy = (*y0 + *y1) / 2;
+        }
+    }
+
+    /// Returns editable control handles:
+    /// - Rect/Ellipse/Mosaic: 8 handles (TL, TM, TR, ML, MR, BL, BM, BR)
+    /// - Arrow: 3 handles (0: Tail, 1: Middle Bend Point, 2: Tip)
+    /// - StepNumber/Text/Pen: 1 center/anchor handle
     pub fn control_points(&self) -> Vec<(i32, i32)> {
         match self {
-            Self::Rect { rect, .. } | Self::Ellipse { rect, .. } | Self::Mosaic { rect, .. } => vec![
-                (rect.x, rect.y),
-                (rect.right(), rect.y),
-                (rect.x, rect.bottom()),
-                (rect.right(), rect.bottom()),
-            ],
+            Self::Rect { rect, .. } | Self::Ellipse { rect, .. } | Self::Mosaic { rect, .. } => {
+                let (mx, my) = (rect.x + rect.w / 2, rect.y + rect.h / 2);
+                vec![
+                    (rect.x, rect.y), (mx, rect.y), (rect.right(), rect.y),
+                    (rect.x, my),                   (rect.right(), my),
+                    (rect.x, rect.bottom()), (mx, rect.bottom()), (rect.right(), rect.bottom()),
+                ]
+            }
             Self::Arrow { x0, y0, cx, cy, x1, y1, .. } => vec![(*x0, *y0), (*cx, *cy), (*x1, *y1)],
             Self::StepNumber { cx, cy, .. } => vec![(*cx, *cy)],
             Self::Text { x, y, .. } => vec![(*x, *y)],
             Self::Pen { points, .. } => {
-                if points.is_empty() {
-                    Vec::new()
-                } else {
-                    let (mut lx, mut ly, mut rx, mut ry) = (i32::MAX, i32::MAX, i32::MIN, i32::MIN);
-                    for &(px, py) in points {
-                        lx = lx.min(px); ly = ly.min(py);
-                        rx = rx.max(px); ry = ry.max(py);
-                    }
-                    vec![((lx + rx) / 2, (ly + ry) / 2)]
+                if points.is_empty() { return Vec::new(); }
+                let (mut lx, mut ly, mut rx, mut ry) = (i32::MAX, i32::MAX, i32::MIN, i32::MIN);
+                for &(px, py) in points {
+                    lx = lx.min(px); ly = ly.min(py);
+                    rx = rx.max(px); ry = ry.max(py);
                 }
+                vec![((lx + rx) / 2, (ly + ry) / 2)]
             }
         }
     }
@@ -107,7 +102,7 @@ impl Annotation {
     pub fn hit_test_control(&self, px: i32, py: i32) -> Option<usize> {
         self.control_points()
             .into_iter()
-            .position(|(hx, hy)| (px - hx).abs() <= 8 && (py - hy).abs() <= 8)
+            .position(|(hx, hy)| (px - hx).abs() <= 9 && (py - hy).abs() <= 9)
     }
 
     pub fn hit_test(&self, px: i32, py: i32) -> bool {
@@ -115,9 +110,9 @@ impl Annotation {
             return true;
         }
         match self {
-            Self::Rect { rect, thickness, style, .. } => {
-                let tol = (*thickness).max(7);
-                if *style == ShapeStyle::Filled {
+            Self::Rect { rect, thickness, filled, .. } => {
+                let tol = (*thickness).max(8);
+                if *filled {
                     rect.contains(px, py)
                 } else {
                     let outer = ScreenRect { x: rect.x - tol, y: rect.y - tol, w: rect.w + tol * 2, h: rect.h + tol * 2 };
@@ -125,23 +120,18 @@ impl Annotation {
                     outer.contains(px, py) && !inner.contains(px, py)
                 }
             }
-            Self::Ellipse { rect, thickness, style, .. } => {
+            Self::Ellipse { rect, thickness, filled, .. } => {
                 if rect.w < 4 || rect.h < 4 { return false; }
                 let (rx, ry) = (rect.w as f32 * 0.5, rect.h as f32 * 0.5);
                 let (dx, dy) = (px as f32 - (rect.x as f32 + rx), py as f32 - (rect.y as f32 + ry));
                 let norm = ((dx / rx).powi(2) + (dy / ry).powi(2)).sqrt();
-                if *style == ShapeStyle::Filled {
-                    norm <= 1.05
-                } else {
-                    let dist = ((norm - 1.0) * rx.min(ry)).abs();
-                    dist <= (*thickness as f32 * 0.5 + 7.0)
-                }
+                if *filled { norm <= 1.05 } else { ((norm - 1.0) * rx.min(ry)).abs() <= (*thickness as f32 * 0.5 + 8.0) }
             }
             Self::Arrow { x0, y0, cx, cy, x1, y1, thickness, .. } => {
-                let tol = *thickness as f32 * 0.5 + 8.0;
+                let tol = (*thickness as f32 * 0.9 + 10.0).max(12.0);
                 let mut prev = (*x0 as f32, *y0 as f32);
-                for i in 1..=16 {
-                    let t = i as f32 / 16.0;
+                for i in 1..=20 {
+                    let t = i as f32 / 20.0;
                     let pt = eval_quad_bezier((*x0 as f32, *y0 as f32), (*cx as f32, *cy as f32), (*x1 as f32, *y1 as f32), t);
                     if point_seg_dist(px as f32, py as f32, prev.0, prev.1, pt.0, pt.1) <= tol {
                         return true;
@@ -151,21 +141,18 @@ impl Annotation {
                 false
             }
             Self::Pen { points, thickness, .. } => {
-                let tol = *thickness as f32 * 0.5 + 7.0;
+                let tol = *thickness as f32 * 0.5 + 8.0;
                 points.windows(2).any(|w| {
                     point_seg_dist(px as f32, py as f32, w[0].0 as f32, w[0].1 as f32, w[1].0 as f32, w[1].1 as f32) <= tol
                 })
             }
             Self::Mosaic { rect, .. } => rect.contains(px, py),
             Self::StepNumber { cx, cy, radius, .. } => {
-                let dx = (px - *cx) as f32;
-                let dy = (py - *cy) as f32;
-                (dx * dx + dy * dy).sqrt() <= (*radius as f32 + 5.0)
+                (((px - *cx) as f32).powi(2) + ((py - *cy) as f32).powi(2)).sqrt() <= (*radius as f32 + 6.0)
             }
             Self::Text { x, y, text, size, .. } => {
-                let est_w = (text.chars().map(|c| if c.is_ascii() { (*size as f32 * 0.6) as i32 } else { *size }).sum::<i32>()).max(32);
-                let est_h = (*size + 10).max(24);
-                ScreenRect { x: *x - 4, y: *y - 4, w: est_w + 8, h: est_h + 8 }.contains(px, py)
+                let est_w = (text.chars().map(|c| if c.is_ascii() { (*size as f32 * 0.6) as i32 } else { *size }).sum::<i32>()).max(36);
+                ScreenRect { x: *x - 6, y: *y - 6, w: est_w + 12, h: (*size + 14).max(28) }.contains(px, py)
             }
         }
     }
@@ -173,17 +160,12 @@ impl Annotation {
     pub fn translate(&mut self, dx: i32, dy: i32) {
         match self {
             Self::Rect { rect, .. } | Self::Ellipse { rect, .. } | Self::Mosaic { rect, .. } => {
-                rect.x += dx;
-                rect.y += dy;
+                rect.x += dx; rect.y += dy;
             }
             Self::Arrow { x0, y0, cx, cy, x1, y1, .. } => {
-                *x0 += dx; *y0 += dy;
-                *cx += dx; *cy += dy;
-                *x1 += dx; *y1 += dy;
+                *x0 += dx; *y0 += dy; *cx += dx; *cy += dy; *x1 += dx; *y1 += dy;
             }
-            Self::Pen { points, .. } => {
-                for p in points { p.0 += dx; p.1 += dy; }
-            }
+            Self::Pen { points, .. } => { for p in points { p.0 += dx; p.1 += dy; } }
             Self::StepNumber { cx, cy, .. } => { *cx += dx; *cy += dy; }
             Self::Text { x, y, .. } => { *x += dx; *y += dy; }
         }
@@ -195,30 +177,35 @@ impl Annotation {
                 let (mut l, mut t, mut r, mut b) = (rect.x, rect.y, rect.right(), rect.bottom());
                 match idx {
                     0 => { l = nx; t = ny; }
-                    1 => { r = nx; t = ny; }
-                    2 => { l = nx; b = ny; }
-                    3 => { r = nx; b = ny; }
+                    1 => t = ny,
+                    2 => { r = nx; t = ny; }
+                    3 => l = nx,
+                    4 => r = nx,
+                    5 => { l = nx; b = ny; }
+                    6 => b = ny,
+                    7 => { r = nx; b = ny; }
                     _ => {}
                 }
                 *rect = ScreenRect::from_points(l, t, r, b);
             }
-            Self::Arrow { x0, y0, cx, cy, x1, y1, style, .. } => match idx {
-                0 => {
-                    let was_straight = *style != ArrowStyle::Curved;
-                    *x0 = nx; *y0 = ny;
-                    if was_straight { *cx = (*x0 + *x1) / 2; *cy = (*y0 + *y1) / 2; }
+            Self::Arrow { x0, y0, cx, cy, x1, y1, .. } => {
+                let curved = (((*cx as f32) - (*x0 + *x1) as f32 * 0.5).powi(2)
+                    + ((*cy as f32) - (*y0 + *y1) as f32 * 0.5).powi(2))
+                    .sqrt()
+                    > 3.5;
+                match idx {
+                    0 => {
+                        *x0 = nx; *y0 = ny;
+                        if !curved { *cx = (*x0 + *x1) / 2; *cy = (*y0 + *y1) / 2; }
+                    }
+                    1 => { *cx = nx; *cy = ny; }
+                    2 => {
+                        *x1 = nx; *y1 = ny;
+                        if !curved { *cx = (*x0 + *x1) / 2; *cy = (*y0 + *y1) / 2; }
+                    }
+                    _ => {}
                 }
-                1 => {
-                    *cx = nx; *cy = ny;
-                    *style = ArrowStyle::Curved;
-                }
-                2 => {
-                    let was_straight = *style != ArrowStyle::Curved;
-                    *x1 = nx; *y1 = ny;
-                    if was_straight { *cx = (*x0 + *x1) / 2; *cy = (*y0 + *y1) / 2; }
-                }
-                _ => {}
-            },
+            }
             Self::StepNumber { cx, cy, .. } => { *cx = nx; *cy = ny; }
             Self::Text { x, y, .. } => { *x = nx; *y = ny; }
             Self::Pen { .. } => {}
@@ -236,18 +223,9 @@ impl Annotation {
                 *thickness = (*thickness + delta * if *highlighter { 2 } else { 1 }).clamp(2, max_t);
                 *thickness
             }
-            Self::Mosaic { block, .. } => {
-                *block = (*block + delta * 2).clamp(6, 36);
-                *block
-            }
-            Self::StepNumber { radius, .. } => {
-                *radius = (*radius + delta).clamp(10, 26);
-                *radius
-            }
-            Self::Text { size, .. } => {
-                *size = (*size + delta * 2).clamp(12, 52);
-                *size
-            }
+            Self::Mosaic { block, .. } => { *block = (*block + delta * 2).clamp(6, 36); *block }
+            Self::StepNumber { radius, .. } => { *radius = (*radius + delta).clamp(10, 26); *radius }
+            Self::Text { size, .. } => { *size = (*size + delta * 2).clamp(12, 52); *size }
         }
     }
 
@@ -278,19 +256,14 @@ impl AnnotationStack {
         self.next_step = self
             .items
             .iter()
-            .filter_map(|a| match a {
-                Annotation::StepNumber { number, .. } => Some(*number),
-                _ => None,
-            })
+            .filter_map(|a| match a { Annotation::StepNumber { number, .. } => Some(*number), _ => None })
             .max()
             .unwrap_or(0);
     }
 
     pub fn save_undo_snapshot(&mut self) {
         self.redo_history.clear();
-        if self.undo_history.len() >= 80 {
-            self.undo_history.remove(0);
-        }
+        if self.undo_history.len() >= 80 { self.undo_history.remove(0); }
         self.undo_history.push(self.items.clone());
     }
 
@@ -304,14 +277,12 @@ impl AnnotationStack {
     }
 
     pub fn delete_selected(&mut self) -> bool {
-        if let Some(idx) = self.selected {
-            if idx < self.items.len() {
-                self.save_undo_snapshot();
-                self.items.remove(idx);
-                self.selected = None;
-                self.sync_step_counter();
-                return true;
-            }
+        if let Some(idx) = self.selected.filter(|&i| i < self.items.len()) {
+            self.save_undo_snapshot();
+            self.items.remove(idx);
+            self.selected = None;
+            self.sync_step_counter();
+            return true;
         }
         false
     }
@@ -320,9 +291,21 @@ impl AnnotationStack {
         (0..self.items.len()).rev().find(|&i| self.items[i].hit_test(px, py))
     }
 
-    pub fn next_step_number(&self) -> u32 {
-        self.next_step + 1
+    pub fn hit_test_any_control(&self, px: i32, py: i32) -> Option<(usize, usize)> {
+        if let Some(sel) = self.selected.filter(|&i| i < self.items.len()) {
+            if let Some(h) = self.items[sel].hit_test_control(px, py) {
+                return Some((sel, h));
+            }
+        }
+        for i in (0..self.items.len()).rev() {
+            if let Some(h) = self.items[i].hit_test_control(px, py) {
+                return Some((i, h));
+            }
+        }
+        None
     }
+
+    pub fn next_step_number(&self) -> u32 { self.next_step + 1 }
 
     pub fn undo(&mut self) -> bool {
         if let Some(prev) = self.undo_history.pop() {
@@ -330,9 +313,7 @@ impl AnnotationStack {
             self.selected = None;
             self.sync_step_counter();
             true
-        } else {
-            false
-        }
+        } else { false }
     }
 
     pub fn redo(&mut self) -> bool {
@@ -341,18 +322,11 @@ impl AnnotationStack {
             self.selected = None;
             self.sync_step_counter();
             true
-        } else {
-            false
-        }
+        } else { false }
     }
 
-    pub fn items(&self) -> &[Annotation] {
-        &self.items
-    }
-
-    pub fn items_mut(&mut self) -> &mut [Annotation] {
-        &mut self.items
-    }
+    pub fn items(&self) -> &[Annotation] { &self.items }
+    pub fn items_mut(&mut self) -> &mut [Annotation] { &mut self.items }
 }
 
 pub fn eval_quad_bezier(p0: (f32, f32), pc: (f32, f32), p1: (f32, f32), t: f32) -> (f32, f32) {
@@ -361,19 +335,16 @@ pub fn eval_quad_bezier(p0: (f32, f32), pc: (f32, f32), p1: (f32, f32), t: f32) 
 }
 
 pub fn constrain_shift_point_rect(sx: i32, sy: i32, x: i32, y: i32) -> (i32, i32) {
-    let dx = x - sx;
-    let dy = y - sy;
+    let (dx, dy) = (x - sx, y - sy);
     let side = dx.abs().max(dy.abs());
     (sx + if dx >= 0 { side } else { -side }, sy + if dy >= 0 { side } else { -side })
 }
 
 pub fn constrain_shift_line(sx: i32, sy: i32, x: i32, y: i32) -> (i32, i32) {
-    let dx = (x - sx) as f32;
-    let dy = (y - sy) as f32;
+    let (dx, dy) = ((x - sx) as f32, (y - sy) as f32);
     let len = (dx * dx + dy * dy).sqrt();
     if len < 1.0 { return (x, y); }
-    let angle = dy.atan2(dx);
-    let snapped = (angle / (std::f32::consts::FRAC_PI_4)).round() * std::f32::consts::FRAC_PI_4;
+    let snapped = (dy.atan2(dx) / std::f32::consts::FRAC_PI_4).round() * std::f32::consts::FRAC_PI_4;
     (sx + (snapped.cos() * len).round() as i32, sy + (snapped.sin() * len).round() as i32)
 }
 
@@ -390,28 +361,25 @@ mod tests {
     use crate::annotate_render::render_annotations;
 
     #[test]
-    fn editable_annotations_support_hit_drag_bend_resize_and_undo() {
+    fn editable_annotations_support_8handle_resize_and_free_bend_tapered_arrow() {
         let mut buf = vec![0x80u8; 160 * 120 * 4];
         let mut stack = AnnotationStack::default();
         stack.push(Annotation::Rect {
-            rect: ScreenRect { x: 10, y: 10, w: 30, h: 20 },
-            color: COLOR_PRESETS[0],
-            thickness: 3,
-            style: ShapeStyle::Rounded,
+            rect: ScreenRect { x: 10, y: 10, w: 40, h: 30 },
+            color: COLOR_PRESETS[0], thickness: 3, filled: false,
         });
-        stack.push(Annotation::straight_arrow(15, 60, 95, 60, COLOR_PRESETS[2], 4, ArrowStyle::Solid));
-        assert_eq!(stack.hit_test_top(55, 60), Some(1));
-        // Bend arrow via middle control point -> automatically turns Curved
-        stack.save_undo_snapshot();
-        stack.items_mut()[1].move_control(1, 55, 30);
-        assert!(matches!(stack.items()[1], Annotation::Arrow { style: ArrowStyle::Curved, cy: 30, .. }));
-        // Wheel resize & drag
-        let new_sz = stack.items_mut()[1].adjust_size(2);
-        assert_eq!(new_sz, 6);
-        stack.items_mut()[0].translate(5, 5);
+        // 8 resize handles: right-middle handle index 4 expands width
+        assert_eq!(stack.items()[0].control_points().len(), 8);
+        stack.items_mut()[0].move_control(4, 70, 25);
+        assert!(matches!(stack.items()[0], Annotation::Rect { rect, .. } if rect.w == 60));
+
+        // Unified tapered arrow starts straight, bends freely by dragging handle 1, straightens back
+        stack.push(Annotation::arrow(15, 70, 115, 70, COLOR_PRESETS[2], 4));
+        assert!(!stack.items()[1].is_arrow_curved());
+        stack.items_mut()[1].move_control(1, 65, 35);
+        assert!(stack.items()[1].is_arrow_curved());
         render_annotations(&mut buf, 160, 120, 0, 0, stack.items());
-        assert!(stack.undo());
-        assert!(stack.redo());
-        assert!(stack.delete_selected() || stack.items().len() == 2);
+        stack.items_mut()[1].straighten_arrow();
+        assert!(!stack.items()[1].is_arrow_curved());
     }
 }

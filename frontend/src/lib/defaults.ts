@@ -22,6 +22,7 @@ export function makeDefaultConfig(): TomoyoConfig {
   return {
     language: 'zh',
     hotkey: 'Alt+Space',
+    override_conflict_hotkeys: false,
     theme: 'light',
     hibernate_delay_secs: 15,
     auto_preview: true,
@@ -63,7 +64,7 @@ export function hydrateSettingsInit(): SettingsInitPayload {
   const def = makeDefaultConfig();
   const rc = (raw.config ?? {}) as Partial<TomoyoConfig>;
   return {
-    version: raw.version || '1.7.0',
+    version: raw.version || '1.7.1',
     autostart: !!raw.autostart,
     plugins: Array.isArray(raw.plugins) ? raw.plugins : [],
     config_path: raw.config_path || '',

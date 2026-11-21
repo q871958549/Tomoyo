@@ -3,6 +3,7 @@ export interface HotkeySlotStatus {
   active: string;
   ok: boolean;
   disabled: boolean;
+  overridden?: boolean;
   reason: string;
 }
 
@@ -71,6 +72,7 @@ export interface CaptureToolHotkeys {
 export interface TomoyoConfig {
   language: string;
   hotkey: string;
+  override_conflict_hotkeys?: boolean;
   theme: string;
   hibernate_delay_secs: number;
   auto_preview: boolean;

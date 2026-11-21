@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.6.0.schema.json
 PackageIdentifier: TomoyoContributors.Tomoyo
-PackageVersion: 1.7.0
+PackageVersion: 1.7.1
 InstallerLocale: zh-CN
 Platform:
   - Windows.Desktop
@@ -16,7 +16,7 @@ Commands:
   - tomoyo
 Installers:
   - Architecture: x64
-    InstallerUrl: https://github.com/q871958549/Tomoyo/releases/download/v1.7.0/Tomoyo-v1.7.0-windows-x64-setup.exe
+    InstallerUrl: https://github.com/q871958549/Tomoyo/releases/download/v1.7.1/Tomoyo-v1.7.1-windows-x64-setup.exe
     InstallerSha256: PLACEHOLDER_UPDATED_BY_RELEASE_SHA256SUMS
 ManifestType: installer
 ManifestVersion: 1.6.0

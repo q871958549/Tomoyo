@@ -47,6 +47,10 @@ impl HotkeyCaptureController {
         Self { hook_tid: None, parent_hwnd }
     }
 
+    pub fn is_active(&self) -> bool {
+        self.hook_tid.is_some()
+    }
+
     pub fn start(&mut self, host_hwnd: usize, tx: mpsc::Sender<String>, notify_msg: u32) {
         self.stop();
         if let Some(p) = self.parent_hwnd {

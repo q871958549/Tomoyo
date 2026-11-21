@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { AlertTriangle, CheckCircle2, Crosshair, FolderOpen, RefreshCw, ShieldAlert } from '@lucide/svelte';
+  import { AlertTriangle, CheckCircle2, Crosshair, FolderOpen, RefreshCw, ShieldAlert, Zap } from '@lucide/svelte';
   import { postHost } from '../../lib/ipc';
   import { tr, type Lang } from '../../lib/i18n';
   import type {
@@ -10,6 +10,7 @@
   } from '../../lib/types';
   import Button from '../../lib/ui/Button.svelte';
   import Segmented from '../../lib/ui/Segmented.svelte';
+  import Switch from '../../lib/ui/Switch.svelte';
 
   interface Props {
     cfg: TomoyoConfig;
@@ -22,6 +23,7 @@
     onRunAudit: () => void;
     onProbe: (spec: string) => void;
     onApplyFreeKey: (slot: 'main' | 'clipboard' | 'translate' | 'capture', key: string) => void;
+    onToggleOverride: (v: boolean) => void;
   }
 
   let {
@@ -35,6 +37,7 @@
     onRunAudit,
     onProbe,
     onApplyFreeKey,
+    onToggleOverride,
   }: Props = $props();
 
   let filter = $state('all');
@@ -99,6 +102,8 @@
           {/if}
           {#if isBad}
             <span class="pill is-bad"><AlertTriangle size={11} /> {s.st?.reason || tr(lang, 'hk_conflict')}</span>
+          {:else if s.spec && s.st?.ok && s.st?.overridden}
+            <span class="pill is-override"><Zap size={11} /> {isEn ? 'Overridden' : '已高优先级接管'}</span>
           {:else if s.spec && s.st?.ok}
             <span class="pill is-ok"><CheckCircle2 size={11} /> {tr(lang, 'hk_ok')}</span>
           {/if}
@@ -125,6 +130,21 @@
       {/if}
     </div>
   {/each}
+
+  <div class="slot-row override-row">
+    <div class="slot-main">
+      <div class="slot-top">
+        <Zap size={14} class="ov-ico" />
+        <span class="t-label">{isEn ? 'High-Priority Conflict Override (Opt-In)' : '高优先级强行接管冲突热键'}</span>
+      </div>
+      <div class="t-desc">
+        {isEn
+          ? 'Mounts a tiny hook ONLY for conflicted shortcuts when RegisterHotKey fails (zero hook/thread when off or conflict-free).'
+          : '仅在快捷键被未知后台服务静默占用导致注册失败时，为冲突键挂载极轻量底层钩子立即恢复使用；无冲突或关闭时零挂载。'}
+      </div>
+    </div>
+    <Switch checked={!!cfg.override_conflict_hotkeys} onchange={onToggleOverride} />
+  </div>
 </div>
 
 {#if probeResult}
@@ -273,7 +293,10 @@
     border-radius: 999px; font-size: 11px; font-weight: 500; white-space: nowrap;
   }
   .pill.is-ok, .pill.is-free { background: var(--ok-soft); color: var(--ok); }
+  .pill.is-override { background: rgba(124, 58, 237, 0.12); color: #7c3aed; }
   .pill.is-bad, .pill.is-conflict { background: var(--danger-soft); color: var(--danger); }
   .pill.is-occupied_external { background: var(--warn-soft); color: var(--warn); }
   .pill.is-tomoyo { background: var(--accent-soft); color: var(--accent); }
+  .override-row { background: var(--canvas); margin: 6px -16px -14px; padding: 12px 16px; border-radius: 0 0 10px 10px; }
+  :global(.ov-ico) { color: #7c3aed; flex-shrink: 0; }
 </style>

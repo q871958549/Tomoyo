@@ -2,7 +2,7 @@
 
 #![cfg(windows)]
 
-use crate::annotate::{Annotation, AnnotationStack, ArrowStyle, ShapeStyle, ToolKind, COLOR_PRESETS};
+use crate::annotate::{Annotation, AnnotationStack, ToolKind, COLOR_PRESETS};
 use crate::annotate_render::render_annotations;
 use crate::export::{
     copy_bgra_to_clipboard, default_save_path, handoff_to_ocr_or_translate, save_bgra_as_png,
@@ -12,7 +12,8 @@ use crate::overlay_draw::{
     ToolbarStyleState,
 };
 use crate::overlay_input::{
-    handle_key_down, handle_lbutton_down, handle_mouse_move, handle_mouse_wheel,
+    cursor_for_hover, handle_key_down, handle_lbutton_dblclk, handle_lbutton_down,
+    handle_mouse_move, handle_mouse_wheel,
 };
 use crate::overlay_text::{
     bake_text_annotations_into_bgra, paint_overlay_gdi_labels, InlineTextEditor,
@@ -32,11 +33,11 @@ use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Input::KeyboardAndMouse::{ReleaseCapture, SetFocus, VK_ESCAPE, VK_RETURN};
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetMessageW,
-    GetWindowLongPtrW, KillTimer, LoadCursorW, PostQuitMessage, RegisterClassW, SetTimer,
-    SetWindowLongPtrW, ShowWindow, TranslateMessage, CS_DBLCLKS, GWLP_USERDATA, IDC_CROSS, MSG,
-    SW_SHOW, WM_DESTROY, WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN,
-    WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_PAINT, WM_RBUTTONUP, WM_TIMER, WNDCLASSW,
-    WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
+    GetWindowLongPtrW, KillTimer, LoadCursorW, PostQuitMessage, RegisterClassW, SetCursor,
+    SetTimer, SetWindowLongPtrW, ShowWindow, TranslateMessage, CS_DBLCLKS, GWLP_USERDATA,
+    IDC_CROSS, MSG, SW_SHOW, WM_DESTROY, WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDBLCLK,
+    WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_PAINT, WM_RBUTTONUP,
+    WM_SETCURSOR, WM_TIMER, WNDCLASSW, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
 };
 
 const TIMER_WHEEL_HUD: usize = 601;
@@ -81,8 +82,7 @@ pub(crate) struct OverlayState {
     pub thickness: i32,
     pub step_radius: i32,
     pub text_size: i32,
-    pub shape_style: ShapeStyle,
-    pub arrow_style: ArrowStyle,
+    pub shape_filled: bool,
     pub mosaic_blur: bool,
     pub stack: AnnotationStack,
     pub live_ann: Option<Annotation>,
@@ -90,6 +90,8 @@ pub(crate) struct OverlayState {
     pub drag: DragMode,
     pub cursor: (i32, i32),
     pub hovered_cmd: Option<ToolbarCmd>,
+    pub hovered_annot: Option<usize>,
+    pub hovered_ctrl: Option<(usize, usize)>,
     pub wheel_hud: Option<String>,
     pub text_editor: Option<InlineTextEditor>,
     pub layout: ToolbarLayout,
@@ -160,11 +162,40 @@ impl OverlayState {
             }
             ToolbarCmd::Thickness(t) => {
                 self.thickness = t.clamp(1, 20);
+                if let Some(sel_i) = self.stack.selected.filter(|&i| i < self.stack.items().len()) {
+                    self.stack.save_undo_snapshot();
+                    match &mut self.stack.items_mut()[sel_i] {
+                        Annotation::Rect { thickness, .. }
+                        | Annotation::Ellipse { thickness, .. }
+                        | Annotation::Arrow { thickness, .. } => *thickness = self.thickness,
+                        Annotation::Pen { thickness, highlighter, .. } => {
+                            *thickness = if *highlighter { (self.thickness * 3).clamp(12, 36) } else { self.thickness };
+                        }
+                        Annotation::Mosaic { block, .. } => *block = (self.thickness * 3).clamp(6, 36),
+                        _ => {}
+                    }
+                }
                 self.show_wheel_hud(hwnd, format!("粗细 {} px", self.thickness));
             }
-            ToolbarCmd::ShapeStyle(s) => self.shape_style = s,
-            ToolbarCmd::ArrowStyle(s) => self.arrow_style = s,
-            ToolbarCmd::MosaicBlur(b) => self.mosaic_blur = b,
+            ToolbarCmd::ShapeFilled(f) => {
+                self.shape_filled = f;
+                if let Some(sel_i) = self.stack.selected.filter(|&i| i < self.stack.items().len()) {
+                    match &mut self.stack.items_mut()[sel_i] {
+                        Annotation::Rect { filled, .. } | Annotation::Ellipse { filled, .. } => {
+                            *filled = f;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            ToolbarCmd::MosaicBlur(b) => {
+                self.mosaic_blur = b;
+                if let Some(sel_i) = self.stack.selected.filter(|&i| i < self.stack.items().len()) {
+                    if let Annotation::Mosaic { blur, .. } = &mut self.stack.items_mut()[sel_i] {
+                        *blur = b;
+                    }
+                }
+            }
             ToolbarCmd::Undo => { self.stack.undo(); }
             ToolbarCmd::ScrollLong => {
                 if let Some(s) = self.sel.filter(|r| r.is_valid()) {
@@ -269,9 +300,10 @@ pub fn run_capture_overlay(mode: CaptureMode) -> Result<CaptureOutcome, String> 
             hex_lower: cfg.capture.copy_hex_lowercase, rgb_mode: false,
             tool_hotkeys: cfg.capture.tool_hotkeys, sel: None, hover_snap: None,
             tool: ToolKind::Select, color_idx: 0, thickness: 4, step_radius: 13, text_size: 20,
-            shape_style: ShapeStyle::Outline, arrow_style: ArrowStyle::Solid, mosaic_blur: false,
+            shape_filled: false, mosaic_blur: false,
             stack: AnnotationStack::default(), live_ann: None, pen_pts: Vec::new(),
-            drag: DragMode::None, cursor: (w / 2, h / 2), hovered_cmd: None, wheel_hud: None,
+            drag: DragMode::None, cursor: (w / 2, h / 2), hovered_cmd: None, hovered_annot: None,
+            hovered_ctrl: None, wheel_hud: None,
             text_editor: None, layout: ToolbarLayout::default(), mem_dc, dib_bmp,
             dib_bits: bits as *mut u8, font, outcome: None,
         });
@@ -318,12 +350,18 @@ unsafe extern "system" fn overlay_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, 
             unsafe { let _ = KillTimer(Some(hwnd), TIMER_WHEEL_HUD); let _ = InvalidateRect(Some(hwnd), None, false); }
             LRESULT(0)
         }
+        WM_SETCURSOR => {
+            if let Ok(cur) = unsafe { LoadCursorW(None, cursor_for_hover(st)) } {
+                unsafe { SetCursor(Some(cur)); }
+            }
+            LRESULT(1)
+        }
         WM_PAINT => {
             let mut ps = PAINTSTRUCT::default();
             let hdc = unsafe { BeginPaint(hwnd, &mut ps) };
             let style = ToolbarStyleState {
                 active_tool: st.tool, active_color: st.color_idx, active_thickness: st.thickness,
-                shape_style: st.shape_style, arrow_style: st.arrow_style, mosaic_blur: st.mosaic_blur,
+                shape_filled: st.shape_filled, mosaic_blur: st.mosaic_blur,
             };
             st.layout = st.sel.filter(|r| r.is_valid()).map_or_else(ToolbarLayout::default, |s| {
                 build_toolbar_layout(s, st.snap.width, st.snap.height, &style, &st.tool_hotkeys)
@@ -333,7 +371,7 @@ unsafe extern "system" fn overlay_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, 
             let dst = unsafe { std::slice::from_raw_parts_mut(st.dib_bits, byte_len) };
             compose_overlay_pixels(
                 dst, &st.snap, &st.dimmed, st.sel, st.hover_snap, st.stack.items(),
-                st.stack.selected, st.live_ann.as_ref(), st.cursor, show_loupe,
+                st.stack.selected, st.hovered_annot, st.live_ann.as_ref(), st.cursor, show_loupe,
                 &st.layout, st.hovered_cmd, st.wheel_hud.as_deref(),
             );
             paint_overlay_gdi_labels(
@@ -365,7 +403,14 @@ unsafe extern "system" fn overlay_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, 
                     }
                 }
                 DragMode::Drawing(_, _) => {
-                    if let Some(a) = st.live_ann.take() { st.stack.push(a); }
+                    if let Some(a) = st.live_ann.take() {
+                        let keep = match &a {
+                            Annotation::Rect { rect, .. } | Annotation::Ellipse { rect, .. } | Annotation::Mosaic { rect, .. } => rect.w >= 4 || rect.h >= 4,
+                            Annotation::Arrow { x0, y0, x1, y1, .. } => (x1 - x0).abs() + (y1 - y0).abs() >= 6,
+                            _ => true,
+                        };
+                        if keep { st.stack.push(a); }
+                    }
                     st.pen_pts.clear();
                 }
                 _ => {}
@@ -374,9 +419,8 @@ unsafe extern "system" fn overlay_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, 
             LRESULT(0)
         }
         WM_LBUTTONDBLCLK => {
-            if st.sel.is_some_and(ScreenRect::is_valid) && st.tool == ToolKind::Select && st.stack.selected.is_none() {
-                st.execute_action(hwnd, ToolbarCmd::Copy);
-            }
+            let (x, y) = xy();
+            handle_lbutton_dblclk(st, hwnd, x, y);
             LRESULT(0)
         }
         WM_RBUTTONUP => {

@@ -360,8 +360,7 @@ pub fn draw_toolbar_icon(
         ToolbarCmd::Tool(ToolKind::Select)
         | ToolbarCmd::Color(_)
         | ToolbarCmd::Thickness(_)
-        | ToolbarCmd::ShapeStyle(_)
-        | ToolbarCmd::ArrowStyle(_)
+        | ToolbarCmd::ShapeFilled(_)
         | ToolbarCmd::MosaicBlur(_) => {}
     }
 }

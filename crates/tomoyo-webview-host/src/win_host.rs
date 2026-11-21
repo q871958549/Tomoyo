@@ -22,6 +22,7 @@ use std::cell::RefCell;
 use std::ffi::c_void;
 use std::rc::Rc;
 use std::sync::mpsc;
+use std::time::{Duration, Instant};
 use tomoyo_core::locate_fonts_dir;
 use webview2_com::Microsoft::Web::WebView2::Win32::{
     CreateCoreWebView2EnvironmentWithOptions, ICoreWebView2, ICoreWebView2Controller,
@@ -44,8 +45,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
     PostQuitMessage, RegisterClassW, SendMessageW, SetForegroundWindow, SetWindowLongPtrW,
     SetWindowPos, SetWindowTextW, ShowWindow, TranslateMessage, GWLP_USERDATA, HWND_NOTOPMOST,
     HWND_TOPMOST, ICON_BIG, ICON_SMALL, IDC_ARROW, MSG, SM_CXSCREEN, SM_CYSCREEN, SWP_NOACTIVATE,
-    SWP_NOMOVE, SWP_NOSIZE, SW_RESTORE, SW_SHOW, WM_CLOSE, WM_DESTROY, WM_SETICON, WM_SIZE,
-    WNDCLASSW, WS_OVERLAPPEDWINDOW, WS_VISIBLE,
+    SWP_NOMOVE, SWP_NOSIZE, SW_RESTORE, SW_SHOW, WM_ACTIVATE, WM_CLOSE, WM_DESTROY, WM_SETICON,
+    WM_SIZE, WNDCLASSW, WS_OVERLAPPEDWINDOW, WS_VISIBLE,
 };
 
 const WM_APP_WEBVIEW_EVENT: u32 = 0x8000 + 31;
@@ -54,10 +55,14 @@ const WM_APP_PICK_FOLDER: u32 = 0x8000 + 33;
 struct HostWindowState {
     controller: Option<ICoreWebView2Controller>,
     webview: Option<ICoreWebView2>,
+    event_tx: mpsc::Sender<String>,
     event_rx: mpsc::Receiver<String>,
     base_title: String,
     is_topmost: bool,
     picking_folder: bool,
+    settings_mode: bool,
+    notify_hwnd: Option<isize>,
+    last_activate_probe: Instant,
     hk_capture: HotkeyCaptureController,
 }
 
@@ -122,6 +127,27 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 }
             }
             LRESULT(0)
+        }
+        WM_ACTIVATE => {
+            if !ptr.is_null() && (wparam.0 & 0xFFFF) != 0 {
+                let st = unsafe { &mut *ptr };
+                if st.settings_mode
+                    && !st.hk_capture.is_active()
+                    && st.webview.is_some()
+                    && st.last_activate_probe.elapsed() >= Duration::from_millis(1200)
+                {
+                    st.last_activate_probe = Instant::now();
+                    if let Some(p) = st.notify_hwnd {
+                        crate::bridge_os::notify_parent_mode(p, 4);
+                    }
+                    crate::win_workers::spawn_hotkey_health_worker(
+                        st.event_tx.clone(),
+                        hwnd.0 as usize,
+                        WM_APP_WEBVIEW_EVENT,
+                    );
+                }
+            }
+            unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
         }
         WM_CLOSE => {
             if !ptr.is_null() {
@@ -201,18 +227,9 @@ pub fn run_windows_host(opts: LaunchArgs) {
 
     let hwnd = unsafe {
         CreateWindowExW(
-            Default::default(),
-            cls,
-            PCWSTR(title_w.as_ptr()),
-            WS_OVERLAPPEDWINDOW | WS_VISIBLE,
-            x,
-            y,
-            opts.width,
-            opts.height,
-            None,
-            None,
-            Some(hinst.into()),
-            None,
+            Default::default(), cls, PCWSTR(title_w.as_ptr()),
+            WS_OVERLAPPEDWINDOW | WS_VISIBLE, x, y, opts.width, opts.height,
+            None, None, Some(hinst.into()), None,
         )
         .expect("CreateWindowExW failed")
     };
@@ -229,10 +246,14 @@ pub fn run_windows_host(opts: LaunchArgs) {
     let mut state = Box::new(HostWindowState {
         controller: None,
         webview: None,
+        event_tx: event_tx.clone(),
         event_rx,
         base_title: opts.title.clone(),
         is_topmost: false,
         picking_folder: false,
+        settings_mode: opts.settings_mode,
+        notify_hwnd: opts.notify_hwnd,
+        last_activate_probe: Instant::now(),
         hk_capture: HotkeyCaptureController::new(opts.notify_hwnd),
     });
     let state_ptr = &mut *state as *mut HostWindowState;
@@ -256,17 +277,7 @@ pub fn run_windows_host(opts: LaunchArgs) {
     } else if tr_mode {
         (load_translator_bootstrap(&opts.theme), None, None)
     } else {
-        (
-            build_init_script(
-                &opts.plugin_id,
-                &opts.query,
-                opts.theme != "light",
-                opts.utools_compat,
-                &plugin_db.borrow().snapshot_json(),
-            ),
-            None,
-            None,
-        )
+        (build_init_script(&opts.plugin_id, &opts.query, opts.theme != "light", opts.utools_compat, &plugin_db.borrow().snapshot_json()), None, None)
     };
     let entry_url = if settings_mode || ocr_mode || clip_mode || tr_mode {
         String::new()

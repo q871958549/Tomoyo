@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import { AlertTriangle, CheckCircle2, X } from '@lucide/svelte';
+  import { AlertTriangle, CheckCircle2, X, Zap } from '@lucide/svelte';
   import { buildComboFromEvent } from '../hotkeys';
   import { postHost, subscribeHost } from '../ipc';
   import type { HotkeySlotStatus, SelectOption } from '../types';
@@ -55,6 +55,7 @@
   let showOk = $derived(
     !!value && !!status && !status.disabled && status.ok && status.spec.toLowerCase() === value.toLowerCase()
   );
+  let showOverridden = $derived(showOk && !!status?.overridden);
 
   function startRecording() {
     if (recording) return;
@@ -174,6 +175,11 @@
         <button type="button" class="t-hk-jump" onclick={onJumpDoctor}>定位真凶 →</button>
       {/if}
     </div>
+  {:else if showOverridden}
+    <div class="t-hk-badge is-override" title={status?.reason || ''}>
+      <Zap size={12} />
+      <span>高优先级接管</span>
+    </div>
   {:else if showOk}
     <div class="t-hk-badge is-ok">
       <CheckCircle2 size={12} />
@@ -214,6 +220,7 @@
     padding: 2px 8px; border-radius: 999px; white-space: nowrap;
   }
   .t-hk-badge.is-ok { background: var(--ok-soft); color: var(--ok); }
+  .t-hk-badge.is-override { background: rgba(124, 58, 237, 0.12); color: #7c3aed; }
   .t-hk-badge.is-conflict { background: var(--danger-soft); color: var(--danger); }
   .t-hk-jump {
     border: 0; background: transparent; color: var(--accent); font-family: inherit;

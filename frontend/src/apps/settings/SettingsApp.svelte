@@ -1,28 +1,15 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import {
-    Camera,
-    FileText,
-    Globe,
-    Keyboard,
-    Languages,
-    Package,
-    Palette,
-    RefreshCw,
-    Search,
-    SlidersHorizontal,
-    Store,
+    Camera, FileText, Globe, Keyboard, Languages, Package,
+    Palette, RefreshCw, Search, SlidersHorizontal, Store,
   } from '@lucide/svelte';
   import { hydrateSettingsInit } from '../../lib/defaults';
   import { applyThemeClass, installErrorTelemetry, postHost, subscribeHost } from '../../lib/ipc';
   import { OFFICIAL_REPO, tr, type Lang } from '../../lib/i18n';
   import type {
-    HotkeyAuditReport,
-    HotkeyHealthReport,
-    LiveProbeResult,
-    ReleaseInfo,
-    TomoyoConfig,
-    UpdateStatus,
+    HotkeyAuditReport, HotkeyHealthReport, LiveProbeResult,
+    ReleaseInfo, TomoyoConfig, UpdateStatus,
   } from '../../lib/types';
   import Button from '../../lib/ui/Button.svelte';
   import AppearanceTab from './AppearanceTab.svelte';
@@ -71,6 +58,27 @@
 
   let lang = $derived<Lang>(cfg.language === 'en' ? 'en' : 'zh');
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
+
+  let conflictSlots = $derived.by(() => {
+    const entries = [
+      { label: lang === 'en' ? 'Launcher' : '主启动器', st: hotkeyHealth.main },
+      { label: lang === 'en' ? 'Clipboard' : '剪贴板', st: hotkeyHealth.clipboard },
+      { label: lang === 'en' ? 'Translate' : '划词翻译', st: hotkeyHealth.translate },
+      { label: lang === 'en' ? 'Capture' : '截图', st: hotkeyHealth.capture },
+    ];
+    return entries.filter((e) => e.st && !e.st.disabled && !e.st.ok && e.st.spec);
+  });
+
+  function jumpToHotkeyConflict() {
+    activeTab = 'hotkeys';
+    runHotkeyAudit();
+  }
+
+  function onToggleOverride(v: boolean) {
+    cfg.override_conflict_hotkeys = v;
+    scheduleSave(0);
+    setTimeout(runHotkeyAudit, 260);
+  }
 
   const navItems = [
     { id: 'general', key: 'nav_general', icon: SlidersHorizontal },
@@ -179,9 +187,8 @@
 
   function checkHotkeyConflictsToast(h: HotkeyHealthReport) {
     const bad = [h.main, h.clipboard, h.translate, h.capture].filter((s) => s && !s.disabled && !s.ok && s.spec);
-    if (bad.length > 0) {
-      const first = bad[0]!;
-      setToast(`⚠ ${first.reason || `${first.spec} 已被其他软件占用`}`, true);
+    if (bad.length === 0 && toastWarn) {
+      setToast(lang === 'en' ? '✓ All global hotkeys active' : '✓ 所有快捷键已实时生效', false);
     }
   }
 
@@ -290,6 +297,9 @@
         >
           <span class="nav-ico"><Icon size={15} /></span>
           <span>{tr(lang, item.key)}</span>
+          {#if item.id === 'hotkeys' && conflictSlots.length > 0}
+            <span class="nav-badge">{conflictSlots.length}</span>
+          {/if}
         </button>
       {/each}
     </nav>
@@ -311,6 +321,7 @@
             {cfg} {lang} health={hotkeyHealth} audit={hotkeyAudit} auditing={auditingHotkeys}
             {probingSpec} {probeResult}
             onRunAudit={runHotkeyAudit} onProbe={probeHotkeyOwner} onApplyFreeKey={applyFreeKey}
+            {onToggleOverride}
           />
         {:else if activeTab === 'appearance'}
           <AppearanceTab {cfg} {lang} {onThemePick} onSave={scheduleSave} />
@@ -353,7 +364,20 @@
     </div>
 
     <footer class="bottom-bar">
-      <span id="toast" class="toast {toastWarn ? 'is-warn' : ''}">{toastMsg}</span>
+      {#if conflictSlots.length > 0}
+        {@const c0 = conflictSlots[0]!}
+        <button id="toast" type="button" class="conflict-bar-btn" onclick={jumpToHotkeyConflict}>
+          ⚠ {conflictSlots.length === 1
+            ? (lang === 'en'
+              ? `${c0.label} hotkey ${c0.st?.spec} occupied · Click to locate & fix →`
+              : `${c0.label}快捷键 ${c0.st?.spec} 被占用 · 点击定位与强行接管 →`)
+            : (lang === 'en'
+              ? `${conflictSlots.length} hotkeys conflicted (${c0.label} ${c0.st?.spec}) · Click to fix →`
+              : `${conflictSlots.length} 项快捷键被占用（${c0.label} ${c0.st?.spec} 等）· 点击定位与修复 →`)}
+        </button>
+      {:else}
+        <span id="toast" class="toast {toastWarn ? 'is-warn' : ''}">{toastMsg}</span>
+      {/if}
       <Button variant="secondary" size="sm" onclick={() => postHost({ cmd: 'close' })}>
         {tr(lang, 'btn_close')}
       </Button>
@@ -396,6 +420,11 @@
     border-radius: 999px; background: var(--accent);
   }
   .nav-ico { display: inline-flex; opacity: 0.85; flex-shrink: 0; }
+  .nav-badge {
+    margin-left: auto; min-width: 17px; height: 17px; padding: 0 5px; border-radius: 999px;
+    background: var(--danger); color: #fff; font-size: 10.5px; font-weight: 600;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
   .side-foot {
     margin-top: auto; padding: 10px 8px 0; border-top: 1px solid var(--border);
     font-size: 11px; color: var(--muted); line-height: 1.55;
@@ -410,4 +439,11 @@
   }
   .toast { font-size: 12.5px; color: var(--ok); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .toast.is-warn { color: var(--warn); }
+  .conflict-bar-btn {
+    border: 1px solid rgba(220, 38, 38, 0.28); background: var(--danger-soft); color: var(--danger);
+    border-radius: 999px; padding: 4px 12px; font-family: inherit; font-size: 12px; font-weight: 500;
+    cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    transition: background-color 0.12s ease, border-color 0.12s ease;
+  }
+  .conflict-bar-btn:hover { border-color: var(--danger); }
 </style>

@@ -84,6 +84,34 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
     const navBtns = document.querySelectorAll<HTMLButtonElement>('nav button[data-tab]');
     expect(navBtns.length).toBe(11);
 
+    // Bottom conflict bar must be a clickable button pointing directly to the conflicted slot!
+    const conflictBtn = document.querySelector<HTMLButtonElement>('button#toast.conflict-bar-btn');
+    expect(conflictBtn).not.toBeNull();
+    expect(conflictBtn?.textContent).toContain('Alt+C');
+    expect(document.querySelector('button[data-tab="hotkeys"] .nav-badge')?.textContent).toBe('2');
+    conflictBtn?.click();
+    flushSync();
+    expect(document.querySelector('button[data-tab="hotkeys"]')?.classList.contains('is-active')).toBe(true);
+    expect(document.body.textContent).toContain('高优先级强行接管冲突热键');
+
+    // Simulate enabling high-priority override: conflict bar disappears and overridden pill appears
+    wv.emit({
+      event: 'hotkey_health',
+      health: {
+        main: { spec: 'Alt+Space', active: 'Alt+Space', ok: true, disabled: false, overridden: false, reason: '' },
+        clipboard: { spec: 'Alt+C', active: 'Alt+C', ok: true, disabled: false, overridden: true, reason: '已高优先级接管生效' },
+        translate: { spec: 'Alt+T', active: 'Alt+T', ok: true, disabled: false, overridden: false, reason: '' },
+        capture: { spec: 'Alt+1', active: 'Alt+1', ok: true, disabled: false, overridden: false, reason: '' },
+      },
+    });
+    flushSync();
+    expect(document.querySelector('button#toast.conflict-bar-btn')).toBeNull();
+    expect(document.body.textContent).toContain('已高优先级接管');
+
+    // Restore original conflict health before iterating all tabs
+    wv.emit({ event: 'hotkey_health', health: window.__TOMOYO_SETTINGS_INIT__!.hotkey_health });
+    flushSync();
+
     // Click every tab and assert zero errors + tab activates
     for (const btn of navBtns) {
       btn.click();

@@ -17,6 +17,8 @@ pub struct HotkeySlotStatus {
     pub active: String,
     pub ok: bool,
     pub disabled: bool,
+    #[serde(default)]
+    pub overridden: bool,
     pub reason: String,
 }
 

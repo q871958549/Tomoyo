@@ -29,7 +29,7 @@ mod stitch;
 
 #[cfg(windows)]
 fn run_windows_main() {
-    use annotate::{Annotation, AnnotationStack, ArrowStyle, ShapeStyle, COLOR_PRESETS};
+    use annotate::{Annotation, AnnotationStack, COLOR_PRESETS};
     use annotate_render::render_annotations;
     use export::{load_png_as_bgra, read_clipboard_image_bgra, save_bgra_as_png};
     use overlay::{run_capture_overlay, CaptureMode, CaptureOutcome};
@@ -70,9 +70,11 @@ fn run_windows_main() {
             rect: ScreenRect { x: 4, y: 4, w: 40, h: 30 },
             color: COLOR_PRESETS[0],
             thickness: 3,
-            style: ShapeStyle::Rounded,
+            filled: false,
         });
-        stack.push(Annotation::straight_arrow(10, 50, 70, 60, COLOR_PRESETS[2], 3, ArrowStyle::Curved));
+        let mut arrow = Annotation::arrow(10, 50, 70, 60, COLOR_PRESETS[2], 3);
+        arrow.move_control(1, 40, 35);
+        stack.push(arrow);
         stack.push(Annotation::Mosaic { rect: ScreenRect { x: 50, y: 10, w: 30, h: 30 }, block: 10, blur: true });
         stack.push(Annotation::StepNumber { cx: 90, cy: 25, number: 1, radius: 13, color: COLOR_PRESETS[3] });
         stack.push(Annotation::Text { x: 12, y: 80, text: "Tomoyo".into(), size: 16, color: COLOR_PRESETS[0] });

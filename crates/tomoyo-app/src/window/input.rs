@@ -1,5 +1,6 @@
 //! Keyboard navigation, filter shortcuts, global hotkey registration, and EDIT subclassing.
 
+use super::hotkey_override::{sync_conflict_override_hook, uninstall_conflict_override_hook};
 use super::{
     AppShell, EM_GETSEL, HOTKEY_CLIPBOARD_ID, HOTKEY_ID, HOTKEY_TRANSLATE_ID, WM_APP_EDIT_KEY,
     WM_APP_PASTE_INTERCEPT,
@@ -236,6 +237,7 @@ pub(super) fn register_configured_hotkey(hwnd: HWND, spec: &str) -> (String, Opt
 }
 
 pub(super) fn unregister_all_hotkeys(hwnd: HWND) {
+    uninstall_conflict_override_hook();
     unsafe {
         for id in [HOTKEY_ID, HOTKEY_CLIPBOARD_ID, HOTKEY_TRANSLATE_ID, HOTKEY_CAPTURE_ID] {
             let _ = UnregisterHotKey(Some(hwnd), id);
@@ -245,82 +247,89 @@ pub(super) fn unregister_all_hotkeys(hwnd: HWND) {
 
 pub(super) fn register_all_hotkeys(hwnd: HWND, cfg: &TomoyoConfig) -> (String, Option<String>) {
     let lang = cfg.lang();
-    let (active, main_conflict) = register_configured_hotkey(hwnd, &cfg.hotkey);
+    let allow_override = cfg.override_conflict_hotkeys;
+    let mut override_entries: Vec<(i32, u32, u32)> = Vec::new();
     let mut issues = Vec::new();
-    let main_status = if let Some(orig) = main_conflict {
-        let msg = match lang {
-            Lang::Zh => format!("主热键 {orig} 被占用，已改用 {active}"),
-            Lang::En => format!("Main hotkey {orig} busy; using {active}"),
-        };
-        issues.push(msg.clone());
-        HotkeySlotStatus {
-            spec: cfg.hotkey.clone(),
-            active: active.clone(),
-            ok: false,
-            disabled: false,
-            reason: msg,
+
+    let (mut active, main_conflict) = register_configured_hotkey(hwnd, &cfg.hotkey);
+    let mut main_status = if let Some(orig) = main_conflict {
+        if allow_override {
+            if let Some(p) = parse_hotkey(&orig) {
+                unsafe { let _ = UnregisterHotKey(Some(hwnd), HOTKEY_ID); }
+                override_entries.push((HOTKEY_ID, p.modifiers, p.vk));
+                active = orig.clone();
+                HotkeySlotStatus {
+                    spec: orig.clone(), active: orig, ok: true, disabled: false, overridden: true,
+                    reason: lang.pick("已高优先级接管生效", "Overridden via high-priority hook").into(),
+                }
+            } else {
+                let msg = match lang {
+                    Lang::Zh => format!("主热键 {orig} 被占用，已改用 {active}"),
+                    Lang::En => format!("Main hotkey {orig} busy; using {active}"),
+                };
+                issues.push(msg.clone());
+                HotkeySlotStatus { spec: orig, active: active.clone(), ok: false, disabled: false, overridden: false, reason: msg }
+            }
+        } else {
+            let msg = match lang {
+                Lang::Zh => format!("主热键 {orig} 被占用，已改用 {active}"),
+                Lang::En => format!("Main hotkey {orig} busy; using {active}"),
+            };
+            issues.push(msg.clone());
+            HotkeySlotStatus { spec: orig, active: active.clone(), ok: false, disabled: false, overridden: false, reason: msg }
         }
     } else {
-        HotkeySlotStatus {
-            spec: cfg.hotkey.clone(),
-            active: active.clone(),
-            ok: true,
-            disabled: false,
-            reason: String::new(),
-        }
+        HotkeySlotStatus { spec: cfg.hotkey.clone(), active: active.clone(), ok: true, disabled: false, overridden: false, reason: String::new() }
     };
 
     let mut reg_opt = |id: i32, spec: &str, label: &str| -> HotkeySlotStatus {
         let trimmed = spec.trim();
         if trimmed.is_empty() {
-            return HotkeySlotStatus {
-                spec: String::new(),
-                active: String::new(),
-                ok: true,
-                disabled: true,
-                reason: String::new(),
-            };
+            return HotkeySlotStatus { spec: String::new(), active: String::new(), ok: true, disabled: true, overridden: false, reason: String::new() };
         }
         if register_optional_hotkey(hwnd, id, trimmed) {
-            HotkeySlotStatus {
-                spec: trimmed.to_string(),
-                active: trimmed.to_string(),
-                ok: true,
-                disabled: false,
-                reason: String::new(),
-            }
-        } else {
-            let reason = match lang {
-                Lang::Zh => format!("已被系统或其他软件占用（{trimmed}）"),
-                Lang::En => format!("Occupied by OS or another app ({trimmed})"),
-            };
-            issues.push(match lang {
-                Lang::Zh => format!("{label}热键 {trimmed} 被其他软件占用"),
-                Lang::En => format!("{label} hotkey {trimmed} is busy"),
-            });
-            HotkeySlotStatus {
-                spec: trimmed.to_string(),
-                active: String::new(),
-                ok: false,
-                disabled: false,
-                reason,
+            return HotkeySlotStatus { spec: trimmed.to_string(), active: trimmed.to_string(), ok: true, disabled: false, overridden: false, reason: String::new() };
+        }
+        if allow_override {
+            if let Some(p) = parse_hotkey(trimmed) {
+                override_entries.push((id, p.modifiers, p.vk));
+                return HotkeySlotStatus {
+                    spec: trimmed.to_string(), active: trimmed.to_string(), ok: true, disabled: false, overridden: true,
+                    reason: lang.pick("已高优先级接管生效", "Overridden via high-priority hook").into(),
+                };
             }
         }
+        let reason = match lang {
+            Lang::Zh => format!("已被系统或其他软件占用（{trimmed}）"),
+            Lang::En => format!("Occupied by OS or another app ({trimmed})"),
+        };
+        issues.push(match lang {
+            Lang::Zh => format!("{label}热键 {trimmed} 被其他软件占用"),
+            Lang::En => format!("{label} hotkey {trimmed} is busy"),
+        });
+        HotkeySlotStatus { spec: trimmed.to_string(), active: String::new(), ok: false, disabled: false, overridden: false, reason }
     };
 
-    let clip_status = reg_opt(HOTKEY_CLIPBOARD_ID, &cfg.clipboard.hotkey, lang.pick("剪贴板", "Clipboard"));
-    let tr_status = reg_opt(HOTKEY_TRANSLATE_ID, &cfg.translate.hotkey, lang.pick("划词翻译", "Translate"));
-    let cap_status = reg_opt(HOTKEY_CAPTURE_ID, &cfg.capture.hotkey, lang.pick("截图", "Capture"));
+    let mut clip_status = reg_opt(HOTKEY_CLIPBOARD_ID, &cfg.clipboard.hotkey, lang.pick("剪贴板", "Clipboard"));
+    let mut tr_status = reg_opt(HOTKEY_TRANSLATE_ID, &cfg.translate.hotkey, lang.pick("划词翻译", "Translate"));
+    let mut cap_status = reg_opt(HOTKEY_CAPTURE_ID, &cfg.capture.hotkey, lang.pick("截图", "Capture"));
+
+    if !sync_conflict_override_hook(hwnd, &override_entries) {
+        for slot in [&mut main_status, &mut clip_status, &mut tr_status, &mut cap_status] {
+            if slot.overridden {
+                slot.ok = false;
+                slot.overridden = false;
+                slot.reason = lang.pick("底层接管钩子挂载失败", "Override hook installation failed").into();
+            }
+        }
+    }
 
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
     save_hotkey_health(&HotkeyHealthReport {
-        main: main_status,
-        clipboard: clip_status,
-        translate: tr_status,
-        capture: cap_status,
+        main: main_status, clipboard: clip_status, translate: tr_status, capture: cap_status,
         updated_at_unix: now,
     });
 

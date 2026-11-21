@@ -20,14 +20,15 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu, DestroyWindow,
-    DispatchMessageW, GetClientRect, GetCursorPos, GetMessageW, GetWindowLongPtrW, GetWindowRect,
-    LoadCursorW, PostQuitMessage, RegisterClassW, SetForegroundWindow, SetLayeredWindowAttributes,
-    SetWindowLongPtrW, SetWindowPos, ShowWindow, TrackPopupMenu, TranslateMessage, CS_DBLCLKS,
-    GWLP_USERDATA, HTCAPTION, HWND_NOTOPMOST, HWND_TOPMOST, IDC_SIZEALL, LWA_ALPHA, MF_CHECKED,
-    MF_SEPARATOR, MF_STRING, MF_UNCHECKED, MSG, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
-    SWP_NOZORDER, SW_SHOW, TPM_LEFTALIGN, TPM_RETURNCMD, WM_DESTROY, WM_ERASEBKGND, WM_KEYDOWN,
-    WM_LBUTTONDBLCLK, WM_MOUSEWHEEL, WM_NCHITTEST, WM_NCRBUTTONUP, WM_PAINT, WM_RBUTTONUP,
-    WNDCLASSW, WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
+    DispatchMessageW, GetClientRect, GetCursorPos, GetMessageW, GetSystemMetrics,
+    GetWindowLongPtrW, GetWindowRect, LoadCursorW, PostQuitMessage, RegisterClassW,
+    SetForegroundWindow, SetLayeredWindowAttributes, SetWindowLongPtrW, SetWindowPos, ShowWindow,
+    TrackPopupMenu, TranslateMessage, CS_DBLCLKS, GWLP_USERDATA, HTCAPTION, HWND_NOTOPMOST,
+    HWND_TOPMOST, IDC_SIZEALL, LWA_ALPHA, MF_CHECKED, MF_SEPARATOR, MF_STRING, MF_UNCHECKED, MSG,
+    SM_CXSCREEN, SM_CYSCREEN, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SW_SHOW,
+    TPM_LEFTALIGN, TPM_RETURNCMD, WM_DESTROY, WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDBLCLK,
+    WM_MBUTTONUP, WM_MOUSEWHEEL, WM_NCHITTEST, WM_NCLBUTTONDBLCLK, WM_NCMBUTTONUP, WM_NCRBUTTONUP,
+    WM_PAINT, WM_RBUTTONUP, WNDCLASSW, WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
 };
 
 const CMD_COPY: u32 = 1;
@@ -90,7 +91,7 @@ impl PinState {
             let _ = AppendMenuW(menu, top_flag, CMD_TOPMOST as usize, w!("窗口置顶 (Topmost)"));
             let _ = AppendMenuW(menu, MF_STRING, CMD_RESET as usize, w!("重置 100% 尺寸与不透明度"));
             let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
-            let _ = AppendMenuW(menu, MF_STRING, CMD_CLOSE as usize, w!("关闭贴图 (Esc)"));
+            let _ = AppendMenuW(menu, MF_STRING, CMD_CLOSE as usize, w!("关闭贴图 (双击 / 中键 / Esc)"));
 
             let mut pt = POINT::default();
             let _ = GetCursorPos(&mut pt);
@@ -145,11 +146,22 @@ pub fn run_pin_window(
         };
         let _ = RegisterClassW(&wc);
 
+        let sw = GetSystemMetrics(SM_CXSCREEN).max(640) as f32;
+        let sh = GetSystemMetrics(SM_CYSCREEN).max(480) as f32;
+        let init_scale = ((sw * 0.82) / (width.max(1) as f32))
+            .min((sh * 0.82) / (height.max(1) as f32))
+            .min(1.0)
+            .max(0.15);
+        let init_w = ((width as f32) * init_scale).round().max(48.0) as i32;
+        let init_h = ((height as f32) * init_scale).round().max(48.0) as i32;
+        let px = screen_x.clamp(16, (sw as i32 - init_w - 16).max(16));
+        let py = screen_y.clamp(16, (sh as i32 - init_h - 16).max(16));
+
         let mut st = Box::new(PinState {
             img_w: width,
             img_h: height,
             bgra,
-            scale: 1.0,
+            scale: init_scale,
             opacity_pct: cfg.capture.pin_opacity.clamp(30, 100),
             topmost: true,
             save_dir: cfg.capture.save_dir,
@@ -160,10 +172,10 @@ pub fn run_pin_window(
             cls,
             w!("Tomoyo Pin"),
             WS_POPUP,
-            screen_x,
-            screen_y,
-            width as i32,
-            height as i32,
+            px,
+            py,
+            init_w,
+            init_h,
             None,
             None,
             Some(hinst.into()),
@@ -263,8 +275,8 @@ unsafe extern "system" fn pin_wndproc(
             }
             LRESULT(0)
         }
-        WM_LBUTTONDBLCLK => {
-            let _ = copy_bgra_to_clipboard(st.img_w, st.img_h, &st.bgra);
+        WM_LBUTTONDBLCLK | WM_NCLBUTTONDBLCLK | WM_MBUTTONUP | WM_NCMBUTTONUP => {
+            unsafe { let _ = DestroyWindow(hwnd); }
             LRESULT(0)
         }
         WM_RBUTTONUP | WM_NCRBUTTONUP => {
