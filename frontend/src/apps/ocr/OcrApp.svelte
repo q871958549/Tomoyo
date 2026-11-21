@@ -93,8 +93,8 @@
   });
 </script>
 
-<div class="ocr-shell">
-  <header class="ocr-head">
+<div class="wb-shell">
+  <header class="wb-head">
     <div class="ocr-meta">
       <strong>OCR 审校与编辑</strong>
       <span class="t-pill">{boot.lang_tag || 'WinRT'}</span>
@@ -151,18 +151,13 @@
     </section>
   </div>
 
-  <footer class="ocr-foot">
-    <span style="color:var(--ok);font-weight:500">{toast}</span>
+  <footer class="wb-foot">
+    <span class="wb-foot-toast">{toast}</span>
     <span>Ctrl+Shift+C 复制全文 · Ctrl+Shift+T 置顶 · Esc 关闭释放内存</span>
   </footer>
 </div>
 
 <style>
-  .ocr-shell { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
-  .ocr-head {
-    display: flex; align-items: center; justify-content: space-between; gap: 10px;
-    padding: 8px 14px; background: var(--surface); border-bottom: 1px solid var(--border); flex-wrap: wrap;
-  }
   .ocr-meta, .ocr-acts { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
   .ocr-work { flex: 1; display: flex; min-height: 0; overflow: hidden; }
   .pane-img { width: 46%; display: flex; flex-direction: column; border-right: 1px solid var(--border); background: var(--img-stage); min-width: 0; }
@@ -184,9 +179,5 @@
     flex: 1; width: 100%; border: 0; outline: none; resize: none; padding: 14px 16px;
     background: transparent; color: var(--text); font-family: "Alibaba PuHuiTi 3.0", "Cascadia Mono", Consolas, monospace;
     font-size: 13.5px; line-height: 1.7;
-  }
-  .ocr-foot {
-    height: 34px; padding: 0 14px; border-top: 1px solid var(--border); background: var(--surface);
-    display: flex; align-items: center; justify-content: space-between; font-size: 11.5px; color: var(--muted);
   }
 </style>

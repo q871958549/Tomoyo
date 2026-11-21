@@ -130,6 +130,19 @@ describe('Tomoyo Workbenches & FlowsTab interactions', () => {
     flushSync();
     expect(wv.posted.some((m) => m.cmd === 'clip_toggle_pin' && m.id_key === 'k1')).toBe(true);
 
+    // Keyboard ergonomics: Ctrl+F focuses search, ArrowDown cycles to k2, Enter copies k2
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', ctrlKey: true }));
+    flushSync();
+    expect(document.activeElement?.tagName).toBe('INPUT');
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }));
+    flushSync();
+    expect(document.querySelector('[data-clip-key="k2"]')?.classList.contains('is-sel')).toBe(true);
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+    flushSync();
+    expect(wv.posted.some((m) => m.cmd === 'copy_text' && m.text === 'https://tomoyo.dev')).toBe(true);
+
     unmount(app);
   });
 

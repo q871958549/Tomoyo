@@ -1,8 +1,12 @@
 //! Dispatches incoming WebView2 host messages safely to native OS helpers, DB, and Plugin Store.
 
+use crate::bridge_ops::{
+    finish_clip_mutation, handle_copy_diag_bundle, handle_install_plugin,
+    handle_open_clipboard_manager, handle_open_logs_dir, handle_read_logs,
+    handle_set_plugin_permission, handle_uninstall_plugin,
+};
 use crate::bridge_os::{notify_parent_mode, set_clipboard_text, shell_open};
 use crate::db::PluginDb;
-use crate::store::{install_plugin_from_source, uninstall_user_plugin};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -65,7 +69,7 @@ pub struct HostAction {
     pub should_close: bool,
     pub apply_theme: Option<String>,
     pub toggle_topmost: bool,
-    /// `0` = none, `1` = app scan folder, `2` = capture save folder.
+    /// `0` = none, `1` = app scan folder, `2` = capture save folder, `3` = sync folder.
     pub pick_folder_mode: u8,
     pub reply_json: Option<String>,
     pub async_check_updates: Option<String>,
@@ -142,10 +146,7 @@ pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isi
             } else {
                 "q871958549/Tomoyo".into()
             };
-            HostAction {
-                async_check_updates: Some(safe_repo),
-                ..Default::default()
-            }
+            HostAction { async_check_updates: Some(safe_repo), ..Default::default() }
         }
         HostMessage::InstallUpdate { release } => HostAction {
             async_install_update: Some(*release),
@@ -155,194 +156,40 @@ pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isi
             async_fetch_store: Some(sources),
             ..Default::default()
         },
-        HostMessage::InstallPlugin {
-            plugin_id,
-            source,
-            sha256,
-        } => {
-            let res = install_plugin_from_source(&plugin_id, &source, &sha256);
-            if res.is_ok()
-                && let Some(target) = notify_hwnd {
-                    notify_parent_reload(target, true);
-                }
-            let evt = match res {
-                Ok(dest) => serde_json::json!({
-                    "event": "store_action_result",
-                    "ok": true,
-                    "action": "install",
-                    "plugin_id": plugin_id,
-                    "message": format!("SHA-256 校验通过，已安装到 {dest}")
-                }),
-                Err(e) => serde_json::json!({
-                    "event": "store_action_result",
-                    "ok": false,
-                    "action": "install",
-                    "plugin_id": plugin_id,
-                    "message": e
-                }),
-            };
-            HostAction {
-                reply_json: Some(evt.to_string()),
-                ..Default::default()
-            }
+        HostMessage::InstallPlugin { plugin_id, source, sha256 } => {
+            handle_install_plugin(plugin_id, source, sha256, notify_hwnd)
         }
-        HostMessage::UninstallPlugin { plugin_id } => {
-            let res = uninstall_user_plugin(&plugin_id);
-            if res.is_ok()
-                && let Some(target) = notify_hwnd {
-                    notify_parent_reload(target, true);
-                }
-            let evt = match res {
-                Ok(()) => serde_json::json!({
-                    "event": "store_action_result",
-                    "ok": true,
-                    "action": "uninstall",
-                    "plugin_id": plugin_id,
-                    "message": "已卸载并热重载主窗口插件列表"
-                }),
-                Err(e) => serde_json::json!({
-                    "event": "store_action_result",
-                    "ok": false,
-                    "action": "uninstall",
-                    "plugin_id": plugin_id,
-                    "message": e
-                }),
-            };
-            HostAction {
-                reply_json: Some(evt.to_string()),
-                ..Default::default()
-            }
+        HostMessage::UninstallPlugin { plugin_id } => handle_uninstall_plugin(plugin_id, notify_hwnd),
+        HostMessage::SetPluginPermission { plugin_id, permission, allowed } => {
+            handle_set_plugin_permission(plugin_id, permission, allowed, notify_hwnd)
         }
-        HostMessage::SetPluginPermission {
-            plugin_id,
-            permission,
-            allowed,
-        } => {
-            let mut msg = "权限参数无效".to_string();
-            let mut ok = false;
-            if let Some(perm) = tomoyo_core::permission_from_key(&permission) {
-                let mut pstore = tomoyo_core::PermissionStore::load_default();
-                pstore.set_permission(&plugin_id, perm, allowed);
-                if let Err(e) = pstore.save_default() {
-                    msg = format!("保存权限失败: {e}");
-                } else {
-                    if let Some(target) = notify_hwnd {
-                        notify_parent_reload(target, true);
-                    }
-                    ok = true;
-                    msg = if allowed {
-                        format!("已授予 {plugin_id} 权限 `{permission}`")
-                    } else {
-                        format!("已撤销 {plugin_id} 权限 `{permission}`")
-                    };
-                }
-            }
-            let evt = serde_json::json!({
-                "event": "perm_action_result",
-                "ok": ok,
-                "message": msg,
-            });
-            HostAction {
-                reply_json: Some(evt.to_string()),
-                ..Default::default()
-            }
-        }
-        HostMessage::ReportJsError {
-            message,
-            source,
-            line,
-        } => {
+        HostMessage::ReportJsError { message, source, line } => {
             tracing::error!(target: "webview_js", source = %source, line = line, "JS error: {message}");
             HostAction::default()
         }
-        HostMessage::ReadLogs {
-            source,
-            errors_only,
-        } => {
-            let safe_file = match source.as_str() {
-                "webview.log" => "webview.log",
-                "last_crash.txt" => "last_crash.txt",
-                _ => "tomoyo.log",
-            };
-            let content = tomoyo_core::read_log_tail(safe_file, 260, errors_only);
-            let (warnings, errors, has_crash_report) = tomoyo_core::count_recent_log_issues();
-            let evt = serde_json::json!({
-                "event": "logs_loaded",
-                "source": safe_file,
-                "errors_only": errors_only,
-                "content": content,
-                "issues": {
-                    "warnings": warnings,
-                    "errors": errors,
-                    "has_crash_report": has_crash_report,
-                },
-                "logs_dir": tomoyo_core::logs_dir().to_string_lossy(),
-            });
-            HostAction {
-                reply_json: Some(evt.to_string()),
-                ..Default::default()
-            }
-        }
-        HostMessage::CopyDiagnosticBundle => {
-            let bundle = tomoyo_core::build_diagnostic_bundle();
-            set_clipboard_text(&bundle);
-            let evt = serde_json::json!({
-                "event": "diag_bundle_copied",
-                "ok": true,
-                "bytes": bundle.len(),
-            });
-            HostAction {
-                reply_json: Some(evt.to_string()),
-                ..Default::default()
-            }
-        }
-        HostMessage::OpenLogsDir => {
-            let dir = tomoyo_core::logs_dir();
-            let _ = std::fs::create_dir_all(&dir);
-            shell_open(&dir.to_string_lossy());
-            HostAction::default()
-        }
-        HostMessage::OpenClipboardManager => {
-            if let Ok(exe) = std::env::current_exe() {
-                let theme = tomoyo_core::TomoyoConfig::load_or_create().theme;
-                let mut cmd = std::process::Command::new(exe);
-                cmd.args([
-                    "--plugin-id", "builtin.clipboard",
-                    "--title", "Tomoyo 剪贴板工作台",
-                    "--entry", crate::clip_view::CLIP_MANAGER_ENTRY,
-                    "--theme", &theme,
-                    "--width", "1060", "--height", "680",
-                ]);
-                if let Some(h) = notify_hwnd {
-                    cmd.args(["--notify-hwnd", &h.to_string()]);
-                }
-                let _ = cmd.spawn();
-            }
-            HostAction::default()
-        }
+        HostMessage::ReadLogs { source, errors_only } => handle_read_logs(source, errors_only),
+        HostMessage::CopyDiagnosticBundle => handle_copy_diag_bundle(),
+        HostMessage::OpenLogsDir => handle_open_logs_dir(),
+        HostMessage::OpenClipboardManager => handle_open_clipboard_manager(notify_hwnd),
         HostMessage::ClipList { query } => HostAction {
             reply_json: Some(crate::clip_view::handle_clip_list(&query)),
             ..Default::default()
         },
         HostMessage::ClipTogglePin { id_key } => {
             let (reply, mutated) = crate::clip_view::handle_clip_toggle_pin(&id_key);
-            if mutated && let Some(t) = notify_hwnd { notify_parent_mode(t, 2); }
-            HostAction { reply_json: Some(reply), ..Default::default() }
+            finish_clip_mutation(reply, mutated, notify_hwnd)
         }
         HostMessage::ClipUpdate { id_key, text, tag, note } => {
             let (reply, mutated) = crate::clip_view::handle_clip_update(&id_key, text, &tag, &note);
-            if mutated && let Some(t) = notify_hwnd { notify_parent_mode(t, 2); }
-            HostAction { reply_json: Some(reply), ..Default::default() }
+            finish_clip_mutation(reply, mutated, notify_hwnd)
         }
         HostMessage::ClipDelete { id_key } => {
             let (reply, mutated) = crate::clip_view::handle_clip_delete(&id_key);
-            if mutated && let Some(t) = notify_hwnd { notify_parent_mode(t, 2); }
-            HostAction { reply_json: Some(reply), ..Default::default() }
+            finish_clip_mutation(reply, mutated, notify_hwnd)
         }
         HostMessage::ClipClearUnpinned => {
             let (reply, mutated) = crate::clip_view::handle_clip_clear_unpinned();
-            if mutated && let Some(t) = notify_hwnd { notify_parent_mode(t, 2); }
-            HostAction { reply_json: Some(reply), ..Default::default() }
+            finish_clip_mutation(reply, mutated, notify_hwnd)
         }
         HostMessage::ClipExport => HostAction {
             reply_json: Some(crate::clip_view::handle_clip_export()),
@@ -350,8 +197,7 @@ pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isi
         },
         HostMessage::ClipImport { json } => {
             let (reply, mutated) = crate::clip_view::handle_clip_import(&json);
-            if mutated && let Some(t) = notify_hwnd { notify_parent_mode(t, 2); }
-            HostAction { reply_json: Some(reply), ..Default::default() }
+            finish_clip_mutation(reply, mutated, notify_hwnd)
         }
         HostMessage::OpenTranslator { text, target_lang } => {
             crate::tr_view::open_or_spawn_translator(&text, &target_lang, notify_hwnd);
@@ -386,15 +232,14 @@ pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isi
         },
         HostMessage::ImportConfigBackup { json } => {
             let (reply, ok) = crate::backup::import_desensitized_backup_json(&json);
-            if ok
-                && let Some(t) = notify_hwnd { notify_parent_reload(t, true); }
+            if ok && let Some(t) = notify_hwnd { notify_parent_reload(t, true); }
             HostAction { reply_json: Some(reply), async_refresh_hotkey_health: ok && notify_hwnd.is_some(), ..Default::default() }
         }
         HostMessage::Close => HostAction { should_close: true, ..Default::default() },
     }
 }
 
-fn notify_parent_reload(raw_hwnd: isize, reload_plugins: bool) {
+pub(crate) fn notify_parent_reload(raw_hwnd: isize, reload_plugins: bool) {
     notify_parent_mode(raw_hwnd, usize::from(reload_plugins));
 }
 

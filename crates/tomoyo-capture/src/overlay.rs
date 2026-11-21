@@ -2,11 +2,7 @@
 
 #![cfg(windows)]
 
-use crate::annotate::{Annotation, AnnotationStack, ToolKind, COLOR_PRESETS};
-use crate::annotate_render::render_annotations;
-use crate::export::{
-    copy_bgra_to_clipboard, default_save_path, handoff_to_ocr_or_translate, save_bgra_as_png,
-};
+use crate::annotate::{Annotation, AnnotationStack, ToolKind};
 use crate::overlay_draw::{
     build_toolbar_layout, compose_overlay_pixels, precompute_dimmed, ToolbarCmd, ToolbarLayout,
     ToolbarStyleState,
@@ -15,9 +11,7 @@ use crate::overlay_input::{
     cursor_for_hover, handle_key_down, handle_lbutton_dblclk, handle_lbutton_down,
     handle_mouse_move, handle_mouse_wheel,
 };
-use crate::overlay_text::{
-    bake_text_annotations_into_bgra, paint_overlay_gdi_labels, InlineTextEditor,
-};
+use crate::overlay_text::{paint_overlay_gdi_labels, InlineTextEditor};
 use crate::screen::{capture_virtual_desktop, enumerate_snap_windows, DesktopSnapshot, ScreenRect};
 use std::ffi::c_void;
 use tomoyo_core::{CaptureToolHotkeys, TomoyoConfig};
@@ -32,15 +26,15 @@ use windows::Win32::Graphics::Gdi::{
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Input::KeyboardAndMouse::{ReleaseCapture, SetFocus, VK_ESCAPE, VK_RETURN};
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetMessageW,
-    GetWindowLongPtrW, KillTimer, LoadCursorW, PostQuitMessage, RegisterClassW, SetCursor,
-    SetTimer, SetWindowLongPtrW, ShowWindow, TranslateMessage, CS_DBLCLKS, GWLP_USERDATA,
-    IDC_CROSS, MSG, SW_SHOW, WM_DESTROY, WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDBLCLK,
-    WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_PAINT, WM_RBUTTONUP,
-    WM_SETCURSOR, WM_TIMER, WNDCLASSW, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
+    CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW, GetWindowLongPtrW, KillTimer,
+    LoadCursorW, PostQuitMessage, RegisterClassW, SetCursor, SetWindowLongPtrW, ShowWindow,
+    TranslateMessage, CS_DBLCLKS, GWLP_USERDATA, IDC_CROSS, MSG, SW_SHOW, WM_DESTROY,
+    WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE,
+    WM_MOUSEWHEEL, WM_PAINT, WM_RBUTTONUP, WM_SETCURSOR, WM_TIMER, WNDCLASSW, WS_EX_TOOLWINDOW,
+    WS_EX_TOPMOST, WS_POPUP,
 };
 
-const TIMER_WHEEL_HUD: usize = 601;
+pub(crate) const TIMER_WHEEL_HUD: usize = 601;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CaptureMode {
@@ -112,150 +106,6 @@ impl Drop for OverlayState {
             if !self.dib_bmp.is_invalid() { let _ = DeleteObject(self.dib_bmp.into()); }
             if !self.mem_dc.is_invalid() { let _ = DeleteDC(self.mem_dc); }
         }
-    }
-}
-
-impl OverlayState {
-    pub(crate) fn commit_text_if_open(&mut self, hwnd: HWND) {
-        if let Some(ed) = self.text_editor.take() {
-            if let Some(ann) = ed.commit_and_close() {
-                self.stack.push(ann);
-            }
-            unsafe { let _ = SetFocus(Some(hwnd)); }
-        }
-    }
-
-    fn finalize_cropped(&mut self, hwnd: HWND) -> Option<(u32, u32, Vec<u8>, ScreenRect)> {
-        self.commit_text_if_open(hwnd);
-        let sel = self.sel?.clamp_to(self.snap.width, self.snap.height);
-        if !sel.is_valid() { return None; }
-        let (cw, ch, mut buf) = self.snap.crop_bgra(sel)?;
-        render_annotations(&mut buf, cw as i32, ch as i32, sel.x, sel.y, self.stack.items());
-        bake_text_annotations_into_bgra(&mut buf, cw as i32, ch as i32, sel.x, sel.y, self.stack.items());
-        Some((cw, ch, buf, sel))
-    }
-
-    pub(crate) fn show_wheel_hud(&mut self, hwnd: HWND, msg: String) {
-        self.wheel_hud = Some(msg);
-        unsafe {
-            let _ = KillTimer(Some(hwnd), TIMER_WHEEL_HUD);
-            let _ = SetTimer(Some(hwnd), TIMER_WHEEL_HUD, 900, None);
-            let _ = InvalidateRect(Some(hwnd), None, false);
-        }
-    }
-
-    pub(crate) fn execute_action(&mut self, hwnd: HWND, cmd: ToolbarCmd) {
-        self.commit_text_if_open(hwnd);
-        match cmd {
-            ToolbarCmd::Tool(t) => {
-                self.tool = if self.tool == t { ToolKind::Select } else { t };
-                if self.tool != ToolKind::Select { self.stack.selected = None; }
-            }
-            ToolbarCmd::Color(i) => {
-                self.color_idx = i.min(COLOR_PRESETS.len() - 1);
-                if let Some(sel_i) = self.stack.selected
-                    && sel_i < self.stack.items().len() {
-                        self.stack.save_undo_snapshot();
-                        self.stack.items_mut()[sel_i].set_color(COLOR_PRESETS[self.color_idx]);
-                    }
-            }
-            ToolbarCmd::Thickness(t) => {
-                self.thickness = t.clamp(1, 20);
-                if let Some(sel_i) = self.stack.selected.filter(|&i| i < self.stack.items().len()) {
-                    self.stack.save_undo_snapshot();
-                    match &mut self.stack.items_mut()[sel_i] {
-                        Annotation::Rect { thickness, .. }
-                        | Annotation::Ellipse { thickness, .. }
-                        | Annotation::Arrow { thickness, .. } => *thickness = self.thickness,
-                        Annotation::Pen { thickness, highlighter, .. } => {
-                            *thickness = if *highlighter { (self.thickness * 3).clamp(12, 36) } else { self.thickness };
-                        }
-                        Annotation::Mosaic { block, .. } => *block = (self.thickness * 3).clamp(6, 36),
-                        _ => {}
-                    }
-                }
-                self.show_wheel_hud(hwnd, format!("粗细 {} px", self.thickness));
-            }
-            ToolbarCmd::ShapeFilled(f) => {
-                self.shape_filled = f;
-                if let Some(sel_i) = self.stack.selected.filter(|&i| i < self.stack.items().len()) {
-                    match &mut self.stack.items_mut()[sel_i] {
-                        Annotation::Rect { filled, .. } | Annotation::Ellipse { filled, .. } => {
-                            *filled = f;
-                        }
-                        _ => {}
-                    }
-                }
-            }
-            ToolbarCmd::MosaicBlur(b) => {
-                self.mosaic_blur = b;
-                if let Some(sel_i) = self.stack.selected.filter(|&i| i < self.stack.items().len())
-                    && let Annotation::Mosaic { blur, .. } = &mut self.stack.items_mut()[sel_i] {
-                        *blur = b;
-                    }
-            }
-            ToolbarCmd::Undo => { self.stack.undo(); }
-            ToolbarCmd::ScrollLong => {
-                if let Some(s) = self.sel.filter(|r| r.is_valid()) {
-                    let r = s.clamp_to(self.snap.width, self.snap.height);
-                    self.outcome = Some(CaptureOutcome::ScrollLong {
-                        screen_x: self.snap.origin_x + r.x,
-                        screen_y: self.snap.origin_y + r.y,
-                        width: r.w,
-                        height: r.h,
-                        save_dir: self.save_dir.clone(),
-                    });
-                    unsafe { let _ = DestroyWindow(hwnd); }
-                    return;
-                }
-            }
-            ToolbarCmd::Cancel => {
-                self.outcome = Some(CaptureOutcome::Done);
-                unsafe { let _ = DestroyWindow(hwnd); }
-                return;
-            }
-            ToolbarCmd::Copy => {
-                if let Some((w, h, buf, _)) = self.finalize_cropped(hwnd) {
-                    let _ = copy_bgra_to_clipboard(w, h, &buf);
-                }
-                self.outcome = Some(CaptureOutcome::Done);
-                unsafe { let _ = DestroyWindow(hwnd); }
-                return;
-            }
-            ToolbarCmd::Save => {
-                if let Some((w, h, buf, _)) = self.finalize_cropped(hwnd) {
-                    let path = default_save_path(&self.save_dir);
-                    let _ = save_bgra_as_png(&path, w, h, &buf);
-                    let _ = copy_bgra_to_clipboard(w, h, &buf);
-                }
-                self.outcome = Some(CaptureOutcome::Done);
-                unsafe { let _ = DestroyWindow(hwnd); }
-                return;
-            }
-            ToolbarCmd::Pin => {
-                self.outcome = Some(if let Some((w, h, buf, r)) = self.finalize_cropped(hwnd) {
-                    CaptureOutcome::Pin {
-                        width: w, height: h, bgra: buf,
-                        screen_x: self.snap.origin_x + r.x, screen_y: self.snap.origin_y + r.y,
-                    }
-                } else { CaptureOutcome::Done });
-                unsafe { let _ = DestroyWindow(hwnd); }
-                return;
-            }
-            ToolbarCmd::Ocr | ToolbarCmd::Translate => {
-                let is_tr = cmd == ToolbarCmd::Translate;
-                if let Some((w, h, buf, _)) = self.finalize_cropped(hwnd) {
-                    unsafe { let _ = DestroyWindow(hwnd); }
-                    let _ = handoff_to_ocr_or_translate(w, h, &buf, is_tr);
-                    self.outcome = Some(CaptureOutcome::Done);
-                    return;
-                }
-                self.outcome = Some(CaptureOutcome::Done);
-                unsafe { let _ = DestroyWindow(hwnd); }
-                return;
-            }
-        }
-        unsafe { let _ = InvalidateRect(Some(hwnd), None, false); }
     }
 }
 

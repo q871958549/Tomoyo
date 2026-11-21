@@ -10,6 +10,7 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 mod backup;
 mod bridge;
+mod bridge_ops;
 mod bridge_os;
 mod clip_view;
 mod db;

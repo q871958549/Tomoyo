@@ -3,13 +3,17 @@
 use super::commands::{dispatch_menu_id, dispatch_wm_command};
 use super::input::{register_all_hotkeys, unregister_all_hotkeys, HOTKEY_CAPTURE_ID};
 use super::updater_ctrl::WM_APP_UPDATE_PROGRESS;
+use super::wndproc_mouse::{
+    handle_lbutton_dblclk, handle_lbutton_up, handle_mouse_down, handle_mouse_leave,
+    handle_mouse_move, handle_mouse_wheel, handle_rbutton_up, handle_set_cursor,
+    hit_test_window_chrome,
+};
 use super::{
     AppShell, HOTKEY_CLIPBOARD_ID, HOTKEY_ID, HOTKEY_TRANSLATE_ID, TIMER_CLEAR_TOAST,
-    TIMER_FOCUS_GUARD, TIMER_HIBERNATE, WM_APP_CONFIG_SAVED, WM_APP_EDIT_KEY, WM_APP_FLOW_DONE,
-    WM_APP_PASTE_INTERCEPT, WM_APP_RESULTS_READY, WM_APP_UPDATE_INSTALLED, WM_APP_UPDATE_READY,
-    WM_APP_WAKE_EXISTING,
+    TIMER_FOCUS_GUARD, TIMER_HIBERNATE, TIMER_LAUNCH_HIDE, WM_APP_CONFIG_SAVED, WM_APP_EDIT_KEY,
+    WM_APP_FLOW_DONE, WM_APP_LAUNCH_DONE, WM_APP_PASTE_INTERCEPT, WM_APP_RESULTS_READY,
+    WM_APP_UPDATE_INSTALLED, WM_APP_UPDATE_READY, WM_APP_WAKE_EXISTING,
 };
-use crate::drag::start_file_drag;
 use crate::icons::WM_APP_ICON_READY;
 use crate::preview_loader::WM_APP_PREVIEW_READY;
 use crate::renderer::{
@@ -17,25 +21,21 @@ use crate::renderer::{
 };
 use crate::tray::WM_TRAY_CALLBACK;
 use std::ffi::c_void;
-use tomoyo_protocol::IconSpec;
-use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
+use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
-    BeginPaint, EndPaint, ScreenToClient, SetBkColor, SetTextColor, HDC, PAINTSTRUCT,
+    BeginPaint, EndPaint, SetBkColor, SetTextColor, HDC, PAINTSTRUCT,
 };
 use windows::Win32::System::DataExchange::RemoveClipboardFormatListener;
 use windows::Win32::UI::Controls::WM_MOUSELEAVE;
-use windows::Win32::UI::Input::KeyboardAndMouse::{
-    ReleaseCapture, SetCapture, SetFocus, TrackMouseEvent, TME_LEAVE, TRACKMOUSEEVENT,
-};
+use windows::Win32::UI::Input::KeyboardAndMouse::SetFocus;
 use windows::Win32::UI::WindowsAndMessaging::{
-    DefWindowProcW, GetClientRect, GetCursorPos, GetForegroundWindow, GetWindowLongPtrW,
-    GetWindowThreadProcessId, IsWindowVisible, KillTimer, LoadCursorW, PostQuitMessage, SetCursor,
-    GWLP_USERDATA, HTBOTTOM, HTBOTTOMLEFT, HTBOTTOMRIGHT, HTCAPTION, HTCLIENT, HTLEFT, HTRIGHT,
-    HTTOP, HTTOPLEFT, HTTOPRIGHT, IDC_HAND, IDC_SIZEWE, MINMAXINFO, WM_ACTIVATE, WM_ACTIVATEAPP,
-    WM_CLIPBOARDUPDATE, WM_COMMAND, WM_CTLCOLOREDIT, WM_DESTROY, WM_DPICHANGED, WM_ENDSESSION,
-    WM_ENTERSIZEMOVE, WM_ERASEBKGND, WM_EXITSIZEMOVE, WM_GETMINMAXINFO, WM_HOTKEY,
-    WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCHITTEST,
-    WM_NCRBUTTONUP, WM_PAINT, WM_RBUTTONUP, WM_SETCURSOR, WM_SIZE, WM_TIMER,
+    DefWindowProcW, GetClientRect, GetForegroundWindow, GetWindowLongPtrW,
+    GetWindowThreadProcessId, IsWindowVisible, KillTimer, PostQuitMessage, GWLP_USERDATA,
+    HTCAPTION, MINMAXINFO, WM_ACTIVATE, WM_ACTIVATEAPP, WM_CLIPBOARDUPDATE, WM_COMMAND,
+    WM_CTLCOLOREDIT, WM_DESTROY, WM_DPICHANGED, WM_ENDSESSION, WM_ENTERSIZEMOVE, WM_ERASEBKGND,
+    WM_EXITSIZEMOVE, WM_GETMINMAXINFO, WM_HOTKEY, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP,
+    WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCHITTEST, WM_NCRBUTTONUP, WM_PAINT, WM_RBUTTONUP,
+    WM_SETCURSOR, WM_SIZE, WM_TIMER,
 };
 
 pub(super) unsafe extern "system" fn main_wndproc(
@@ -62,26 +62,7 @@ pub(super) unsafe extern "system" fn main_wndproc(
             LRESULT(0)
         }
         WM_NCHITTEST => hit_test_window_chrome(hwnd, app, lparam),
-        WM_SETCURSOR => {
-            if (lparam.0 & 0xFFFF) as u32 == HTCLIENT {
-                let mut pt = POINT::default();
-                unsafe {
-                    let _ = GetCursorPos(&mut pt);
-                    let _ = ScreenToClient(hwnd, &mut pt);
-                }
-                if (app.inter.dragging_divider || app.is_over_preview_divider(pt.x, pt.y))
-                    && let Ok(cur) = unsafe { LoadCursorW(None, IDC_SIZEWE) } {
-                        unsafe { SetCursor(Some(cur)); }
-                        return LRESULT(1);
-                    }
-                if app.hit_test_update_badge(pt.x, pt.y)
-                    && let Ok(cur) = unsafe { LoadCursorW(None, IDC_HAND) } {
-                        unsafe { SetCursor(Some(cur)); }
-                        return LRESULT(1);
-                    }
-            }
-            unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
-        }
+        WM_SETCURSOR => handle_set_cursor(hwnd, app, msg, wparam, lparam),
         WM_ENTERSIZEMOVE => {
             app.inter.in_size_move = true;
             LRESULT(0)
@@ -122,15 +103,24 @@ pub(super) unsafe extern "system" fn main_wndproc(
                 4 => {
                     let cfg = app.config.read().unwrap().clone();
                     unregister_all_hotkeys(hwnd);
-                    let (active, _, plug_hks, flow_hks) = register_all_hotkeys(hwnd, &cfg, &app.plugin_host);
+                    let (active, _, plug_hks, flow_hks) =
+                        register_all_hotkeys(hwnd, &cfg, &app.plugin_host);
                     app.plugin_hotkeys = plug_hks;
                     app.flow_hotkeys = flow_hks;
-                    if let Some(t) = app.tray.as_mut() { t.update_tooltip(&active); }
+                    if let Some(t) = app.tray.as_mut() {
+                        t.update_tooltip(&active);
+                    }
                 }
                 3 => unregister_all_hotkeys(hwnd),
                 2 => app.on_clipboard_db_external_change(),
-                1 => { app.reload_config_and_all(); app.show_toast(app.lang.pick("设置与插件已同步生效", "Settings & plugins synced")); }
-                _ => { app.reload_config_from_settings(); app.show_toast(app.lang.pick("设置已实时同步生效", "Settings synced live")); }
+                1 => {
+                    app.reload_config_and_all();
+                    app.show_toast(app.lang.pick("设置与插件已同步生效", "Settings & plugins synced"));
+                }
+                _ => {
+                    app.reload_config_from_settings();
+                    app.show_toast(app.lang.pick("设置已实时同步生效", "Settings synced live"));
+                }
             }
             LRESULT(0)
         }
@@ -143,63 +133,43 @@ pub(super) unsafe extern "system" fn main_wndproc(
                 HOTKEY_CLIPBOARD_ID => app.toggle_clipboard_launcher(),
                 HOTKEY_TRANSLATE_ID => app.trigger_selection_translate(),
                 HOTKEY_CAPTURE_ID => app.trigger_capture("region"),
-                id if id >= super::plugin_hotkeys::FLOW_HOTKEY_BASE => super::plugin_hotkeys::handle_flow_hotkey(app, id),
-                id if id >= super::plugin_hotkeys::PLUGIN_HOTKEY_BASE => super::plugin_hotkeys::handle_plugin_hotkey(app, id),
+                id if id >= super::plugin_hotkeys::FLOW_HOTKEY_BASE => {
+                    super::plugin_hotkeys::handle_flow_hotkey(app, id);
+                }
+                id if id >= super::plugin_hotkeys::PLUGIN_HOTKEY_BASE => {
+                    super::plugin_hotkeys::handle_plugin_hotkey(app, id);
+                }
                 _ => {}
             }
             LRESULT(0)
         }
-        WM_CLIPBOARDUPDATE => { app.on_clipboard_update(); LRESULT(0) }
+        WM_CLIPBOARDUPDATE => {
+            app.on_clipboard_update();
+            LRESULT(0)
+        }
         WM_ACTIVATE => {
             let in_grace = app.inter.last_shown_at.is_some_and(|t| t.elapsed().as_millis() < 140);
-            if (wparam.0 & 0xFFFF) == 0 && !in_grace && !app.inter.in_modal_overlay && unsafe { IsWindowVisible(hwnd).as_bool() } {
+            if (wparam.0 & 0xFFFF) == 0
+                && !in_grace
+                && !app.inter.in_modal_overlay
+                && unsafe { IsWindowVisible(hwnd).as_bool() }
+            {
                 app.hide_launcher();
             }
             LRESULT(0)
         }
         WM_ACTIVATEAPP => {
             let in_grace = app.inter.last_shown_at.is_some_and(|t| t.elapsed().as_millis() < 140);
-            if wparam.0 == 0 && !in_grace && !app.inter.in_modal_overlay && unsafe { IsWindowVisible(hwnd).as_bool() } {
+            if wparam.0 == 0
+                && !in_grace
+                && !app.inter.in_modal_overlay
+                && unsafe { IsWindowVisible(hwnd).as_bool() }
+            {
                 app.hide_launcher();
             }
             LRESULT(0)
         }
-        WM_TIMER => {
-            match wparam.0 {
-                TIMER_FOCUS_GUARD => {
-                    if !unsafe { IsWindowVisible(hwnd).as_bool() } {
-                        unsafe { let _ = KillTimer(Some(hwnd), TIMER_FOCUS_GUARD); }
-                    } else if !app.inter.in_modal_overlay && !app.inter.in_size_move {
-                        let fg = unsafe { GetForegroundWindow() };
-                        let mut fg_pid = 0u32;
-                        if !fg.is_invalid() { unsafe { GetWindowThreadProcessId(fg, Some(&mut fg_pid)); } }
-                        if fg != hwnd && fg_pid != std::process::id() {
-                            if app.inter.last_shown_at.is_some_and(|t| t.elapsed().as_millis() < 420) {
-                                super::hotkey_override::force_foreground_window(hwnd);
-                                unsafe { let _ = SetFocus(Some(app.edit_hwnd)); }
-                            } else {
-                                app.hide_launcher();
-                            }
-                        }
-                    }
-                }
-                TIMER_HIBERNATE => {
-                    if !unsafe { IsWindowVisible(hwnd).as_bool() } {
-                        let cycles = app.run_hibernate();
-                        tracing::info!("Entered hibernation cycle #{cycles}");
-                    } else {
-                        unsafe { let _ = KillTimer(Some(hwnd), TIMER_HIBERNATE); }
-                    }
-                }
-                TIMER_CLEAR_TOAST => {
-                    unsafe { let _ = KillTimer(Some(hwnd), TIMER_CLEAR_TOAST); }
-                    app.toast = None;
-                    app.invalidate();
-                }
-                _ => {}
-            }
-            LRESULT(0)
-        }
+        WM_TIMER => handle_timer(hwnd, app, wparam.0),
         WM_APP_RESULTS_READY => { app.on_results_ready(); LRESULT(0) }
         WM_APP_ICON_READY => { app.on_icons_ready(); LRESULT(0) }
         WM_APP_PREVIEW_READY => { app.on_preview_ready(); LRESULT(0) }
@@ -213,6 +183,7 @@ pub(super) unsafe extern "system" fn main_wndproc(
         WM_APP_UPDATE_PROGRESS => { app.on_update_progress(); LRESULT(0) }
         WM_APP_UPDATE_INSTALLED => { app.on_update_installed(); LRESULT(0) }
         WM_APP_FLOW_DONE => { app.on_async_flow_done(); LRESULT(0) }
+        WM_APP_LAUNCH_DONE => { app.on_async_launch_done(); LRESULT(0) }
         WM_DPICHANGED => {
             let new_dpi = (wparam.0 & 0xFFFF) as u32;
             let suggested = (lparam.0 != 0).then(|| unsafe { &*(lparam.0 as *const RECT) });
@@ -227,91 +198,14 @@ pub(super) unsafe extern "system" fn main_wndproc(
             }
             unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
         }
-        WM_RBUTTONUP => {
-            let (x, y) = unpack_xy(lparam);
-            let y_dip = y as f32 / app.dpi_scale.max(1.0);
-            if y_dip < HEADER_HEIGHT_DIP as f32 {
-                app.show_logo_context_menu();
-            } else if let Some(idx) = app.hit_test_row(x, y) {
-                app.selected = idx;
-                app.refresh_selected_preview();
-                app.invalidate();
-                app.show_result_context_menu(idx);
-            } else {
-                app.show_logo_context_menu();
-            }
-            LRESULT(0)
-        }
+        WM_RBUTTONUP => handle_rbutton_up(app, lparam),
         WM_LBUTTONDOWN => handle_mouse_down(hwnd, app, lparam),
-        WM_MOUSEMOVE => handle_mouse_move(hwnd, app, lparam),
-        WM_MOUSELEAVE => {
-            app.inter.mouse_tracked = false;
-            let changed = app.inter.hovered.take().is_some()
-                | app.inter.hovered_filter.take().is_some();
-            if changed {
-                app.invalidate();
-            }
-            LRESULT(0)
-        }
-        WM_LBUTTONUP => {
-            app.inter.drag_origin = None;
-            if app.inter.dragging_divider {
-                app.inter.dragging_divider = false;
-                unsafe { let _ = ReleaseCapture(); }
-                app.persist_window_geometry();
-            }
-            LRESULT(0)
-        }
-        WM_LBUTTONDBLCLK => {
-            app.inter.drag_origin = None;
-            let (x, y) = unpack_xy(lparam);
-            if let Some(idx) = app.hit_test_row(x, y) {
-                app.selected = idx;
-                app.execute_selected(0);
-            }
-            LRESULT(0)
-        }
-        WM_MOUSEWHEEL => {
-            let delta = ((wparam.0 >> 16) & 0xFFFF) as i16;
-            if !app.results.is_empty() {
-                if delta < 0 && app.selected + 1 < app.results.len() {
-                    app.selected += 1;
-                } else if delta > 0 && app.selected > 0 {
-                    app.selected -= 1;
-                }
-                app.ensure_selected_visible();
-                app.refresh_selected_preview();
-                app.resize_to_fit_results();
-                app.invalidate();
-            }
-            LRESULT(0)
-        }
-        WM_TRAY_CALLBACK => {
-            let ev = (lparam.0 & 0xFFFF) as u32;
-            if ev == WM_LBUTTONUP || ev == WM_LBUTTONDBLCLK {
-                app.toggle_launcher();
-            } else if ev == WM_RBUTTONUP {
-                let (clip_on, tr_on, cap_on) = app
-                    .config
-                    .read()
-                    .map(|c| (
-                        c.is_plugin_enabled(tomoyo_core::PLUGIN_CLIPBOARD),
-                        c.is_plugin_enabled(tomoyo_core::PLUGIN_TRANSLATE),
-                        c.is_plugin_enabled(tomoyo_core::PLUGIN_CAPTURE),
-                    ))
-                    .unwrap_or((true, true, true));
-                let chosen = app.tray.as_ref().and_then(|tray| {
-                    tray.show_context_menu(
-                        app.lang, app.theme, app.dpi_scale, app.font_regular, app.font_medium,
-                        clip_on, tr_on, cap_on,
-                    )
-                });
-                if let Some(id) = chosen {
-                    dispatch_menu_id(hwnd, app, id);
-                }
-            }
-            LRESULT(0)
-        }
+        WM_MOUSEMOVE => handle_mouse_move(hwnd, app, wparam, lparam),
+        WM_MOUSELEAVE => handle_mouse_leave(app),
+        WM_LBUTTONUP => handle_lbutton_up(app),
+        WM_LBUTTONDBLCLK => handle_lbutton_dblclk(app, lparam),
+        WM_MOUSEWHEEL => handle_mouse_wheel(app, wparam),
+        WM_TRAY_CALLBACK => handle_tray_callback(hwnd, app, lparam),
         WM_ENDSESSION => {
             if wparam.0 != 0 {
                 tracing::info!("Windows session ending; performing clean shutdown checkpoint");
@@ -338,107 +232,76 @@ pub(super) unsafe extern "system" fn main_wndproc(
     }
 }
 
-fn unpack_xy(lparam: LPARAM) -> (i32, i32) {
-    ((lparam.0 & 0xFFFF) as i16 as i32, ((lparam.0 >> 16) & 0xFFFF) as i16 as i32)
-}
-
-fn hit_test_window_chrome(hwnd: HWND, app: &AppShell, lparam: LPARAM) -> LRESULT {
-    let (sx, sy) = unpack_xy(lparam);
-    let mut pt = POINT { x: sx, y: sy };
-    let mut rc = RECT::default();
-    unsafe {
-        let _ = ScreenToClient(hwnd, &mut pt);
-        let _ = GetClientRect(hwnd, &mut rc);
-    }
-    let (w, h) = (rc.right - rc.left, rc.bottom - rc.top);
-    let grip = (6.0 * app.dpi_scale.max(1.0)).round() as i32;
-    let hit = match (pt.x < grip, pt.x >= w - grip, pt.y < grip, pt.y >= h - grip) {
-        (true, _, true, _) => HTTOPLEFT,   (_, true, true, _) => HTTOPRIGHT,
-        (true, _, _, true) => HTBOTTOMLEFT, (_, true, _, true) => HTBOTTOMRIGHT,
-        (true, _, _, _) => HTLEFT,         (_, true, _, _) => HTRIGHT,
-        (_, _, true, _) => HTTOP,          (_, _, _, true) => HTBOTTOM,
-        _ => {
-            let header_px = (HEADER_HEIGHT_DIP as f32 * app.dpi_scale.max(1.0)) as i32;
-            let footer_px = (FOOTER_HEIGHT_DIP as f32 * app.dpi_scale.max(1.0)) as i32;
-            if app.hit_test_update_badge(pt.x, pt.y) { HTCLIENT }
-            else if pt.y < header_px || pt.y >= h - footer_px { HTCAPTION }
-            else { HTCLIENT }
+fn handle_timer(hwnd: HWND, app: &mut AppShell, timer_id: usize) -> LRESULT {
+    match timer_id {
+        TIMER_FOCUS_GUARD => {
+            if !unsafe { IsWindowVisible(hwnd).as_bool() } {
+                unsafe { let _ = KillTimer(Some(hwnd), TIMER_FOCUS_GUARD); }
+            } else if !app.inter.in_modal_overlay && !app.inter.in_size_move {
+                let fg = unsafe { GetForegroundWindow() };
+                let mut fg_pid = 0u32;
+                if !fg.is_invalid() {
+                    unsafe { GetWindowThreadProcessId(fg, Some(&mut fg_pid)); }
+                }
+                if fg != hwnd && fg_pid != std::process::id() {
+                    if app.inter.last_shown_at.is_some_and(|t| t.elapsed().as_millis() < 420) {
+                        super::hotkey_override::force_foreground_window(hwnd);
+                        unsafe { let _ = SetFocus(Some(app.edit_hwnd)); }
+                    } else {
+                        app.hide_launcher();
+                    }
+                }
+            }
         }
-    };
-    LRESULT(hit as isize)
-}
-
-fn handle_mouse_down(hwnd: HWND, app: &mut AppShell, lparam: LPARAM) -> LRESULT {
-    let (x, y) = unpack_xy(lparam);
-    if app.hit_test_update_badge(x, y) {
-        app.set_query_text(":update");
-        return LRESULT(0);
-    }
-    if app.is_over_preview_divider(x, y) {
-        app.inter.dragging_divider = true;
-        unsafe { SetCapture(hwnd); }
-        return LRESULT(0);
-    }
-    if let Some(f) = app.hit_test_filter(x, y) {
-        app.set_active_filter(f);
-        unsafe { let _ = SetFocus(Some(app.edit_hwnd)); }
-        return LRESULT(0);
-    }
-    if let Some(idx) = app.hit_test_row(x, y) {
-        app.action_menu_open = false;
-        app.selected = idx;
-        app.refresh_selected_preview();
-        app.resize_to_fit_results();
-        app.invalidate();
-        app.inter.drag_origin = match app.results.get(idx).map(|r| r.icon.clone()) {
-            Some(IconSpec::ShellPath(path)) => Some((x, y, path)),
-            _ => None,
-        };
+        TIMER_HIBERNATE => {
+            if !unsafe { IsWindowVisible(hwnd).as_bool() } {
+                let cycles = app.run_hibernate();
+                tracing::info!("Entered hibernation cycle #{cycles}");
+            } else {
+                unsafe { let _ = KillTimer(Some(hwnd), TIMER_HIBERNATE); }
+            }
+        }
+        TIMER_CLEAR_TOAST => {
+            unsafe { let _ = KillTimer(Some(hwnd), TIMER_CLEAR_TOAST); }
+            app.toast = None;
+            app.invalidate();
+        }
+        TIMER_LAUNCH_HIDE => {
+            unsafe { let _ = KillTimer(Some(hwnd), TIMER_LAUNCH_HIDE); }
+            if unsafe { IsWindowVisible(hwnd).as_bool() } {
+                app.hide_launcher();
+            }
+        }
+        _ => {}
     }
     LRESULT(0)
 }
 
-fn handle_mouse_move(hwnd: HWND, app: &mut AppShell, lparam: LPARAM) -> LRESULT {
-    let (x, y) = unpack_xy(lparam);
-    if !app.inter.mouse_tracked {
-        app.inter.mouse_tracked = true;
-        let mut tme = TRACKMOUSEEVENT {
-            cbSize: std::mem::size_of::<TRACKMOUSEEVENT>() as u32,
-            dwFlags: TME_LEAVE,
-            hwndTrack: hwnd,
-            dwHoverTime: 0,
-        };
-        unsafe { let _ = TrackMouseEvent(&mut tme); }
-    }
-    if app.inter.dragging_divider {
-        let mut rc = RECT::default();
-        unsafe { let _ = GetClientRect(hwnd, &mut rc); }
-        let scale = app.dpi_scale.max(1.0);
-        let w_dip = (rc.right - rc.left) as f32 / scale;
-        let clamped = (w_dip - x as f32 / scale)
-            .round()
-            .clamp(220.0, (w_dip - 380.0).clamp(220.0, 620.0)) as i32;
-        if clamped != app.geom.preview_width_dip {
-            app.geom.preview_width_dip = clamped;
-            app.geom.list_width_dip = (w_dip as i32 - clamped).clamp(MIN_WINDOW_WIDTH_DIP, 1400);
-            app.invalidate();
+fn handle_tray_callback(hwnd: HWND, app: &mut AppShell, lparam: LPARAM) -> LRESULT {
+    let ev = (lparam.0 & 0xFFFF) as u32;
+    if ev == WM_LBUTTONUP || ev == WM_LBUTTONDBLCLK {
+        app.toggle_launcher();
+    } else if ev == WM_RBUTTONUP {
+        let (clip_on, tr_on, cap_on) = app
+            .config
+            .read()
+            .map(|c| {
+                (
+                    c.is_plugin_enabled(tomoyo_core::PLUGIN_CLIPBOARD),
+                    c.is_plugin_enabled(tomoyo_core::PLUGIN_TRANSLATE),
+                    c.is_plugin_enabled(tomoyo_core::PLUGIN_CAPTURE),
+                )
+            })
+            .unwrap_or((true, true, true));
+        let chosen = app.tray.as_ref().and_then(|tray| {
+            tray.show_context_menu(
+                app.lang, app.theme, app.dpi_scale, app.font_regular, app.font_medium, clip_on,
+                tr_on, cap_on,
+            )
+        });
+        if let Some(id) = chosen {
+            dispatch_menu_id(hwnd, app, id);
         }
-        return LRESULT(0);
-    }
-    if let Some((ox, oy, path)) = app.inter.drag_origin.clone()
-        && ((x - ox).abs() > 6 || (y - oy).abs() > 6) {
-            app.inter.drag_origin = None;
-            app.inter.in_modal_overlay = true;
-            let _ = start_file_drag(&path);
-            app.inter.in_modal_overlay = false;
-            return LRESULT(0);
-        }
-    let new_filter_hover = app.hit_test_filter(x, y);
-    let new_hover = if new_filter_hover.is_some() { None } else { app.hit_test_row(x, y) };
-    if new_hover != app.inter.hovered || new_filter_hover != app.inter.hovered_filter {
-        app.inter.hovered = new_hover;
-        app.inter.hovered_filter = new_filter_hover;
-        app.invalidate();
     }
     LRESULT(0)
 }

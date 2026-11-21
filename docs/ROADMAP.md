@@ -1,6 +1,6 @@
 # Tomoyo 长期演进蓝图与分阶段替代计划 (Long-Term Roadmap)
 
-> **定位与基线**：`v2.2.1` 完成纯工程结构减压与 7 道自动化防膨胀硬门禁建设：`check_hygiene.ps1` 升级为 7 道全自动门禁（380/450 双水位、Rust/npm 禁用依赖、防 WARP、前端产物天花板、Rust↔TS IPC 双向契约校验、`happy-dom` 冒烟、`-CheckBinaries` 体积红线）；全工作区 17 个 Crate 接入 `cargo clippy --workspace --all-targets -- -D warnings` 零警告并通过大枚举 `Box` 缩栈；4 份内嵌 WebView HTML 启用构建期 Gzip 压缩（净省 401 KB / `-66.8%`，`tomoyo-webview-host.exe` 降至 `4.36 MB`）；最紧绷的 3 个 440+ 行热点模块完成拆解减压，前端单测扩充至 3 套件 9 用例。  
+> **定位与基线**：`v2.2.2` 彻底根治搜索结果双击启动应用反馈滞后与双击抖动丢失体验顽疾（引入 0ms 瞬时行内「启动中…/✓ 已启动」徽章 + 非阻塞 COM-STA `ShellExecuteExW` + `AllowSetForegroundWindow(ASFW_ANY)` + 失败明文留窗诊断与同行双击防抖容错），同步完成第二梯队 420+ 行热点模块拆解（`wndproc.rs`/`bridge.rs`/`overlay.rs` 均降至 310 行以内）、前后端双向 IPC 1:1 契约校验（46 上行指令 + 26 下行事件）、工作台公共样式去重与剪贴板全键盘流（`Ctrl+F`/`↑↓`/`Enter`）、工作流行内参数可视化提示以及 CI/Release Node 24 原生 Actions 升级。  
 > **产品目标**：`tomoyo.exe` 始终坚守极简、低占用、毫秒唤起的 Windows 原生启动器核心；剪贴板、划词翻译、截图贴图、离线 OCR、本地备忘录等高频效率工具一律以**按需启停/安装的模块化官方插件**形态提供（本机实测已顺利替代并卸载 Pot 与 PixPin）。  
 > **执行纪律**：每个版本坚持小步快跑与实机验收，严守内存/句柄硬红线与全仓单文件 ≤ 450 行、零警告、前端编译产物运行时门禁。
 
@@ -30,6 +30,8 @@
 │  v3.0.0 · 远期：物理拆包 Core/Suite 双版本 + WASM wasi-p2 + 公益代码签名     │
 ├──────────────────────────────────────────────────────────────────────────────┤
 │  v2.3+  · 远期：纯外部 MCP 桥接与本地文档语义检索插件 + Ed25519 插件签名     │
+├──────────────────────────────────────────────────────────────────────────────┤
+│  v2.2.2 · [已完成] 双击启动 0ms 瞬时反馈 + 第二梯队拆解 + 双向 IPC 1:1 契约│
 ├──────────────────────────────────────────────────────────────────────────────┤
 │  v2.2.1 · [已完成] 7道防膨胀门禁 + Clippy全绿 + HTML Gzip瘦身 + 热点拆解    │
 ├──────────────────────────────────────────────────────────────────────────────┤
@@ -259,6 +261,17 @@
    - 拆解最紧绷的 3 个 440+ 行热点：`scroll_capture.rs` (`450 → 330` 行 + `scroll_hud.rs`)、`annotate_render.rs` (`445 → 258` 行 + `annotate_arrow.rs`)、`TranslatorApp.svelte` (`442 → 378` 行 + `TranslatorDrawer.svelte`)；
 4. **前端自动化测试矩阵扩容**：
    - 新增 `workbenches.test.ts`（翻译抽屉/生词本、剪贴板筛选/置顶/单行复制、OCR 清洗/翻译、FlowsTab 新建工作流）与 `ipc_contract.test.ts`（自动化 IPC 契约与热键/配置容错测试），3 套件 9 用例零警告全绿。
+
+### 阶段十三（体验精修）：`v2.2.2` — 双击启动 0ms 瞬时反馈根治、第二梯队减压与双向 IPC 契约（已完成 ✅）
+1. **搜索结果双击应用 0ms 瞬时反馈与防丢失根治（`launch_ctrl.rs` + `wndproc_mouse.rs` + `sdf_pass.rs` / `gdi_pass.rs`）**：
+   - 彻底消除主线程同步 `ShellExecuteW` 阻塞 `300ms–2.5s` 导致的界面假死与无反馈黑盒：双击或回车触发启动类动作时 `< 2 ms` 同步刷新行内主题色「启动中…」徽章与底部状态栏，随后在独立 COM-STA 短生命周期线程执行 `AllowSetForegroundWindow(ASFW_ANY)` + `ShellExecuteExW`；
+   - 成功时行内徽章翻绿显示「✓ 已启动」并保留清晰确认节拍（若目标应用抢先弹窗则立即让位隐藏），失败时**绝不隐窗**并标红直显具体原因（如文件不存在 / UAC 取消 / 权限不足）；
+   - 补齐同行双击防抖容错（克服高 DPI 屏 4px `SM_CXDOUBLECLK` 限制）并将 OLE 拖拽门槛升级至 `MK_LBUTTON` + `12 × dpi_scale`，杜绝手抖吞双击。
+2. **第二梯队 420+ 行热点拆解 & 双向 IPC 1:1 契约门禁**：
+   - `wndproc.rs` (`437 → 302` 行 + `wndproc_mouse.rs`)、`bridge.rs` (`423 → 268` 行 + `bridge_ops.rs`)、`overlay.rs` (`423 → 277` 行 + `overlay_actions.rs`) 全员降至 310 行以下；
+   - `check_hygiene.ps1` 与 `ipc_contract.test.ts` 升级为双向对称校验（46 项上行指令 + 26 项下行事件 1:1 零漏配）。
+3. **工作台公共样式去重、剪贴板全键盘流、带参工作流反馈与 Node 24 CI 升级**：
+   - 抽离 `frontend/src/styles/workbench.css`，为剪贴板工作台新增 `Ctrl+F` 聚焦、`↑↓` 切换与 `Enter` 快捷复制；工作流列表实时高亮行内文本参数提示并新增单元测试；CI/Release Actions 全面升级至 `checkout@v7` / `setup-node@v7` / `attest-build-provenance@v4` / `action-gh-release@v3`。
 
 ---
 

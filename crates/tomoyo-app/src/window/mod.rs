@@ -7,6 +7,7 @@ mod flow_exec;
 mod hotkey_avoid;
 mod hotkey_override;
 mod input;
+mod launch_ctrl;
 mod layout;
 mod menus;
 mod plugin_hotkeys;
@@ -14,6 +15,7 @@ mod selftest;
 mod translate_ctrl;
 mod updater_ctrl;
 mod wndproc;
+mod wndproc_mouse;
 
 use crate::preview_loader::AsyncPreviewLoader;
 use crate::renderer::{compute_filter_counts, FilterCounts, FluentRenderer, RenderState, ThemePalette};
@@ -52,9 +54,11 @@ pub(super) const WM_APP_CONFIG_SAVED: u32 = WM_APP + 20;
 pub const WM_APP_WAKE_EXISTING: u32 = WM_APP + 21;
 pub(super) const WM_APP_UPDATE_INSTALLED: u32 = WM_APP + 22;
 pub(super) const WM_APP_FLOW_DONE: u32 = WM_APP + 24;
+pub(super) const WM_APP_LAUNCH_DONE: u32 = WM_APP + 25;
 pub(super) const TIMER_HIBERNATE: usize = 1001;
 pub(super) const TIMER_CLEAR_TOAST: usize = 1002;
 pub(super) const TIMER_FOCUS_GUARD: usize = 1003;
+pub(super) const TIMER_LAUNCH_HIDE: usize = 1004;
 pub(super) const EM_SETCUEBANNER: u32 = 0x1501;
 pub(super) const EM_GETSEL: u32 = 0x00B0;
 pub(super) const EM_SETSEL: u32 = 0x00B1;
@@ -94,6 +98,8 @@ pub(super) struct InteractionState {
     pub in_size_move: bool,
     pub dragging_divider: bool,
     pub drag_origin: Option<(i32, i32, String)>,
+    pub last_click: Option<(usize, Instant)>,
+    pub launching: Option<launch_ctrl::LaunchingState>,
     pub prev_foreground_hwnd: isize,
     pub in_modal_overlay: bool,
     pub suppress_next_clip_img: bool,
@@ -143,6 +149,7 @@ pub struct AppShell {
     pub(super) plugin_hotkeys: Vec<tomoyo_plugin_host::ActivePluginHotkey>,
     pub(super) flow_hotkeys: Vec<String>,
     pub(super) pending_flow_result: Arc<Mutex<Option<Result<tomoyo_core::FlowRunPlan, String>>>>,
+    pub(super) pending_launch_result: Arc<Mutex<Option<launch_ctrl::LaunchResultMsg>>>,
     pub(super) pending_update_install: Arc<Mutex<updater_ctrl::UpdateInstallSlot>>,
     pub(super) dpi_scale: f32,
     pub(super) taskbar_created_msg: u32,
@@ -211,6 +218,8 @@ impl AppShell {
         self.inter.filter_counts = None;
         self.toast = None;
         self.inter.drag_origin = None;
+        self.inter.last_click = None;
+        self.inter.launching = None;
         self.inter.dragging_divider = false;
         self.preview_loader.cancel_all();
         let delay_ms = self
@@ -220,6 +229,7 @@ impl AppShell {
             .unwrap_or(15_000);
         unsafe {
             let _ = KillTimer(Some(self.hwnd), TIMER_FOCUS_GUARD);
+            let _ = KillTimer(Some(self.hwnd), TIMER_LAUNCH_HIDE);
             let _ = ShowWindow(self.hwnd, SW_HIDE);
             self.inter.suppress_edit_change = true;
             let _ = SetWindowTextW(self.edit_hwnd, w!(""));
@@ -352,6 +362,7 @@ impl AppShell {
         if self.inter.suppress_edit_change {
             return;
         }
+        self.cancel_pending_launch_hide();
         self.current_query = read_edit_text(self.edit_hwnd);
         self.inter.filter_counts = None;
         self.dispatch_query();
@@ -375,6 +386,12 @@ impl AppShell {
         let update_label = self.updater.available_release().map(|r| format!("↑ v{}", r.version));
         let filter_vis = self.is_filter_bar_visible();
         let filter_tabs = self.visible_filter_tabs();
+        let launching_row = self.inter.launching.as_ref().and_then(|l| {
+            self.results
+                .iter()
+                .position(|r| r.id == l.item_id)
+                .map(|idx| (idx, l.finished_ok))
+        });
         let state = RenderState {
             lang: self.lang, theme: self.theme, query: &self.current_query,
             mode_badge: mode.as_deref(), attached_capsule: attached_label.as_deref(),
@@ -382,6 +399,7 @@ impl AppShell {
             filter_tabs: &filter_tabs, active_filter: self.active_filter,
             hovered_filter: self.inter.hovered_filter, filter_counts: self.inter.filter_counts.as_ref(),
             items: &self.results, selected: self.selected, hovered: self.inter.hovered,
+            launching_row,
             scroll_offset: self.scroll_offset, max_visible_rows: self.geom.max_visible_rows,
             preview_width_dip: self.geom.preview_width_dip, action_menu_open: self.action_menu_open,
             selected_action: self.selected_action, preview: self.cached_preview.as_ref(),

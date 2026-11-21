@@ -218,8 +218,8 @@
   });
 </script>
 
-<div class="tr-shell">
-  <header class="tr-header">
+<div class="wb-shell">
+  <header class="wb-head">
     <div class="lang-capsule">
       <Select value={srcLang} options={srcLangs} size="sm" minWidth="104px" onchange={(v) => { srcLang = v; if (sourceText.trim()) runTranslate(); }} />
       <Button variant="icon" size="sm" title="互换语言" onclick={swapLangs}><ArrowLeftRight size={14} /></Button>
@@ -349,8 +349,8 @@
     {/if}
   </div>
 
-  <footer class="tr-foot">
-    <span class="foot-toast">{toast}</span>
+  <footer class="wb-foot">
+    <span class="wb-foot-toast">{toast}</span>
     <span>Ctrl+Enter 翻译 · Ctrl+Shift+T 置顶 · Esc 退出释放内存</span>
   </footer>
 </div>
@@ -365,11 +365,6 @@
 />
 
 <style>
-  .tr-shell { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
-  .tr-header {
-    display: flex; align-items: center; justify-content: space-between; gap: 10px;
-    padding: 8px 14px; background: var(--surface); border-bottom: 1px solid var(--border); flex-wrap: wrap;
-  }
   .lang-capsule, .hdr-tools, .src-acts { display: flex; align-items: center; gap: 6px; }
   .auto-pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); margin-right: 4px; }
   .tr-body { flex: 1; display: flex; min-height: 0; overflow: hidden; }
@@ -398,9 +393,4 @@
     border: 1px solid var(--border); font-size: 12px; line-height: 1.6; color: var(--text-secondary);
   }
   .phonetic { color: var(--accent); font-weight: 500; font-family: "Cascadia Mono", Consolas, monospace; font-size: 12px; }
-  .tr-foot {
-    height: 34px; padding: 0 14px; border-top: 1px solid var(--border); background: var(--surface);
-    display: flex; align-items: center; justify-content: space-between; font-size: 11.5px; color: var(--muted);
-  }
-  .foot-toast { color: var(--ok); font-weight: 500; }
 </style>

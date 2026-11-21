@@ -12,6 +12,7 @@
     mono?: boolean;
     size?: 'sm' | 'md';
     id?: string;
+    inputEl?: HTMLInputElement;
     autocomplete?: string;
     class?: string;
     oninput?: (val: string) => void;
@@ -32,6 +33,7 @@
     mono = false,
     size = 'md',
     id = undefined,
+    inputEl = $bindable(),
     autocomplete = 'off',
     class: extraClass = '',
     oninput,
@@ -68,6 +70,7 @@
     <span class="t-input-lead"><Search size={14} /></span>
   {/if}
   <input
+    bind:this={inputEl}
     {id}
     type={effectiveType}
     {value}

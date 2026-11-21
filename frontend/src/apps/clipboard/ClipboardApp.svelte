@@ -64,8 +64,9 @@
   let clearArmed = $state(false);
   let importOpen = $state(false);
   let importJson = $state('');
-  let toast = $state('剪贴板工作台就绪 · Ctrl+S 保存编辑');
+  let toast = $state('剪贴板工作台就绪 · Ctrl+F 搜索 · ↑↓ 切换 · Ctrl+S 保存');
   let ctx = $state<{ open: boolean; x: number; y: number; item: ClipItem | null }>({ open: false, x: 0, y: 0, item: null });
+  let searchEl: HTMLInputElement | undefined = $state();
   let searchTimer: ReturnType<typeof setTimeout> | null = null;
 
   let current = $derived(items.find((i) => i.key === selectedKey) ?? null);
@@ -189,9 +190,30 @@
     });
 
     const onKey = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.key.toLowerCase() === 's') { e.preventDefault(); saveDetail(); }
-      else if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 't') { e.preventDefault(); postHost({ cmd: 'toggle_pin_topmost' }); }
-      else if (e.key === 'Escape' && !e.defaultPrevented) {
+      const target = e.target as HTMLElement | null;
+      const inTextarea = target?.tagName === 'TEXTAREA';
+      const inOtherInput = target?.tagName === 'INPUT' && target !== searchEl;
+      if (e.ctrlKey && e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        searchEl?.focus();
+        searchEl?.select();
+      } else if (e.ctrlKey && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        saveDetail();
+      } else if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 't') {
+        e.preventDefault();
+        postHost({ cmd: 'toggle_pin_topmost' });
+      } else if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && !inTextarea && !inOtherInput && !importOpen && items.length > 0) {
+        e.preventDefault();
+        const curIdx = items.findIndex((i) => i.key === selectedKey);
+        const delta = e.key === 'ArrowDown' ? 1 : -1;
+        const nextIdx = curIdx < 0 ? 0 : (curIdx + delta + items.length) % items.length;
+        selectedKey = items[nextIdx].key;
+        document.querySelector(`[data-clip-key="${CSS.escape(selectedKey)}"]`)?.scrollIntoView({ block: 'nearest' });
+      } else if (e.key === 'Enter' && !inTextarea && !inOtherInput && !importOpen && current) {
+        e.preventDefault();
+        copyItem(current, false);
+      } else if (e.key === 'Escape' && !e.defaultPrevented) {
         if (importOpen) importOpen = false;
         else postHost({ cmd: 'close' });
       }
@@ -201,8 +223,8 @@
   });
 </script>
 
-<div class="cb-shell">
-  <header class="cb-head">
+<div class="wb-shell">
+  <header class="wb-head">
     <div class="cb-head-l">
       <strong>剪贴板工作台</strong>
       <span class="t-pill">{total} 条</span>
@@ -248,13 +270,14 @@
 
     <section class="cb-list-pane">
       <div class="cb-search">
-        <Input type="search" size="sm" bind:value={query} placeholder="搜索内容、拼音或 #标签…" oninput={onSearchInput} />
+        <Input type="search" size="sm" bind:inputEl={searchEl} bind:value={query} placeholder="搜索内容、拼音或 #标签… (Ctrl+F)" oninput={onSearchInput} />
       </div>
       <div class="cb-scroll">
         {#each items as it}
           <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
           <div
             class="cb-card {it.key === selectedKey ? 'is-sel' : ''}"
+            data-clip-key={it.key}
             onclick={() => (selectedKey = it.key)}
             ondblclick={() => copyItem(it, false)}
             oncontextmenu={(e) => { e.preventDefault(); selectedKey = it.key; ctx = { open: true, x: e.clientX, y: e.clientY, item: it }; }}
@@ -274,14 +297,14 @@
             </div>
           </div>
         {:else}
-          <div class="empty-msg">当前条件下无剪贴板记录</div>
+          <div class="wb-empty">当前条件下无剪贴板记录</div>
         {/each}
       </div>
     </section>
 
     <section class="cb-detail">
       {#if !current}
-        <div class="empty-msg" style="margin:auto">选择左侧条目查看或编辑详情</div>
+        <div class="wb-empty" style="margin:auto">选择左侧条目查看或编辑详情</div>
       {:else}
         <div class="det-head">
           <div class="cb-head-l">
@@ -325,9 +348,9 @@
     </section>
   </div>
 
-  <footer class="cb-foot">
-    <span style="color:var(--ok);font-weight:500">{toast}</span>
-    <span>双击复制 · 右键快捷菜单 · Ctrl+S 保存 · Esc 退出</span>
+  <footer class="wb-foot">
+    <span class="wb-foot-toast">{toast}</span>
+    <span>Ctrl+F 搜索 · ↑↓ 切换 · Enter/双击复制 · Ctrl+S 保存 · Esc 退出</span>
   </footer>
 </div>
 
@@ -350,11 +373,6 @@
 <ContextMenu open={ctx.open} x={ctx.x} y={ctx.y} items={ctxItems} onselect={onCtxSelect} onclose={() => (ctx.open = false)} />
 
 <style>
-  .cb-shell { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
-  .cb-head {
-    display: flex; align-items: center; justify-content: space-between; gap: 10px;
-    padding: 8px 14px; background: var(--surface); border-bottom: 1px solid var(--border);
-  }
   .cb-head-l, .cb-head-r { display: flex; align-items: center; gap: 7px; }
   .cb-main { flex: 1; display: flex; min-height: 0; overflow: hidden; }
   .cb-rail {
@@ -397,8 +415,6 @@
   .img-stage { flex: 1; display: grid; place-items: center; overflow: auto; padding: 16px; background: var(--img-stage); }
   .img-stage img { max-width: 100%; max-height: 100%; border-radius: 8px; box-shadow: var(--shadow-pop); }
   .img-bar { padding: 10px 14px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; }
-  .empty-msg { text-align: center; padding: 28px 12px; color: var(--muted); font-size: 12.5px; }
-  .cb-foot { height: 34px; padding: 0 14px; border-top: 1px solid var(--border); background: var(--surface); display: flex; align-items: center; justify-content: space-between; font-size: 11.5px; color: var(--muted); }
   .modal-bg { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.45); display: grid; place-items: center; z-index: 90; }
   .modal-box { width: 520px; max-width: 92vw; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
   .modal-ta {

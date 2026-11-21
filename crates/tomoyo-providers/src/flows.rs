@@ -102,7 +102,15 @@ impl Provider for FlowsProvider {
             };
 
             let chain = step_chain_summary(f, zh);
-            let sub = if f.description.is_empty() {
+            let sub = if !input_arg.is_empty() {
+                let preview_arg: String = input_arg.chars().take(28).collect();
+                let ell = if input_arg.chars().count() > 28 { "…" } else { "" };
+                if zh {
+                    format!("⚡ 行内参数「{preview_arg}{ell}」· {chain}")
+                } else {
+                    format!("⚡ Input \"{preview_arg}{ell}\" · {chain}")
+                }
+            } else if f.description.is_empty() {
                 chain.clone()
             } else {
                 format!("{} · {chain}", f.description)
@@ -112,6 +120,14 @@ impl Provider for FlowsProvider {
                 (
                     lang.pick("触发词", "Keyword").into(),
                     if f.keyword.is_empty() { format!("flow {}", f.id) } else { f.keyword.clone() },
+                ),
+                (
+                    lang.pick("输入来源", "Input").into(),
+                    if !input_arg.is_empty() {
+                        lang.pick("行内参数（优先于剪贴板）", "Inline argument (overrides clipboard)").into()
+                    } else {
+                        lang.pick("剪贴板回退（可在触发词后追加文本参数）", "Clipboard fallback (append text to override)").into()
+                    },
                 ),
             ];
             for (idx, step) in f.steps.iter().enumerate() {
@@ -168,6 +184,33 @@ impl Provider for FlowsProvider {
         let fresh = index_flows(load_or_init_flows());
         if let Ok(mut guard) = self.entries.write() {
             *guard = fresh;
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tomoyo_core::default_workflows;
+
+    #[test]
+    fn passes_inline_arguments_and_shows_preview_for_parameterized_flow_queries() {
+        let cfg = Arc::new(RwLock::new(TomoyoConfig::default()));
+        let prov = FlowsProvider {
+            config: cfg,
+            entries: RwLock::new(index_flows(default_workflows())),
+        };
+        let ctx = QueryContext::new("aisum summarize this paragraph", 1, 10);
+        let hits = prov.query(&ctx);
+        assert!(!hits.is_empty());
+        assert_eq!(hits[0].id, "flow:clip_ai_summary");
+        assert!(hits[0].subtitle.contains("summarize this paragraph"));
+        match &hits[0].actions[0].kind {
+            ActionKind::InternalCommand { command: InternalCommandKind::RunFlow { flow_id, input } } => {
+                assert_eq!(flow_id, "clip_ai_summary");
+                assert_eq!(input, "summarize this paragraph");
+            }
+            other => panic!("unexpected action: {other:?}"),
         }
     }
 }

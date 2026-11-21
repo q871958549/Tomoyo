@@ -396,4 +396,32 @@ mod tests {
         assert_eq!(clean[0].keyword, "ok");
         assert_eq!(clean[0].hotkey, "Alt+Shift+V");
     }
+
+    #[test]
+    fn inline_input_overrides_read_clipboard_and_feeds_llm_transform() {
+        let flow = WorkflowDef {
+            id: "ai_param".into(),
+            name: "AI Param".into(),
+            keyword: "aisum".into(),
+            hotkey: String::new(),
+            description: String::new(),
+            enabled: true,
+            steps: vec![
+                FlowStep { kind: FlowStepKind::ReadClipboard, value: String::new() },
+                FlowStep { kind: FlowStepKind::LlmTransform, value: "Summarize:".into() },
+                FlowStep { kind: FlowStepKind::CopyText, value: String::new() },
+            ],
+        };
+        let plan_inline = run_flow_pipeline_with_llm(&flow, "inline note", "stale clip", |p, t| {
+            Ok(format!("{p} {t}"))
+        })
+        .unwrap();
+        assert_eq!(plan_inline.copy_text.as_deref(), Some("Summarize: inline note"));
+
+        let plan_clip = run_flow_pipeline_with_llm(&flow, "", "fresh clip", |p, t| {
+            Ok(format!("{p} {t}"))
+        })
+        .unwrap();
+        assert_eq!(plan_clip.copy_text.as_deref(), Some("Summarize: fresh clip"));
+    }
 }

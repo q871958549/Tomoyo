@@ -44,6 +44,7 @@ pub struct RenderState<'a> {
     pub items: &'a [ResultItem],
     pub selected: usize,
     pub hovered: Option<usize>,
+    pub launching_row: Option<(usize, bool)>,
     pub scroll_offset: usize,
     pub max_visible_rows: usize,
     pub preview_width_dip: i32,

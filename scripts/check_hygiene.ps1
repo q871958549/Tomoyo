@@ -145,7 +145,38 @@ if (-not $enumMatch.Success) {
         }
     }
     if ($ipcViolations -eq 0) {
-        Write-Host "  [OK] All $($checkedCmds.Count) frontend IPC commands match Rust HostMessage ($($validCmds.Count) variants)." -ForegroundColor Green
+        Write-Host "  [OK] Frontend -> Rust: all $($checkedCmds.Count) IPC commands match Rust HostMessage ($($validCmds.Count) variants)." -ForegroundColor Green
+    }
+
+    # Symmetric Rust -> Frontend HostEvent parity check
+    $rustEvents = @{}
+    foreach ($rf in (Get-ChildItem -Path crates\tomoyo-webview-host\src -Recurse -Include *.rs)) {
+        $rsrc = Get-Content $rf.FullName -Raw
+        foreach ($em in [regex]::Matches($rsrc, '"event"\s*:\s*"([a-z0-9_]+)"')) {
+            $rustEvents[$em.Groups[1].Value] = $true
+        }
+    }
+    $feEvents = @{}
+    foreach ($ff in $feFiles) {
+        $src = Get-Content $ff.FullName -Raw
+        foreach ($em in [regex]::Matches($src, '(?:\bev\b|data\.event)\s*[!=]==\s*[''"]([a-z0-9_]+)[''"]')) {
+            $evName = $em.Groups[1].Value
+            $feEvents[$evName] = $true
+            if (-not $rustEvents.ContainsKey($evName)) {
+                $rel = $ff.FullName.Replace((Get-Location).Path + "\", "")
+                Write-Host "  [FAIL] Frontend listens for unknown Rust HostEvent '$evName' in $rel" -ForegroundColor Red
+                $ipcViolations++
+            }
+        }
+    }
+    foreach ($reName in $rustEvents.Keys) {
+        if (-not $feEvents.ContainsKey($reName)) {
+            Write-Host "  [FAIL] Rust emits unhandled HostEvent '$reName' (no frontend listener found)" -ForegroundColor Red
+            $ipcViolations++
+        }
+    }
+    if ($ipcViolations -eq 0) {
+        Write-Host "  [OK] Rust -> Frontend: symmetric 1:1 HostEvent parity ($($feEvents.Count)/$($rustEvents.Count) events matched)." -ForegroundColor Green
     }
 }
 $violations += $ipcViolations

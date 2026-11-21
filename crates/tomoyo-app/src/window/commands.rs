@@ -140,6 +140,9 @@ impl AppShell {
         if matches!(action.kind, ActionKind::CopyImage { .. }) {
             self.inter.suppress_next_clip_img = true;
         }
+        if self.try_start_async_launch(&action.kind, &item.id, &item.title) {
+            return;
+        }
         let outcome = execute_action(&action.kind, &item.id, &self.plugin_host, self.theme.is_dark);
 
         if let Some(internal) = outcome.internal {

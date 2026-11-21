@@ -102,7 +102,13 @@ pub(super) fn paint_sdf_pass(
             canvas.fill_rounded_rect(22.0, y0 + 11.0, 52.0, y0 + 41.0, 7.0, category_rgb(item.category));
         }
         let mut text_right = lay.list_w_dip - 20.0;
-        if is_sel || slot < 8 {
+        let row_launch = state.launching_row.filter(|(li, _)| *li == idx);
+        if let Some((_, done)) = row_launch {
+            let pill_col = if done { Rgb(0x10, 0xB9, 0x81) } else { pal.accent };
+            let pw = 74.0;
+            canvas.fill_rounded_rect(text_right - pw, y0 + 14.5, text_right, y0 + 37.5, 6.0, pill_col);
+            text_right -= pw + 8.0;
+        } else if is_sel || slot < 8 {
             text_right -= 48.0;
         }
         if let Some(badge) = &item.badge {
@@ -121,7 +127,23 @@ pub(super) fn paint_sdf_pass(
         canvas.fill_rounded_rect(lay.list_w_dip - 7.0, ty0, lay.list_w_dip - 3.0, ty0 + thumb_h, 2.0, pal.scroll_thumb);
     }
 
-    let dot_col = if state.everything_status.is_some() { Rgb(0x10, 0xB9, 0x81) } else { Rgb(0x6B, 0x72, 0x80) };
+    let dot_col = if let Some(t) = state.toast {
+        if t.starts_with('✗') || t.starts_with('⚠') {
+            Rgb(0xEF, 0x44, 0x44)
+        } else if t.starts_with('✓') {
+            Rgb(0x10, 0xB9, 0x81)
+        } else if state.launching_row.is_some() {
+            pal.accent
+        } else if state.everything_status.is_some() {
+            Rgb(0x10, 0xB9, 0x81)
+        } else {
+            Rgb(0x6B, 0x72, 0x80)
+        }
+    } else if state.everything_status.is_some() {
+        Rgb(0x10, 0xB9, 0x81)
+    } else {
+        Rgb(0x6B, 0x72, 0x80)
+    };
     canvas.fill_rounded_rect(14.0, lay.fy0 + 11.5, 21.0, lay.fy0 + 18.5, 3.5, dot_col);
 
     if let Some(ver) = state.update_badge {

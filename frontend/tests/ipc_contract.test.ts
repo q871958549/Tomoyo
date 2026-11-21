@@ -9,6 +9,12 @@ const frontendSources = import.meta.glob<string>('../src/**/*.{ts,svelte}', {
   eager: true,
 });
 
+const webviewHostRustSources = import.meta.glob<string>('../../crates/tomoyo-webview-host/src/**/*.rs', {
+  query: '?raw',
+  import: 'default',
+  eager: true,
+});
+
 function parseRustHostMessageCommands(src: string): Set<string> {
   const enumBlock = src.match(/pub enum HostMessage\s*\{([\s\S]*?)\r?\n\}/);
   if (!enumBlock) throw new Error('Failed to locate `pub enum HostMessage` in bridge.rs');
@@ -23,7 +29,7 @@ function parseRustHostMessageCommands(src: string): Set<string> {
   return cmds;
 }
 
-describe('Rust <-> TypeScript IPC contract & utility resilience', () => {
+describe('Symmetric Rust <-> TypeScript IPC contract & utility resilience', () => {
   it('every frontend postHost({ cmd }) matches a Rust HostMessage variant', () => {
     const rustCmds = parseRustHostMessageCommands(bridgeRs);
     expect(rustCmds.size).toBeGreaterThanOrEqual(40);
@@ -45,6 +51,35 @@ describe('Rust <-> TypeScript IPC contract & utility resilience', () => {
 
     expect(usedCmds.size).toBeGreaterThanOrEqual(30);
     expect(unknown).toEqual([]);
+  });
+
+  it('every Rust HostEvent and frontend subscribeHost listener match 1:1 symmetrically', () => {
+    const rustEvents = new Set<string>();
+    for (const code of Object.values(webviewHostRustSources)) {
+      const re = /"event"\s*:\s*"([a-z0-9_]+)"/g;
+      let match: RegExpExecArray | null;
+      while ((match = re.exec(code)) !== null) {
+        rustEvents.add(match[1]);
+      }
+    }
+    expect(rustEvents.size).toBeGreaterThanOrEqual(20);
+
+    const feEvents = new Set<string>();
+    const unknownListeners: string[] = [];
+    for (const [file, code] of Object.entries(frontendSources)) {
+      const re = /(?:\bev\b|data\.event)\s*[!=]==\s*['"]([a-z0-9_]+)['"]/g;
+      let match: RegExpExecArray | null;
+      while ((match = re.exec(code)) !== null) {
+        feEvents.add(match[1]);
+        if (!rustEvents.has(match[1])) {
+          unknownListeners.push(`${file}: ${match[1]}`);
+        }
+      }
+    }
+
+    const unhandledRust = [...rustEvents].filter((e) => !feEvents.has(e));
+    expect(unknownListeners).toEqual([]);
+    expect(unhandledRust).toEqual([]);
   });
 
   it('hydrateSettingsInit safely falls back on empty or partial host payloads', () => {

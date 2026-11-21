@@ -204,6 +204,7 @@ impl AppShell {
             plugin_hotkeys,
             flow_hotkeys,
             pending_flow_result: Arc::new(Mutex::new(None)),
+            pending_launch_result: Arc::new(Mutex::new(None)),
             pending_update_install: Arc::new(Mutex::new(Default::default())),
             dpi_scale,
             taskbar_created_msg,

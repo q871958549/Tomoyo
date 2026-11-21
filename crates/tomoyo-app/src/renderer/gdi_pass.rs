@@ -84,15 +84,26 @@ pub(super) fn paint_gdi_pass(
             }
 
             let mut text_right = lay.list_w_dip - 20.0;
-            let shortcut = if is_sel { "Enter".to_string() } else if slot < 8 { format!("Alt+{}", slot + 1) } else { String::new() };
-            if !shortcut.is_empty() {
-                let (sc_font, sc_col) = if is_sel {
-                    (fonts.badge, pal.chip_active_text)
+            if let Some((_, done)) = state.launching_row.filter(|(li, _)| *li == idx) {
+                let lbl = if done {
+                    state.lang.pick("✓ 已启动", "✓ Opened")
                 } else {
-                    (fonts.footer, pal.text_muted)
+                    state.lang.pick("启动中…", "Opening…")
                 };
-                draw_text_gdi(dc, sc_font, sc_col, &shortcut, dip_rect(text_right - 40.0, y0 + 8.0, text_right, y1 - 8.0, scale), DT_RIGHT);
-                text_right -= 48.0;
+                let pw = 74.0;
+                draw_text_gdi(dc, fonts.badge, Rgb(0xFF, 0xFF, 0xFF), lbl, dip_rect(text_right - pw, y0 + 14.5, text_right, y0 + 37.5, scale), DT_CENTER);
+                text_right -= pw + 8.0;
+            } else {
+                let shortcut = if is_sel { "Enter".to_string() } else if slot < 8 { format!("Alt+{}", slot + 1) } else { String::new() };
+                if !shortcut.is_empty() {
+                    let (sc_font, sc_col) = if is_sel {
+                        (fonts.badge, pal.chip_active_text)
+                    } else {
+                        (fonts.footer, pal.text_muted)
+                    };
+                    draw_text_gdi(dc, sc_font, sc_col, &shortcut, dip_rect(text_right - 40.0, y0 + 8.0, text_right, y1 - 8.0, scale), DT_RIGHT);
+                    text_right -= 48.0;
+                }
             }
             if let Some(badge) = &item.badge {
                 let bw = (badge.chars().count() as f32 * 6.8 + 18.0).clamp(44.0, 120.0);
@@ -171,7 +182,20 @@ pub(super) fn paint_gdi_pass(
         } else {
             lay.w_dip - 186.0
         };
-        draw_text_gdi(dc, fonts.footer, pal.text_secondary, &left_text, dip_rect(28.0, lay.fy0, left_right, lay.h_dip, scale), DT_LEFT);
+        let footer_col = if let Some(t) = state.toast {
+            if t.starts_with('✗') {
+                if pal.is_dark { Rgb(0xF8, 0x71, 0x71) } else { Rgb(0xDC, 0x26, 0x26) }
+            } else if t.starts_with('✓') {
+                if pal.is_dark { Rgb(0x34, 0xD3, 0x99) } else { Rgb(0x05, 0x96, 0x69) }
+            } else if state.launching_row.is_some() {
+                pal.accent
+            } else {
+                pal.text_secondary
+            }
+        } else {
+            pal.text_secondary
+        };
+        draw_text_gdi(dc, fonts.footer, footer_col, &left_text, dip_rect(28.0, lay.fy0, left_right, lay.h_dip, scale), DT_LEFT);
 
         let stats = current_process_stats();
         let mem_text = match state.lang {

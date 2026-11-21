@@ -15,6 +15,8 @@ mod annotate_render;
 mod export;
 #[cfg(windows)]
 mod overlay;
+#[cfg(windows)]
+mod overlay_actions;
 mod overlay_draw;
 mod overlay_icons;
 #[cfg(windows)]
