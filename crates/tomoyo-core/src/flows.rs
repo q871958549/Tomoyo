@@ -180,11 +180,10 @@ pub fn sanitize_workflows(raw: Vec<WorkflowDef>) -> Vec<WorkflowDef> {
 
 pub fn load_or_init_flows() -> Vec<WorkflowDef> {
     let path = flows_file_path();
-    if let Ok(raw) = std::fs::read_to_string(&path) {
-        if let Ok(parsed) = toml::from_str::<FlowsFile>(&raw) {
+    if let Ok(raw) = std::fs::read_to_string(&path)
+        && let Ok(parsed) = toml::from_str::<FlowsFile>(&raw) {
             return sanitize_workflows(parsed.flows);
         }
-    }
     let defs = default_workflows();
     let _ = save_flows(&defs);
     defs

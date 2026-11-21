@@ -91,7 +91,7 @@ pub fn status_from_release(
     } else {
         UpdateStatus::Available {
             current: current_ver.to_string(),
-            release,
+            release: Box::new(release),
             checked_at_unix,
         }
     }

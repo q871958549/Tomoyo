@@ -1,6 +1,6 @@
 # Tomoyo 长期演进蓝图与分阶段替代计划 (Long-Term Roadmap)
 
-> **定位与基线**：`v2.2.0` 开启 Tomoyo 多年稳态沉淀与开放基础设施周期：为任意声明式工作流补齐**全局热键静默直达**（自动继承全屏避让与冲突接管）、引入零常驻 BYOM/BYOK **`llm_transform` 本地/AI 管道步骤**（直接复用本地 Ollama 与 DPAPI 加密 OpenAI 兼容接口）、根治混合 DPI 多屏首帧缩放与 `sync_dir` 备忘录无缝迁移、修复 Winget 发布清单版本正则，并正式上线 **Windows ARM64 原生构建** 与 **GitHub SLSA Build Provenance 加密溯源证明**（见 [`docs/DISTRIBUTION.md`](DISTRIBUTION.md)）。  
+> **定位与基线**：`v2.2.1` 完成纯工程结构减压与 7 道自动化防膨胀硬门禁建设：`check_hygiene.ps1` 升级为 7 道全自动门禁（380/450 双水位、Rust/npm 禁用依赖、防 WARP、前端产物天花板、Rust↔TS IPC 双向契约校验、`happy-dom` 冒烟、`-CheckBinaries` 体积红线）；全工作区 17 个 Crate 接入 `cargo clippy --workspace --all-targets -- -D warnings` 零警告并通过大枚举 `Box` 缩栈；4 份内嵌 WebView HTML 启用构建期 Gzip 压缩（净省 401 KB / `-66.8%`，`tomoyo-webview-host.exe` 降至 `4.36 MB`）；最紧绷的 3 个 440+ 行热点模块完成拆解减压，前端单测扩充至 3 套件 9 用例。  
 > **产品目标**：`tomoyo.exe` 始终坚守极简、低占用、毫秒唤起的 Windows 原生启动器核心；剪贴板、划词翻译、截图贴图、离线 OCR、本地备忘录等高频效率工具一律以**按需启停/安装的模块化官方插件**形态提供（本机实测已顺利替代并卸载 Pot 与 PixPin）。  
 > **执行纪律**：每个版本坚持小步快跑与实机验收，严守内存/句柄硬红线与全仓单文件 ≤ 450 行、零警告、前端编译产物运行时门禁。
 
@@ -30,6 +30,8 @@
 │  v3.0.0 · 远期：物理拆包 Core/Suite 双版本 + WASM wasi-p2 + 公益代码签名     │
 ├──────────────────────────────────────────────────────────────────────────────┤
 │  v2.3+  · 远期：纯外部 MCP 桥接与本地文档语义检索插件 + Ed25519 插件签名     │
+├──────────────────────────────────────────────────────────────────────────────┤
+│  v2.2.1 · [已完成] 7道防膨胀门禁 + Clippy全绿 + HTML Gzip瘦身 + 热点拆解    │
 ├──────────────────────────────────────────────────────────────────────────────┤
 │  v2.2.0 · [已完成] 工作流全局热键 + 本地 AI 管道 + ARM64 原生构建 + SLSA溯源 │
 ├──────────────────────────────────────────────────────────────────────────────┤
@@ -246,6 +248,17 @@
    - `layout.rs` 首帧基于目标显示器 `GetDpiForMonitor(MDT_EFFECTIVE_DPI)` 缩放并自动钳位在目标 `rcWork` 内，杜绝跨屏 DPI 错位与预览栏出界；`sync.rs` 切换同步目录时自动无损迁移 `notes/`；
 4. **Windows ARM64 原生支持、SLSA 溯源与分发规范（[`docs/DISTRIBUTION.md`](DISTRIBUTION.md)）**：
    - CI 新增 `windows-11-arm` 原生编译测试，Release 同步发布 `windows-arm64-portable.zip` + 全量 `actions/attest-build-provenance@v2` SLSA 构建证明，并修复 Winget 发布清单正则保留 `ManifestVersion: 1.6.0`。
+
+### 阶段十三（加固）：`v2.2.1` — 前后端结构减压、7 道防膨胀门禁与 Clippy 零警告工程加固（已完成 ✅）
+1. **7 道自动化防膨胀门禁（`scripts/check_hygiene.ps1` + CI）**：
+   - 新增 `380 / 450` 双水位提醒、前端单文件产物体积红线与重型 npm 黑名单、**Rust `HostMessage` ↔ TypeScript `postHost` 双向 IPC 契约全量校验**、以及 `-CheckBinaries` Release 二进制体积天花板；更新 [`docs/CODING_STANDARDS.md`](CODING_STANDARDS.md) 全面对齐 Svelte 5 + Tailwind v4 + TS 工程规范；
+2. **全工作区 `cargo clippy --workspace --all-targets -- -D warnings` 零警告**：
+   - 接入 GitHub Actions CI，清理全仓 17 个 Crate 全部静态告警，对 `HostMessage`、`UpdateStatus`、`LiveRuntime` 大变体执行 `Box` 缩栈，并将 `PopupState::closed` 升级为 `Cell<bool>` 消除潜在别名隐患；
+3. **构建期 Gzip 压缩内嵌 HTML & Top-3 热点文件减压**：
+   - `tomoyo-webview-host/build.rs` 使用 `flate2` 最高压缩比将 4 份单文件 HTML 压为 `.html.gz`（`600.7 KB → 199.7 KB`，压缩率 `-66.8%`），按需 `< 2 ms` 解压，`tomoyo-webview-host.exe` 体积从 `4.74 MB` 降至 `4.36 MB`；
+   - 拆解最紧绷的 3 个 440+ 行热点：`scroll_capture.rs` (`450 → 330` 行 + `scroll_hud.rs`)、`annotate_render.rs` (`445 → 258` 行 + `annotate_arrow.rs`)、`TranslatorApp.svelte` (`442 → 378` 行 + `TranslatorDrawer.svelte`)；
+4. **前端自动化测试矩阵扩容**：
+   - 新增 `workbenches.test.ts`（翻译抽屉/生词本、剪贴板筛选/置顶/单行复制、OCR 清洗/翻译、FlowsTab 新建工作流）与 `ipc_contract.test.ts`（自动化 IPC 契约与热键/配置容错测试），3 套件 9 用例零警告全绿。
 
 ---
 

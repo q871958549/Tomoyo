@@ -132,11 +132,10 @@ pub(crate) fn dispatch_plugin_event(
     );
 
     for (id, plug) in plugins.iter_mut() {
-        if let Some(target) = target_plugin {
-            if !id.eq_ignore_ascii_case(target) {
+        if let Some(target) = target_plugin
+            && !id.eq_ignore_ascii_case(target) {
                 continue;
             }
-        }
         if disabled_ids.contains(&id.to_ascii_lowercase()) {
             continue;
         }
@@ -158,16 +157,14 @@ pub(crate) fn dispatch_plugin_event(
             }
             Err(_) => continue,
         }
-        if let Some(LiveRuntime::Stdio(proc)) = plug.live.as_mut() {
-            if let Ok(params) = serde_json::to_value(payload) {
+        if let Some(LiveRuntime::Stdio(proc)) = plug.live.as_mut()
+            && let Ok(params) = serde_json::to_value(payload) {
                 let timeout = Duration::from_millis(plug.manifest.resources.query_timeout_ms.min(1500));
-                if let Ok(val) = proc.call(METHOD_EVENT, params, timeout) {
-                    if let Ok(resp) = serde_json::from_value::<ExecuteResponse>(val) {
+                if let Ok(val) = proc.call(METHOD_EVENT, params, timeout)
+                    && let Ok(resp) = serde_json::from_value::<ExecuteResponse>(val) {
                         responses.push(resp);
                     }
-                }
             }
-        }
     }
     (responses, any_spawned)
 }

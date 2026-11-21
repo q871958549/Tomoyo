@@ -227,7 +227,7 @@ fn load_embedded_hicon() -> Option<HICON> {
         let hinst = GetModuleHandleW(None).ok()?;
         let h = LoadImageW(
             Some(hinst.into()),
-            PCWSTR(1 as *const u16),
+            PCWSTR(std::ptr::dangling::<u16>()),
             IMAGE_ICON,
             32,
             32,

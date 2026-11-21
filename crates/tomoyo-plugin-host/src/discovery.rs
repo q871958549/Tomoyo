@@ -140,14 +140,13 @@ pub fn default_plugin_dirs() -> Vec<PathBuf> {
             dirs.push(p);
         }
     }
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(dir) = exe.parent() {
             let p = dir.join("plugins");
             if p.is_dir() && !dirs.contains(&p) {
                 dirs.push(p);
             }
         }
-    }
     let user_dir = tomoyo_core::data_dir().join("plugins");
     if !dirs.contains(&user_dir) {
         dirs.push(user_dir);

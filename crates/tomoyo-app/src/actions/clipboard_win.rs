@@ -201,7 +201,7 @@ fn decode_dib_slice(slice: &[u8], hdr_size: usize) -> Option<(u32, u32, Vec<u8>)
     let pixel_offset = bi_size
         .saturating_add(extra_masks)
         .saturating_add((hdr.biClrUsed as usize).saturating_mul(4));
-    let stride = (((w as usize) * (bpp as usize) + 31) / 32) * 4;
+    let stride = ((w as usize) * (bpp as usize)).div_ceil(32) * 4;
     let needed = pixel_offset.checked_add(stride.checked_mul(h as usize)?)?;
     if needed > slice.len() {
         return None;

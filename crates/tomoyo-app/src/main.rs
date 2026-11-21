@@ -82,14 +82,16 @@ impl Drop for SingletonMutex {
     }
 }
 
-fn build_engine() -> (
+type EngineBundle = (
     Arc<RwLock<TomoyoConfig>>,
     Arc<QueryRouter>,
     Arc<PluginHost>,
     Arc<ClipboardProvider>,
     Arc<AppsProvider>,
     Arc<UpdateManager>,
-) {
+);
+
+fn build_engine() -> EngineBundle {
     let loaded_cfg = TomoyoConfig::load_or_create();
     let clip_db_path = if loaded_cfg.clipboard.persist_sqlite {
         Some(data_dir().join("clipboard.db"))
@@ -295,8 +297,8 @@ fn wake_existing_instance(silent: bool) {
         return;
     }
     unsafe {
-        if let Ok(hwnd) = FindWindowW(w!("TomoyoLauncherWindowClass"), PCWSTR::null()) {
-            if !hwnd.is_invalid() {
+        if let Ok(hwnd) = FindWindowW(w!("TomoyoLauncherWindowClass"), PCWSTR::null())
+            && !hwnd.is_invalid() {
                 let mut pid = 0u32;
                 let _ = GetWindowThreadProcessId(hwnd, Some(&mut pid));
                 if pid != 0 {
@@ -305,7 +307,6 @@ fn wake_existing_instance(silent: bool) {
                 let _ = PostMessageW(Some(hwnd), WM_APP_WAKE_EXISTING, WPARAM(0), LPARAM(0));
                 tracing::info!("Signaled existing Tomoyo instance (PID {pid}) to show launcher.");
             }
-        }
     }
 }
 

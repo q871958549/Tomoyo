@@ -131,11 +131,10 @@ pub fn available_ocr_languages() -> Vec<String> {
     };
     let mut out = Vec::new();
     for i in 0..list.Size().unwrap_or(0) {
-        if let Ok(lang) = list.GetAt(i) {
-            if let Ok(tag) = lang.LanguageTag() {
+        if let Ok(lang) = list.GetAt(i)
+            && let Ok(tag) = lang.LanguageTag() {
                 out.push(tag.to_string());
             }
-        }
     }
     out
 }
@@ -275,24 +274,22 @@ pub fn recognize_image(
         let n = line_list.Size().unwrap_or(0);
         raw_lines.reserve(n as usize);
         for i in 0..n {
-            if let Ok(ln) = line_list.GetAt(i) {
-                if let Ok(txt) = ln.Text() {
+            if let Ok(ln) = line_list.GetAt(i)
+                && let Ok(txt) = ln.Text() {
                     let s = txt.to_string();
                     if !s.trim().is_empty() {
                         raw_lines.push(s);
                     }
                 }
-            }
         }
     }
-    if raw_lines.is_empty() {
-        if let Ok(full) = res.Text() {
+    if raw_lines.is_empty()
+        && let Ok(full) = res.Text() {
             let s = full.to_string();
             if !s.trim().is_empty() {
                 raw_lines.push(s);
             }
         }
-    }
 
     let raw_text = raw_lines.join("\r\n");
     let lines: Vec<String> = if raw_mode {

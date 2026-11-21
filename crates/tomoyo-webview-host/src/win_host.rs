@@ -99,9 +99,8 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     st.picking_folder = true;
                     let reply = if wparam.0 == 3 {
                         let (r, changed) = crate::folder_picker::pick_sync_folder(hwnd);
-                        if changed {
-                            if let Some(t) = st.notify_hwnd { crate::bridge_os::notify_parent_mode(t, 1); }
-                        }
+                        if changed
+                            && let Some(t) = st.notify_hwnd { crate::bridge_os::notify_parent_mode(t, 1); }
                         r
                     } else if wparam.0 == 2 {
                         crate::folder_picker::pick_capture_save_folder(hwnd)
@@ -203,7 +202,7 @@ pub fn run_windows_host(opts: LaunchArgs) {
     }
 
     let hinst = unsafe { GetModuleHandleW(None).unwrap() };
-    let embedded_icon = unsafe { LoadIconW(Some(hinst.into()), PCWSTR(1 as *const u16)).ok() };
+    let embedded_icon = unsafe { LoadIconW(Some(hinst.into()), PCWSTR(std::ptr::dangling::<u16>())).ok() };
     let cls = if opts.settings_mode {
         SETTINGS_WINDOW_CLASS
     } else if clip_mode {
@@ -354,12 +353,11 @@ pub fn run_windows_host(opts: LaunchArgs) {
                                                 // Defer modal IFileOpenDialog out of WebMessageReceived to avoid WebView2 COM reentrancy.
                                                 let _ = PostMessageW(Some(hwnd), WM_APP_PICK_FOLDER, WPARAM(act.pick_folder_mode as usize), LPARAM(0));
                                             }
-                                            if let Some(reply) = &act.reply_json {
-                                                if let Some(wv) = &wv_sender {
+                                            if let Some(reply) = &act.reply_json
+                                                && let Some(wv) = &wv_sender {
                                                     let rw = HSTRING::from(reply);
                                                     let _ = wv.PostWebMessageAsJson(PCWSTR(rw.as_ptr()));
                                                 }
-                                            }
                                             if act.hotkey_capture_cmd > 0 {
                                                 (*state_ptr).hk_capture.start(hwnd_raw, tx_cb.clone(), WM_APP_WEBVIEW_EVENT);
                                             } else if act.hotkey_capture_cmd < 0 {

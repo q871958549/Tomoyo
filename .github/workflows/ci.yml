@@ -33,10 +33,11 @@ jobs:
         shell: pwsh
         run: pwsh -File scripts/check_hygiene.ps1
 
-      - name: Setup Rust toolchain (Windows + wasm32)
+      - name: Setup Rust toolchain (Windows + wasm32 + clippy)
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
+          components: clippy
 
       - name: Cache Cargo dependencies
         uses: Swatinem/rust-cache@v2
@@ -47,6 +48,11 @@ jobs:
           cargo build --manifest-path plugins/example-wasm/Cargo.toml --target wasm32-unknown-unknown --release
           Copy-Item plugins/example-wasm/target/wasm32-unknown-unknown/release/tomoyo_plugin_wasm_demo.wasm plugins/example-wasm/plugin.wasm -Force
 
+      - name: Run Clippy lint gate (zero warnings)
+        env:
+          RUSTFLAGS: "-D warnings"
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
       - name: Run full workspace unit & integration tests (zero warnings)
         env:
           RUSTFLAGS: "-D warnings"
@@ -54,6 +60,10 @@ jobs:
 
       - name: Build release binaries
         run: cargo build --release --workspace
+
+      - name: Enforce release binary size ceilings
+        shell: pwsh
+        run: pwsh -File scripts/check_hygiene.ps1 -CheckBinaries
 
       - name: Run strict anti-leak resource budget & WebView self-tests
         shell: pwsh

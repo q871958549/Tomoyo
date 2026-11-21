@@ -46,11 +46,10 @@ impl AppShell {
                 }
 
                 // Restore prior clipboard text cleanly so selection-translate never clobbers user data.
-                if changed {
-                    if let Some(old) = prev_text {
+                if changed
+                    && let Some(old) = prev_text {
                         let _ = set_clipboard_text(&old);
                     }
-                }
                 std::thread::sleep(Duration::from_millis(60));
                 suppress_flag.store(false, Ordering::Release);
 

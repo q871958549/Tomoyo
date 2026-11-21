@@ -299,11 +299,10 @@ pub fn sanitize_config(cfg: &mut TomoyoConfig) -> Vec<String> {
     let mut seen_apps = HashSet::new();
     let mut clean_apps = Vec::new();
     for raw in std::mem::take(&mut cfg.clipboard.excluded_apps) {
-        if let Some(exe) = normalize_exe_name(&raw) {
-            if seen_apps.insert(exe.clone()) && clean_apps.len() < MAX_EXCLUDED_APPS {
+        if let Some(exe) = normalize_exe_name(&raw)
+            && seen_apps.insert(exe.clone()) && clean_apps.len() < MAX_EXCLUDED_APPS {
                 clean_apps.push(exe);
             }
-        }
     }
     cfg.clipboard.excluded_apps = clean_apps;
     crate::translate::sanitize_translate_config(

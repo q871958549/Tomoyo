@@ -65,7 +65,7 @@ impl TomoyoPlugin for OcrPlugin {
 
 fn resolve_ocr_options(ctx: &QueryContext) -> (LangPref, bool, Option<String>) {
     let (mut pref, mut raw_mode, explicit_path) = parse_ocr_args(&ctx.args);
-    let tokens: Vec<String> = ctx.args.trim().split_whitespace().map(|s| s.to_ascii_lowercase()).collect();
+    let tokens: Vec<String> = ctx.args.split_whitespace().map(|s| s.to_ascii_lowercase()).collect();
     let has_lang_arg = tokens.iter().any(|t| matches!(t.as_str(), "en" | "eng" | "english" | "zh" | "cn" | "chinese"));
     if !has_lang_arg {
         match ctx.plugin_settings.get("default_lang").and_then(|v| v.as_str()) {
@@ -84,7 +84,7 @@ fn parse_ocr_args(raw: &str) -> (LangPref, bool, Option<String>) {
     let mut pref = LangPref::Auto;
     let mut raw_mode = false;
     let mut rest_parts: Vec<&str> = Vec::new();
-    for tok in raw.trim().split_whitespace() {
+    for tok in raw.split_whitespace() {
         match tok.to_ascii_lowercase().as_str() {
             "en" | "eng" | "english" if rest_parts.is_empty() => pref = LangPref::En,
             "zh" | "cn" | "chinese" if rest_parts.is_empty() => pref = LangPref::Zh,

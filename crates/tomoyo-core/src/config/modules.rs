@@ -37,11 +37,10 @@ pub fn sanitize_filters_and_plugins(cfg: &mut TomoyoConfig) {
     let mut seen_hk_ex = HashSet::new();
     let mut clean_hk_ex = Vec::new();
     for raw in std::mem::take(&mut cfg.hotkey_excluded_apps) {
-        if let Some(exe) = super::normalize_exe_name(&raw) {
-            if seen_hk_ex.insert(exe.clone()) && clean_hk_ex.len() < 64 {
+        if let Some(exe) = super::normalize_exe_name(&raw)
+            && seen_hk_ex.insert(exe.clone()) && clean_hk_ex.len() < 64 {
                 clean_hk_ex.push(exe);
             }
-        }
     }
     cfg.hotkey_excluded_apps = clean_hk_ex;
 
@@ -134,11 +133,10 @@ pub fn sanitize_filters_and_plugins(cfg: &mut TomoyoConfig) {
     for (k, v) in std::mem::take(&mut cfg.plugin_hotkeys) {
         let key = k.trim().to_ascii_lowercase();
         let val = v.trim().to_string();
-        if !key.is_empty() && key.len() <= 128 && key.contains(':') && clean_phk.len() < 32 {
-            if val.is_empty() || super::parse_hotkey(&val).is_some() {
+        if !key.is_empty() && key.len() <= 128 && key.contains(':') && clean_phk.len() < 32
+            && (val.is_empty() || super::parse_hotkey(&val).is_some()) {
                 clean_phk.insert(key, val);
             }
-        }
     }
     cfg.plugin_hotkeys = clean_phk;
 

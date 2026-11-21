@@ -71,9 +71,9 @@ pub(super) fn paint_sdf_pass(
         canvas.fill_rect_dip(12.0, lay.header_h, lay.w_dip - 12.0, lay.header_h + 1.0, pal.divider);
     }
 
-    if lay.has_preview {
-        if let Some(prev) = state.preview {
-            if let Some((iw, ih, rgba)) = &prev.image_rgba {
+    if lay.has_preview
+        && let Some(prev) = state.preview
+            && let Some((iw, ih, rgba)) = &prev.image_rgba {
                 let (px0, px1) = (lay.list_w_dip + 14.0, lay.w_dip - 14.0);
                 let avail_w = (px1 - px0).max(40.0);
                 let avail_h = (lay.fy0 - (lay.header_h + 60.0) - 52.0).clamp(60.0, 210.0);
@@ -84,8 +84,6 @@ pub(super) fn paint_sdf_pass(
                 canvas.draw_rgba_image(dx, dy, dw, dh, *iw, *ih, rgba);
                 canvas.stroke_rounded_rect(dx - 3.0, dy - 3.0, dx + dw + 3.0, dy + dh + 3.0, 6.0, pal.border);
             }
-        }
-    }
 
     for slot in 0..lay.visible_count {
         let idx = state.scroll_offset + slot;
@@ -135,9 +133,9 @@ pub(super) fn paint_sdf_pass(
         }
     }
 
-    if state.action_menu_open {
-        if let Some(sel) = state.items.get(state.selected) {
-            if !sel.actions.is_empty() {
+    if state.action_menu_open
+        && let Some(sel) = state.items.get(state.selected)
+            && !sel.actions.is_empty() {
                 let n = sel.actions.len().min(6);
                 let (mx1, my1) = (lay.list_w_dip - 14.0, lay.fy0 - 10.0);
                 let (mx0, my0) = (mx1 - 240.0, (my1 - (n as f32 * 30.0 + 16.0)).max(lay.list_top + 4.0));
@@ -149,8 +147,6 @@ pub(super) fn paint_sdf_pass(
                     canvas.stroke_rounded_rect(mx0 + 6.0, ay0, mx1 - 6.0, ay0 + 28.0, 6.0, pal.sel_border);
                 }
             }
-        }
-    }
 
     canvas.fill_rect_dip(0.0, 0.0, lay.w_dip, 1.0, pal.border);
     canvas.fill_rect_dip(0.0, lay.h_dip - 1.0, lay.w_dip, lay.h_dip, pal.border);

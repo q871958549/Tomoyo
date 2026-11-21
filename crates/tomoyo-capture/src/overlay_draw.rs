@@ -238,12 +238,10 @@ pub fn compose_overlay_pixels(
             if sel.is_some() {
                 render_annotations(dst, w, h, 0, 0, annotations);
                 if let Some(a) = live_ann { render_single(dst, w, h, 0, 0, a); }
-                if let Some(idx) = hovered_ann.filter(|&i| Some(i) != selected_ann) {
-                    if let Some(a) = annotations.get(idx) { draw_selection_handles(dst, w, h, a, true); }
-                }
-                if let Some(idx) = selected_ann {
-                    if let Some(a) = annotations.get(idx) { draw_selection_handles(dst, w, h, a, false); }
-                }
+                if let Some(idx) = hovered_ann.filter(|&i| Some(i) != selected_ann)
+                    && let Some(a) = annotations.get(idx) { draw_selection_handles(dst, w, h, a, true); }
+                if let Some(idx) = selected_ann
+                    && let Some(a) = annotations.get(idx) { draw_selection_handles(dst, w, h, a, false); }
             }
             let border_col = if sel.is_some() { AnnotColor(0x3B, 0x82, 0xF6) } else { AnnotColor(0x60, 0xA5, 0xFA) };
             stroke_box(dst, w, h, r, 2, border_col);
@@ -309,14 +307,12 @@ pub fn compose_overlay_pixels(
         }
     }
 
-    if let Some(cmd) = hovered_cmd {
-        if let Some(btn) = layout.hits.iter().find(|b| b.cmd == cmd) {
-            if let Some(tr) = tooltip_rect_for(btn, w, h) {
+    if let Some(cmd) = hovered_cmd
+        && let Some(btn) = layout.hits.iter().find(|b| b.cmd == cmd)
+            && let Some(tr) = tooltip_rect_for(btn, w, h) {
                 fill_rounded_rect_aa(dst, w, h, tr, 6.0, AnnotColor(0x0E, 0x10, 0x16), 0.95);
                 stroke_rounded_rect_aa(dst, w, h, tr, 6.0, 1.0, AnnotColor(0x38, 0x3D, 0x4F), 0.9);
             }
-        }
-    }
     if wheel_hud.is_some() {
         let r = wheel_hud_rect(cursor, w, h);
         fill_rounded_rect_aa(dst, w, h, r, 6.0, AnnotColor(0x0E, 0x10, 0x16), 0.92);

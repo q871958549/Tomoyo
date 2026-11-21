@@ -36,11 +36,10 @@ impl IndexedText {
                         }
                     }
                 }
-                if readings.is_empty() {
-                    if let Some(py) = ch.to_pinyin() {
+                if readings.is_empty()
+                    && let Some(py) = ch.to_pinyin() {
                         readings.push(py.plain());
                     }
-                }
                 if let Some(&primary) = readings.first() {
                     pinyin_full.push_str(primary);
                     if let Some(first) = primary.chars().next() {

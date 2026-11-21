@@ -8,14 +8,14 @@ use tomoyo_providers::{ClipboardEntry, ClipboardPayload, ClipboardStore, ParsedC
 
 pub const CLIP_MANAGER_ENTRY: &str = "__tomoyo_clipboard_manager__";
 
-const CLIP_HTML_BUNDLE: &str = include_str!("../../../frontend/dist/clipboard.html");
+const CLIP_HTML_GZ: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/clipboard.html.gz"));
 
 pub fn is_clip_manager_entry(entry: &str) -> bool {
     entry == CLIP_MANAGER_ENTRY
 }
 
 pub fn assemble_clip_manager_html() -> String {
-    CLIP_HTML_BUNDLE.to_string()
+    crate::inflate_embedded_html(CLIP_HTML_GZ)
 }
 
 pub struct ClipManagerBootstrap {

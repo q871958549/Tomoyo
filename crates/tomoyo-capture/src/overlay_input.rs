@@ -66,8 +66,8 @@ pub fn cursor_for_hover(st: &OverlayState) -> PCWSTR {
         if st.hovered_annot.is_some() {
             return IDC_SIZEALL;
         }
-        if st.tool == ToolKind::Select {
-            if let Some(s) = st.sel {
+        if st.tool == ToolKind::Select
+            && let Some(s) = st.sel {
                 if let Some(h_idx) = hit_test_handle(s, st.cursor.0, st.cursor.1) {
                     return box_handle_cursor(h_idx);
                 }
@@ -75,7 +75,6 @@ pub fn cursor_for_hover(st: &OverlayState) -> PCWSTR {
                     return IDC_SIZEALL;
                 }
             }
-        }
     }
     IDC_CROSS
 }
@@ -175,15 +174,14 @@ pub fn handle_lbutton_down(st: &mut OverlayState, hwnd: HWND, x: i32, y: i32) {
 }
 
 pub fn handle_lbutton_dblclk(st: &mut OverlayState, hwnd: HWND, x: i32, y: i32) {
-    if let Some((idx, 1)) = st.stack.hit_test_any_control(x, y) {
-        if matches!(st.stack.items().get(idx), Some(Annotation::Arrow { .. })) {
+    if let Some((idx, 1)) = st.stack.hit_test_any_control(x, y)
+        && matches!(st.stack.items().get(idx), Some(Annotation::Arrow { .. })) {
             st.stack.save_undo_snapshot();
             st.stack.items_mut()[idx].straighten_arrow();
             st.stack.selected = Some(idx);
             unsafe { let _ = InvalidateRect(Some(hwnd), None, false); }
             return;
         }
-    }
     if st.sel.is_some_and(ScreenRect::is_valid)
         && st.tool == ToolKind::Select
         && st.stack.hit_test_top(x, y).is_none()

@@ -138,8 +138,8 @@ impl Provider for CalcProvider {
                 DetectedIntent::Url(url) => out.push(build_url_item(self.id(), url)),
                 DetectedIntent::WindowsPath(path) => out.push(build_path_item(self.id(), path)),
                 DetectedIntent::JsonSnippet => {
-                    if let Ok(val) = serde_json::from_str::<serde_json::Value>(trimmed) {
-                        if let Ok(pretty) = serde_json::to_string_pretty(&val) {
+                    if let Ok(val) = serde_json::from_str::<serde_json::Value>(trimmed)
+                        && let Ok(pretty) = serde_json::to_string_pretty(&val) {
                             let mut item = copy_card(
                                 "intent:json_pretty",
                                 &pretty.lines().take(2).collect::<Vec<_>>().join(" "),
@@ -159,7 +159,6 @@ impl Provider for CalcProvider {
                             }];
                             out.push(item);
                         }
-                    }
                 }
             }
         }

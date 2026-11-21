@@ -79,18 +79,16 @@ pub fn locate_fonts_dir() -> Option<PathBuf> {
     if let Ok(cwd) = std::env::current_dir() {
         candidates.push(cwd.join("assets").join("fonts"));
     }
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(dir) = exe.parent() {
             candidates.push(dir.join("assets").join("fonts"));
             candidates.push(dir.join("fonts"));
             // Cargo workspace `target/release` or `target/debug` -> `../../assets/fonts`
-            if let Some(p1) = dir.parent() {
-                if let Some(p2) = p1.parent() {
+            if let Some(p1) = dir.parent()
+                && let Some(p2) = p1.parent() {
                     candidates.push(p2.join("assets").join("fonts"));
                 }
-            }
         }
-    }
     candidates.push(crate::data_dir().join("fonts"));
 
     candidates

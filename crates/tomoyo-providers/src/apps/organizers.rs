@@ -8,19 +8,17 @@ pub(super) fn detect_desktop_organizer_dirs() -> Vec<PathBuf> {
     // 1. DeskBox (`%LOCALAPPDATA%\DeskBox\data\*.json` and `%USERPROFILE%\DeskBox`)
     if let Ok(local_app) = std::env::var("LOCALAPPDATA") {
         let deskbox_data = PathBuf::from(&local_app).join("DeskBox").join("data");
-        if let Ok(raw) = std::fs::read_to_string(deskbox_data.join("settings.json")) {
-            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&raw) {
-                if let Some(root) = json
+        if let Ok(raw) = std::fs::read_to_string(deskbox_data.join("settings.json"))
+            && let Ok(json) = serde_json::from_str::<serde_json::Value>(&raw)
+                && let Some(root) = json
                     .get("defaultManagedStorageRootPath")
                     .and_then(|v| v.as_str())
                 {
                     push_existing_dir(&mut dirs, PathBuf::from(root));
                 }
-            }
-        }
-        if let Ok(raw) = std::fs::read_to_string(deskbox_data.join("widget-layout.json")) {
-            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&raw) {
-                if let Some(widgets) = json
+        if let Ok(raw) = std::fs::read_to_string(deskbox_data.join("widget-layout.json"))
+            && let Ok(json) = serde_json::from_str::<serde_json::Value>(&raw)
+                && let Some(widgets) = json
                     .get("layout")
                     .and_then(|l| l.get("widgets"))
                     .and_then(|w| w.as_array())
@@ -31,15 +29,13 @@ pub(super) fn detect_desktop_organizer_dirs() -> Vec<PathBuf> {
                         }
                     }
                 }
-            }
-        }
     }
 
     // 2. PecoFence (`%APPDATA%\PecoFence\config.json` -> desktopPath & folder portal fences)
     if let Ok(appdata) = std::env::var("APPDATA") {
         let pf_cfg = PathBuf::from(&appdata).join("PecoFence").join("config.json");
-        if let Ok(raw) = std::fs::read_to_string(pf_cfg) {
-            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&raw) {
+        if let Ok(raw) = std::fs::read_to_string(pf_cfg)
+            && let Ok(json) = serde_json::from_str::<serde_json::Value>(&raw) {
                 if let Some(dp) = json
                     .get("settings")
                     .and_then(|s| s.get("desktopPath"))
@@ -57,7 +53,6 @@ pub(super) fn detect_desktop_organizer_dirs() -> Vec<PathBuf> {
                     }
                 }
             }
-        }
     }
 
     if let Ok(userprofile) = std::env::var("USERPROFILE") {

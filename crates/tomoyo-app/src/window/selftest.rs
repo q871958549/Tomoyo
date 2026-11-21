@@ -21,9 +21,8 @@ impl AppShell {
             self.edit_bg_brush = CreateSolidBrush(new_theme.bg.to_colorref());
             let _ = InvalidateRect(Some(self.edit_hwnd), None, true);
         }
-        if persist {
-            if let Ok(mut cfg) = self.config.write() { cfg.theme = theme_name.to_string(); let _ = cfg.save(); }
-        }
+        if persist
+            && let Ok(mut cfg) = self.config.write() { cfg.theme = theme_name.to_string(); let _ = cfg.save(); }
         self.invalidate();
     }
 
@@ -31,9 +30,8 @@ impl AppShell {
         let new_lang = Lang::from_code(lang_code);
         self.lang = new_lang;
         unsafe { apply_cue_banner(self.edit_hwnd, new_lang); }
-        if persist {
-            if let Ok(mut cfg) = self.config.write() { cfg.language = new_lang.code().to_string(); let _ = cfg.save(); }
-        }
+        if persist
+            && let Ok(mut cfg) = self.config.write() { cfg.language = new_lang.code().to_string(); let _ = cfg.save(); }
         self.dispatch_query();
         self.invalidate();
     }

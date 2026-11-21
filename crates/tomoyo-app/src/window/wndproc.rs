@@ -69,18 +69,16 @@ pub(super) unsafe extern "system" fn main_wndproc(
                     let _ = GetCursorPos(&mut pt);
                     let _ = ScreenToClient(hwnd, &mut pt);
                 }
-                if app.inter.dragging_divider || app.is_over_preview_divider(pt.x, pt.y) {
-                    if let Ok(cur) = unsafe { LoadCursorW(None, IDC_SIZEWE) } {
+                if (app.inter.dragging_divider || app.is_over_preview_divider(pt.x, pt.y))
+                    && let Ok(cur) = unsafe { LoadCursorW(None, IDC_SIZEWE) } {
                         unsafe { SetCursor(Some(cur)); }
                         return LRESULT(1);
                     }
-                }
-                if app.hit_test_update_badge(pt.x, pt.y) {
-                    if let Ok(cur) = unsafe { LoadCursorW(None, IDC_HAND) } {
+                if app.hit_test_update_badge(pt.x, pt.y)
+                    && let Ok(cur) = unsafe { LoadCursorW(None, IDC_HAND) } {
                         unsafe { SetCursor(Some(cur)); }
                         return LRESULT(1);
                     }
-                }
             }
             unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
         }
@@ -419,7 +417,7 @@ fn handle_mouse_move(hwnd: HWND, app: &mut AppShell, lparam: LPARAM) -> LRESULT 
         let w_dip = (rc.right - rc.left) as f32 / scale;
         let clamped = (w_dip - x as f32 / scale)
             .round()
-            .clamp(220.0, ((w_dip - 380.0).max(220.0)).min(620.0)) as i32;
+            .clamp(220.0, (w_dip - 380.0).clamp(220.0, 620.0)) as i32;
         if clamped != app.geom.preview_width_dip {
             app.geom.preview_width_dip = clamped;
             app.geom.list_width_dip = (w_dip as i32 - clamped).clamp(MIN_WINDOW_WIDTH_DIP, 1400);
@@ -427,15 +425,14 @@ fn handle_mouse_move(hwnd: HWND, app: &mut AppShell, lparam: LPARAM) -> LRESULT 
         }
         return LRESULT(0);
     }
-    if let Some((ox, oy, path)) = app.inter.drag_origin.clone() {
-        if (x - ox).abs() > 6 || (y - oy).abs() > 6 {
+    if let Some((ox, oy, path)) = app.inter.drag_origin.clone()
+        && ((x - ox).abs() > 6 || (y - oy).abs() > 6) {
             app.inter.drag_origin = None;
             app.inter.in_modal_overlay = true;
             let _ = start_file_drag(&path);
             app.inter.in_modal_overlay = false;
             return LRESULT(0);
         }
-    }
     let new_filter_hover = app.hit_test_filter(x, y);
     let new_hover = if new_filter_hover.is_some() { None } else { app.hit_test_row(x, y) };
     if new_hover != app.inter.hovered || new_filter_hover != app.inter.hovered_filter {

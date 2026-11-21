@@ -99,12 +99,11 @@ impl CaptureToolHotkeys {
             (&mut self.translate, &defaults.translate, "翻译"),
         ];
         for (slot, def, label) in fields {
-            if let Some(norm) = Self::normalize_key(slot) {
-                if used.insert(norm.clone()) {
+            if let Some(norm) = Self::normalize_key(slot)
+                && used.insert(norm.clone()) {
                     *slot = norm;
                     continue;
                 }
-            }
             let fb = def.to_string();
             if used.insert(fb.clone()) {
                 *slot = fb;

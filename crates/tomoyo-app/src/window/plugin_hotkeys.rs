@@ -29,12 +29,11 @@ pub(super) fn register_plugin_hotkeys(
         let id = PLUGIN_HOTKEY_BASE + idx as i32;
         if register_optional_hotkey(hwnd, id, &hk.spec) {
             tracing::info!(plugin = %hk.plugin_id, hotkey = %hk.spec, id = id, "Registered plugin hotkey");
-        } else if cfg.override_conflict_hotkeys {
-            if let Some(p) = parse_hotkey(&hk.spec) {
+        } else if cfg.override_conflict_hotkeys
+            && let Some(p) = parse_hotkey(&hk.spec) {
                 override_entries.push((id, p.modifiers, p.vk));
                 tracing::info!(plugin = %hk.plugin_id, hotkey = %hk.spec, id = id, "Queued plugin hotkey for conflict rescue");
             }
-        }
         registered.push(hk);
     }
     registered
@@ -55,12 +54,11 @@ pub(super) fn register_flow_hotkeys(
         let spec = flow.hotkey.trim();
         if register_optional_hotkey(hwnd, id, spec) {
             tracing::info!(flow = %flow.id, hotkey = %spec, id = id, "Registered workflow hotkey");
-        } else if cfg.override_conflict_hotkeys {
-            if let Some(p) = parse_hotkey(spec) {
+        } else if cfg.override_conflict_hotkeys
+            && let Some(p) = parse_hotkey(spec) {
                 override_entries.push((id, p.modifiers, p.vk));
                 tracing::info!(flow = %flow.id, hotkey = %spec, id = id, "Queued workflow hotkey for conflict rescue");
             }
-        }
         registered.push(flow.id);
     }
     registered

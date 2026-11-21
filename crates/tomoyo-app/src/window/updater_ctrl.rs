@@ -36,15 +36,14 @@ impl AppShell {
             .name("tomoyo-manual-update".into())
             .spawn(move || {
                 let res = updater.check_now_sync(&repo);
-                if matches!(res, UpdateStatus::UpToDate { .. } | UpdateStatus::Available { .. }) {
-                    if let Ok(mut w) = cfg.write() {
+                if matches!(res, UpdateStatus::UpToDate { .. } | UpdateStatus::Available { .. })
+                    && let Ok(mut w) = cfg.write() {
                         w.update.last_checked_unix = std::time::SystemTime::now()
                             .duration_since(std::time::UNIX_EPOCH)
                             .map(|d| d.as_secs())
                             .unwrap_or(0);
                         let _ = w.save();
                     }
-                }
                 unsafe {
                     let _ = PostMessageW(
                         Some(HWND(hwnd_raw as *mut c_void)),

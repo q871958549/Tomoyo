@@ -10,6 +10,7 @@
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 mod annotate;
+mod annotate_arrow;
 mod annotate_render;
 mod export;
 #[cfg(windows)]
@@ -25,6 +26,8 @@ mod pin_window;
 mod screen;
 #[cfg(windows)]
 mod scroll_capture;
+#[cfg(windows)]
+mod scroll_hud;
 #[cfg(windows)]
 mod scroll_preview;
 mod stitch;

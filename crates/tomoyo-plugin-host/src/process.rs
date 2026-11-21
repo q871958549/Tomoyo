@@ -142,11 +142,10 @@ impl LivePluginProcess {
                             if trimmed.is_empty() {
                                 continue;
                             }
-                            if let Ok(resp) = serde_json::from_str::<JsonRpcResponse>(trimmed) {
-                                if tx.send(resp).is_err() {
+                            if let Ok(resp) = serde_json::from_str::<JsonRpcResponse>(trimmed)
+                                && tx.send(resp).is_err() {
                                     break;
                                 }
-                            }
                         }
                     }
                 }
@@ -297,8 +296,8 @@ fn resolve_command(plugin_dir: &Path, command: &str) -> String {
     }
 
     // Check alongside current executable (makes workspace dev & installed plugins work immediately!).
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(exe_dir) = exe.parent() {
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(exe_dir) = exe.parent() {
             let clean_name = Path::new(command)
                 .file_name()
                 .map(|s| s.to_string_lossy().into_owned())
@@ -317,8 +316,8 @@ fn resolve_command(plugin_dir: &Path, command: &str) -> String {
                 let is_deps_dir = exe_dir
                     .file_name()
                     .is_some_and(|n| n.eq_ignore_ascii_case("deps"));
-                if is_deps_dir {
-                    if let Some(parent_dir) = exe_dir.parent() {
+                if is_deps_dir
+                    && let Some(parent_dir) = exe_dir.parent() {
                         let parent_sib = parent_dir.join(&clean_name);
                         if parent_sib.is_file() {
                             return parent_sib.to_string_lossy().into_owned();
@@ -328,18 +327,15 @@ fn resolve_command(plugin_dir: &Path, command: &str) -> String {
                             return parent_sib_exe.to_string_lossy().into_owned();
                         }
                     }
-                }
             }
         }
-    }
 
     // On Windows, avoid the Microsoft Store `WindowsApps\python.exe` stub when `python` / `python3` is requested.
     #[cfg(windows)]
-    if command.eq_ignore_ascii_case("python") || command.eq_ignore_ascii_case("python3") {
-        if let Some(real_py) = find_real_windows_python() {
+    if (command.eq_ignore_ascii_case("python") || command.eq_ignore_ascii_case("python3"))
+        && let Some(real_py) = find_real_windows_python() {
             return real_py;
         }
-    }
 
     command.to_string()
 }

@@ -113,21 +113,19 @@ fn flatten_plugin_root(entries: BTreeMap<PathBuf, Vec<u8>>) -> Result<BTreeMap<P
         .filter_map(|p| p.components().next())
         .map(|c| c.as_os_str().to_string_lossy().into_owned())
         .collect();
-    if let Some(first) = top_dirs.first() {
-        if top_dirs.iter().all(|d| d == first) {
+    if let Some(first) = top_dirs.first()
+        && top_dirs.iter().all(|d| d == first) {
             let mut stripped = BTreeMap::new();
             for (path, data) in entries {
-                if let Ok(rest) = path.strip_prefix(first) {
-                    if !rest.as_os_str().is_empty() {
+                if let Ok(rest) = path.strip_prefix(first)
+                    && !rest.as_os_str().is_empty() {
                         stripped.insert(rest.to_path_buf(), data);
                     }
-                }
             }
             if stripped.contains_key(Path::new("tomoyo-plugin.toml")) {
                 return Ok(stripped);
             }
         }
-    }
     Err("压缩包根目录缺少 `tomoyo-plugin.toml` 清单文件".into())
 }
 

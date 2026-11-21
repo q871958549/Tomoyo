@@ -150,8 +150,7 @@ pub fn run_pin_window(
         let sh = GetSystemMetrics(SM_CYSCREEN).max(480) as f32;
         let init_scale = ((sw * 0.82) / (width.max(1) as f32))
             .min((sh * 0.82) / (height.max(1) as f32))
-            .min(1.0)
-            .max(0.15);
+            .clamp(0.15, 1.0);
         let init_w = ((width as f32) * init_scale).round().max(48.0) as i32;
         let init_h = ((height as f32) * init_scale).round().max(48.0) as i32;
         let px = screen_x.clamp(16, (sw as i32 - init_w - 16).max(16));

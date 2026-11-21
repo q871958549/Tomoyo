@@ -67,13 +67,12 @@ pub(super) fn paint_gdi_pass(
             let is_sel = idx == state.selected;
 
             let mut drew_shell_icon = false;
-            if let IconSpec::ShellPath(path) = &item.icon {
-                if let Some(hicon) = icons.get_or_enqueue(path) {
+            if let IconSpec::ShellPath(path) = &item.icon
+                && let Some(hicon) = icons.get_or_enqueue(path) {
                     let isize = (30.0 * scale).round() as i32;
                     let _ = DrawIconEx(dc, (22.0 * scale).round() as i32, ((y0 + 11.0) * scale).round() as i32, hicon, isize, isize, 0, None, DI_NORMAL);
                     drew_shell_icon = true;
                 }
-            }
             if !drew_shell_icon {
                 if matches!(item.icon, IconSpec::ShellPath(_)) {
                     let mut c = Canvas { buf: surface.pixels_mut(), w: width, h: height, scale };
@@ -114,8 +113,8 @@ pub(super) fn paint_gdi_pass(
             draw_text_gdi(dc, fonts.subtitle, pal.text_secondary, &item.subtitle, dip_rect(62.0, y0 + 28.0, text_right, y0 + 47.0, scale), DT_LEFT);
         }
 
-        if lay.has_preview {
-            if let Some(prev) = state.preview {
+        if lay.has_preview
+            && let Some(prev) = state.preview {
                 let (px0, px1) = (lay.list_w_dip + 14.0, lay.w_dip - 14.0);
                 draw_text_gdi(dc, fonts.title, pal.text_primary, &prev.title, dip_rect(px0, lay.header_h + 10.0, px1, lay.header_h + 32.0, scale), DT_LEFT);
                 draw_text_gdi(dc, fonts.footer, pal.text_secondary, &prev.meta_line, dip_rect(px0, lay.header_h + 32.0, px1, lay.header_h + 50.0, scale), DT_LEFT);
@@ -130,10 +129,9 @@ pub(super) fn paint_gdi_pass(
                 };
                 draw_multiline_gdi(dc, body_font, pal.text_primary, &prev.body, dip_rect(px0, body_top, px1, lay.fy0 - 10.0, scale));
             }
-        }
 
-        if state.action_menu_open {
-            if let Some(sel) = state.items.get(state.selected) {
+        if state.action_menu_open
+            && let Some(sel) = state.items.get(state.selected) {
                 let n = sel.actions.len().min(6);
                 let (mx1, my1) = (lay.list_w_dip - 14.0, lay.fy0 - 10.0);
                 let (mx0, my0) = (mx1 - 240.0, (my1 - (n as f32 * 30.0 + 16.0)).max(lay.list_top + 4.0));
@@ -148,7 +146,6 @@ pub(super) fn paint_gdi_pass(
                     draw_text_gdi(dc, fnt, col, &act.label, dip_rect(mx0 + 14.0, ay0, mx1 - 14.0, ay0 + 28.0, scale), DT_LEFT);
                 }
             }
-        }
 
         let left_text = if let Some(toast) = state.toast {
             toast.to_string()

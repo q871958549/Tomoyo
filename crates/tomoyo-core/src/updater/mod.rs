@@ -60,7 +60,7 @@ pub enum UpdateStatus {
     },
     Available {
         current: String,
-        release: ReleaseInfo,
+        release: Box<ReleaseInfo>,
         checked_at_unix: u64,
     },
     Error {
@@ -97,7 +97,7 @@ impl UpdateManager {
 
     pub fn available_release(&self) -> Option<ReleaseInfo> {
         match self.snapshot() {
-            UpdateStatus::Available { release, .. } => Some(release),
+            UpdateStatus::Available { release, .. } => Some(*release),
             _ => None,
         }
     }
@@ -136,12 +136,11 @@ impl UpdateManager {
             .name("tomoyo-update-check".into())
             .spawn(move || {
                 let res = mgr.check_now_sync(&repo);
-                if matches!(res, UpdateStatus::UpToDate { .. } | UpdateStatus::Available { .. }) {
-                    if let Ok(mut cfg) = cfg_arc.write() {
+                if matches!(res, UpdateStatus::UpToDate { .. } | UpdateStatus::Available { .. })
+                    && let Ok(mut cfg) = cfg_arc.write() {
                         cfg.update.last_checked_unix = now_unix();
                         let _ = cfg.save();
                     }
-                }
                 on_done();
             });
     }

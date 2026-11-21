@@ -68,25 +68,22 @@ impl AppShell {
     }
 
     fn apply_flow_plan(&mut self, plan: FlowRunPlan) {
-        if let Some((title, body)) = plan.save_note_title_body.as_ref() {
-            if let Err(e) = save_flow_markdown_note(title, body) {
+        if let Some((title, body)) = plan.save_note_title_body.as_ref()
+            && let Err(e) = save_flow_markdown_note(title, body) {
                 self.show_toast(&e);
                 return;
             }
-        }
         if let Some(txt) = plan.copy_text.as_deref() {
             let _ = set_clipboard_text(txt);
         }
-        if let Some(url) = plan.open_url.as_deref() {
-            if is_safe_http_url(url) {
+        if let Some(url) = plan.open_url.as_deref()
+            && is_safe_http_url(url) {
                 let _ = shell_open(url, None, None);
             }
-        }
-        if let Some(path) = plan.open_path.as_deref() {
-            if std::path::Path::new(path).exists() {
+        if let Some(path) = plan.open_path.as_deref()
+            && std::path::Path::new(path).exists() {
                 let _ = shell_open(path, None, None);
             }
-        }
         if let Some(mode) = plan.capture_mode.as_deref() {
             self.trigger_capture(mode);
             return;

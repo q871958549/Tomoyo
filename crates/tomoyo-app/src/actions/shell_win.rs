@@ -224,8 +224,8 @@ pub fn spawn_ephemeral_webview(
 }
 
 fn locate_sibling_exe(name: &str) -> Result<std::path::PathBuf, String> {
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(dir) = exe.parent() {
             let sib = dir.join(name);
             if sib.is_file() {
                 return Ok(sib);
@@ -237,7 +237,6 @@ fn locate_sibling_exe(name: &str) -> Result<std::path::PathBuf, String> {
                 }
             }
         }
-    }
     Err(format!("{name} not found next to tomoyo.exe"))
 }
 

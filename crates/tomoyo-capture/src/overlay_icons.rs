@@ -134,6 +134,7 @@ pub fn stroke_rounded_rect_aa(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn fill_circle_aa(
     dst: &mut [u8],
     w: i32,

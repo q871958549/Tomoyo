@@ -76,8 +76,8 @@ impl AsyncPreviewLoader {
                                     }
                                     _ => None,
                                 };
-                                if let Some(preview) = resolved {
-                                    if job_seq == w_seq.load(Ordering::Acquire) {
+                                if let Some(preview) = resolved
+                                    && job_seq == w_seq.load(Ordering::Acquire) {
                                         let _ = res_tx.send(PreviewOutcome {
                                             seq: job_seq,
                                             item_id,
@@ -95,7 +95,6 @@ impl AsyncPreviewLoader {
                                             }
                                         }
                                     }
-                                }
                             }
                         }
                     }

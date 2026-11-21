@@ -88,10 +88,19 @@ fn init_webview_logging() {
         .try_init();
 }
 
-const SETTINGS_HTML_BUNDLE: &str = include_str!("../../../frontend/dist/settings.html");
+const SETTINGS_HTML_GZ: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/settings.html.gz"));
+
+/// Inflates a compile-time gzip-compressed single-file Svelte 5 HTML bundle on demand (< 2ms).
+pub fn inflate_embedded_html(gz: &[u8]) -> String {
+    use std::io::Read;
+    let mut dec = flate2::read::GzDecoder::new(gz);
+    let mut out = String::with_capacity(gz.len() * 3);
+    let _ = dec.read_to_string(&mut out);
+    out
+}
 
 pub fn assemble_settings_html() -> String {
-    SETTINGS_HTML_BUNDLE.to_string()
+    inflate_embedded_html(SETTINGS_HTML_GZ)
 }
 
 pub struct LaunchArgs {

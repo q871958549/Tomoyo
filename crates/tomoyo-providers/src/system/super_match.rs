@@ -184,10 +184,10 @@ pub fn build_super_match_items(
                     preview: Some(PreviewSpec::FilePreview { path: first.clone() }),
                 });
 
-                if Path::new(first).is_file() {
-                    if let Ok(meta) = std::fs::metadata(first) {
-                        if meta.len() <= 8 * 1024 * 1024 {
-                            if let Ok(data) = std::fs::read(first) {
+                if Path::new(first).is_file()
+                    && let Ok(meta) = std::fs::metadata(first)
+                        && meta.len() <= 8 * 1024 * 1024
+                            && let Ok(data) = std::fs::read(first) {
                                 let digest: String = Sha256::digest(&data)
                                     .iter()
                                     .map(|b| format!("{b:02x}"))
@@ -226,9 +226,6 @@ pub fn build_super_match_items(
                                     }),
                                 });
                             }
-                        }
-                    }
-                }
 
                 items.push(ResultItem {
                     id: "super:files:terminal".into(),

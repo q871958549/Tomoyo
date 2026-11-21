@@ -104,11 +104,10 @@ fn find_pinyin_or_acronym_spans(
         if let Some(multi) = ch.to_pinyin_multi() {
             let mut inits = Vec::with_capacity(2);
             for py in multi {
-                if let Some(f) = py.plain().chars().next() {
-                    if !inits.contains(&f) {
+                if let Some(f) = py.plain().chars().next()
+                    && !inits.contains(&f) {
                         inits.push(f);
                     }
-                }
             }
             if !inits.is_empty() {
                 init_slots.push((bs, be, inits));
@@ -169,11 +168,10 @@ fn match_pinyin_from(
                 if rest.is_empty() {
                     return Some(start);
                 }
-                if start + 1 < chars.len() {
-                    if let Some(end) = match_pinyin_from(chars, start + 1, rest) {
+                if start + 1 < chars.len()
+                    && let Some(end) = match_pinyin_from(chars, start + 1, rest) {
                         return Some(end);
                     }
-                }
             }
         }
         return None;
@@ -225,12 +223,11 @@ fn merge_spans(mut spans: Vec<(usize, usize)>) -> Vec<(usize, usize)> {
         if s >= e {
             continue;
         }
-        if let Some(last) = merged.last_mut() {
-            if s <= last.1 {
+        if let Some(last) = merged.last_mut()
+            && s <= last.1 {
                 last.1 = last.1.max(e);
                 continue;
             }
-        }
         merged.push((s, e));
     }
     merged

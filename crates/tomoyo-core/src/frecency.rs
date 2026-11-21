@@ -99,21 +99,19 @@ impl FrecencyStore {
         };
 
         let mut query_boost = 0i64;
-        if let Some(bucket) = self.query_entries.get(&norm_q) {
-            if let Some(rec) = bucket.get(item_id) {
+        if let Some(bucket) = self.query_entries.get(&norm_q)
+            && let Some(rec) = bucket.get(item_id) {
                 query_boost = (decayed_score(rec, now, 1_650.0).round() as i64).clamp(0, 3_800);
             }
-        }
         if query_boost == 0 && norm_q.chars().count() >= 2 {
             // Prefix carry-over: selecting under `android` gently lifts `an` / `and` too.
             for (saved_q, bucket) in &self.query_entries {
-                if saved_q.len() > norm_q.len() && saved_q.starts_with(&norm_q) {
-                    if let Some(rec) = bucket.get(item_id) {
+                if saved_q.len() > norm_q.len() && saved_q.starts_with(&norm_q)
+                    && let Some(rec) = bucket.get(item_id) {
                         let ratio = (norm_q.len() as f64 / saved_q.len() as f64).clamp(0.3, 0.9);
                         let b = (decayed_score(rec, now, 950.0) * ratio).round() as i64;
                         query_boost = query_boost.max(b.clamp(0, 1_600));
                     }
-                }
             }
         }
 
@@ -203,11 +201,10 @@ impl FrecencyStore {
             let _ = std::fs::create_dir_all(parent);
         }
         let tmp = path.with_extension("json.tmp");
-        if let Ok(json) = serde_json::to_string(self) {
-            if std::fs::write(&tmp, json).is_ok() {
+        if let Ok(json) = serde_json::to_string(self)
+            && std::fs::write(&tmp, json).is_ok() {
                 let _ = std::fs::rename(&tmp, path);
             }
-        }
     }
 }
 

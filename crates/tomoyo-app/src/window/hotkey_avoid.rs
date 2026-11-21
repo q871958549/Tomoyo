@@ -53,14 +53,12 @@ pub(super) fn should_avoid_hotkey(self_hwnd: HWND) -> bool {
         }
 
         let exe_lower = query_process_basename_lower(fg_pid).unwrap_or_default();
-        if !exe_lower.is_empty() {
-            if let Ok(guard) = excluded_store().try_read() {
-                if guard.iter().any(|ex| ex == &exe_lower) {
+        if !exe_lower.is_empty()
+            && let Ok(guard) = excluded_store().try_read()
+                && guard.iter().any(|ex| ex == &exe_lower) {
                     tracing::debug!(exe = %exe_lower, "Yielding hotkey to excluded foreground app");
                     return true;
                 }
-            }
-        }
 
         if !SUSPEND_FULLSCREEN.load(Ordering::Relaxed) {
             return false;
@@ -70,12 +68,11 @@ pub(super) fn should_avoid_hotkey(self_hwnd: HWND) -> bool {
             return false;
         }
 
-        if let Ok(state) = SHQueryUserNotificationState() {
-            if state == QUNS_RUNNING_D3D_FULL_SCREEN || state == QUNS_BUSY || state == QUNS_PRESENTATION_MODE {
+        if let Ok(state) = SHQueryUserNotificationState()
+            && (state == QUNS_RUNNING_D3D_FULL_SCREEN || state == QUNS_BUSY || state == QUNS_PRESENTATION_MODE) {
                 tracing::debug!(exe = %exe_lower, ?state, "Yielding hotkey to fullscreen app");
                 return true;
             }
-        }
 
         // Borderless fullscreen game / media player check: covers entire monitor AND has no caption bar
         let style = GetWindowLongW(fg, GWL_STYLE) as u32;

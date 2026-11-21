@@ -105,13 +105,12 @@ impl RollingLogState {
                 .open(&self.path)
                 .ok();
         }
-        if let Some(f) = &mut self.file {
-            if f.write_all(buf).is_ok() {
+        if let Some(f) = &mut self.file
+            && f.write_all(buf).is_ok() {
                 let _ = f.flush();
                 self.written = self.written.saturating_add(buf.len() as u64);
                 self.rotate_if_needed();
             }
-        }
     }
 }
 
@@ -136,11 +135,10 @@ pub fn write_process_log_bytes(buf: &[u8], mirror_stderr: bool) -> io::Result<us
     if mirror_stderr {
         let _ = io::stderr().write_all(buf);
     }
-    if let Some(mtx) = PROCESS_LOG.get() {
-        if let Ok(mut guard) = mtx.lock() {
+    if let Some(mtx) = PROCESS_LOG.get()
+        && let Ok(mut guard) = mtx.lock() {
             guard.write_bytes(buf);
         }
-    }
     Ok(buf.len())
 }
 
@@ -152,11 +150,10 @@ pub fn append_crash_record(summary: &str) {
     let block = format!(
         "\n=== TOMOYO CRASH RECORD [{ts}] component={comp} ver=v{CURRENT_VERSION} pid={pid} ===\n{summary}\n"
     );
-    if let Some(mtx) = PROCESS_LOG.get() {
-        if let Ok(mut guard) = mtx.lock() {
+    if let Some(mtx) = PROCESS_LOG.get()
+        && let Ok(mut guard) = mtx.lock() {
             guard.write_bytes(block.as_bytes());
         }
-    }
     let last_crash = logs_dir().join("last_crash.txt");
     let _ = std::fs::write(last_crash, block.as_bytes());
 }

@@ -6,14 +6,14 @@ use tomoyo_core::{logs_dir, TomoyoConfig};
 
 pub const TRANSLATOR_ENTRY: &str = "__tomoyo_translator__";
 
-const TRANSLATOR_HTML_BUNDLE: &str = include_str!("../../../frontend/dist/translator.html");
+const TRANSLATOR_HTML_GZ: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/translator.html.gz"));
 
 pub fn is_translator_entry(entry: &str) -> bool {
     entry == TRANSLATOR_ENTRY
 }
 
 pub fn assemble_translator_html() -> String {
-    TRANSLATOR_HTML_BUNDLE.to_string()
+    crate::inflate_embedded_html(TRANSLATOR_HTML_GZ)
 }
 
 pub fn read_last_translate_req() -> (String, String) {
@@ -77,12 +77,11 @@ pub fn open_or_spawn_translator(text: &str, target_lang: &str, notify_hwnd: Opti
         use windows::core::PCWSTR;
         use windows::Win32::UI::WindowsAndMessaging::FindWindowW;
         unsafe {
-            if let Ok(hwnd) = FindWindowW(TRANSLATOR_WINDOW_CLASS, PCWSTR::null()) {
-                if !hwnd.is_invalid() {
+            if let Ok(hwnd) = FindWindowW(TRANSLATOR_WINDOW_CLASS, PCWSTR::null())
+                && !hwnd.is_invalid() {
                     activate_window_with_msg(hwnd, WM_APP_ACTIVATE_TRANSLATOR);
                     return;
                 }
-            }
         }
     }
 

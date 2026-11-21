@@ -39,8 +39,8 @@ pub fn detect_intents(input: &str) -> Vec<DetectedIntent> {
     }
 
     // Unix timestamp (10-digit seconds or 13-digit milliseconds)
-    if (s.len() == 10 || s.len() == 13) && s.bytes().all(|b| b.is_ascii_digit()) {
-        if let Ok(val) = s.parse::<i64>() {
+    if (s.len() == 10 || s.len() == 13) && s.bytes().all(|b| b.is_ascii_digit())
+        && let Ok(val) = s.parse::<i64>() {
             let is_millis = s.len() == 13;
             let secs = if is_millis { val / 1000 } else { val };
             if (946_684_800..=4_102_444_800).contains(&secs) {
@@ -50,14 +50,12 @@ pub fn detect_intents(input: &str) -> Vec<DetectedIntent> {
                 });
             }
         }
-    }
 
     // JSON object / array
-    if (s.starts_with('{') && s.ends_with('}')) || (s.starts_with('[') && s.ends_with(']')) {
-        if serde_json::from_str::<serde_json::Value>(s).is_ok() {
+    if ((s.starts_with('{') && s.ends_with('}')) || (s.starts_with('[') && s.ends_with(']')))
+        && serde_json::from_str::<serde_json::Value>(s).is_ok() {
             out.push(DetectedIntent::JsonSnippet);
         }
-    }
 
     // Math candidate
     if looks_like_math(s) {

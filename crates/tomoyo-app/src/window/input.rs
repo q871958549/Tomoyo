@@ -58,11 +58,10 @@ impl AppShell {
             return;
         }
 
-        if ctrl_down && shift_down && vk == b'P' as u16 {
-            if self.trigger_selected_clipboard_shortcut("pin") {
+        if ctrl_down && shift_down && vk == b'P' as u16
+            && self.trigger_selected_clipboard_shortcut("pin") {
                 return;
             }
-        }
 
         if ctrl_down && vk == b'E' as u16 {
             if !self.trigger_selected_clipboard_shortcut("edit_workbench") {
@@ -71,11 +70,10 @@ impl AppShell {
             return;
         }
 
-        if ctrl_down && vk == b'D' as u16 {
-            if self.trigger_selected_clipboard_shortcut("delete") {
+        if ctrl_down && vk == b'D' as u16
+            && self.trigger_selected_clipboard_shortcut("delete") {
                 return;
             }
-        }
 
         if ctrl_down && vk == b'P' as u16 {
             self.preview_enabled = !self.preview_enabled;
@@ -105,13 +103,11 @@ impl AppShell {
                     Some(LPARAM(&mut end as *mut _ as isize)),
                 );
             }
-            if start == end {
-                if let Some(txt) = self.results.get(self.selected).and_then(|i| i.copy_text.as_deref()) {
-                    if set_clipboard_text(txt) {
+            if start == end
+                && let Some(txt) = self.results.get(self.selected).and_then(|i| i.copy_text.as_deref())
+                    && set_clipboard_text(txt) {
                         self.show_toast(self.lang.pick("已复制选中项内容", "Copied selected result"));
                     }
-                }
-            }
             return;
         }
 
@@ -299,15 +295,14 @@ pub(super) fn register_all_hotkeys(
         if register_optional_hotkey(hwnd, id, trimmed) {
             return HotkeySlotStatus { spec: trimmed.to_string(), active: trimmed.to_string(), ok: true, disabled: false, overridden: false, reason: String::new() };
         }
-        if allow_override {
-            if let Some(p) = parse_hotkey(trimmed) {
+        if allow_override
+            && let Some(p) = parse_hotkey(trimmed) {
                 override_entries.push((id, p.modifiers, p.vk));
                 return HotkeySlotStatus {
                     spec: trimmed.to_string(), active: trimmed.to_string(), ok: true, disabled: false, overridden: true,
                     reason: lang.pick("已高优先级接管生效", "Overridden via high-priority hook").into(),
                 };
             }
-        }
         let reason = match lang {
             Lang::Zh => format!("已被系统或其他软件占用（{trimmed}）"),
             Lang::En => format!("Occupied by OS or another app ({trimmed})"),

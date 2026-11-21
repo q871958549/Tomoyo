@@ -13,7 +13,7 @@ use tomoyo_protocol::{
 
 pub(crate) enum LiveRuntime {
     Stdio(LivePluginProcess),
-    Wasm(LiveWasmPlugin),
+    Wasm(Box<LiveWasmPlugin>),
 }
 
 impl LiveRuntime {
@@ -86,7 +86,7 @@ pub(crate) fn ensure_live(
                 *max_fuel,
             )
             .map_err(|e| ProcessError::Spawn(e.to_string()))?;
-            plug.live = Some(LiveRuntime::Wasm(wasm));
+            plug.live = Some(LiveRuntime::Wasm(Box::new(wasm)));
             Ok(true)
         }
         RuntimeConfig::Webview { .. } => Ok(false),

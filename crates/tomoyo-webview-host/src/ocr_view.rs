@@ -4,14 +4,14 @@ use std::path::{Path, PathBuf};
 
 pub const OCR_VIEWER_ENTRY: &str = "__tomoyo_ocr_viewer__";
 
-const OCR_VIEWER_HTML: &str = include_str!("../../../frontend/dist/ocr.html");
+const OCR_VIEWER_HTML_GZ: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/ocr.html.gz"));
 
 pub fn is_ocr_viewer_entry(entry: &str) -> bool {
     entry == OCR_VIEWER_ENTRY
 }
 
 pub fn assemble_ocr_viewer_html() -> String {
-    OCR_VIEWER_HTML.to_string()
+    crate::inflate_embedded_html(OCR_VIEWER_HTML_GZ)
 }
 
 pub struct OcrViewerBootstrap {

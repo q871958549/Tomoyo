@@ -52,8 +52,10 @@ pub fn current_process_stats() -> ProcessMemoryStats {
 
     unsafe {
         let proc = GetCurrentProcess();
-        let mut pmc = PROCESS_MEMORY_COUNTERS_EX::default();
-        pmc.cb = std::mem::size_of::<PROCESS_MEMORY_COUNTERS_EX>() as u32;
+        let mut pmc = PROCESS_MEMORY_COUNTERS_EX {
+            cb: std::mem::size_of::<PROCESS_MEMORY_COUNTERS_EX>() as u32,
+            ..Default::default()
+        };
         let ok = K32GetProcessMemoryInfo(
             proc,
             &mut pmc as *mut PROCESS_MEMORY_COUNTERS_EX as *mut _,
@@ -103,8 +105,10 @@ pub fn inspect_pid_working_set(pid: u32) -> Option<u64> {
         let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ, false, pid)
             .or_else(|_| OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid))
             .ok()?;
-        let mut pmc = PROCESS_MEMORY_COUNTERS_EX::default();
-        pmc.cb = std::mem::size_of::<PROCESS_MEMORY_COUNTERS_EX>() as u32;
+        let mut pmc = PROCESS_MEMORY_COUNTERS_EX {
+            cb: std::mem::size_of::<PROCESS_MEMORY_COUNTERS_EX>() as u32,
+            ..Default::default()
+        };
         let ok = K32GetProcessMemoryInfo(
             handle,
             &mut pmc as *mut PROCESS_MEMORY_COUNTERS_EX as *mut _,

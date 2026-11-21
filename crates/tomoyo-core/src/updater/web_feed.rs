@@ -112,15 +112,12 @@ pub fn parse_atom_entries(xml: &str) -> Vec<AtomReleaseEntry> {
                 html_url = href;
             }
         }
-        if tag_opt.is_none() {
-            if let Some(id_val) = extract_xml_tag(block, "id") {
-                if let Some(last) = id_val.rsplit('/').next() {
-                    if !last.is_empty() {
+        if tag_opt.is_none()
+            && let Some(id_val) = extract_xml_tag(block, "id")
+                && let Some(last) = id_val.rsplit('/').next()
+                    && !last.is_empty() {
                         tag_opt = Some(last.to_string());
                     }
-                }
-            }
-        }
         let Some(tag) = tag_opt else {
             continue;
         };
@@ -182,8 +179,8 @@ pub fn fetch_release_via_github_web(clean_repo: &str) -> Result<Option<ReleaseIn
         }
     }
 
-    if resolved_tag.is_none() && !saw_404 {
-        if let Ok(page) = http_get_detailed(&latest_url, &[], 7000, 256 * 1024) {
+    if resolved_tag.is_none() && !saw_404
+        && let Ok(page) = http_get_detailed(&latest_url, &[], 7000, 256 * 1024) {
             if page.status_code == 404 {
                 saw_404 = true;
             } else {
@@ -191,7 +188,6 @@ pub fn fetch_release_via_github_web(clean_repo: &str) -> Result<Option<ReleaseIn
                     .or_else(|| extract_tag_from_release_url(&page.text_lossy()));
             }
         }
-    }
 
     let atom_url = format!("https://github.com/{clean_repo}/releases.atom");
     let atom_entries = http_get(&atom_url, 7000, 128 * 1024)

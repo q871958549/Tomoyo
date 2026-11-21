@@ -108,11 +108,10 @@ pub(crate) fn scan_known_local_configs(procs: &[ProcInfo]) -> Vec<(String, Strin
         if !procs.iter().any(|p| p.name_lower.contains(proc_key)) {
             continue;
         }
-        if std::fs::metadata(path).is_ok_and(|m| m.len() <= 262_144) {
-            if let Ok(raw) = std::fs::read_to_string(path) {
+        if std::fs::metadata(path).is_ok_and(|m| m.len() <= 262_144)
+            && let Ok(raw) = std::fs::read_to_string(path) {
                 hits.push(((*proc_key).to_string(), (*label).to_string(), raw.to_ascii_lowercase()));
             }
-        }
     }
     hits
 }
@@ -128,9 +127,9 @@ pub(crate) fn guess_suspects(
     let spec_compact = spec_lower.replace('+', " + ");
 
     for (proc_key, label, content) in cfg_hits {
-        if content.contains(&spec_lower) || content.contains(&spec_compact) {
-            if let Some(p) = procs.iter().find(|pr| pr.name_lower.contains(proc_key)) {
-                if seen_pids.insert(p.pid) {
+        if (content.contains(&spec_lower) || content.contains(&spec_compact))
+            && let Some(p) = procs.iter().find(|pr| pr.name_lower.contains(proc_key))
+                && seen_pids.insert(p.pid) {
                     out.push(crate::hotkey_doctor::SuspectProcess {
                         process_name: p.name.clone(),
                         pid: p.pid,
@@ -139,15 +138,13 @@ pub(crate) fn guess_suspects(
                         confidence: "high",
                     });
                 }
-            }
-        }
     }
     for &(key, label, defaults) in KNOWN_SIGNATURES {
         if !defaults.iter().any(|d| d.eq_ignore_ascii_case(spec)) {
             continue;
         }
-        if let Some(p) = procs.iter().find(|pr| pr.name_lower.contains(key)) {
-            if seen_pids.insert(p.pid) {
+        if let Some(p) = procs.iter().find(|pr| pr.name_lower.contains(key))
+            && seen_pids.insert(p.pid) {
                 out.push(crate::hotkey_doctor::SuspectProcess {
                     process_name: p.name.clone(),
                     pid: p.pid,
@@ -156,7 +153,6 @@ pub(crate) fn guess_suspects(
                     confidence: "medium",
                 });
             }
-        }
     }
     out
 }

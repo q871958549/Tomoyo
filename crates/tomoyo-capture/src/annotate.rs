@@ -304,11 +304,10 @@ impl AnnotationStack {
     }
 
     pub fn hit_test_any_control(&self, px: i32, py: i32) -> Option<(usize, usize)> {
-        if let Some(sel) = self.selected.filter(|&i| i < self.items.len()) {
-            if let Some(h) = self.items[sel].hit_test_control(px, py) {
+        if let Some(sel) = self.selected.filter(|&i| i < self.items.len())
+            && let Some(h) = self.items[sel].hit_test_control(px, py) {
                 return Some((sel, h));
             }
-        }
         for i in (0..self.items.len()).rev() {
             if let Some(h) = self.items[i].hit_test_control(px, py) {
                 return Some((i, h));

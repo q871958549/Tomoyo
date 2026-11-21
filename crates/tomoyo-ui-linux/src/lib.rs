@@ -76,11 +76,10 @@ impl LinuxBackend {
                 continue;
             }
             let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or("app");
-            if let Ok(raw) = std::fs::read_to_string(&p) {
-                if let Some(app) = Self::parse_desktop_entry(stem, &raw) {
+            if let Ok(raw) = std::fs::read_to_string(&p)
+                && let Some(app) = Self::parse_desktop_entry(stem, &raw) {
                     out.push(app);
                 }
-            }
         }
         out.sort_by(|a, b| a.title.cmp(&b.title));
         out

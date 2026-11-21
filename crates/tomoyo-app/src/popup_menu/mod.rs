@@ -90,7 +90,7 @@ pub(super) struct PopupState<'a> {
     pub hovered: Option<usize>,
     pub mouse_tracked: bool,
     pub chosen: Option<u32>,
-    pub closed: bool,
+    pub closed: std::cell::Cell<bool>,
     pub surface: Option<DibSurface>,
     pub fonts: FontPack,
 }
@@ -143,7 +143,7 @@ pub fn show_themed_popup_menu(
         hovered: None,
         mouse_tracked: false,
         chosen: None,
-        closed: false,
+        closed: std::cell::Cell::new(false),
         surface: None,
         fonts,
     });
@@ -188,7 +188,7 @@ pub fn show_themed_popup_menu(
         let _ = SetForegroundWindow(hwnd);
 
         let mut msg = MSG::default();
-        while !state.closed {
+        while !state.closed.get() {
             let ret = GetMessageW(&mut msg, None, 0, 0);
             if ret.0 <= 0 {
                 if ret.0 == 0 {
@@ -319,11 +319,10 @@ unsafe extern "system" fn popup_wndproc(
         }
         WM_LBUTTONUP => {
             let y_dip = (((lparam.0 >> 16) & 0xFFFF) as i16 as f32) / st.scale;
-            if let Some(idx) = hit_test_item(&st.metrics, y_dip) {
-                if let Some(PopupEntry::Item { id, .. }) = st.entries.get(idx) {
+            if let Some(idx) = hit_test_item(&st.metrics, y_dip)
+                && let Some(PopupEntry::Item { id, .. }) = st.entries.get(idx) {
                     st.chosen = Some(*id);
                 }
-            }
             close_popup(hwnd, st);
             LRESULT(0)
         }
@@ -336,11 +335,10 @@ unsafe extern "system" fn popup_wndproc(
             if vk == VK_ESCAPE.0 {
                 close_popup(hwnd, st);
             } else if vk == VK_RETURN.0 {
-                if let Some(idx) = st.hovered {
-                    if let Some(PopupEntry::Item { id, .. }) = st.entries.get(idx) {
+                if let Some(idx) = st.hovered
+                    && let Some(PopupEntry::Item { id, .. }) = st.entries.get(idx) {
                         st.chosen = Some(*id);
                     }
-                }
                 close_popup(hwnd, st);
             } else if vk == VK_DOWN.0 || vk == VK_UP.0 {
                 step_selection(st, vk == VK_DOWN.0);
@@ -364,7 +362,7 @@ unsafe extern "system" fn popup_wndproc(
 }
 
 fn close_popup(hwnd: HWND, st: &mut PopupState<'_>) {
-    st.closed = true;
+    st.closed.set(true);
     unsafe {
         let _ = PostMessageW(Some(hwnd), WM_NULL, WPARAM(0), LPARAM(0));
     }

@@ -31,11 +31,10 @@ pub(crate) fn rank_and_dedup(
         if !seen_ids.insert(item.id.clone()) {
             continue;
         }
-        if let Some(canon_path) = canonical_launch_path(&item) {
-            if !seen_paths.insert(canon_path) {
+        if let Some(canon_path) = canonical_launch_path(&item)
+            && !seen_paths.insert(canon_path) {
                 continue;
             }
-        }
         deduped.push(item);
         if deduped.len() >= limit {
             break;

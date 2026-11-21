@@ -1,7 +1,7 @@
 //! Procedural Modern White artistic Tomoyo brand icon rasterizer.
 //!
-//! Renders the porcelain-white rounded squircle + sculptural calligraphic obsidian "T"
-//! + iridescent silver-ice pearl dot with 2x2 supersampled anti-aliasing at any DPI.
+//! Renders the porcelain-white rounded squircle, sculptural calligraphic obsidian "T",
+//! and iridescent silver-ice pearl dot with 2x2 supersampled anti-aliasing at any DPI.
 //! Used coherently across the Win32 system tray icon, window icon, and launcher header!
 
 /// Paints the Modern White porcelain Tomoyo emblem onto a 32-bit BGRA pixel buffer

@@ -14,7 +14,7 @@ pub trait Provider: Send + Sync {
     }
     /// Dynamic prefix check (e.g. config-driven web search keywords).
     fn matches_prefix(&self, token_lower: &str) -> bool {
-        self.prefixes().iter().any(|&p| p == token_lower)
+        self.prefixes().contains(&token_lower)
     }
     /// Whether this provider participates in unprefixed global searches.
     fn supports_global(&self) -> bool {
@@ -171,9 +171,9 @@ impl QueryRouter {
         if ctx.attached.is_some() {
             let (first_token, rest) = split_first_token(trimmed);
             let first_lower = first_token.to_lowercase();
-            if !first_lower.is_empty() {
-                if let Some(bridge) = &self.plugin_bridge {
-                    if bridge.matches_keyword(&first_lower) {
+            if !first_lower.is_empty()
+                && let Some(bridge) = &self.plugin_bridge
+                    && bridge.matches_keyword(&first_lower) {
                         let p_ctx = ctx.clone().with_keyword(&first_lower, rest);
                         let results = bridge.query_keyword(&first_lower, &p_ctx);
                         return FastQueryBatch {
@@ -183,19 +183,16 @@ impl QueryRouter {
                             run_slow_ipc: false,
                         };
                     }
-                }
-            }
             let mut results = Vec::new();
             for p in &self.providers {
                 if p.id() == "builtin.system" {
                     results.extend(p.query(&ctx));
                 }
             }
-            if let Some(bridge) = &self.plugin_bridge {
-                if !self.is_stale(generation) {
+            if let Some(bridge) = &self.plugin_bridge
+                && !self.is_stale(generation) {
                     results.extend(bridge.query_global(&ctx));
                 }
-            }
             return FastQueryBatch {
                 items: self.rank_and_cap_for_query(trimmed, results, limit),
                 effective_ctx: ctx,
@@ -251,8 +248,8 @@ impl QueryRouter {
                 };
             }
 
-            if let Some(bridge) = &self.plugin_bridge {
-                if bridge.matches_keyword(&first_lower) {
+            if let Some(bridge) = &self.plugin_bridge
+                && bridge.matches_keyword(&first_lower) {
                     let p_ctx = ctx.clone().with_keyword(&first_lower, rest);
                     let results = bridge.query_keyword(&first_lower, &p_ctx);
                     return FastQueryBatch {
@@ -262,7 +259,6 @@ impl QueryRouter {
                         run_slow_ipc: false,
                     };
                 }
-            }
         }
 
         self.run_filtered_fast(ctx, generation, limit)
@@ -324,13 +320,11 @@ impl QueryRouter {
             combined.extend(p.query(&sub_ctx));
         }
 
-        if ctx.filter == SearchFilter::All && !ctx.trimmed.is_empty() {
-            if let Some(bridge) = &self.plugin_bridge {
-                if !self.is_stale(generation) {
+        if ctx.filter == SearchFilter::All && !ctx.trimmed.is_empty()
+            && let Some(bridge) = &self.plugin_bridge
+                && !self.is_stale(generation) {
                     combined.extend(bridge.query_global(ctx));
                 }
-            }
-        }
 
         let mut ranked = self.rank_and_cap_for_query(&ctx.trimmed, combined, limit);
         if ranked.is_empty() && ctx.filter == SearchFilter::All && !ctx.trimmed.is_empty() {

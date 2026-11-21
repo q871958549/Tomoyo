@@ -214,11 +214,10 @@ impl AppShell {
         unsafe {
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, &mut *app as *mut AppShell as isize);
         }
-        if app.config.read().map(|c| c.is_plugin_enabled(tomoyo_core::PLUGIN_CLIPBOARD)).unwrap_or(true) {
-            if let Some(txt) = read_clipboard_text() {
+        if app.config.read().map(|c| c.is_plugin_enabled(tomoyo_core::PLUGIN_CLIPBOARD)).unwrap_or(true)
+            && let Some(txt) = read_clipboard_text() {
                 app.clipboard.push_text(txt);
             }
-        }
         Ok(app)
     }
 }

@@ -161,8 +161,8 @@ fn preview_xlsx(path: &Path, title: &str, size_str: &str, modified: &str) -> Opt
     let mut f = File::open(path).ok()?;
     let entries = read_zip_central_directory(&mut f)?;
     let mut sheets = Vec::new();
-    if let Some(wb) = entries.iter().find(|e| e.name.eq_ignore_ascii_case("xl/workbook.xml")) {
-        if let Some(xml) = extract_zip_entry_text(&mut f, wb) {
+    if let Some(wb) = entries.iter().find(|e| e.name.eq_ignore_ascii_case("xl/workbook.xml"))
+        && let Some(xml) = extract_zip_entry_text(&mut f, wb) {
             for part in xml.split("<sheet ").skip(1).take(12) {
                 if let Some(i) = part.find("name=\"") {
                     let rest = &part[i + 6..];
@@ -172,21 +172,19 @@ fn preview_xlsx(path: &Path, title: &str, size_str: &str, modified: &str) -> Opt
                 }
             }
         }
-    }
     let mut lines = Vec::new();
     if !sheets.is_empty() {
         lines.push(format!("工作表 ({})：{}", sheets.len(), sheets.join(" / ")));
         lines.push(String::new());
     }
-    if let Some(ss) = entries.iter().find(|e| e.name.eq_ignore_ascii_case("xl/sharedStrings.xml")) {
-        if let Some(xml) = extract_zip_entry_text(&mut f, ss) {
+    if let Some(ss) = entries.iter().find(|e| e.name.eq_ignore_ascii_case("xl/sharedStrings.xml"))
+        && let Some(xml) = extract_zip_entry_text(&mut f, ss) {
             let cells = extract_xml_tag_texts(&xml, "t", 22);
             if !cells.is_empty() {
                 lines.push("文本摘要：".into());
                 for c in cells { lines.push(format!("· {c}")); }
             }
         }
-    }
     Some(ResolvedPreview {
         title: title.to_string(),
         meta_line: format!("XLSX · {} 表 · {size_str} · {modified}", sheets.len().max(1)),
@@ -276,9 +274,8 @@ fn extract_pdf_max_count(s: &str) -> Option<u32> {
     let mut best = None;
     for part in s.split("/Count").skip(1) {
         let num_str: String = part.trim_start().chars().take_while(|c| c.is_ascii_digit()).collect();
-        if let Ok(v) = num_str.parse::<u32>() {
-            if v > 0 && v < 100_000 { best = Some(best.map_or(v, |b: u32| b.max(v))); }
-        }
+        if let Ok(v) = num_str.parse::<u32>()
+            && v > 0 && v < 100_000 { best = Some(best.map_or(v, |b: u32| b.max(v))); }
     }
     best
 }

@@ -80,8 +80,8 @@ impl IconCache {
                         IconJob::Extract(job_ep, path) => {
                             if job_ep == w_epoch.load(Ordering::Acquire) {
                                 let icon = extract_shell_icon(&path);
-                                if job_ep == w_epoch.load(Ordering::Acquire) {
-                                    if res_tx.send((job_ep, path, icon)).is_ok() {
+                                if job_ep == w_epoch.load(Ordering::Acquire)
+                                    && res_tx.send((job_ep, path, icon)).is_ok() {
                                         let raw_hwnd = w_hwnd.load(Ordering::Acquire);
                                         if raw_hwnd != 0 && !w_queued.swap(true, Ordering::AcqRel) {
                                             unsafe {
@@ -94,7 +94,6 @@ impl IconCache {
                                             }
                                         }
                                     }
-                                }
                                 // Stale icons drop deterministically here without hitting `res_rx`.
                             }
                         }

@@ -74,12 +74,11 @@ pub fn import_desensitized_backup_json(raw: &str) -> (String, bool) {
     }
     let root = sync_root_dir();
     for (name, content) in [("snippets.toml", bundle.snippets_toml.as_deref()), ("flows.toml", bundle.flows_toml.as_deref())] {
-        if let Some(txt) = content {
-            if txt.len() <= 262_144 {
+        if let Some(txt) = content
+            && txt.len() <= 262_144 {
                 let _ = std::fs::create_dir_all(&root);
                 let _ = std::fs::write(root.join(name), txt);
             }
-        }
     }
     let note_tail = if notes.is_empty() { String::new() } else { format!("（已自动修正 {} 项）", notes.len()) };
     (

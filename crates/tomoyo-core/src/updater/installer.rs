@@ -51,9 +51,7 @@ pub fn detect_install_kind() -> InstallKind {
         return InstallKind::Setup;
     }
     let dir_low = dir.to_string_lossy().to_ascii_lowercase();
-    if dir_low.contains("\\programs\\tomoyo") {
-        InstallKind::Setup
-    } else if dir_low.contains("\\target\\") {
+    if dir_low.contains("\\programs\\tomoyo") || dir_low.contains("\\target\\") {
         InstallKind::Setup
     } else {
         InstallKind::Portable
@@ -130,15 +128,14 @@ pub fn compute_file_sha256(path: &Path) -> Result<String, String> {
 }
 
 fn choose_download_target(release: &ReleaseInfo) -> Option<(&str, &str)> {
-    if detect_install_kind() == InstallKind::Portable {
-        if let Some(purl) = release.portable_url.as_deref() {
+    if detect_install_kind() == InstallKind::Portable
+        && let Some(purl) = release.portable_url.as_deref() {
             let pname = release
                 .portable_name
                 .as_deref()
                 .unwrap_or("Tomoyo-portable-update.zip");
             return Some((purl, pname));
         }
-    }
     release.download_url.as_deref().map(|u| {
         let n = release
             .asset_name

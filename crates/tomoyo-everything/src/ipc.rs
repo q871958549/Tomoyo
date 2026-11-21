@@ -115,16 +115,13 @@ mod win {
         unsafe {
             if let Ok(hwnd) =
                 FindWindowW(w!("EVERYTHING_TASKBAR_NOTIFICATION_(1.5a)"), PCWSTR::null())
-            {
-                if !hwnd.is_invalid() {
+                && !hwnd.is_invalid() {
                     return Some((hwnd, EverythingVersion::V15Alpha));
                 }
-            }
-            if let Ok(hwnd) = FindWindowW(w!("EVERYTHING_TASKBAR_NOTIFICATION"), PCWSTR::null()) {
-                if !hwnd.is_invalid() {
+            if let Ok(hwnd) = FindWindowW(w!("EVERYTHING_TASKBAR_NOTIFICATION"), PCWSTR::null())
+                && !hwnd.is_invalid() {
                     return Some((hwnd, EverythingVersion::V14));
                 }
-            }
             None
         }
     }
@@ -216,7 +213,7 @@ mod win {
                 return Err(EverythingError::Timeout(opts.timeout_ms));
             }
             slot.result
-                .unwrap_or_else(|| Err(EverythingError::Timeout(opts.timeout_ms)))
+                .unwrap_or(Err(EverythingError::Timeout(opts.timeout_ms)))
         })
     }
 }

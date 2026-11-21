@@ -66,14 +66,13 @@ pub fn cmd_import_utools(args: &[String]) -> i32 {
                     }
                 }
             }
-            if keywords.is_empty() {
-                if let Some(code) = feat.get("code").and_then(|v| v.as_str()) {
+            if keywords.is_empty()
+                && let Some(code) = feat.get("code").and_then(|v| v.as_str()) {
                     let clean = code.trim().to_string();
                     if !clean.is_empty() && !keywords.contains(&clean) {
                         keywords.push(clean);
                     }
                 }
-            }
         }
     }
 

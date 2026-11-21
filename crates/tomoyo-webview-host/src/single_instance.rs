@@ -79,12 +79,11 @@ fn activate_existing_with_retry(window_class: PCWSTR, activate_msg: u32) {
     // Wait briefly in case the first process acquired the mutex moments before CreateWindowExW.
     for attempt in 0..8 {
         unsafe {
-            if let Ok(hwnd) = FindWindowW(window_class, PCWSTR::null()) {
-                if !hwnd.is_invalid() {
+            if let Ok(hwnd) = FindWindowW(window_class, PCWSTR::null())
+                && !hwnd.is_invalid() {
                     activate_window_with_msg(hwnd, activate_msg);
                     return;
                 }
-            }
         }
         if attempt < 7 {
             std::thread::sleep(std::time::Duration::from_millis(35));

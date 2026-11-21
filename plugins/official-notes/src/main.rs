@@ -101,14 +101,13 @@ fn extract_title(body: &str, file_name: &str) -> String {
 fn extract_tags(body: &str) -> Vec<String> {
     let mut tags = Vec::new();
     for tok in body.split_whitespace() {
-        if let Some(rest) = tok.strip_prefix('#') {
-            if !rest.is_empty() && !rest.starts_with('#') && rest.len() <= 24 {
+        if let Some(rest) = tok.strip_prefix('#')
+            && !rest.is_empty() && !rest.starts_with('#') && rest.len() <= 24 {
                 let clean = rest.trim_matches(|c: char| matches!(c, ',' | '.' | ';' | '，' | '。'));
                 if !clean.is_empty() && !tags.iter().any(|x: &String| x.eq_ignore_ascii_case(clean)) {
                     tags.push(format!("#{clean}"));
                 }
             }
-        }
     }
     tags
 }
@@ -258,8 +257,8 @@ impl TomoyoPlugin for NotesPlugin {
         }
 
         // 2. One-key save latest clipboard text as Markdown note (`note clip`)
-        if args.eq_ignore_ascii_case("clip") {
-            if let Some(clip) = ctx.clipboard.as_ref().filter(|c| !c.text.trim().is_empty()) {
+        if args.eq_ignore_ascii_case("clip")
+            && let Some(clip) = ctx.clipboard.as_ref().filter(|c| !c.text.trim().is_empty()) {
                 let title: String = clip.text.lines().next().unwrap_or("剪贴板笔记").trim().chars().take(32).collect();
                 let body = if !def_tag.is_empty() && !clip.text.contains(&def_tag) {
                     format!("{}\n\n{def_tag}", clip.text)
@@ -290,7 +289,6 @@ impl TomoyoPlugin for NotesPlugin {
                 });
                 return out;
             }
-        }
 
         // 3. Full-text / title / #tag search across local Markdown notes
         let docs = load_notes_from(&dir);

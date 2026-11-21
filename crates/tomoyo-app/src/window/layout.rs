@@ -380,11 +380,10 @@ impl AppShell {
             }
         }
         if self.active_filter != SearchFilter::All {
-            if let SearchFilter::Custom(idx) = self.active_filter {
-                if let Some(lbl) = self.config.read().ok().and_then(|c| c.custom_filters.get(idx as usize).map(|t| t.label.clone())) {
+            if let SearchFilter::Custom(idx) = self.active_filter
+                && let Some(lbl) = self.config.read().ok().and_then(|c| c.custom_filters.get(idx as usize).map(|t| t.label.clone())) {
                     return Some(lbl);
                 }
-            }
             return Some(self.active_filter.label(l == Lang::Zh).into());
         }
         None

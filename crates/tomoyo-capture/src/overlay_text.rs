@@ -203,16 +203,14 @@ pub fn paint_overlay_gdi_labels(
             let mut w: Vec<u16> = format!("{} × {}", s.w, s.h).encode_utf16().collect();
             DrawTextW(mem_dc, &mut w, &mut rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         }
-        if let Some(cmd) = hovered_cmd {
-            if let Some(btn) = layout.hits.iter().find(|b| b.cmd == cmd) {
-                if let Some(tr) = tooltip_rect_for(btn, snap.width, snap.height) {
+        if let Some(cmd) = hovered_cmd
+            && let Some(btn) = layout.hits.iter().find(|b| b.cmd == cmd)
+                && let Some(tr) = tooltip_rect_for(btn, snap.width, snap.height) {
                     let mut rc = RECT { left: tr.x, top: tr.y, right: tr.right(), bottom: tr.bottom() };
                     SetTextColor(mem_dc, COLORREF(0x00F8_FAFC));
                     let mut w: Vec<u16> = btn.tooltip.encode_utf16().collect();
                     DrawTextW(mem_dc, &mut w, &mut rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
                 }
-            }
-        }
         if let Some(txt) = wheel_hud {
             let r = wheel_hud_rect(cursor, snap.width, snap.height);
             let mut rc = RECT { left: r.x, top: r.y, right: r.right(), bottom: r.bottom() };

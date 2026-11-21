@@ -104,8 +104,8 @@ impl ClipboardStore {
             source_app: src.clone(),
         });
 
-        if let Some(db_lock) = &self.db {
-            if let Ok(conn) = db_lock.lock() {
+        if let Some(db_lock) = &self.db
+            && let Ok(conn) = db_lock.lock() {
                 let _ = conn.execute(
                     "INSERT INTO clipboard_history (text, captured_at, pinned, kind, subtype, source_app)
                      VALUES (?1, ?2, 0, 'text', ?3, ?4)
@@ -117,7 +117,6 @@ impl ClipboardStore {
                 );
                 prune_sqlite_locked(&conn, self.max_persisted);
             }
-        }
     }
 
     pub fn push_image(&self, path: String, width: u32, height: u32, digest_key: String) {
@@ -148,8 +147,8 @@ impl ClipboardStore {
             source_app: src.clone(),
         });
 
-        if let Some(db_lock) = &self.db {
-            if let Ok(conn) = db_lock.lock() {
+        if let Some(db_lock) = &self.db
+            && let Ok(conn) = db_lock.lock() {
                 let _ = conn.execute(
                     "INSERT INTO clipboard_history (text, captured_at, pinned, kind, subtype, image_path, img_w, img_h, source_app)
                      VALUES (?1, ?2, 0, 'image', 'image', ?3, ?4, ?5, ?6)
@@ -161,7 +160,6 @@ impl ClipboardStore {
                 );
                 prune_sqlite_locked(&conn, self.max_persisted);
             }
-        }
     }
 
     pub fn push_files_with_source(&self, mut paths: Vec<String>, source_app: &str) {
@@ -187,8 +185,8 @@ impl ClipboardStore {
             source_app: src.clone(),
         });
 
-        if let Some(db_lock) = &self.db {
-            if let Ok(conn) = db_lock.lock() {
+        if let Some(db_lock) = &self.db
+            && let Ok(conn) = db_lock.lock() {
                 let _ = conn.execute(
                     "INSERT INTO clipboard_history (text, captured_at, pinned, kind, subtype, file_paths, source_app)
                      VALUES (?1, ?2, 0, 'files', 'files', ?3, ?4)
@@ -197,20 +195,18 @@ impl ClipboardStore {
                 );
                 prune_sqlite_locked(&conn, self.max_persisted);
             }
-        }
     }
 
     pub fn toggle_pin(&self, id_key: &str) -> bool {
         let mut new_pinned = false;
-        if let Ok(mut guard) = self.history.write() {
-            if let Some(item) = guard.iter_mut().find(|e| e.key == id_key) {
+        if let Ok(mut guard) = self.history.write()
+            && let Some(item) = guard.iter_mut().find(|e| e.key == id_key) {
                 item.pinned = !item.pinned;
                 new_pinned = item.pinned;
             }
-        }
-        if let Some(db_lock) = &self.db {
-            if let Ok(conn) = db_lock.lock() {
-                if let Ok(cur) = conn.query_row(
+        if let Some(db_lock) = &self.db
+            && let Ok(conn) = db_lock.lock()
+                && let Ok(cur) = conn.query_row(
                     "SELECT pinned FROM clipboard_history WHERE text = ?1",
                     params![id_key],
                     |r| r.get::<_, i64>(0),
@@ -222,25 +218,21 @@ impl ClipboardStore {
                         params![target, id_key],
                     );
                 }
-            }
-        }
         new_pinned
     }
 
     pub fn delete_item(&self, id_key: &str) -> bool {
         let mut deleted = false;
-        if let Ok(mut guard) = self.history.write() {
-            if let Some(pos) = guard.iter().position(|e| e.key == id_key) {
-                if let Some(removed) = guard.remove(pos) {
+        if let Ok(mut guard) = self.history.write()
+            && let Some(pos) = guard.iter().position(|e| e.key == id_key)
+                && let Some(removed) = guard.remove(pos) {
                     deleted = true;
                     if let ClipboardPayload::Image { path, .. } = removed.payload {
                         let _ = std::fs::remove_file(path);
                     }
                 }
-            }
-        }
-        if let Some(db_lock) = &self.db {
-            if let Ok(conn) = db_lock.lock() {
+        if let Some(db_lock) = &self.db
+            && let Ok(conn) = db_lock.lock() {
                 if let Ok(Some(img_path)) = conn.query_row(
                     "SELECT image_path FROM clipboard_history WHERE text = ?1 AND kind = 'image'",
                     params![id_key],
@@ -252,7 +244,6 @@ impl ClipboardStore {
                     deleted = deleted || n > 0;
                 }
             }
-        }
         deleted
     }
 
@@ -264,13 +255,12 @@ impl ClipboardStore {
         let Ok(conn) = db_lock.lock() else { return 0 };
         if let Ok(mut stmt) = conn.prepare(
             "SELECT image_path FROM clipboard_history WHERE pinned = 0 AND kind = 'image' AND image_path IS NOT NULL",
-        ) {
-            if let Ok(rows) = stmt.query_map([], |r| r.get::<_, Option<String>>(0)) {
+        )
+            && let Ok(rows) = stmt.query_map([], |r| r.get::<_, Option<String>>(0)) {
                 for path in rows.flatten().flatten() {
                     let _ = std::fs::remove_file(path);
                 }
             }
-        }
         conn.execute("DELETE FROM clipboard_history WHERE pinned = 0", []).unwrap_or(0)
     }
 
@@ -316,17 +306,14 @@ impl ClipboardStore {
     }
 
     pub fn list_tags(&self) -> Vec<(String, usize)> {
-        if let Some(db_lock) = &self.db {
-            if let Ok(conn) = db_lock.lock() {
-                if let Ok(mut stmt) = conn.prepare(
+        if let Some(db_lock) = &self.db
+            && let Ok(conn) = db_lock.lock()
+                && let Ok(mut stmt) = conn.prepare(
                     "SELECT tag, COUNT(*) FROM clipboard_history WHERE tag != '' GROUP BY tag ORDER BY COUNT(*) DESC, tag ASC LIMIT 32",
-                ) {
-                    if let Ok(rows) = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)? as usize))) {
+                )
+                    && let Ok(rows) = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)? as usize))) {
                         return rows.flatten().collect();
                     }
-                }
-            }
-        }
         let mut map: HashMap<String, usize> = HashMap::new();
         if let Ok(g) = self.history.read() {
             for e in g.iter().filter(|e| !e.tag.is_empty()) {
@@ -382,25 +369,21 @@ impl ClipboardStore {
     }
 
     pub fn item_count(&self) -> usize {
-        if let Some(db_lock) = &self.db {
-            if let Ok(conn) = db_lock.lock() {
-                if let Ok(n) = conn.query_row("SELECT COUNT(*) FROM clipboard_history", [], |r| r.get::<_, i64>(0)) {
+        if let Some(db_lock) = &self.db
+            && let Ok(conn) = db_lock.lock()
+                && let Ok(n) = conn.query_row("SELECT COUNT(*) FROM clipboard_history", [], |r| r.get::<_, i64>(0)) {
                     return n.max(0) as usize;
                 }
-            }
-        }
         self.history.read().map(|g| g.len()).unwrap_or(0)
     }
 
     pub fn query_filtered(&self, q: &ParsedClipQuery, cap: usize) -> Vec<ClipboardEntry> {
         let cap = cap.clamp(1, 500);
-        if let Some(db_lock) = &self.db {
-            if let Ok(conn) = db_lock.lock() {
-                if let Some(db_items) = query_sqlite_filtered(&conn, q, cap) {
+        if let Some(db_lock) = &self.db
+            && let Ok(conn) = db_lock.lock()
+                && let Some(db_items) = query_sqlite_filtered(&conn, q, cap) {
                     return db_items;
                 }
-            }
-        }
         let Ok(guard) = self.history.read() else { return Vec::new() };
         let mut v: Vec<ClipboardEntry> = guard.iter().filter(|e| entry_matches_query(e, q)).cloned().collect();
         v.sort_by(|a, b| b.pinned.cmp(&a.pinned).then_with(|| b.captured_at_unix.cmp(&a.captured_at_unix)));
@@ -412,19 +395,17 @@ impl ClipboardStore {
         if let Ok(mut guard) = self.history.write() {
             guard.shrink_to_fit();
         }
-        if let Some(db_lock) = &self.db {
-            if let Ok(conn) = db_lock.lock() {
+        if let Some(db_lock) = &self.db
+            && let Ok(conn) = db_lock.lock() {
                 let _ = conn.execute_batch("PRAGMA shrink_memory;");
             }
-        }
     }
 
     pub fn shutdown_checkpoint(&self) {
-        if let Some(db_lock) = &self.db {
-            if let Ok(conn) = db_lock.lock() {
+        if let Some(db_lock) = &self.db
+            && let Ok(conn) = db_lock.lock() {
                 let _ = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
             }
-        }
     }
 
     fn insert_ram_entry(&self, mut entry: ClipboardEntry) {

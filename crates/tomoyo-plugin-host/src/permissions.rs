@@ -6,14 +6,13 @@ use tomoyo_protocol::{Permission, PluginManifest};
 
 pub(crate) fn is_bundled_plugin_dir(dir: &Path) -> bool {
     let dir_str = dir.to_string_lossy().to_ascii_lowercase();
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(parent) = exe.parent() {
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(parent) = exe.parent() {
             let bundled = parent.join("plugins").to_string_lossy().to_ascii_lowercase();
             if dir_str.starts_with(&bundled) {
                 return true;
             }
         }
-    }
     if let Ok(cwd) = std::env::current_dir() {
         let local_plugins = cwd.join("plugins").to_string_lossy().to_ascii_lowercase();
         if dir_str.starts_with(&local_plugins) {

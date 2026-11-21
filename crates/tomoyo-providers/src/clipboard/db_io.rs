@@ -114,13 +114,12 @@ pub(super) fn load_recent_rows(
     if let Ok(mut stmt) = conn.prepare(
         "SELECT text, captured_at, pinned, kind, image_path, img_w, img_h, subtype, tag, note, source_app, file_paths
          FROM clipboard_history ORDER BY pinned DESC, captured_at DESC LIMIT ?1",
-    ) {
-        if let Ok(rows) = stmt.query_map(params![limit as i64], parse_db_row) {
+    )
+        && let Ok(rows) = stmt.query_map(params![limit as i64], parse_db_row) {
             for entry in rows.flatten().filter_map(row_to_entry) {
                 out.push_back(entry);
             }
         }
-    }
 }
 
 pub(super) fn row_to_entry(r: RawDbRow) -> Option<ClipboardEntry> {
@@ -225,8 +224,8 @@ pub(super) fn prune_sqlite_locked(conn: &Connection, max_persisted: usize) {
              SELECT id FROM clipboard_history WHERE kind = 'image'
              ORDER BY pinned DESC, captured_at DESC LIMIT ?1
          )",
-    ) {
-        if let Ok(rows) = stmt.query_map(params![MAX_DISK_IMAGES as i64], |r| {
+    )
+        && let Ok(rows) = stmt.query_map(params![MAX_DISK_IMAGES as i64], |r| {
             Ok((r.get::<_, i64>(0)?, r.get::<_, Option<String>>(1)?))
         }) {
             for (id, path_opt) in rows.flatten() {
@@ -236,7 +235,6 @@ pub(super) fn prune_sqlite_locked(conn: &Connection, max_persisted: usize) {
                 let _ = conn.execute("DELETE FROM clipboard_history WHERE id = ?1", params![id]);
             }
         }
-    }
     let _ = conn.execute(
         "DELETE FROM clipboard_history WHERE pinned = 0 AND kind != 'image' AND id NOT IN (
             SELECT id FROM clipboard_history ORDER BY pinned DESC, captured_at DESC LIMIT ?1
@@ -303,11 +301,10 @@ pub(super) fn entry_matches_query(e: &ClipboardEntry, q: &ParsedClipQuery) -> bo
             return false;
         }
     }
-    if let Some(tag) = &q.tag {
-        if !e.tag.to_lowercase().contains(tag.as_str()) {
+    if let Some(tag) = &q.tag
+        && !e.tag.to_lowercase().contains(tag.as_str()) {
             return false;
         }
-    }
     if q.tokens.is_empty() {
         return true;
     }

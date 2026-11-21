@@ -153,12 +153,11 @@ impl OverlayState {
             }
             ToolbarCmd::Color(i) => {
                 self.color_idx = i.min(COLOR_PRESETS.len() - 1);
-                if let Some(sel_i) = self.stack.selected {
-                    if sel_i < self.stack.items().len() {
+                if let Some(sel_i) = self.stack.selected
+                    && sel_i < self.stack.items().len() {
                         self.stack.save_undo_snapshot();
                         self.stack.items_mut()[sel_i].set_color(COLOR_PRESETS[self.color_idx]);
                     }
-                }
             }
             ToolbarCmd::Thickness(t) => {
                 self.thickness = t.clamp(1, 20);
@@ -190,11 +189,10 @@ impl OverlayState {
             }
             ToolbarCmd::MosaicBlur(b) => {
                 self.mosaic_blur = b;
-                if let Some(sel_i) = self.stack.selected.filter(|&i| i < self.stack.items().len()) {
-                    if let Annotation::Mosaic { blur, .. } = &mut self.stack.items_mut()[sel_i] {
+                if let Some(sel_i) = self.stack.selected.filter(|&i| i < self.stack.items().len())
+                    && let Annotation::Mosaic { blur, .. } = &mut self.stack.items_mut()[sel_i] {
                         *blur = b;
                     }
-                }
             }
             ToolbarCmd::Undo => { self.stack.undo(); }
             ToolbarCmd::ScrollLong => {

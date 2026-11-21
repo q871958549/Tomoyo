@@ -15,7 +15,7 @@ pub enum HostMessage {
     OpenPath { path: String },
     DbPut { id: String, doc: Value },
     DbRemove { id: String },
-    SaveSettings { config: tomoyo_core::TomoyoConfig, autostart: bool },
+    SaveSettings { config: Box<tomoyo_core::TomoyoConfig>, autostart: bool },
     SaveFlows { flows: Vec<tomoyo_core::WorkflowDef> },
     PickFolder,
     PickCaptureDir,
@@ -25,7 +25,7 @@ pub enum HostMessage {
     SyncTheme { theme: String },
     TogglePinTopmost,
     CheckUpdates { repo: String },
-    InstallUpdate { release: tomoyo_core::ReleaseInfo },
+    InstallUpdate { release: Box<tomoyo_core::ReleaseInfo> },
     FetchStore { sources: Vec<String> },
     InstallPlugin { plugin_id: String, source: String, sha256: String },
     UninstallPlugin { plugin_id: String },
@@ -119,7 +119,7 @@ pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isi
         }
         HostMessage::SaveFlows { flows } => {
             let (reply, ok) = crate::backup::save_flows_reply(&flows);
-            if ok { if let Some(t) = notify_hwnd { notify_parent_reload(t, true); } }
+            if ok && let Some(t) = notify_hwnd { notify_parent_reload(t, true); }
             HostAction { reply_json: Some(reply), ..Default::default() }
         }
         HostMessage::PickFolder => HostAction { pick_folder_mode: 1, ..Default::default() },
@@ -127,7 +127,7 @@ pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isi
         HostMessage::PickSyncDir => HostAction { pick_folder_mode: 3, ..Default::default() },
         HostMessage::ClearSyncDir => {
             let (reply, ok) = crate::backup::clear_sync_dir_reply();
-            if ok { if let Some(t) = notify_hwnd { notify_parent_reload(t, true); } }
+            if ok && let Some(t) = notify_hwnd { notify_parent_reload(t, true); }
             HostAction { reply_json: Some(reply), ..Default::default() }
         }
         HostMessage::StartCapture { mode } => {
@@ -148,7 +148,7 @@ pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isi
             }
         }
         HostMessage::InstallUpdate { release } => HostAction {
-            async_install_update: Some(release),
+            async_install_update: Some(*release),
             ..Default::default()
         },
         HostMessage::FetchStore { sources } => HostAction {
@@ -161,11 +161,10 @@ pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isi
             sha256,
         } => {
             let res = install_plugin_from_source(&plugin_id, &source, &sha256);
-            if res.is_ok() {
-                if let Some(target) = notify_hwnd {
+            if res.is_ok()
+                && let Some(target) = notify_hwnd {
                     notify_parent_reload(target, true);
                 }
-            }
             let evt = match res {
                 Ok(dest) => serde_json::json!({
                     "event": "store_action_result",
@@ -189,11 +188,10 @@ pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isi
         }
         HostMessage::UninstallPlugin { plugin_id } => {
             let res = uninstall_user_plugin(&plugin_id);
-            if res.is_ok() {
-                if let Some(target) = notify_hwnd {
+            if res.is_ok()
+                && let Some(target) = notify_hwnd {
                     notify_parent_reload(target, true);
                 }
-            }
             let evt = match res {
                 Ok(()) => serde_json::json!({
                     "event": "store_action_result",
@@ -328,22 +326,22 @@ pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isi
         },
         HostMessage::ClipTogglePin { id_key } => {
             let (reply, mutated) = crate::clip_view::handle_clip_toggle_pin(&id_key);
-            if mutated { if let Some(t) = notify_hwnd { notify_parent_mode(t, 2); } }
+            if mutated && let Some(t) = notify_hwnd { notify_parent_mode(t, 2); }
             HostAction { reply_json: Some(reply), ..Default::default() }
         }
         HostMessage::ClipUpdate { id_key, text, tag, note } => {
             let (reply, mutated) = crate::clip_view::handle_clip_update(&id_key, text, &tag, &note);
-            if mutated { if let Some(t) = notify_hwnd { notify_parent_mode(t, 2); } }
+            if mutated && let Some(t) = notify_hwnd { notify_parent_mode(t, 2); }
             HostAction { reply_json: Some(reply), ..Default::default() }
         }
         HostMessage::ClipDelete { id_key } => {
             let (reply, mutated) = crate::clip_view::handle_clip_delete(&id_key);
-            if mutated { if let Some(t) = notify_hwnd { notify_parent_mode(t, 2); } }
+            if mutated && let Some(t) = notify_hwnd { notify_parent_mode(t, 2); }
             HostAction { reply_json: Some(reply), ..Default::default() }
         }
         HostMessage::ClipClearUnpinned => {
             let (reply, mutated) = crate::clip_view::handle_clip_clear_unpinned();
-            if mutated { if let Some(t) = notify_hwnd { notify_parent_mode(t, 2); } }
+            if mutated && let Some(t) = notify_hwnd { notify_parent_mode(t, 2); }
             HostAction { reply_json: Some(reply), ..Default::default() }
         }
         HostMessage::ClipExport => HostAction {
@@ -352,7 +350,7 @@ pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isi
         },
         HostMessage::ClipImport { json } => {
             let (reply, mutated) = crate::clip_view::handle_clip_import(&json);
-            if mutated { if let Some(t) = notify_hwnd { notify_parent_mode(t, 2); } }
+            if mutated && let Some(t) = notify_hwnd { notify_parent_mode(t, 2); }
             HostAction { reply_json: Some(reply), ..Default::default() }
         }
         HostMessage::OpenTranslator { text, target_lang } => {
@@ -388,9 +386,8 @@ pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isi
         },
         HostMessage::ImportConfigBackup { json } => {
             let (reply, ok) = crate::backup::import_desensitized_backup_json(&json);
-            if ok {
-                if let Some(t) = notify_hwnd { notify_parent_reload(t, true); }
-            }
+            if ok
+                && let Some(t) = notify_hwnd { notify_parent_reload(t, true); }
             HostAction { reply_json: Some(reply), async_refresh_hotkey_health: ok && notify_hwnd.is_some(), ..Default::default() }
         }
         HostMessage::Close => HostAction { should_close: true, ..Default::default() },

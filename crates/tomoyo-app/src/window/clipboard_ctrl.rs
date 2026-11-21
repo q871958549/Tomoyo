@@ -83,11 +83,10 @@ impl AppShell {
             self.clipboard.push_text_with_source(txt, &src_app);
         } else if self.inter.suppress_next_clip_img {
             self.inter.suppress_next_clip_img = false;
-        } else if capture_images {
-            if let Some((path, w, h, digest)) = read_clipboard_image_png() {
+        } else if capture_images
+            && let Some((path, w, h, digest)) = read_clipboard_image_png() {
                 self.clipboard.push_image_with_source(path, w, h, digest, &src_app);
             }
-        }
     }
 
     pub(super) fn trigger_selected_clipboard_shortcut(&mut self, action_id: &str) -> bool {

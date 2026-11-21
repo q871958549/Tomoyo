@@ -191,11 +191,10 @@ pub fn parse_list2_buffer(buf: &[u8]) -> Result<EverythingResponse, EverythingEr
                 .unwrap_or(&full_path)
                 .to_string();
         }
-        if path.is_empty() {
-            if let Some((parent, _)) = full_path.rsplit_once('\\') {
+        if path.is_empty()
+            && let Some((parent, _)) = full_path.rsplit_once('\\') {
                 path = parent.to_string();
             }
-        }
 
         let is_drive = (flags & EVERYTHING_IPC_DRIVE) != 0;
         let is_folder = (flags & EVERYTHING_IPC_FOLDER) != 0 || is_drive;

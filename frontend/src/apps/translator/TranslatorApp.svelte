@@ -16,9 +16,9 @@
   import type { ContextMenuItem, SelectOption } from '../../lib/types';
   import Button from '../../lib/ui/Button.svelte';
   import ContextMenu from '../../lib/ui/ContextMenu.svelte';
-  import Input from '../../lib/ui/Input.svelte';
   import Select from '../../lib/ui/Select.svelte';
   import Switch from '../../lib/ui/Switch.svelte';
+  import TranslatorDrawer, { type HistItem, type WordItem } from './TranslatorDrawer.svelte';
 
   interface EngineResult {
     engine_name: string;
@@ -36,8 +36,6 @@
     trace_id?: string;
     results: EngineResult[];
   }
-  interface WordItem { word: string; translation: string; phonetic?: string; note?: string; }
-  interface HistItem { source: string; translated: string; engine: string; target_lang: string; }
 
   const boot = (window.__TOMOYO_TR_INIT__ ?? {}) as {
     theme?: string; text?: string; target_lang?: string;
@@ -72,26 +70,12 @@
   let history = $state<HistItem[]>(Array.isArray(boot.history) ? boot.history : []);
   let wordbook = $state<WordItem[]>(Array.isArray(boot.wordbook) ? boot.wordbook : []);
   let drawer = $state<'wordbook' | 'history' | null>(null);
-  let drawerQuery = $state('');
   let pinnedTop = $state(false);
   let clearArmed = $state(false);
   let toast = $state('已就绪 · 多源并行翻译');
   let ctxMenu = $state({ open: false, x: 0, y: 0 });
   let srcEl: HTMLTextAreaElement | undefined = $state();
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-
-  let filteredWords = $derived(
-    wordbook.filter((w) => {
-      const q = drawerQuery.trim().toLowerCase();
-      return !q || w.word.toLowerCase().includes(q) || w.translation.toLowerCase().includes(q);
-    })
-  );
-  let filteredHist = $derived(
-    history.filter((h) => {
-      const q = drawerQuery.trim().toLowerCase();
-      return !q || h.source.toLowerCase().includes(q) || h.translated.toLowerCase().includes(q);
-    })
-  );
 
   function isSaved(word: string): boolean {
     const low = word.trim().toLowerCase();
@@ -353,48 +337,15 @@
     </section>
 
     {#if drawer}
-      <aside class="drawer">
-        <div class="drawer-head">
-          <strong>{drawer === 'wordbook' ? `生词本 (${wordbook.length})` : `历史 (${history.length})`}</strong>
-          <div class="src-acts">
-            {#if drawer === 'history' && history.length > 0}
-              <Button variant="danger" size="sm" onclick={clearHistory}>{clearArmed ? '确认清空' : '清空'}</Button>
-            {/if}
-            <Button variant="icon" size="sm" onclick={() => (drawer = null)}><X size={14} /></Button>
-          </div>
-        </div>
-        <div class="drawer-q">
-          <Input type="search" size="sm" bind:value={drawerQuery} placeholder="筛选词条…" />
-        </div>
-        <div class="drawer-list">
-          {#if drawer === 'wordbook'}
-            {#each filteredWords as w}
-              <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-              <div class="d-card" onclick={() => loadEntry(w.word, 'auto')}>
-                <div class="d-src">{w.word} {#if w.phonetic}<span class="phonetic">{w.phonetic}</span>{/if}</div>
-                <div class="d-tr">{w.translation}</div>
-                <div class="d-foot">
-                  <span>{w.note || '生词'}</span>
-                  <Button variant="danger" size="sm" onclick={(e) => { e.stopPropagation(); postHost({ cmd: 'tr_delete_word', word: w.word }); }}>移除</Button>
-                </div>
-              </div>
-            {:else}
-              <div class="empty-tip">暂无收藏生词</div>
-            {/each}
-          {:else}
-            {#each filteredHist as h}
-              <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-              <div class="d-card" onclick={() => loadEntry(h.source, h.target_lang || 'auto')}>
-                <div class="d-src">{h.source}</div>
-                <div class="d-tr">{h.translated}</div>
-                <div class="d-foot"><span>{h.engine} · → {h.target_lang}</span></div>
-              </div>
-            {:else}
-              <div class="empty-tip">暂无翻译历史</div>
-            {/each}
-          {/if}
-        </div>
-      </aside>
+      <TranslatorDrawer
+        mode={drawer}
+        {wordbook}
+        {history}
+        {clearArmed}
+        onClearHistory={clearHistory}
+        onLoadEntry={loadEntry}
+        onClose={() => (drawer = null)}
+      />
     {/if}
   </div>
 
@@ -447,22 +398,6 @@
     border: 1px solid var(--border); font-size: 12px; line-height: 1.6; color: var(--text-secondary);
   }
   .phonetic { color: var(--accent); font-weight: 500; font-family: "Cascadia Mono", Consolas, monospace; font-size: 12px; }
-  .drawer {
-    width: 276px; flex-shrink: 0; border-left: 1px solid var(--border); background: var(--sidebar);
-    display: flex; flex-direction: column; min-height: 0;
-  }
-  .drawer-head { padding: 10px 12px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; font-size: 13px; }
-  .drawer-q { padding: 8px 10px; border-bottom: 1px solid var(--border); }
-  .drawer-list { flex: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
-  .d-card {
-    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
-    padding: 8px 10px; cursor: pointer; transition: border-color 0.12s ease;
-  }
-  .d-card:hover { border-color: var(--accent); }
-  .d-src { font-weight: 500; font-size: 12.5px; word-break: break-word; }
-  .d-tr { font-size: 12px; color: var(--muted); margin-top: 3px; word-break: break-word; }
-  .d-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 5px; font-size: 11px; color: var(--muted); }
-  .empty-tip { text-align: center; padding: 28px 10px; font-size: 12px; color: var(--muted); }
   .tr-foot {
     height: 34px; padding: 0 14px; border-top: 1px solid var(--border); background: var(--surface);
     display: flex; align-items: center; justify-content: space-between; font-size: 11.5px; color: var(--muted);

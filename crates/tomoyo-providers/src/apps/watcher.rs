@@ -67,11 +67,10 @@ mod win_impl {
                             .encode_utf16()
                             .chain(std::iter::once(0))
                             .collect();
-                        if let Ok(h) = unsafe { FindFirstChangeNotificationW(PCWSTR(wide.as_ptr()), true, flags) } {
-                            if !h.is_invalid() {
+                        if let Ok(h) = unsafe { FindFirstChangeNotificationW(PCWSTR(wide.as_ptr()), true, flags) }
+                            && !h.is_invalid() {
                                 guards.push(ChangeHandle(h));
                             }
-                        }
                     }
                     if guards.is_empty() {
                         return;

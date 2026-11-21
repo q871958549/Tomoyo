@@ -167,7 +167,8 @@ impl PluginHost {
         if ensure_live(plug, perms, interactive)? {
             cvar.notify_one();
         }
-        let res = match plug.live.as_mut() {
+        
+        match plug.live.as_mut() {
             Some(LiveRuntime::Stdio(proc)) => {
                 let params = serde_json::to_value(&req)?;
                 match proc.call(METHOD_EXECUTE, params, timeout) {
@@ -185,8 +186,7 @@ impl PluginHost {
                 ProcessError::Spawn(e.to_string())
             }),
             None => Ok(ExecuteResponse::default()),
-        };
-        res
+        }
     }
 
     pub fn reap_plugins(&self, force_all: bool) -> usize {
@@ -201,8 +201,8 @@ impl PluginHost {
                 .as_ref()
                 .map(|l| force_all || now.duration_since(l.last_used()) >= idle_ttl)
                 .unwrap_or(false);
-            if should_reap {
-                if let Some(mut live) = plug.live.take() {
+            if should_reap
+                && let Some(mut live) = plug.live.take() {
                     tracing::info!(
                         "Reaping idle [{}] plugin `{}` (pid={:?})",
                         plug.manifest.runtime.kind_badge(),
@@ -212,7 +212,6 @@ impl PluginHost {
                     live.shutdown();
                     reaped += 1;
                 }
-            }
         }
         reaped
     }
@@ -344,8 +343,8 @@ impl PluginHost {
                             .as_ref()
                             .map(|l| now.duration_since(l.last_used()) >= ttl)
                             .unwrap_or(false);
-                        if expired {
-                            if let Some(mut live) = plug.live.take() {
+                        if expired
+                            && let Some(mut live) = plug.live.take() {
                                 tracing::info!(
                                     "Idle reaper stopping [{}] plugin `{}`",
                                     plug.manifest.runtime.kind_badge(),
@@ -353,7 +352,6 @@ impl PluginHost {
                                 );
                                 live.shutdown();
                             }
-                        }
                     }
                 }
             });

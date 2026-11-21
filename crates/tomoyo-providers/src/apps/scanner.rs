@@ -214,7 +214,7 @@ fn scan_dir_recursive(
             ext.to_ascii_lowercase().as_str(),
             "bat" | "cmd" | "ps1" | "msc" | "url"
         );
-        if !is_lnk && !is_appref && !(cfg.allow_exe && is_exe) && !(cfg.allow_scripts && is_script) {
+        if !(is_lnk || is_appref || (cfg.allow_exe && is_exe) || (cfg.allow_scripts && is_script)) {
             continue;
         }
 

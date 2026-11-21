@@ -41,11 +41,10 @@ impl PluginDb {
     }
 
     pub fn put(&mut self, id: String, doc: Value) {
-        if self.docs.len() >= MAX_DOCS_PER_PLUGIN && !self.docs.contains_key(&id) {
-            if let Some(first_key) = self.docs.keys().next().cloned() {
+        if self.docs.len() >= MAX_DOCS_PER_PLUGIN && !self.docs.contains_key(&id)
+            && let Some(first_key) = self.docs.keys().next().cloned() {
                 self.docs.remove(&first_key);
             }
-        }
         self.docs.insert(id, doc);
         self.save();
     }
@@ -65,11 +64,10 @@ impl PluginDb {
             let _ = std::fs::create_dir_all(parent);
         }
         let tmp = self.path.with_extension("json.tmp");
-        if let Ok(json) = serde_json::to_string(&self.docs) {
-            if std::fs::write(&tmp, json).is_ok() {
+        if let Ok(json) = serde_json::to_string(&self.docs)
+            && std::fs::write(&tmp, json).is_ok() {
                 let _ = std::fs::rename(&tmp, &self.path);
             }
-        }
     }
 }
 
