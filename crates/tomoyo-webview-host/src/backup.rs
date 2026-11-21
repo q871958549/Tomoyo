@@ -1,7 +1,7 @@
 //! Desensitized single-file config backup & validated restore (strips machine-bound DPAPI secrets).
 
 use serde::{Deserialize, Serialize};
-use tomoyo_core::{data_dir, TomoyoConfig, CURRENT_VERSION};
+use tomoyo_core::{sync_root_dir, TomoyoConfig, WorkflowDef, CURRENT_VERSION};
 
 #[derive(Debug, Serialize, Deserialize)]
 struct TomoyoBackupBundle {
@@ -12,6 +12,8 @@ struct TomoyoBackupBundle {
     config: TomoyoConfig,
     #[serde(default)]
     snippets_toml: Option<String>,
+    #[serde(default)]
+    flows_toml: Option<String>,
 }
 
 fn default_schema() -> u32 {
@@ -22,16 +24,20 @@ fn default_schema() -> u32 {
 pub fn export_desensitized_backup_json() -> String {
     let mut cfg = TomoyoConfig::load_or_create();
     let _ = cfg.sanitize();
-    let snippets_path = data_dir().join("snippets.toml");
-    let snippets_toml = std::fs::metadata(&snippets_path)
-        .ok()
-        .filter(|m| m.len() <= 262_144)
-        .and_then(|_| std::fs::read_to_string(&snippets_path).ok());
+    let root = sync_root_dir();
+    let read_opt = |name: &str| {
+        let p = root.join(name);
+        std::fs::metadata(&p)
+            .ok()
+            .filter(|m| m.len() <= 262_144)
+            .and_then(|_| std::fs::read_to_string(&p).ok())
+    };
     let bundle = TomoyoBackupBundle {
         schema_version: 1,
         app_version: CURRENT_VERSION.to_string(),
         config: cfg,
-        snippets_toml,
+        snippets_toml: read_opt("snippets.toml"),
+        flows_toml: read_opt("flows.toml"),
     };
     let json = serde_json::to_string_pretty(&bundle).unwrap_or_else(|_| "{}".into());
     serde_json::json!({
@@ -66,10 +72,13 @@ pub fn import_desensitized_backup_json(raw: &str) -> (String, bool) {
             false,
         );
     }
-    if let Some(snip) = bundle.snippets_toml.as_deref() {
-        if snip.len() <= 262_144 {
-            let _ = std::fs::create_dir_all(data_dir());
-            let _ = std::fs::write(data_dir().join("snippets.toml"), snip);
+    let root = sync_root_dir();
+    for (name, content) in [("snippets.toml", bundle.snippets_toml.as_deref()), ("flows.toml", bundle.flows_toml.as_deref())] {
+        if let Some(txt) = content {
+            if txt.len() <= 262_144 {
+                let _ = std::fs::create_dir_all(&root);
+                let _ = std::fs::write(root.join(name), txt);
+            }
         }
     }
     let note_tail = if notes.is_empty() { String::new() } else { format!("（已自动修正 {} 项）", notes.len()) };
@@ -83,6 +92,25 @@ pub fn import_desensitized_backup_json(raw: &str) -> (String, bool) {
         .to_string(),
         true,
     )
+}
+
+pub fn save_flows_reply(flows: &[WorkflowDef]) -> (String, bool) {
+    match tomoyo_core::save_flows(flows) {
+        Ok(clean) => (
+            serde_json::json!({
+                "event": "flows_saved",
+                "ok": true,
+                "flows": clean,
+                "message": format!("已保存 {} 条声明式工作流并热重载生效", clean.len())
+            })
+            .to_string(),
+            true,
+        ),
+        Err(e) => (
+            serde_json::json!({ "event": "flows_saved", "ok": false, "message": e }).to_string(),
+            false,
+        ),
+    }
 }
 
 pub fn clear_sync_dir_reply() -> (String, bool) {

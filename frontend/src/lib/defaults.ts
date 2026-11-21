@@ -135,9 +135,11 @@ export function hydrateSettingsInit(): SettingsInitPayload {
   const def = makeDefaultConfig();
   const rc = (raw.config ?? {}) as Partial<TomoyoConfig>;
   return {
-    version: raw.version || '2.0.0',
+    version: raw.version || '2.1.0',
     autostart: !!raw.autostart,
     plugins: Array.isArray(raw.plugins) ? raw.plugins : [],
+    flows: Array.isArray(raw.flows) ? raw.flows : [],
+    flows_path: raw.flows_path || '',
     config_path: raw.config_path || '',
     sync_dir: raw.sync_dir || '',
     plugins_dir: raw.plugins_dir || '',

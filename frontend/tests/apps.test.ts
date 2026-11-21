@@ -79,6 +79,12 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
           { key: 'raw_output', label: '保留原始空格', type: 'bool', default: false },
         ],
       }],
+      flows: [{
+        id: 'clip_clean_paste', name: '剪贴板去换行纯文本直贴', keyword: 'cleanpaste',
+        description: '合并单行后直贴', enabled: true,
+        steps: [{ kind: 'read_clipboard', value: '' }, { kind: 'single_line', value: '' }, { kind: 'paste_text', value: '' }],
+      }],
+      flows_path: 'C:\\Tomoyo\\flows.toml',
       running_apps: ['code.exe', 'notepad.exe'],
       secrets_status: { deepl: false, openai: true },
       hotkey_health: origHealth,
@@ -91,7 +97,7 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
     flushSync();
 
     const navBtns = document.querySelectorAll<HTMLButtonElement>('nav button[data-tab]');
-    expect(navBtns.length).toBe(11);
+    expect(navBtns.length).toBe(12);
 
     // Bottom conflict bar must be a clickable button pointing directly to the conflicted slot!
     const conflictBtn = document.querySelector<HTMLButtonElement>('button#toast.conflict-bar-btn');
@@ -190,6 +196,16 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
     expect(savedCfg.custom_filters?.some((t) => t.id === 'code')).toBe(true);
     expect(savedCfg.disabled_plugins).toContain('dev.tomoyo.translate');
     expect(savedCfg.plugin_settings?.['dev.tomoyo.ocr']?.raw_output).toBe(true);
+
+    // Declarative Action Flows tab: toggling a flow emits `save_flows` cleanly
+    document.querySelector<HTMLButtonElement>('button[data-tab="flows"]')?.click();
+    flushSync();
+    expect(document.body.textContent).toContain('剪贴板去换行纯文本直贴');
+    const flowSw = document.querySelector<HTMLButtonElement>('button[role="switch"][aria-label="剪贴板去换行纯文本直贴"]');
+    expect(flowSw).not.toBeNull();
+    flowSw?.click();
+    flushSync();
+    expect(wv.posted.some((m) => m.cmd === 'save_flows')).toBe(true);
 
     unmount(app);
   });

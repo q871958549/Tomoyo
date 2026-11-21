@@ -316,6 +316,7 @@ impl AppShell {
                 }
                 Err(e) => self.show_toast(&e),
             },
+            InternalCommandKind::RunFlow { flow_id, input } => self.execute_workflow(&flow_id, &input),
         }
     }
 

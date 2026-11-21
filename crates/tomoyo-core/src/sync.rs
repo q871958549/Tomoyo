@@ -68,11 +68,13 @@ pub fn set_sync_dir(dir: Option<&str>) -> Result<(Option<PathBuf>, String), Stri
             let _ = std::fs::copy(&src_cfg, &target_cfg);
         }
     }
-    let target_snip = target.join("snippets.toml");
-    if !target_snip.is_file() {
-        let src_snip = prev_root.join("snippets.toml");
-        if src_snip.is_file() {
-            let _ = std::fs::copy(&src_snip, &target_snip);
+    for file in ["snippets.toml", "flows.toml"] {
+        let dst = target.join(file);
+        if !dst.is_file() {
+            let src = prev_root.join(file);
+            if src.is_file() {
+                let _ = std::fs::copy(&src, &dst);
+            }
         }
     }
 

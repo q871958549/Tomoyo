@@ -306,6 +306,7 @@ pub enum InternalCommandKind {
     ExtractZipHere { path: String },
     CopyFileContents { path: String },
     ComputeFileSha256 { path: String },
+    RunFlow { flow_id: String, input: String },
 }
 
 /// Declarative Server-Driven UI (SDUI) preview card rendered natively without WebView.

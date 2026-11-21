@@ -118,6 +118,7 @@ fn build_engine() -> (
     let translate = Arc::new(TranslateProvider::new(config.clone()));
     let capture = Arc::new(CaptureProvider::new(config.clone()));
     let snippets = Arc::new(SnippetsProvider::new(config.clone()));
+    let flows = Arc::new(tomoyo_providers::FlowsProvider::new(config.clone()));
     let web = Arc::new(WebSearchProvider::new(config.clone()));
     let windows = Arc::new(WindowsSwitcherProvider::new());
     let processes = Arc::new(ProcessProvider::new(config.clone()));
@@ -131,6 +132,7 @@ fn build_engine() -> (
         apps.clone(),
         calc,
         snippets,
+        flows,
         web,
         everything,
         clipboard.clone(),
@@ -206,6 +208,7 @@ fn run_self_test(fonts: &PrivateFonts, strict_budget: bool) {
         ":stats",
         ":plugins",
         "snip iso",
+        "flow",
         "cb",
         "cap",
         "@pdf",

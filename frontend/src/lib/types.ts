@@ -207,11 +207,27 @@ export interface UpdateStatus {
   release?: ReleaseInfo;
 }
 
+export interface WorkflowStep {
+  kind: string;
+  value?: string;
+}
+
+export interface WorkflowDef {
+  id: string;
+  name: string;
+  keyword: string;
+  description: string;
+  enabled: boolean;
+  steps: WorkflowStep[];
+}
+
 export interface SettingsInitPayload {
   version: string;
   config: TomoyoConfig;
   autostart: boolean;
   plugins: PluginEntry[];
+  flows?: WorkflowDef[];
+  flows_path?: string;
   config_path: string;
   sync_dir?: string;
   plugins_dir: string;

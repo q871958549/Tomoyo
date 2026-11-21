@@ -1,11 +1,13 @@
 //! Tomoyo Open Ecosystem CLI (`tomoyo-cli`):
 //! - `tomoyo-cli new <name> --lang <rust|wasm|python|webview>`
+//! - `tomoyo-cli dev <plugin-dir> [--query "<args>"] [--once]`
 //! - `tomoyo-cli verify <plugin-dir>`
 //! - `tomoyo-cli hash <plugin-dir>`
 //! - `tomoyo-cli import-utools <utools-plugin-dir>`
-//! - `tomoyo-cli registry list [--index <path-or-https-url>]`
+//! - `tomoyo-cli registry list|check [--index <path-or-https-url>]`
 //! - `tomoyo-cli install <plugin-id> [--index <path-or-https-url>] [--dest <plugins-dir>]`
 
+mod dev;
 mod hash;
 mod scaffold;
 mod utools;
@@ -27,6 +29,7 @@ fn main() {
 
     let code = match args[0].as_str() {
         "new" => cmd_new(&args[1..]),
+        "dev" => dev::cmd_dev(&args[1..]),
         "verify" => cmd_verify(&args[1..]),
         "hash" => cmd_hash(&args[1..]),
         "import-utools" => cmd_import_utools(&args[1..]),
@@ -50,16 +53,17 @@ fn print_usage() {
          \n\
          USAGE:\n\
          \t tomoyo-cli new <name> [--lang rust|wasm|python|webview] [--dir <path>]\n\
+         \t tomoyo-cli dev <plugin-dir> [--query \"<args>\"] [--once]\n\
          \t tomoyo-cli verify <plugin-dir>\n\
          \t tomoyo-cli hash <plugin-dir>\n\
          \t tomoyo-cli import-utools <utools-plugin-dir>\n\
-         \t tomoyo-cli registry list [--index <path-or-https-url>]\n\
+         \t tomoyo-cli registry list|check [--index <path-or-https-url>]\n\
          \t tomoyo-cli install <plugin-id> [--index <path-or-https-url>] [--dest <dir>]\n",
         env!("CARGO_PKG_VERSION")
     );
 }
 
-fn flag_val<'a>(args: &'a [String], flag: &str) -> Option<&'a str> {
+pub(crate) fn flag_val<'a>(args: &'a [String], flag: &str) -> Option<&'a str> {
     args.windows(2).find(|w| w[0] == flag).map(|w| w[1].as_str())
 }
 
@@ -185,8 +189,11 @@ fn cmd_verify(args: &[String]) -> i32 {
 
 fn cmd_registry(args: &[String]) -> i32 {
     let sub = args.first().map(|s| s.as_str()).unwrap_or("list");
+    if sub == "check" {
+        return dev::cmd_registry_check(&args[1..]);
+    }
     if sub != "list" {
-        eprintln!("Usage: tomoyo-cli registry list [--index <path-or-https-url>]");
+        eprintln!("Usage: tomoyo-cli registry list|check [--index <path-or-https-url>]");
         return 1;
     }
     let index_source = flag_val(args, "--index").unwrap_or("registry/index.json");
@@ -362,7 +369,7 @@ fn install_direct_zip(source: &str, sha256_opt: Option<&str>, dest_root: &Path) 
     0
 }
 
-fn load_registry(source: &str) -> Result<PluginRegistryIndex, String> {
+pub(crate) fn load_registry(source: &str) -> Result<PluginRegistryIndex, String> {
     if source.starts_with("https://") || source.starts_with("http://") {
         let resp = tomoyo_core::http::http_get(source, 8000, 4 * 1024 * 1024)?;
         if resp.status_code != 200 {

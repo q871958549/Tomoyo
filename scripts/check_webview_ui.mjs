@@ -104,7 +104,7 @@ const settingsPosted = await runCompiledHtml(
   },
   async (win, posted) => {
     const tabs = [...win.document.querySelectorAll('nav button[data-tab]')];
-    if (tabs.length !== 11) throw new Error(`settings.html: expected 11 nav tabs, got ${tabs.length}`);
+    if (tabs.length !== 12) throw new Error(`settings.html: expected 12 nav tabs, got ${tabs.length}`);
     if (win.document.querySelectorAll('select').length !== 0) {
       throw new Error('settings.html: raw native <select> detected (must use custom Select primitive)');
     }
@@ -158,4 +158,4 @@ await runCompiledHtml(
   }
 );
 
-console.log(`[OK] All 4 compiled Svelte 5 WebView bundles booted in happy-dom (11 Settings tabs + Hotkey Doctor verified, live hotkey conflict rendered, ${settingsPosted.length} IPC commands, 0 JS errors).`);
+console.log(`[OK] All 4 compiled Svelte 5 WebView bundles booted in happy-dom (12 Settings tabs + Flows + Hotkey Doctor verified, live hotkey conflict rendered, ${settingsPosted.length} IPC commands, 0 JS errors).`);

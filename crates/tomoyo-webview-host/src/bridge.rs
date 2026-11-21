@@ -16,6 +16,7 @@ pub enum HostMessage {
     DbPut { id: String, doc: Value },
     DbRemove { id: String },
     SaveSettings { config: tomoyo_core::TomoyoConfig, autostart: bool },
+    SaveFlows { flows: Vec<tomoyo_core::WorkflowDef> },
     PickFolder,
     PickCaptureDir,
     PickSyncDir,
@@ -26,29 +27,11 @@ pub enum HostMessage {
     CheckUpdates { repo: String },
     InstallUpdate { release: tomoyo_core::ReleaseInfo },
     FetchStore { sources: Vec<String> },
-    InstallPlugin {
-        plugin_id: String,
-        source: String,
-        sha256: String,
-    },
+    InstallPlugin { plugin_id: String, source: String, sha256: String },
     UninstallPlugin { plugin_id: String },
-    SetPluginPermission {
-        plugin_id: String,
-        permission: String,
-        allowed: bool,
-    },
-    ReportJsError {
-        message: String,
-        #[serde(default)]
-        source: String,
-        #[serde(default)]
-        line: u32,
-    },
-    ReadLogs {
-        source: String,
-        #[serde(default)]
-        errors_only: bool,
-    },
+    SetPluginPermission { plugin_id: String, permission: String, allowed: bool },
+    ReportJsError { message: String, #[serde(default)] source: String, #[serde(default)] line: u32 },
+    ReadLogs { source: String, #[serde(default)] errors_only: bool },
     CopyDiagnosticBundle,
     OpenLogsDir,
     OpenClipboardManager,
@@ -133,6 +116,11 @@ pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isi
                 async_refresh_hotkey_health: notify_hwnd.is_some(),
                 ..Default::default()
             }
+        }
+        HostMessage::SaveFlows { flows } => {
+            let (reply, ok) = crate::backup::save_flows_reply(&flows);
+            if ok { if let Some(t) = notify_hwnd { notify_parent_reload(t, true); } }
+            HostAction { reply_json: Some(reply), ..Default::default() }
         }
         HostMessage::PickFolder => HostAction { pick_folder_mode: 1, ..Default::default() },
         HostMessage::PickCaptureDir => HostAction { pick_folder_mode: 2, ..Default::default() },

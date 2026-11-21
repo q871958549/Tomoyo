@@ -11,6 +11,7 @@ const ZH: Record<string, string> = {
   nav_translate: '翻译引擎',
   nav_capture: '截图与贴图',
   nav_web: '快捷网页搜索',
+  nav_flows: '轻量工作流',
   nav_store: '插件清单',
   nav_plugins: '插件管理',
   nav_logs: '诊断与日志',
@@ -164,6 +165,8 @@ const ZH: Record<string, string> = {
   rec_need_mod: '普通键需加修饰键（F1–F12 / PrintScreen 可单键）',
   h_hotkeys: '全局热键治理中心',
   lead_hotkeys: '扫描系统热键占用矩阵，静默归因嫌疑程序，并支持「抓现行」实测定位热键冲突真凶。',
+  h_flows: '声明式轻量工作流 (flow)',
+  lead_flows: '零脚本解释器开销的纯声明式多步动作管道（flows.toml），在搜索框输入 flow / wf 或触发词即可一键串行执行。',
 };
 
 const EN: Record<string, string> = {
@@ -175,6 +178,7 @@ const EN: Record<string, string> = {
   nav_translate: 'Translation',
   nav_capture: 'Screenshot & Pin',
   nav_web: 'Web Searches',
+  nav_flows: 'Action Flows',
   nav_store: 'Plugin Catalog',
   nav_plugins: 'Plugins & Modules',
   nav_logs: 'Diagnostics & Logs',
@@ -328,6 +332,8 @@ const EN: Record<string, string> = {
   rec_need_mod: 'Add modifier (F1–F12 / PrintScreen allow single key)',
   h_hotkeys: 'Global Hotkey Doctor',
   lead_hotkeys: 'Audit OS shortcut occupancy, attribute suspect apps, and run live culprit probes.',
+  h_flows: 'Declarative Action Flows (flow)',
+  lead_flows: 'Zero-interpreter multi-step pipelines stored in flows.toml. Trigger via `flow` / `wf` or custom keywords.',
 };
 
 export function tr(lang: Lang, key: string): string {

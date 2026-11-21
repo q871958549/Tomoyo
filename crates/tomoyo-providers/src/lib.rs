@@ -8,6 +8,7 @@ pub mod everything;
 pub mod everything_history;
 mod everything_rank;
 mod file_actions;
+pub mod flows;
 pub mod processes;
 pub mod snippets;
 pub mod system;
@@ -24,6 +25,7 @@ pub use clipboard::{
 };
 pub use everything::EverythingProvider;
 pub use everything_history::record_everything_query;
+pub use flows::FlowsProvider;
 pub use processes::ProcessProvider;
 pub use snippets::SnippetsProvider;
 pub use system::SystemProvider;

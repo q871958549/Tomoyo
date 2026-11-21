@@ -188,6 +188,8 @@ pub fn build_settings_init_script() -> String {
         "config": cfg,
         "autostart": autostart,
         "plugins": plugins,
+        "flows": tomoyo_core::load_or_init_flows(),
+        "flows_path": tomoyo_core::flows_file_path().to_string_lossy(),
         "config_path": TomoyoConfig::config_path().to_string_lossy(),
         "sync_dir": tomoyo_core::configured_sync_dir().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default(),
         "plugins_dir": plugins_dir.to_string_lossy(),

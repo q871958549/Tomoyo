@@ -72,6 +72,8 @@ jobs:
           if ($p3.ExitCode -ne 0) { exit $p3.ExitCode }
           .\target\release\tomoyo-plugin-ocr.exe --self-test
           .\target\release\tomoyo-cli.exe registry list
+          .\target\release\tomoyo-cli.exe registry check --manifest-only
+          .\target\release\tomoyo-cli.exe dev plugins/official-notes --query "hello" --once
 
   cross-platform-core:
     strategy:

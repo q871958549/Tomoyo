@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import {
     Camera, FileText, Globe, Keyboard, Languages, Package,
-    Palette, RefreshCw, Search, SlidersHorizontal, Store,
+    Palette, RefreshCw, Search, SlidersHorizontal, Store, Workflow,
   } from '@lucide/svelte';
   import {
     hydrateSettingsInit, isPluginEnabled, PLUGIN_CAPTURE, PLUGIN_CLIPBOARD, PLUGIN_TRANSLATE,
@@ -11,11 +11,12 @@
   import { OFFICIAL_REPO, tr, type Lang } from '../../lib/i18n';
   import type {
     CustomFilterTab, HotkeyAuditReport, HotkeyHealthReport, LiveProbeResult,
-    ReleaseInfo, TomoyoConfig, UpdateStatus,
+    ReleaseInfo, TomoyoConfig, UpdateStatus, WorkflowDef,
   } from '../../lib/types';
   import Button from '../../lib/ui/Button.svelte';
   import AppearanceTab from './AppearanceTab.svelte';
   import CaptureTab from './CaptureTab.svelte';
+  import FlowsTab from './FlowsTab.svelte';
   import GeneralTab from './GeneralTab.svelte';
   import HotkeysTab from './HotkeysTab.svelte';
   import LogsTab from './LogsTab.svelte';
@@ -33,6 +34,7 @@
   let syncDir = $state(init.sync_dir || '');
   let configPath = $state(init.config_path || '');
   let plugins = $state(init.plugins);
+  let flows = $state<WorkflowDef[]>(init.flows || []);
   let secretsStatus = $state(init.secrets_status);
   let hotkeyHealth = $state<HotkeyHealthReport>(init.hotkey_health || {});
   let activeTab = $state('general');
@@ -84,6 +86,10 @@
   function onUpdatePluginConfig(hotkeys: Record<string, string>, settings: Record<string, Record<string, string | number | boolean>>) {
     cfg.plugin_hotkeys = hotkeys; cfg.plugin_settings = settings; scheduleSave(120);
   }
+  function onSaveFlows(next: WorkflowDef[]) {
+    flows = next;
+    postHost({ cmd: 'save_flows', flows: $state.snapshot(next) });
+  }
   function onTogglePlugin(id: string, enabled: boolean) {
     const low = id.toLowerCase();
     const next = (cfg.disabled_plugins || []).filter((x) => x.toLowerCase() !== low);
@@ -100,6 +106,7 @@
     { id: 'translate', key: 'nav_translate', icon: Languages, on: isPluginEnabled(cfg, PLUGIN_TRANSLATE) },
     { id: 'capture', key: 'nav_capture', icon: Camera, on: isPluginEnabled(cfg, PLUGIN_CAPTURE) },
     { id: 'web', key: 'nav_web', icon: Globe, on: true },
+    { id: 'flows', key: 'nav_flows', icon: Workflow, on: true },
     { id: 'store', key: 'nav_store', icon: Store, on: true },
     { id: 'plugins', key: 'nav_plugins', icon: Package, on: true },
     { id: 'logs', key: 'nav_logs', icon: FileText, on: true },
@@ -209,6 +216,9 @@
           document.documentElement.lang = cfg.language === 'en' ? 'en' : 'zh-CN';
         }
         setToast(`${data.ok ? '✓ ' : '✗ '}${data.message || ''}`, !data.ok);
+      } else if (ev === 'flows_saved') {
+        if (data.ok && Array.isArray(data.flows)) flows = data.flows as WorkflowDef[];
+        setToast(`${data.ok ? '✓ ' : '✗ '}${data.message || ''}`, !data.ok);
       } else if (ev === 'sync_dir_updated') {
         if (data.cancelled) return;
         if (data.ok) {
@@ -317,6 +327,8 @@
           />
         {:else if activeTab === 'web'}
           <WebSearchTab {cfg} {lang} onSave={scheduleSave} />
+        {:else if activeTab === 'flows'}
+          <FlowsTab {lang} {flows} flowsPath={init.flows_path || ''} {onSaveFlows} />
         {:else if activeTab === 'store'}
           <StoreTab {lang} items={storeItems} statusText={storeStatus} loading={storeLoading} onRefresh={fetchStore} />
         {:else if activeTab === 'plugins'}
