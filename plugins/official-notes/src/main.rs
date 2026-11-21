@@ -84,7 +84,7 @@ fn load_notes_from(dir: &Path) -> Vec<NoteDoc> {
         let modified_secs = meta.modified().ok().and_then(|m| m.duration_since(UNIX_EPOCH).ok()).map(|d| d.as_secs()).unwrap_or(0);
         docs.push(NoteDoc { path, file_name, title, snippet, body, tags, modified_secs });
     }
-    docs.sort_by(|a, b| b.modified_secs.cmp(&a.modified_secs));
+    docs.sort_by_key(|a| std::cmp::Reverse(a.modified_secs));
     docs
 }
 

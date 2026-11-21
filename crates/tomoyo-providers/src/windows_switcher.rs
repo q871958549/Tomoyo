@@ -78,7 +78,7 @@ impl Provider for WindowsSwitcherProvider {
             });
         }
 
-        results.sort_by(|a, b| b.score.cmp(&a.score));
+        results.sort_by_key(|a| std::cmp::Reverse(a.score));
         results.truncate(if dedicated { ctx.limit.min(20) } else { 4 });
         results
     }

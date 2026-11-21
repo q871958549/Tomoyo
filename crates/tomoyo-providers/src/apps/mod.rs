@@ -240,7 +240,7 @@ fn scan_all_apps(apps_cfg: &AppsConfig) -> Vec<AppEntry> {
         })
         .collect();
 
-    entries.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    entries.sort_by_cached_key(|a| a.name.to_lowercase());
     entries
 }
 

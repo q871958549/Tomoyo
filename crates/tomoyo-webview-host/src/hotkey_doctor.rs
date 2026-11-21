@@ -343,7 +343,7 @@ pub fn probe_hotkey_owner_live(spec: &str, host_hwnd: usize, parent_hwnd: Option
             (base < 60_000 && probe >= (base * 4).max(base + 150_000)).then_some((p, base, probe))
         })
         .collect();
-    spikes.sort_by(|a, b| b.2.cmp(&a.2));
+    spikes.sort_by_key(|a| std::cmp::Reverse(a.2));
 
     if let Some((top, base, probe)) = spikes.first().copied() {
         std::thread::sleep(std::time::Duration::from_millis(220));
