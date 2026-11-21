@@ -1,6 +1,6 @@
 # Tomoyo 长期演进蓝图与分阶段替代计划 (Long-Term Roadmap)
 
-> **定位与基线**：`v2.1.0` 正式交付全蓝图收官核心能力——**声明式轻量动作流 (`flow` / `wf`)**（零脚本解释器，纯 Rust 有界多步管道 `flows.toml` 自动接入免账号同步目录，内置「截图识字翻译」「剪贴板去换行直贴」「剪贴板多源翻译」「剪贴板存备忘」「网页速查」并在设置中心提供 12 页签可视化步骤编排）与 **开放插件开发体验升级**（`tomoyo-cli dev` 监听热重载 + `tomoyo-cli registry check` 自动清单与 SHA-256 校验接入 CI）。  
+> **定位与基线**：`v2.2.0` 开启 Tomoyo 多年稳态沉淀与开放基础设施周期：为任意声明式工作流补齐**全局热键静默直达**（自动继承全屏避让与冲突接管）、引入零常驻 BYOM/BYOK **`llm_transform` 本地/AI 管道步骤**（直接复用本地 Ollama 与 DPAPI 加密 OpenAI 兼容接口）、根治混合 DPI 多屏首帧缩放与 `sync_dir` 备忘录无缝迁移、修复 Winget 发布清单版本正则，并正式上线 **Windows ARM64 原生构建** 与 **GitHub SLSA Build Provenance 加密溯源证明**（见 [`docs/DISTRIBUTION.md`](DISTRIBUTION.md)）。  
 > **产品目标**：`tomoyo.exe` 始终坚守极简、低占用、毫秒唤起的 Windows 原生启动器核心；剪贴板、划词翻译、截图贴图、离线 OCR、本地备忘录等高频效率工具一律以**按需启停/安装的模块化官方插件**形态提供（本机实测已顺利替代并卸载 Pot 与 PixPin）。  
 > **执行纪律**：每个版本坚持小步快跑与实机验收，严守内存/句柄硬红线与全仓单文件 ≤ 450 行、零警告、前端编译产物运行时门禁。
 
@@ -27,6 +27,12 @@
 
 ```text
 ┌──────────────────────────────────────────────────────────────────────────────┐
+│  v3.0.0 · 远期：物理拆包 Core/Suite 双版本 + WASM wasi-p2 + 公益代码签名     │
+├──────────────────────────────────────────────────────────────────────────────┤
+│  v2.3+  · 远期：纯外部 MCP 桥接与本地文档语义检索插件 + Ed25519 插件签名     │
+├──────────────────────────────────────────────────────────────────────────────┤
+│  v2.2.0 · [已完成] 工作流全局热键 + 本地 AI 管道 + ARM64 原生构建 + SLSA溯源 │
+├──────────────────────────────────────────────────────────────────────────────┤
 │  v2.1.0 · [已完成] 声明式轻量工作流 (`flow`) + `tomoyo-cli dev` + 清单校验   │
 ├──────────────────────────────────────────────────────────────────────────────┤
 │  v2.0.0 · [已完成] 插件协议 v2（声明式热键/事件订阅/设置 Schema + 旗舰插件） │
@@ -230,6 +236,16 @@
 2. **插件开发者体验与 CI 自动化防漂移（`tomoyo-cli dev` + `registry check`）**：
    - `tomoyo-cli dev <plugin-dir>` 自动监听变更、校验 Protocol v2 清单与实时查询耗时，并通过 Win32 消息热通知运行中的 `tomoyo.exe` 重载插件；
    - `tomoyo-cli registry check` 自动核验清单 Schema、ID/版本一致性与全量 SHA-256，并已接入 GitHub Actions CI 流水线。
+
+### 阶段十三：`v2.2.0` — 稳态沉淀、工作流全局热键、本地 AI 管道与 ARM64 / SLSA 信任底座（已完成 ✅）
+1. **工作流全局热键静默直达（`WorkflowDef::hotkey` + `FLOW_HOTKEY_BASE = 200`）**：
+   - 任意工作流可在设置中心「轻量工作流」内一键录制绑定全局热键，由 `tomoyo.exe` 统一治理并原生继承全屏/远程桌面避让与冲突接管；按下即直接作用于当前前台窗口（例如 `Alt+Shift+V` 原地清洗剪贴板断行并直贴，无需闪烁启动器）；
+2. **零常驻 BYOM/BYOK 本地 AI 管道步骤（`flows_llm.rs` + 异步 `WM_APP_FLOW_DONE`）**：
+   - 新增 `llm_transform` 原语与内置工作流 `aisum`（剪贴板本地 AI 提炼要点），后台短生命周期线程调用本地 Ollama 或 DPAPI 加密 OpenAI 兼容接口，不阻塞 UI、用完即退 0 MB 常驻；
+3. **混合 DPI 多屏精修与 `sync_dir` 备忘录迁移**：
+   - `layout.rs` 首帧基于目标显示器 `GetDpiForMonitor(MDT_EFFECTIVE_DPI)` 缩放并自动钳位在目标 `rcWork` 内，杜绝跨屏 DPI 错位与预览栏出界；`sync.rs` 切换同步目录时自动无损迁移 `notes/`；
+4. **Windows ARM64 原生支持、SLSA 溯源与分发规范（[`docs/DISTRIBUTION.md`](DISTRIBUTION.md)）**：
+   - CI 新增 `windows-11-arm` 原生编译测试，Release 同步发布 `windows-arm64-portable.zip` + 全量 `actions/attest-build-provenance@v2` SLSA 构建证明，并修复 Winget 发布清单正则保留 `ManifestVersion: 1.6.0`。
 
 ---
 

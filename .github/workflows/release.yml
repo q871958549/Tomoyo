@@ -8,6 +8,8 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 jobs:
   build-windows-x64:
@@ -58,21 +60,15 @@ jobs:
       - name: Stage release bundle, build Inno Setup installer & portable ZIP
         shell: pwsh
         run: |
-          $tag = if ($env:GITHUB_REF_NAME -and $env:GITHUB_REF_NAME.StartsWith("v")) { $env:GITHUB_REF_NAME } else { "v0.5.0" }
+          $tag = if ($env:GITHUB_REF_NAME -and $env:GITHUB_REF_NAME.StartsWith("v")) { $env:GITHUB_REF_NAME } else { "v2.2.0" }
           $ver = $tag.TrimStart("v")
           $stage = "dist/stage"
-          New-Item -ItemType Directory -Force -Path $stage | Out-Null
-          New-Item -ItemType Directory -Force -Path "$stage/assets/fonts" | Out-Null
-          New-Item -ItemType Directory -Force -Path "$stage/registry" | Out-Null
+          New-Item -ItemType Directory -Force -Path $stage, "$stage/assets/fonts", "$stage/registry" | Out-Null
 
-          Copy-Item target/release/tomoyo.exe $stage/
-          Copy-Item target/release/tomoyo-webview-host.exe $stage/
-          Copy-Item target/release/tomoyo-capture.exe $stage/
-          Copy-Item target/release/tomoyo-cli.exe $stage/
-          Copy-Item target/release/tomoyo-plugin-hello.exe $stage/
-          Copy-Item target/release/tomoyo-plugin-ocr.exe $stage/
-          Copy-Item target/release/tomoyo-plugin-notes.exe $stage/
-          Copy-Item LICENSE-MIT, LICENSE-APACHE, README.md $stage/
+          foreach ($bin in @("tomoyo.exe", "tomoyo-webview-host.exe", "tomoyo-capture.exe", "tomoyo-cli.exe", "tomoyo-plugin-hello.exe", "tomoyo-plugin-ocr.exe", "tomoyo-plugin-notes.exe")) {
+            Copy-Item "target/release/$bin" "$stage/"
+          }
+          Copy-Item LICENSE-MIT, LICENSE-APACHE, README.md "$stage/"
           Copy-Item assets/fonts/*.ttf "$stage/assets/fonts/"
           Copy-Item assets/tomoyo.ico "$stage/assets/"
           Copy-Item registry/index.json "$stage/registry/"
@@ -82,7 +78,7 @@ jobs:
             Get-ChildItem "plugins/$p" -Exclude "target","__pycache__" | Copy-Item -Destination "$stage/plugins/$p" -Recurse -Force
           }
 
-          # 1. Portable ZIP
+          # 1. Portable ZIP (x64)
           $zipPath = "dist/Tomoyo-$tag-windows-x64-portable.zip"
           Compress-Archive -Path "$stage/*" -DestinationPath $zipPath -Force
 
@@ -94,7 +90,7 @@ jobs:
           & $iscc "/DAppVersion=$ver" "/DStageDir=..\dist\stage" "packaging\tomoyo.iss"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-          # 3. SHA-256 Checksums + Winget/Scoop release manifests
+          # 3. SHA-256 Checksums + Winget/Scoop release manifests (preserving ManifestVersion 1.6.0)
           $setupPath = "dist/Tomoyo-$tag-windows-x64-setup.exe"
           $lines = @()
           $setupSha = ""
@@ -109,12 +105,28 @@ jobs:
           $lines | Out-File -Encoding ascii "dist/SHA256SUMS.txt"
           Get-Content "dist/SHA256SUMS.txt"
 
-          $scoopOut = [regex]::Replace((Get-Content "packaging/scoop/tomoyo.json" -Raw).Replace("PLACEHOLDER_UPDATED_BY_RELEASE_SHA256SUMS", $zipSha), "\d+\.\d+\.\d+", $ver)
+          $scoopOut = (Get-Content "packaging/scoop/tomoyo.json" -Raw) `
+            -replace 'PLACEHOLDER_UPDATED_BY_RELEASE_SHA256SUMS', $zipSha `
+            -replace '"version":\s*"[^"]+"', "`"version`": `"$ver`"" `
+            -replace '/releases/download/v[^/]+/Tomoyo-v[^-]+-', "/releases/download/v$ver/Tomoyo-v$ver-"
           Set-Content -Path "dist/tomoyo.scoop.json" -Value $scoopOut -Encoding UTF8
-          $wingetOut = [regex]::Replace((Get-Content "packaging/winget/TomoyoContributors.Tomoyo.installer.yaml" -Raw).Replace("PLACEHOLDER_UPDATED_BY_RELEASE_SHA256SUMS", $setupSha), "1\.\d+\.\d+", $ver)
+
+          $wingetOut = (Get-Content "packaging/winget/TomoyoContributors.Tomoyo.installer.yaml" -Raw) `
+            -replace 'PLACEHOLDER_UPDATED_BY_RELEASE_SHA256SUMS', $setupSha `
+            -replace '(?m)^PackageVersion:\s*.+$', "PackageVersion: $ver" `
+            -replace '/releases/download/v[^/]+/Tomoyo-v[^-]+-', "/releases/download/v$ver/Tomoyo-v$ver-"
           Set-Content -Path "dist/TomoyoContributors.Tomoyo.installer.yaml" -Value $wingetOut -Encoding UTF8
 
-      - name: Publish GitHub Release
+      - name: Attest x64 Release Build Provenance (SLSA)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            dist/Tomoyo-*-windows-x64-setup.exe
+            dist/Tomoyo-*-windows-x64-portable.zip
+            dist/SHA256SUMS.txt
+
+      - name: Publish GitHub Release (x64)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
@@ -126,3 +138,58 @@ jobs:
             dist/SHA256SUMS.txt
             dist/tomoyo.scoop.json
             dist/TomoyoContributors.Tomoyo.installer.yaml
+
+  build-windows-arm64:
+    runs-on: windows-11-arm
+    needs: [build-windows-x64]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain (Windows ARM64)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build native Windows ARM64 release binaries
+        run: cargo build --release --workspace
+
+      - name: Package Windows ARM64 Portable ZIP & SHA-256
+        shell: pwsh
+        run: |
+          $tag = if ($env:GITHUB_REF_NAME -and $env:GITHUB_REF_NAME.StartsWith("v")) { $env:GITHUB_REF_NAME } else { "v2.2.0" }
+          $stage = "dist/stage-arm64"
+          New-Item -ItemType Directory -Force -Path $stage, "$stage/assets/fonts", "$stage/registry" | Out-Null
+          foreach ($bin in @("tomoyo.exe", "tomoyo-webview-host.exe", "tomoyo-capture.exe", "tomoyo-cli.exe", "tomoyo-plugin-hello.exe", "tomoyo-plugin-ocr.exe", "tomoyo-plugin-notes.exe")) {
+            Copy-Item "target/release/$bin" "$stage/"
+          }
+          Copy-Item LICENSE-MIT, LICENSE-APACHE, README.md "$stage/"
+          Copy-Item assets/fonts/*.ttf "$stage/assets/fonts/"
+          Copy-Item assets/tomoyo.ico "$stage/assets/"
+          Copy-Item registry/index.json "$stage/registry/"
+          foreach ($p in @("example-hello", "example-python", "example-wasm", "example-webview-json", "builtin-ocr", "official-notes")) {
+            New-Item -ItemType Directory -Force -Path "$stage/plugins/$p" | Out-Null
+            Get-ChildItem "plugins/$p" -Exclude "target","__pycache__" | Copy-Item -Destination "$stage/plugins/$p" -Recurse -Force
+          }
+          $zipPath = "dist/Tomoyo-$tag-windows-arm64-portable.zip"
+          Compress-Archive -Path "$stage/*" -DestinationPath $zipPath -Force
+          $h = (Get-FileHash $zipPath -Algorithm SHA256).Hash.ToLower()
+          "$h  $(Split-Path -Leaf $zipPath)" | Out-File -Encoding ascii "dist/SHA256SUMS-arm64.txt"
+          Get-Content "dist/SHA256SUMS-arm64.txt"
+
+      - name: Attest ARM64 Release Build Provenance (SLSA)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            dist/Tomoyo-*-windows-arm64-portable.zip
+            dist/SHA256SUMS-arm64.txt
+
+      - name: Attach Windows ARM64 Assets to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/Tomoyo-*-windows-arm64-portable.zip
+            dist/SHA256SUMS-arm64.txt

@@ -24,6 +24,7 @@ pub enum FlowStepKind {
     Lowercase,
     UrlEncode,
     Template,
+    LlmTransform,
     CopyText,
     PasteText,
     OpenUrl,
@@ -48,6 +49,7 @@ impl FlowStepKind {
             Self::Lowercase => "转小写",
             Self::UrlEncode => "URL 编码",
             Self::Template => "模板拼装",
+            Self::LlmTransform => "本地/AI 文本处理",
             Self::CopyText => "复制到剪贴板",
             Self::PasteText => "直贴回原窗口",
             Self::OpenUrl => "打开网页",
@@ -72,6 +74,7 @@ impl FlowStepKind {
             Self::Lowercase => "Lowercase",
             Self::UrlEncode => "URL Encode",
             Self::Template => "Template",
+            Self::LlmTransform => "Local / AI Transform",
             Self::CopyText => "Copy Text",
             Self::PasteText => "Paste to Window",
             Self::OpenUrl => "Open URL",
@@ -98,11 +101,19 @@ pub struct WorkflowDef {
     #[serde(default)]
     pub keyword: String,
     #[serde(default)]
+    pub hotkey: String,
+    #[serde(default)]
     pub description: String,
     #[serde(default = "default_true")]
     pub enabled: bool,
     #[serde(default)]
     pub steps: Vec<FlowStep>,
+}
+
+impl WorkflowDef {
+    pub fn has_llm_step(&self) -> bool {
+        self.steps.iter().any(|s| s.kind == FlowStepKind::LlmTransform)
+    }
 }
 
 fn default_true() -> bool {
@@ -135,68 +146,7 @@ pub fn flows_file_path() -> PathBuf {
     crate::sync_root_dir().join("flows.toml")
 }
 
-pub fn default_workflows() -> Vec<WorkflowDef> {
-    vec![
-        WorkflowDef {
-            id: "shot_ocr_tr".into(),
-            name: "截图识字并多源翻译".into(),
-            keyword: "shottr".into(),
-            description: "框选屏幕区域 → WinRT 离线 OCR → 立即打开多源翻译对比".into(),
-            enabled: true,
-            steps: vec![FlowStep { kind: FlowStepKind::CaptureTranslate, value: String::new() }],
-        },
-        WorkflowDef {
-            id: "clip_clean_paste".into(),
-            name: "剪贴板去换行纯文本直贴".into(),
-            keyword: "cleanpaste".into(),
-            description: "读取剪贴板 → 合并断行与多余空格 → 无格式直接贴回当前窗口（PDF 复制利器）".into(),
-            enabled: true,
-            steps: vec![
-                FlowStep { kind: FlowStepKind::ReadClipboard, value: String::new() },
-                FlowStep { kind: FlowStepKind::SingleLine, value: String::new() },
-                FlowStep { kind: FlowStepKind::PasteText, value: String::new() },
-            ],
-        },
-        WorkflowDef {
-            id: "clip_translate".into(),
-            name: "剪贴板一键多源翻译".into(),
-            keyword: "cliptr".into(),
-            description: "读取剪贴板或输入参数 → 清理首尾空白 → 拉起多源翻译工作台".into(),
-            enabled: true,
-            steps: vec![
-                FlowStep { kind: FlowStepKind::ReadClipboard, value: String::new() },
-                FlowStep { kind: FlowStepKind::Trim, value: String::new() },
-                FlowStep { kind: FlowStepKind::LaunchTranslate, value: String::new() },
-            ],
-        },
-        WorkflowDef {
-            id: "clip_to_note".into(),
-            name: "剪贴板整理并存为本地备忘".into(),
-            keyword: "clipnote".into(),
-            description: "读取剪贴板 → 去除多余空行 → 直接写入本地 Markdown 备忘录目录".into(),
-            enabled: true,
-            steps: vec![
-                FlowStep { kind: FlowStepKind::ReadClipboard, value: String::new() },
-                FlowStep { kind: FlowStepKind::TrimLines, value: String::new() },
-                FlowStep { kind: FlowStepKind::SaveNote, value: "剪贴板摘录".into() },
-                FlowStep { kind: FlowStepKind::Toast, value: "已将剪贴板保存为本地 Markdown 备忘录".into() },
-            ],
-        },
-        WorkflowDef {
-            id: "clip_web_search".into(),
-            name: "剪贴板文本速查网页".into(),
-            keyword: "clipweb".into(),
-            description: "读取剪贴板 → 合并单行 → URL 编码并在浏览器中检索".into(),
-            enabled: true,
-            steps: vec![
-                FlowStep { kind: FlowStepKind::ReadClipboard, value: String::new() },
-                FlowStep { kind: FlowStepKind::SingleLine, value: String::new() },
-                FlowStep { kind: FlowStepKind::UrlEncode, value: String::new() },
-                FlowStep { kind: FlowStepKind::OpenUrl, value: "https://www.google.com/search?q={{text}}".into() },
-            ],
-        },
-    ]
-}
+pub use crate::flows_llm::default_workflows;
 
 pub fn sanitize_workflows(raw: Vec<WorkflowDef>) -> Vec<WorkflowDef> {
     let mut out = Vec::new();
@@ -210,6 +160,8 @@ pub fn sanitize_workflows(raw: Vec<WorkflowDef>) -> Vec<WorkflowDef> {
         f.id = id.chars().take(36).collect();
         f.name = name;
         f.keyword = f.keyword.trim().to_ascii_lowercase().chars().take(24).collect();
+        let hk = f.hotkey.trim();
+        f.hotkey = if !hk.is_empty() && crate::parse_hotkey(hk).is_some() { hk.to_string() } else { String::new() };
         f.description = f.description.trim().chars().take(120).collect();
         f.steps.truncate(MAX_FLOW_STEPS);
         for s in &mut f.steps {
@@ -303,6 +255,20 @@ fn expand_flow_vars(tpl: &str, text: &str, input: &str, clip: &str) -> String {
 
 /// Evaluates all pure transforms in a workflow and returns the concrete `FlowRunPlan`.
 pub fn run_flow_pipeline(flow: &WorkflowDef, input: &str, clipboard: &str) -> FlowRunPlan {
+    run_flow_pipeline_with_llm(flow, input, clipboard, |_, txt| Ok(txt.to_string()))
+        .unwrap_or_default()
+}
+
+/// Evaluates a workflow pipeline including optional `LlmTransform` steps via caller-provided BYOM/BYOK handler.
+pub fn run_flow_pipeline_with_llm<F>(
+    flow: &WorkflowDef,
+    input: &str,
+    clipboard: &str,
+    mut llm_fn: F,
+) -> Result<FlowRunPlan, String>
+where
+    F: FnMut(&str, &str) -> Result<String, String>,
+{
     let mut text = if !input.trim().is_empty() {
         input.trim().to_string()
     } else {
@@ -337,6 +303,10 @@ pub fn run_flow_pipeline(flow: &WorkflowDef, input: &str, clipboard: &str) -> Fl
             FlowStepKind::UrlEncode => text = percent_encode_uri(&text),
             FlowStepKind::Template => {
                 text = expand_flow_vars(&step.value, &text, input, clipboard);
+            }
+            FlowStepKind::LlmTransform => {
+                let prompt = expand_flow_vars(&step.value, &text, input, clipboard);
+                text = llm_fn(&prompt, &text)?;
             }
             FlowStepKind::CopyText => plan.copy_text = Some(text.clone()),
             FlowStepKind::PasteText => {
@@ -383,7 +353,7 @@ pub fn run_flow_pipeline(flow: &WorkflowDef, input: &str, clipboard: &str) -> Fl
         }
     }
     plan.final_text = text;
-    plan
+    Ok(plan)
 }
 
 #[cfg(test)]
@@ -396,6 +366,7 @@ mod tests {
             id: "test_web".into(),
             name: "Clean Search".into(),
             keyword: "csearch".into(),
+            hotkey: "Alt+Shift+S".into(),
             description: String::new(),
             enabled: true,
             steps: vec![
@@ -415,14 +386,15 @@ mod tests {
     #[test]
     fn sanitizes_duplicate_and_empty_workflows() {
         let bad = vec![
-            WorkflowDef { id: "".into(), name: "No ID".into(), keyword: "".into(), description: "".into(), enabled: true, steps: vec![FlowStep { kind: FlowStepKind::Trim, value: "".into() }] },
-            WorkflowDef { id: "a".into(), name: "Empty".into(), keyword: "".into(), description: "".into(), enabled: true, steps: vec![] },
-            WorkflowDef { id: "ok".into(), name: "Valid".into(), keyword: "OK".into(), description: "".into(), enabled: true, steps: vec![FlowStep { kind: FlowStepKind::Trim, value: "".into() }] },
-            WorkflowDef { id: "OK".into(), name: "Dup".into(), keyword: "".into(), description: "".into(), enabled: true, steps: vec![FlowStep { kind: FlowStepKind::Trim, value: "".into() }] },
+            WorkflowDef { id: "".into(), name: "No ID".into(), keyword: "".into(), hotkey: "".into(), description: "".into(), enabled: true, steps: vec![FlowStep { kind: FlowStepKind::Trim, value: "".into() }] },
+            WorkflowDef { id: "a".into(), name: "Empty".into(), keyword: "".into(), hotkey: "".into(), description: "".into(), enabled: true, steps: vec![] },
+            WorkflowDef { id: "ok".into(), name: "Valid".into(), keyword: "OK".into(), hotkey: "Alt+Shift+V".into(), description: "".into(), enabled: true, steps: vec![FlowStep { kind: FlowStepKind::Trim, value: "".into() }] },
+            WorkflowDef { id: "OK".into(), name: "Dup".into(), keyword: "".into(), hotkey: "not-a-key".into(), description: "".into(), enabled: true, steps: vec![FlowStep { kind: FlowStepKind::Trim, value: "".into() }] },
         ];
         let clean = sanitize_workflows(bad);
         assert_eq!(clean.len(), 1);
         assert_eq!(clean[0].id, "ok");
         assert_eq!(clean[0].keyword, "ok");
+        assert_eq!(clean[0].hotkey, "Alt+Shift+V");
     }
 }

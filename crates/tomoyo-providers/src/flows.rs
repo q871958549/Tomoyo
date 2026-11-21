@@ -128,7 +128,7 @@ impl Provider for FlowsProvider {
                 category: ResultCategory::Plugin,
                 score,
                 icon: IconSpec::Monogram("WF".into()),
-                badge: Some(format!("{} 步", f.steps.len())),
+                badge: Some(if f.hotkey.is_empty() { format!("{} 步", f.steps.len()) } else { f.hotkey.clone() }),
                 copy_text: Some(f.name.clone()),
                 actions: vec![
                     ActionSpec {

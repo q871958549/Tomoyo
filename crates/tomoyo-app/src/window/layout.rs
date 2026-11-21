@@ -15,7 +15,7 @@ use windows::Win32::Graphics::Gdi::{
     DeleteObject, GetMonitorInfoW, MonitorFromPoint, MONITORINFO, MONITOR_DEFAULTTONEAREST,
     MONITOR_DEFAULTTONULL,
 };
-use windows::Win32::UI::HiDpi::GetDpiForWindow;
+use windows::Win32::UI::HiDpi::{GetDpiForMonitor, GetDpiForWindow, MDT_EFFECTIVE_DPI};
 use windows::Win32::UI::WindowsAndMessaging::{
     GetClientRect, GetCursorPos, GetWindowRect, MoveWindow, SendMessageW, SetWindowPos,
     HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOZORDER, SWP_SHOWWINDOW, WM_SETFONT,
@@ -102,44 +102,50 @@ impl AppShell {
 
     pub(super) fn position_on_active_monitor(&mut self) {
         unsafe {
-            let dpi = GetDpiForWindow(self.hwnd);
+            let mut pt = POINT::default();
+            let _ = GetCursorPos(&mut pt);
+            let cursor_mon = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
+
+            // Pick target monitor first so mixed-DPI monitors compute exact frame-1 dimensions.
+            let target_mon = if let Some((cx, cy)) = self.geom.custom_pos {
+                let m = MonitorFromPoint(POINT { x: cx + 160, y: cy + 30 }, MONITOR_DEFAULTTONULL);
+                if !m.is_invalid() { m } else { cursor_mon }
+            } else {
+                cursor_mon
+            };
+
+            let (mut dpi_x, mut dpi_y) = (0u32, 0u32);
+            let dpi = if GetDpiForMonitor(target_mon, MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y).is_ok() && dpi_x > 0 {
+                dpi_x
+            } else {
+                GetDpiForWindow(self.hwnd)
+            };
             if dpi > 0 {
                 self.sync_dpi_scale(dpi as f32 / 96.0);
             }
-            let width = (self.desired_width_dip() as f32 * self.dpi_scale) as i32;
-            let height = (self.desired_height_dip() as f32 * self.dpi_scale) as i32;
 
-            if let Some((cx, cy)) = self.geom.custom_pos {
-                let test_pt = POINT {
-                    x: cx + width / 2,
-                    y: cy + 30,
-                };
-                if !MonitorFromPoint(test_pt, MONITOR_DEFAULTTONULL).is_invalid() {
-                    let _ = SetWindowPos(
-                        self.hwnd,
-                        Some(HWND_TOPMOST),
-                        cx,
-                        cy,
-                        width,
-                        height,
-                        SWP_NOACTIVATE,
-                    );
-                    self.layout_edit_control(width);
-                    return;
-                }
-            }
-
-            let mut pt = POINT::default();
-            let _ = GetCursorPos(&mut pt);
-            let hmon = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
             let mut mi = MONITORINFO {
                 cbSize: std::mem::size_of::<MONITORINFO>() as u32,
                 ..Default::default()
             };
-            let _ = GetMonitorInfoW(hmon, &mut mi);
+            let _ = GetMonitorInfoW(target_mon, &mut mi);
             let work = mi.rcWork;
-            let x = work.left + ((work.right - work.left) - width) / 2;
-            let y = work.top + ((work.bottom - work.top) / 5).max(40);
+            let width = (self.desired_width_dip() as f32 * self.dpi_scale) as i32;
+            let height = (self.desired_height_dip() as f32 * self.dpi_scale) as i32;
+
+            let (x, y) = if let Some((cx, cy)) = self.geom.custom_pos {
+                let valid = !MonitorFromPoint(POINT { x: cx + 160, y: cy + 30 }, MONITOR_DEFAULTTONULL).is_invalid();
+                if valid {
+                    (
+                        cx.clamp(work.left, (work.right - width).max(work.left)),
+                        cy.clamp(work.top, (work.bottom - height).max(work.top)),
+                    )
+                } else {
+                    (work.left + ((work.right - work.left) - width) / 2, work.top + ((work.bottom - work.top) / 5).max(40))
+                }
+            } else {
+                (work.left + ((work.right - work.left) - width) / 2, work.top + ((work.bottom - work.top) / 5).max(40))
+            };
             let _ = SetWindowPos(self.hwnd, Some(HWND_TOPMOST), x, y, width, height, SWP_NOACTIVATE);
             self.layout_edit_control(width);
         }

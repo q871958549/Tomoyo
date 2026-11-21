@@ -90,3 +90,19 @@ jobs:
           RUSTFLAGS: "-D warnings"
         run: |
           cargo test -p tomoyo-protocol -p tomoyo-core -p tomoyo-everything -p tomoyo-providers -p tomoyo-ui-shared -p tomoyo-ui-macos -p tomoyo-ui-linux
+
+  windows-arm64-check:
+    runs-on: windows-11-arm
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Setup Rust toolchain (Windows ARM64)
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+      - name: Verify full workspace builds natively on Windows ARM64
+        env:
+          RUSTFLAGS: "-D warnings"
+        run: |
+          cargo check --workspace
+          cargo test -p tomoyo-protocol -p tomoyo-core

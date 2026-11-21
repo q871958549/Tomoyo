@@ -51,6 +51,7 @@ pub const WM_APP_UPDATE_READY: u32 = WM_APP + 4;
 pub(super) const WM_APP_CONFIG_SAVED: u32 = WM_APP + 20;
 pub const WM_APP_WAKE_EXISTING: u32 = WM_APP + 21;
 pub(super) const WM_APP_UPDATE_INSTALLED: u32 = WM_APP + 22;
+pub(super) const WM_APP_FLOW_DONE: u32 = WM_APP + 24;
 pub(super) const TIMER_HIBERNATE: usize = 1001;
 pub(super) const TIMER_CLEAR_TOAST: usize = 1002;
 pub(super) const TIMER_FOCUS_GUARD: usize = 1003;
@@ -140,6 +141,8 @@ pub struct AppShell {
     pub(super) hotkey_label: String,
     pub(super) hotkey_conflict: Option<String>,
     pub(super) plugin_hotkeys: Vec<tomoyo_plugin_host::ActivePluginHotkey>,
+    pub(super) flow_hotkeys: Vec<String>,
+    pub(super) pending_flow_result: Arc<Mutex<Option<Result<tomoyo_core::FlowRunPlan, String>>>>,
     pub(super) pending_update_install: Arc<Mutex<updater_ctrl::UpdateInstallSlot>>,
     pub(super) dpi_scale: f32,
     pub(super) taskbar_created_msg: u32,

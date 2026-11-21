@@ -77,6 +77,22 @@ pub fn set_sync_dir(dir: Option<&str>) -> Result<(Option<PathBuf>, String), Stri
             }
         }
     }
+    let src_notes = prev_root.join("notes");
+    if src_notes.is_dir() {
+        let dst_notes = target.join("notes");
+        let _ = std::fs::create_dir_all(&dst_notes);
+        if let Ok(rd) = std::fs::read_dir(&src_notes) {
+            for ent in rd.flatten().take(500) {
+                let p = ent.path();
+                if p.is_file() {
+                    let dst_f = dst_notes.join(ent.file_name());
+                    if !dst_f.exists() {
+                        let _ = std::fs::copy(&p, &dst_f);
+                    }
+                }
+            }
+        }
+    }
 
     std::fs::create_dir_all(&local).map_err(|e| format!("无法写入本地指针目录：{e}"))?;
     std::fs::write(&ptr_file, format!("{clean}\n")).map_err(|e| format!("写入同步目录配置失败：{e}"))?;

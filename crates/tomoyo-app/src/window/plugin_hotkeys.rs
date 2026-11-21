@@ -1,16 +1,19 @@
-//! Protocol v2 declarative plugin global hotkeys & non-blocking event dispatch.
+//! Protocol v2 declarative plugin & workflow global hotkeys + non-blocking event dispatch.
 
 use super::input::register_optional_hotkey;
 use super::AppShell;
 use std::sync::Arc;
-use tomoyo_core::{parse_hotkey, TomoyoConfig};
+use tomoyo_core::{load_or_init_flows, parse_hotkey, TomoyoConfig};
 use tomoyo_plugin_host::{ActivePluginHotkey, PluginHost};
 use tomoyo_protocol::{PluginEventKind, PluginEventPayload};
 use windows::Win32::Foundation::HWND;
 use windows::Win32::UI::Input::KeyboardAndMouse::UnregisterHotKey;
+use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, IsWindowVisible};
 
 pub(super) const PLUGIN_HOTKEY_BASE: i32 = 100;
 const MAX_PLUGIN_HOTKEYS: usize = 16;
+pub(super) const FLOW_HOTKEY_BASE: i32 = 200;
+const MAX_FLOW_HOTKEYS: usize = 16;
 
 /// Registers active global hotkeys declared by enabled Protocol v2 plugins.
 /// Conflicted slots are automatically appended to `override_entries` when auto-rescue is enabled.
@@ -37,12 +40,56 @@ pub(super) fn register_plugin_hotkeys(
     registered
 }
 
+/// Registers active global hotkeys bound to enabled declarative workflows (`flows.toml`).
+pub(super) fn register_flow_hotkeys(
+    hwnd: HWND,
+    cfg: &TomoyoConfig,
+    override_entries: &mut Vec<(i32, u32, u32)>,
+) -> Vec<String> {
+    let mut registered = Vec::new();
+    for flow in load_or_init_flows().into_iter().filter(|f| f.enabled && !f.hotkey.trim().is_empty()) {
+        if registered.len() >= MAX_FLOW_HOTKEYS {
+            break;
+        }
+        let id = FLOW_HOTKEY_BASE + registered.len() as i32;
+        let spec = flow.hotkey.trim();
+        if register_optional_hotkey(hwnd, id, spec) {
+            tracing::info!(flow = %flow.id, hotkey = %spec, id = id, "Registered workflow hotkey");
+        } else if cfg.override_conflict_hotkeys {
+            if let Some(p) = parse_hotkey(spec) {
+                override_entries.push((id, p.modifiers, p.vk));
+                tracing::info!(flow = %flow.id, hotkey = %spec, id = id, "Queued workflow hotkey for conflict rescue");
+            }
+        }
+        registered.push(flow.id);
+    }
+    registered
+}
+
 pub(super) fn unregister_plugin_hotkeys(hwnd: HWND) {
     unsafe {
         for i in 0..MAX_PLUGIN_HOTKEYS as i32 {
             let _ = UnregisterHotKey(Some(hwnd), PLUGIN_HOTKEY_BASE + i);
         }
+        for i in 0..MAX_FLOW_HOTKEYS as i32 {
+            let _ = UnregisterHotKey(Some(hwnd), FLOW_HOTKEY_BASE + i);
+        }
     }
+}
+
+/// Handles a triggered declarative workflow global hotkey (`id >= FLOW_HOTKEY_BASE`).
+pub(super) fn handle_flow_hotkey(app: &mut AppShell, id: i32) {
+    let idx = (id - FLOW_HOTKEY_BASE) as usize;
+    let Some(flow_id) = app.flow_hotkeys.get(idx).cloned() else {
+        return;
+    };
+    if !unsafe { IsWindowVisible(app.hwnd).as_bool() } {
+        let fg = unsafe { GetForegroundWindow() };
+        if !fg.is_invalid() && fg != app.hwnd {
+            app.inter.prev_foreground_hwnd = fg.0 as isize;
+        }
+    }
+    app.execute_workflow(&flow_id, "");
 }
 
 /// Handles a triggered Protocol v2 plugin hotkey (`id >= PLUGIN_HOTKEY_BASE`).

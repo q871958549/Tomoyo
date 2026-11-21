@@ -5,7 +5,7 @@ use super::input::{register_all_hotkeys, unregister_all_hotkeys, HOTKEY_CAPTURE_
 use super::updater_ctrl::WM_APP_UPDATE_PROGRESS;
 use super::{
     AppShell, HOTKEY_CLIPBOARD_ID, HOTKEY_ID, HOTKEY_TRANSLATE_ID, TIMER_CLEAR_TOAST,
-    TIMER_FOCUS_GUARD, TIMER_HIBERNATE, WM_APP_CONFIG_SAVED, WM_APP_EDIT_KEY,
+    TIMER_FOCUS_GUARD, TIMER_HIBERNATE, WM_APP_CONFIG_SAVED, WM_APP_EDIT_KEY, WM_APP_FLOW_DONE,
     WM_APP_PASTE_INTERCEPT, WM_APP_RESULTS_READY, WM_APP_UPDATE_INSTALLED, WM_APP_UPDATE_READY,
     WM_APP_WAKE_EXISTING,
 };
@@ -124,8 +124,9 @@ pub(super) unsafe extern "system" fn main_wndproc(
                 4 => {
                     let cfg = app.config.read().unwrap().clone();
                     unregister_all_hotkeys(hwnd);
-                    let (active, _, plug_hks) = register_all_hotkeys(hwnd, &cfg, &app.plugin_host);
+                    let (active, _, plug_hks, flow_hks) = register_all_hotkeys(hwnd, &cfg, &app.plugin_host);
                     app.plugin_hotkeys = plug_hks;
+                    app.flow_hotkeys = flow_hks;
                     if let Some(t) = app.tray.as_mut() { t.update_tooltip(&active); }
                 }
                 3 => unregister_all_hotkeys(hwnd),
@@ -144,6 +145,7 @@ pub(super) unsafe extern "system" fn main_wndproc(
                 HOTKEY_CLIPBOARD_ID => app.toggle_clipboard_launcher(),
                 HOTKEY_TRANSLATE_ID => app.trigger_selection_translate(),
                 HOTKEY_CAPTURE_ID => app.trigger_capture("region"),
+                id if id >= super::plugin_hotkeys::FLOW_HOTKEY_BASE => super::plugin_hotkeys::handle_flow_hotkey(app, id),
                 id if id >= super::plugin_hotkeys::PLUGIN_HOTKEY_BASE => super::plugin_hotkeys::handle_plugin_hotkey(app, id),
                 _ => {}
             }
@@ -212,6 +214,7 @@ pub(super) unsafe extern "system" fn main_wndproc(
         WM_APP_UPDATE_READY => { app.on_update_ready(); LRESULT(0) }
         WM_APP_UPDATE_PROGRESS => { app.on_update_progress(); LRESULT(0) }
         WM_APP_UPDATE_INSTALLED => { app.on_update_installed(); LRESULT(0) }
+        WM_APP_FLOW_DONE => { app.on_async_flow_done(); LRESULT(0) }
         WM_DPICHANGED => {
             let new_dpi = (wparam.0 & 0xFFFF) as u32;
             let suggested = (lparam.0 != 0).then(|| unsafe { &*(lparam.0 as *const RECT) });

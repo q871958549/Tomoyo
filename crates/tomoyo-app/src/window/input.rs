@@ -253,7 +253,7 @@ pub(super) fn register_all_hotkeys(
     hwnd: HWND,
     cfg: &TomoyoConfig,
     plugin_host: &tomoyo_plugin_host::PluginHost,
-) -> (String, Option<String>, Vec<tomoyo_plugin_host::ActivePluginHotkey>) {
+) -> (String, Option<String>, Vec<tomoyo_plugin_host::ActivePluginHotkey>, Vec<String>) {
     super::hotkey_avoid::sync_hotkey_avoidance(cfg.suspend_hotkeys_in_fullscreen, &cfg.hotkey_excluded_apps);
     let lang = cfg.lang();
     let allow_override = cfg.override_conflict_hotkeys;
@@ -326,6 +326,7 @@ pub(super) fn register_all_hotkeys(
     let mut tr_status = reg_opt(HOTKEY_TRANSLATE_ID, tr_spec, lang.pick("划词翻译", "Translate"));
     let mut cap_status = reg_opt(HOTKEY_CAPTURE_ID, cap_spec, lang.pick("截图", "Capture"));
     let plug_hks = super::plugin_hotkeys::register_plugin_hotkeys(hwnd, cfg, plugin_host, &mut override_entries);
+    let flow_hks = super::plugin_hotkeys::register_flow_hotkeys(hwnd, cfg, &mut override_entries);
 
     if !sync_conflict_override_hook(hwnd, &override_entries) {
         for slot in [&mut main_status, &mut clip_status, &mut tr_status, &mut cap_status] {
@@ -348,7 +349,7 @@ pub(super) fn register_all_hotkeys(
             Lang::En => format!("⚠ {} (Ctrl+, to change)", issues.join("; ")),
         })
     };
-    (active, summary, plug_hks)
+    (active, summary, plug_hks, flow_hks)
 }
 
 pub(super) fn register_optional_hotkey(hwnd: HWND, id: i32, spec: &str) -> bool {

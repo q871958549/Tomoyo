@@ -172,10 +172,11 @@ impl AppShell {
                 }
             }
             unregister_all_hotkeys(self.hwnd);
-            let (active, conflict, plug_hks) = register_all_hotkeys(self.hwnd, &cfg_for_hk, &self.plugin_host);
+            let (active, conflict, plug_hks, flow_hks) = register_all_hotkeys(self.hwnd, &cfg_for_hk, &self.plugin_host);
             self.hotkey_label = active;
             self.hotkey_conflict = conflict;
             self.plugin_hotkeys = plug_hks;
+            self.flow_hotkeys = flow_hks;
             if let Some(tray) = &mut self.tray {
                 tray.update_tooltip(&self.hotkey_label);
             }

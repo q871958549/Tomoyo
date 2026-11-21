@@ -206,6 +206,11 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
     flowSw?.click();
     flushSync();
     expect(wv.posted.some((m) => m.cmd === 'save_flows')).toBe(true);
+    const hkBtn = document.querySelector<HTMLButtonElement>('button[data-flow-hk="clip_clean_paste"]');
+    expect(hkBtn).not.toBeNull();
+    hkBtn?.click();
+    flushSync();
+    expect(document.querySelector('[data-flow-hk-drawer="clip_clean_paste"]')).not.toBeNull();
 
     unmount(app);
   });

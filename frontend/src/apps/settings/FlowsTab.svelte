@@ -1,9 +1,10 @@
 <script lang="ts">
-  import { FileCode, Plus, Trash2, Workflow } from '@lucide/svelte';
+  import { FileCode, Keyboard, Plus, Trash2, Workflow } from '@lucide/svelte';
   import { postHost } from '../../lib/ipc';
   import { tr, type Lang } from '../../lib/i18n';
   import type { SelectOption, WorkflowDef, WorkflowStep } from '../../lib/types';
   import Button from '../../lib/ui/Button.svelte';
+  import HotkeyRecorder from '../../lib/ui/HotkeyRecorder.svelte';
   import Input from '../../lib/ui/Input.svelte';
   import Select from '../../lib/ui/Select.svelte';
   import Switch from '../../lib/ui/Switch.svelte';
@@ -17,6 +18,16 @@
 
   let { lang, flows, flowsPath, onSaveFlows }: Props = $props();
   let isEn = $derived(lang === 'en');
+  let hkEditId = $state<string | null>(null);
+
+  const FLOW_HK_PRESETS: SelectOption[] = [
+    { value: 'Alt+Shift+V', label: 'Alt+Shift+V' },
+    { value: 'Alt+Shift+T', label: 'Alt+Shift+T' },
+    { value: 'Alt+Shift+N', label: 'Alt+Shift+N' },
+    { value: 'Alt+Shift+A', label: 'Alt+Shift+A' },
+    { value: 'F2', label: 'F2' },
+    { value: 'F3', label: 'F3' },
+  ];
 
   const STEP_META: Array<{ value: string; zh: string; en: string; needsVal?: boolean; ph?: string }> = [
     { value: 'read_clipboard', zh: '读取剪贴板', en: 'Read Clipboard' },
@@ -30,6 +41,7 @@
     { value: 'lowercase', zh: '转为小写', en: 'Lowercase' },
     { value: 'url_encode', zh: 'URL 编码', en: 'URL Encode' },
     { value: 'template', zh: '模板拼装', en: 'Template', needsVal: true, ph: '例如 [{{date}}] {{text}}' },
+    { value: 'llm_transform', zh: '本地/AI 文本处理', en: 'Local / AI Transform', needsVal: true, ph: '系统提示词（调用本地 Ollama 或 DPAPI OpenAI 接口）' },
     { value: 'copy_text', zh: '复制到剪贴板', en: 'Copy to Clipboard' },
     { value: 'paste_text', zh: '直贴回原窗口', en: 'Paste to Window' },
     { value: 'launch_translate', zh: '多源翻译', en: 'Launch Translate' },
@@ -67,6 +79,11 @@
     onSaveFlows(next);
   }
 
+  function updateFlowHotkey(idx: number, spec: string) {
+    const next = flows.map((f, i) => (i === idx ? { ...f, hotkey: spec.trim() } : f));
+    onSaveFlows(next);
+  }
+
   function removeFlow(idx: number) {
     const next = flows.filter((_, i) => i !== idx);
     onSaveFlows(next);
@@ -95,6 +112,7 @@
       id,
       name,
       keyword: draftKeyword.trim().toLowerCase(),
+      hotkey: '',
       description: draftDesc.trim(),
       enabled: true,
       steps: draftSteps.map((s) => ({ kind: s.kind, value: (s.value || '').trim() })),
@@ -126,27 +144,52 @@
     <div class="empty-msg">{isEn ? 'No workflows configured yet.' : '暂无工作流，可在下方创建自定义动作管道。'}</div>
   {:else}
     {#each flows as f, i}
-      <div class="flow-row {f.enabled ? '' : 'is-off'}">
-        <div class="flow-main">
-          <div class="flow-top">
-            <Workflow size={14} class="flow-ico" />
-            <span class="t-label">{f.name}</span>
-            {#if f.keyword}<span class="t-pill">{f.keyword}</span>{/if}
+      {@const editingHk = hkEditId === f.id}
+      <div class="flow-item">
+        <div class="flow-row {f.enabled ? '' : 'is-off'}">
+          <div class="flow-main">
+            <div class="flow-top">
+              <Workflow size={14} class="flow-ico" />
+              <span class="t-label">{f.name}</span>
+              {#if f.keyword}<span class="t-pill">{f.keyword}</span>{/if}
+              <button
+                type="button"
+                class="hk-pill {f.hotkey || editingHk ? 'is-bound' : ''}"
+                data-flow-hk={f.id}
+                onclick={() => (hkEditId = editingHk ? null : f.id)}
+              >
+                <Keyboard size={11} />
+                <span>{f.hotkey || (isEn ? 'Bind Hotkey' : '绑定全局热键')}</span>
+              </button>
+            </div>
+            {#if f.description}<div class="t-desc">{f.description}</div>{/if}
+            <div class="step-chain">
+              {#each f.steps as s, si}
+                {#if si > 0}<span class="arrow">→</span>{/if}
+                <span class="step-chip">{stepLabel(s.kind)}</span>
+              {/each}
+            </div>
           </div>
-          {#if f.description}<div class="t-desc">{f.description}</div>{/if}
-          <div class="step-chain">
-            {#each f.steps as s, si}
-              {#if si > 0}<span class="arrow">→</span>{/if}
-              <span class="step-chip">{stepLabel(s.kind)}</span>
-            {/each}
+          <div class="flow-ops">
+            <Switch checked={f.enabled} ariaLabel={f.name} onchange={(v) => toggleEnabled(i, v)} />
+            <Button variant="ghost" size="sm" onclick={() => removeFlow(i)}>
+              <Trash2 size={13} />
+            </Button>
           </div>
         </div>
-        <div class="flow-ops">
-          <Switch checked={f.enabled} ariaLabel={f.name} onchange={(v) => toggleEnabled(i, v)} />
-          <Button variant="ghost" size="sm" onclick={() => removeFlow(i)}>
-            <Trash2 size={13} />
-          </Button>
-        </div>
+        {#if editingHk}
+          <div class="hk-drawer" data-flow-hk-drawer={f.id}>
+            <div class="t-desc">{isEn ? 'Triggers this workflow directly without opening launcher (auto-avoids fullscreen apps).' : '按下即直接静默触发该工作流（自动继承全屏/远程桌面避让与冲突接管）。'}</div>
+            <HotkeyRecorder
+              value={f.hotkey || ''}
+              presets={FLOW_HK_PRESETS}
+              allowDisable={true}
+              presetPlaceholder={isEn ? 'Preset' : '预设'}
+              disabledLabel={isEn ? 'Unbound' : '未绑定'}
+              onchange={(spec) => updateFlowHotkey(i, spec)}
+            />
+          </div>
+        {/if}
       </div>
     {/each}
   {/if}
@@ -210,12 +253,25 @@
   .tab-lead { margin: 0; font-size: 12.5px; color: var(--muted); }
   .flow-list { padding: 8px 16px; }
   .empty-msg { padding: 14px 0; font-size: 12.5px; color: var(--muted); }
+  .flow-item { border-bottom: 1px solid var(--border); }
+  .flow-item:last-child { border-bottom: 0; }
   .flow-row {
     display: flex; align-items: center; justify-content: space-between; gap: 12px;
-    padding: 12px 0; border-bottom: 1px solid var(--border);
+    padding: 12px 0;
   }
-  .flow-row:last-child { border-bottom: 0; }
   .flow-row.is-off { opacity: 0.55; }
+  .hk-pill {
+    display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px; border-radius: 999px;
+    border: 1px solid var(--border-strong); background: var(--surface); color: var(--muted);
+    font-family: inherit; font-size: 11px; font-weight: 500; cursor: pointer;
+    transition: border-color 0.12s ease, color 0.12s ease, background-color 0.12s ease;
+  }
+  .hk-pill:hover, .hk-pill.is-bound { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+  .hk-drawer {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    margin: 0 0 10px; padding: 9px 12px; border-radius: 8px;
+    background: var(--canvas); border: 1px solid var(--border);
+  }
   .flow-main { min-width: 0; flex: 1; }
   .flow-top { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
   :global(.flow-ico) { color: var(--accent); flex-shrink: 0; }

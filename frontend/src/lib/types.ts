@@ -216,6 +216,7 @@ export interface WorkflowDef {
   id: string;
   name: string;
   keyword: string;
+  hotkey?: string;
   description: string;
   enabled: boolean;
   steps: WorkflowStep[];
