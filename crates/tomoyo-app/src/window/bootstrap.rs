@@ -1,11 +1,10 @@
 //! Win32 window bootstrap, EDIT control creation, and two-phase async query worker setup.
 
-use super::input::{edit_subclass_proc, register_configured_hotkey, register_optional_hotkey};
+use super::input::{edit_subclass_proc, register_all_hotkeys};
 use super::wndproc::main_wndproc;
 use super::{
     AppShell, InteractionState, QueryJob, QueryOutcome, WindowGeometry, EDIT_CTRL_ID,
-    EDIT_SUBCLASS_ID, EM_SETCUEBANNER, HOTKEY_CLIPBOARD_ID, HOTKEY_TRANSLATE_ID,
-    WM_APP_RESULTS_READY,
+    EDIT_SUBCLASS_ID, EM_SETCUEBANNER, WM_APP_RESULTS_READY,
 };
 use crate::actions::read_clipboard_text;
 use crate::preview_loader::AsyncPreviewLoader;
@@ -147,11 +146,9 @@ impl AppShell {
             unsafe {
                 let _ = AddClipboardFormatListener(hwnd);
             }
-            let (active, conflict) = register_configured_hotkey(hwnd, &cfg_snap.hotkey);
+            let (active, conflict) = register_all_hotkeys(hwnd, &cfg_snap);
             hotkey_label = active;
             hotkey_conflict = conflict;
-            let _ = register_optional_hotkey(hwnd, HOTKEY_CLIPBOARD_ID, &cfg_snap.clipboard.hotkey);
-            let _ = register_optional_hotkey(hwnd, HOTKEY_TRANSLATE_ID, &cfg_snap.translate.hotkey);
             Some(TrayIcon::install(hwnd, &hotkey_label))
         } else {
             None

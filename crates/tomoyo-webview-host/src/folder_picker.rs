@@ -15,7 +15,7 @@ use windows::Win32::UI::Shell::{
 /// Opens the native Windows folder selection dialog parented to `owner` and validates
 /// the chosen directory against Tomoyo's scan directory safety rules.
 pub fn pick_scan_folder(owner: HWND) -> String {
-    match show_folder_dialog(owner) {
+    match show_folder_dialog(owner, w!("选择自定义应用或便携软件目录")) {
         Some(raw_path) => match validate_scan_dir(&raw_path) {
             Ok(clean) => serde_json::json!({
                 "event": "folder_picked",
@@ -42,7 +42,32 @@ pub fn pick_scan_folder(owner: HWND) -> String {
     }
 }
 
-fn show_folder_dialog(owner: HWND) -> Option<String> {
+pub fn pick_capture_save_folder(owner: HWND) -> String {
+    match show_folder_dialog(owner, w!("选择截图默认保存目录")) {
+        Some(raw_path) if std::path::Path::new(&raw_path).is_dir() => serde_json::json!({
+            "event": "capture_dir_picked",
+            "ok": true,
+            "cancelled": false,
+            "path": raw_path
+        })
+        .to_string(),
+        Some(raw_path) => serde_json::json!({
+            "event": "capture_dir_picked",
+            "ok": false,
+            "cancelled": false,
+            "error": format!("所选目录不可访问: {raw_path}")
+        })
+        .to_string(),
+        None => serde_json::json!({
+            "event": "capture_dir_picked",
+            "ok": false,
+            "cancelled": true
+        })
+        .to_string(),
+    }
+}
+
+fn show_folder_dialog(owner: HWND, title: windows::core::PCWSTR) -> Option<String> {
     unsafe {
         let dialog: IFileOpenDialog =
             CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER).ok()?;
@@ -50,7 +75,7 @@ fn show_folder_dialog(owner: HWND) -> Option<String> {
         let _ = dialog.SetOptions(
             cur_opts | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST | FOS_NOCHANGEDIR,
         );
-        let _ = dialog.SetTitle(w!("选择自定义应用或便携软件目录"));
+        let _ = dialog.SetTitle(title);
         if dialog.Show(Some(owner)).is_err() {
             return None;
         }

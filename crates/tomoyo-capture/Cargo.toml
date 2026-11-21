@@ -1,0 +1,36 @@
+[package]
+name = "tomoyo-capture"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Ephemeral pure-Rust native Windows screenshot, annotation, color picker & Pin-to-Desktop helper for Tomoyo (0 MB idle RAM)"
+
+[[bin]]
+name = "tomoyo-capture"
+path = "src/main.rs"
+
+[dependencies]
+tomoyo-core = { workspace = true }
+png = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+mimalloc = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+windows = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Dwm",
+    "Win32_Graphics_Gdi",
+    "Win32_System_Com",
+    "Win32_System_Console",
+    "Win32_System_DataExchange",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Memory",
+    "Win32_System_Threading",
+    "Win32_UI_HiDpi",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_WindowsAndMessaging",
+] }

@@ -24,8 +24,9 @@ use tomoyo_core::{
 use tomoyo_plugin_host::{default_plugin_dirs, PluginHost};
 use tomoyo_protocol::AttachedContext;
 use tomoyo_providers::{
-    AppsProvider, CalcProvider, ClipboardProvider, EverythingProvider, ProcessProvider,
-    SnippetsProvider, SystemProvider, TranslateProvider, WebSearchProvider, WindowsSwitcherProvider,
+    AppsProvider, CalcProvider, CaptureProvider, ClipboardProvider, EverythingProvider,
+    ProcessProvider, SnippetsProvider, SystemProvider, TranslateProvider, WebSearchProvider,
+    WindowsSwitcherProvider,
 };
 use window::{AppShell, WM_APP_UPDATE_READY, WM_APP_WAKE_EXISTING};
 use windows::core::{w, PCWSTR};
@@ -115,6 +116,7 @@ fn build_engine() -> (
     let everything = Arc::new(EverythingProvider::new(config.clone()));
     let calc = Arc::new(CalcProvider::new());
     let translate = Arc::new(TranslateProvider::new(config.clone()));
+    let capture = Arc::new(CaptureProvider::new(config.clone()));
     let snippets = Arc::new(SnippetsProvider::new(config.clone()));
     let web = Arc::new(WebSearchProvider::new(config.clone()));
     let windows = Arc::new(WindowsSwitcherProvider::new());
@@ -133,6 +135,7 @@ fn build_engine() -> (
         everything,
         clipboard.clone(),
         translate,
+        capture,
         windows,
         processes,
         system,
@@ -204,6 +207,7 @@ fn run_self_test(fonts: &PrivateFonts, strict_budget: bool) {
         ":plugins",
         "snip iso",
         "cb",
+        "cap",
         "@pdf",
         "hi Tomoyo Rust",
         "py tomoyo",

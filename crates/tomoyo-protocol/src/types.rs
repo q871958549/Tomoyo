@@ -289,6 +289,7 @@ pub enum InternalCommandKind {
     OpenClipboardManager { focus_key: Option<String> },
     ToggleClipboardCapture,
     OpenTranslator { text: String, target_lang: Option<String> },
+    StartCapture { mode: String },
     CheckForUpdates,
     InstallUpdate,
     ClearAttachedContext,

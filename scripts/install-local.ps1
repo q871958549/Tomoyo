@@ -25,7 +25,7 @@ $version = if ($cargoToml -match 'version\s*=\s*"([^"]+)"') { $Matches[1] } else
 Write-Host "=== Installing Tomoyo v$version -> $InstallDir ===" -ForegroundColor Cyan
 
 # Stop any running instances before replacing binaries
-Stop-Process -Name "tomoyo","tomoyo-webview-host" -Force -ErrorAction SilentlyContinue
+Stop-Process -Name "tomoyo","tomoyo-webview-host","tomoyo-capture" -Force -ErrorAction SilentlyContinue
 Start-Sleep -Milliseconds 300
 
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
@@ -33,7 +33,7 @@ New-Item -ItemType Directory -Force -Path (Join-Path $InstallDir "assets\fonts")
 New-Item -ItemType Directory -Force -Path (Join-Path $InstallDir "registry") | Out-Null
 
 # Copy executables & license/docs
-foreach ($bin in @("tomoyo.exe", "tomoyo-webview-host.exe", "tomoyo-cli.exe", "tomoyo-plugin-hello.exe", "tomoyo-plugin-ocr.exe")) {
+foreach ($bin in @("tomoyo.exe", "tomoyo-webview-host.exe", "tomoyo-capture.exe", "tomoyo-cli.exe", "tomoyo-plugin-hello.exe", "tomoyo-plugin-ocr.exe")) {
     Copy-Item (Join-Path $releaseDir $bin) $InstallDir -Force
 }
 Copy-Item (Join-Path $repoRoot "LICENSE-MIT"), (Join-Path $repoRoot "LICENSE-APACHE"), (Join-Path $repoRoot "README.md") $InstallDir -Force

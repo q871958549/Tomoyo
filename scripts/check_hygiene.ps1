@@ -11,8 +11,8 @@ param(
 $ErrorActionPreference = "Stop"
 $violations = 0
 
-Write-Host "=== [1/3] Checking source file line-count ceiling (<= $MaxLines lines) ==="
-$files = Get-ChildItem -Path crates, plugins -Recurse -Include *.rs,*.html,*.css,*.js,*.py |
+Write-Host "=== [1/4] Checking source file line-count ceiling (<= $MaxLines lines) ==="
+$files = Get-ChildItem -Path crates, plugins, scripts -Recurse -Include *.rs,*.html,*.css,*.js,*.mjs,*.py |
     Where-Object { $_.FullName -notmatch '\\target\\' -and $_.FullName -notmatch '\\__pycache__\\' }
 
 foreach ($f in $files) {
@@ -27,7 +27,7 @@ if ($violations -eq 0) {
     Write-Host "  [OK] All $($files.Count) source files are strictly <= $MaxLines lines!" -ForegroundColor Green
 }
 
-Write-Host "=== [2/3] Checking forbidden heavy dependencies in Cargo.toml ==="
+Write-Host "=== [2/4] Checking forbidden heavy dependencies in Cargo.toml ==="
 $forbiddenCrates = @('^\s*tokio\s*=', '^\s*reqwest\s*=', '^\s*hyper\s*=', '^\s*tauri\s*=', '^\s*wry\s*=', '^\s*async-std\s*=')
 $tomls = Get-ChildItem -Path Cargo.toml, crates, plugins -Recurse -Include Cargo.toml |
     Where-Object { $_.FullName -notmatch '\\target\\' }
@@ -46,7 +46,7 @@ if ($depViolations -eq 0) {
     Write-Host "  [OK] Zero forbidden heavy crates detected." -ForegroundColor Green
 }
 
-Write-Host "=== [3/3] Checking anti-WARP / anti-Direct2D regression ==="
+Write-Host "=== [3/4] Checking anti-WARP / anti-Direct2D regression ==="
 $warpHits = Select-String -Path (Get-ChildItem -Path crates -Recurse -Include *.rs) -Pattern 'ID2D1DCRenderTarget|D2D1CreateFactory' -ErrorAction SilentlyContinue
 if ($warpHits) {
     foreach ($h in $warpHits) {
@@ -55,6 +55,21 @@ if ($warpHits) {
     }
 } else {
     Write-Host "  [OK] Pure-Rust SDF + ClearType GDI pipeline preserved (zero D2D/WARP bloat)." -ForegroundColor Green
+}
+
+Write-Host "=== [4/4] Executing WebView2 UI JS runtime smoke gate ==="
+$nodeCmd = Get-Command node -ErrorAction SilentlyContinue
+if ($nodeCmd) {
+    & $nodeCmd.Source "scripts/check_webview_ui.mjs"
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "  [FAIL] WebView2 UI runtime JS smoke check failed!" -ForegroundColor Red
+        $violations++
+    }
+} elseif ($env:CI) {
+    Write-Host "  [FAIL] Node.js required in CI to execute scripts/check_webview_ui.mjs" -ForegroundColor Red
+    $violations++
+} else {
+    Write-Host "  [WARN] Node.js not found locally; skipped WebView2 UI JS runtime check." -ForegroundColor Yellow
 }
 
 if ($violations -gt 0) {

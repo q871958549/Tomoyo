@@ -1,13 +1,10 @@
 //! Self-test, soak diagnostics, and live hot-reload synchronization for `AppShell`.
 
-use super::input::{register_configured_hotkey, register_optional_hotkey};
-use super::{
-    bootstrap::apply_cue_banner, AppShell, HOTKEY_CLIPBOARD_ID, HOTKEY_ID, HOTKEY_TRANSLATE_ID,
-};
+use super::input::{register_all_hotkeys, unregister_all_hotkeys};
+use super::{bootstrap::apply_cue_banner, AppShell};
 use crate::renderer::{compute_filter_counts, MIN_WINDOW_WIDTH_DIP};
 use tomoyo_core::TomoyoConfig;
 use tomoyo_protocol::{AttachedContext, SearchFilter};
-use windows::Win32::UI::Input::KeyboardAndMouse::UnregisterHotKey;
 use windows::Win32::UI::WindowsAndMessaging::IsWindowVisible;
 
 impl AppShell {
@@ -69,9 +66,6 @@ impl AppShell {
         let fresh = TomoyoConfig::load_or_create();
         let new_lang = fresh.lang();
         let new_theme = fresh.theme.clone();
-        let new_hotkey = fresh.hotkey.clone();
-        let new_clip_hotkey = fresh.clipboard.hotkey.clone();
-        let new_tr_hotkey = fresh.translate.hotkey.clone();
         self.preview_enabled = fresh.auto_preview;
         self.show_filter_bar = fresh.show_filter_bar;
         self.geom.list_width_dip = fresh.window.width_dip.clamp(MIN_WINDOW_WIDTH_DIP, 1400);
@@ -87,6 +81,7 @@ impl AppShell {
                     || old.apps.extra_scan_depth != fresh.apps.extra_scan_depth
             })
             .unwrap_or(true);
+        let cfg_for_hk = fresh.clone();
         if let Ok(mut cfg) = self.config.write() {
             *cfg = fresh;
         }
@@ -96,16 +91,10 @@ impl AppShell {
         }
         self.apply_theme(&new_theme, false);
         if self.tray.is_some() {
-            unsafe {
-                let _ = UnregisterHotKey(Some(self.hwnd), HOTKEY_ID);
-                let _ = UnregisterHotKey(Some(self.hwnd), HOTKEY_CLIPBOARD_ID);
-                let _ = UnregisterHotKey(Some(self.hwnd), HOTKEY_TRANSLATE_ID);
-            }
-            let (active, conflict) = register_configured_hotkey(self.hwnd, &new_hotkey);
+            unregister_all_hotkeys(self.hwnd);
+            let (active, conflict) = register_all_hotkeys(self.hwnd, &cfg_for_hk);
             self.hotkey_label = active;
             self.hotkey_conflict = conflict;
-            let _ = register_optional_hotkey(self.hwnd, HOTKEY_CLIPBOARD_ID, &new_clip_hotkey);
-            let _ = register_optional_hotkey(self.hwnd, HOTKEY_TRANSLATE_ID, &new_tr_hotkey);
             if let Some(tray) = &mut self.tray {
                 tray.update_tooltip(&self.hotkey_label);
             }

@@ -50,6 +50,10 @@ jobs:
           $p2 = Start-Process -FilePath ".\target\release\tomoyo-webview-host.exe" -ArgumentList "--self-test" -Wait -PassThru -RedirectStandardOutput $out2 -NoNewWindow
           Get-Content $out2
           if ($p2.ExitCode -ne 0) { exit $p2.ExitCode }
+          $out3 = Join-Path $env:TEMP "tomoyo_ci_st3.txt"
+          $p3 = Start-Process -FilePath ".\target\release\tomoyo-capture.exe" -ArgumentList "--self-test" -Wait -PassThru -RedirectStandardOutput $out3 -NoNewWindow
+          Get-Content $out3
+          if ($p3.ExitCode -ne 0) { exit $p3.ExitCode }
           .\target\release\tomoyo-plugin-ocr.exe --self-test
           .\target\release\tomoyo-cli.exe registry list
 

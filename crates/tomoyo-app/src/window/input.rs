@@ -1,15 +1,21 @@
 //! Keyboard navigation, filter shortcuts, global hotkey registration, and EDIT subclassing.
 
-use super::{AppShell, EM_GETSEL, HOTKEY_ID, WM_APP_EDIT_KEY, WM_APP_PASTE_INTERCEPT};
+use super::{
+    AppShell, EM_GETSEL, HOTKEY_CLIPBOARD_ID, HOTKEY_ID, HOTKEY_TRANSLATE_ID, WM_APP_EDIT_KEY,
+    WM_APP_PASTE_INTERCEPT,
+};
 use crate::actions::{clipboard_has_rich_attachment, set_clipboard_text};
 use std::ffi::c_void;
-use tomoyo_core::parse_hotkey;
+use tomoyo_core::{parse_hotkey, Lang, TomoyoConfig};
 use tomoyo_protocol::SearchFilter;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    GetKeyState, RegisterHotKey, HOT_KEY_MODIFIERS, MOD_CONTROL, MOD_NOREPEAT, MOD_SHIFT, VK_BACK,
-    VK_CONTROL, VK_DOWN, VK_ESCAPE, VK_RETURN, VK_SHIFT, VK_SPACE, VK_TAB, VK_UP,
+    GetKeyState, RegisterHotKey, UnregisterHotKey, HOT_KEY_MODIFIERS, MOD_CONTROL, MOD_NOREPEAT,
+    MOD_SHIFT, VK_BACK, VK_CONTROL, VK_DOWN, VK_ESCAPE, VK_RETURN, VK_SHIFT, VK_SPACE, VK_TAB,
+    VK_UP,
 };
+
+pub(super) const HOTKEY_CAPTURE_ID: i32 = 4;
 use windows::Win32::UI::Shell::DefSubclassProc;
 use windows::Win32::UI::WindowsAndMessaging::{
     GetWindowTextLengthW, PostMessageW, SendMessageW, WM_KEYDOWN, WM_SYSKEYDOWN,
@@ -225,6 +231,49 @@ pub(super) fn register_configured_hotkey(hwnd: HWND, spec: &str) -> (String, Opt
     } else {
         ("Unbound".to_string(), Some(spec.to_string()))
     }
+}
+
+pub(super) fn unregister_all_hotkeys(hwnd: HWND) {
+    unsafe {
+        for id in [HOTKEY_ID, HOTKEY_CLIPBOARD_ID, HOTKEY_TRANSLATE_ID, HOTKEY_CAPTURE_ID] {
+            let _ = UnregisterHotKey(Some(hwnd), id);
+        }
+    }
+}
+
+pub(super) fn register_all_hotkeys(hwnd: HWND, cfg: &TomoyoConfig) -> (String, Option<String>) {
+    let lang = cfg.lang();
+    let (active, main_conflict) = register_configured_hotkey(hwnd, &cfg.hotkey);
+    let mut issues = Vec::new();
+    if let Some(orig) = main_conflict {
+        issues.push(match lang {
+            Lang::Zh => format!("主热键 {orig} 被占用，已改用 {active}"),
+            Lang::En => format!("Main hotkey {orig} busy; using {active}"),
+        });
+    }
+    let extras = [
+        (HOTKEY_CLIPBOARD_ID, &cfg.clipboard.hotkey, lang.pick("剪贴板", "Clipboard")),
+        (HOTKEY_TRANSLATE_ID, &cfg.translate.hotkey, lang.pick("划词翻译", "Translate")),
+        (HOTKEY_CAPTURE_ID, &cfg.capture.hotkey, lang.pick("截图", "Capture")),
+    ];
+    for (id, spec, label) in extras {
+        let trimmed = spec.trim();
+        if !trimmed.is_empty() && !register_optional_hotkey(hwnd, id, trimmed) {
+            issues.push(match lang {
+                Lang::Zh => format!("{label}热键 {trimmed} 被其他软件占用"),
+                Lang::En => format!("{label} hotkey {trimmed} is busy"),
+            });
+        }
+    }
+    let summary = if issues.is_empty() {
+        None
+    } else {
+        Some(match lang {
+            Lang::Zh => format!("⚠ {}（按 Ctrl+, 调整）", issues.join("；")),
+            Lang::En => format!("⚠ {} (Ctrl+, to change)", issues.join("; ")),
+        })
+    };
+    (active, summary)
 }
 
 pub(super) fn register_optional_hotkey(hwnd: HWND, id: i32, spec: &str) -> bool {

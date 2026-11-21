@@ -1,30 +1,4 @@
-    const INIT = window.__TOMOYO_SETTINGS_INIT__ || {};
-    let state = JSON.parse(JSON.stringify(INIT.config || {}));
-    let autostart = !!INIT.autostart;
-    let recordingHotkey = false;
-    let saveTimer = null;
-
-    function curLang() {
-      return (state.language || 'zh').toLowerCase().startsWith('en') ? 'en' : 'zh';
-    }
-    function t(key) {
-      return (I18N[curLang()] && I18N[curLang()][key]) || I18N.zh[key] || key;
-    }
-    function esc(s) {
-      return String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
-    }
-    function post(msg) {
-      if (window.chrome && window.chrome.webview) {
-        window.chrome.webview.postMessage(JSON.stringify(msg));
-      }
-    }
-    function setToast(text, isWarn) {
-      const el = document.getElementById('toast');
-      el.classList.toggle('warn', !!isWarn);
-      el.textContent = text;
-    }
-
-    // Sidebar navigation
+    // Sidebar navigation (INIT, state, autostart, t, esc, post, setToast come from settings_boot.js)
     let storeLoadedOnce = false;
     let updatesCheckedInSession = false;
     document.querySelectorAll('nav button').forEach(btn => {
@@ -72,6 +46,8 @@
       if (!recordingHotkey) renderHotkeyDisplay();
       if (!recordingClipHotkey) renderClipHotkeyDisplay();
       if (!recordingTrHotkey) renderTrHotkeyDisplay();
+      if (!recordingCapHotkey) renderCapHotkeyDisplay();
+      renderCapSaveDir();
       renderTrEngineChips();
       renderSecretBadges();
       setToast(t('toast_ready'), false);
@@ -144,13 +120,14 @@
     }
 
     window.addEventListener('keydown', (e) => {
-      if (recordingHotkey || recordingClipHotkey || recordingTrHotkey) {
+      if (recordingHotkey || recordingClipHotkey || recordingTrHotkey || recordingCapHotkey) {
         e.preventDefault();
         e.stopPropagation();
         if (e.key === 'Escape') {
           if (recordingHotkey) stopHotkeyRecording();
           if (recordingClipHotkey) stopClipHotkeyRecording();
           if (recordingTrHotkey) stopTrHotkeyRecording();
+          if (recordingCapHotkey) stopCapHotkeyRecording();
           return;
         }
         const mainKey = keyEventToName(e);
@@ -161,14 +138,21 @@
         if (e.shiftKey) mods.push('Shift');
         if (e.metaKey) mods.push('Win');
         if (mods.length === 0) {
-          const target = recordingHotkey ? recEl : (recordingClipHotkey ? document.getElementById('clip-hotkey-recorder') : document.getElementById('tr-hotkey-recorder'));
+          const target = recordingHotkey
+            ? recEl
+            : recordingClipHotkey
+              ? document.getElementById('clip-hotkey-recorder')
+              : recordingTrHotkey
+                ? document.getElementById('tr-hotkey-recorder')
+                : document.getElementById('cap-hotkey-recorder');
           if (target) target.textContent = t('rec_need_mod');
           return;
         }
         const combo = mods.concat([mainKey]).join('+');
         if (recordingHotkey) applyHotkey(combo);
         else if (recordingClipHotkey) applyClipHotkey(combo);
-        else applyTrHotkey(combo);
+        else if (recordingTrHotkey) applyTrHotkey(combo);
+        else applyCapHotkey(combo);
         return;
       }
       if (e.key === 'Escape') closeWin();
@@ -223,6 +207,13 @@
         ollama_url: document.getElementById('tr_ollama_url') ? document.getElementById('tr_ollama_url').value.trim() : 'http://127.0.0.1:11434',
         ollama_model: document.getElementById('tr_ollama_model') ? document.getElementById('tr_ollama_model').value.trim() : 'qwen2.5:7b'
       };
+      const prevCap = state.capture || {};
+      state.capture = {
+        hotkey: String(prevCap.hotkey || '').trim(),
+        save_dir: String(prevCap.save_dir || '').trim(),
+        pin_opacity: Math.min(100, Math.max(30, parseInt((document.getElementById('cap_opacity') && document.getElementById('cap_opacity').value) || '100', 10) || 100)),
+        copy_hex_lowercase: !!(document.getElementById('cap_hex_lower') && document.getElementById('cap_hex_lower').checked)
+      };
       const prevUpd = state.update || {};
       state.update = {
         auto_check: document.getElementById('upd_auto').checked,
@@ -245,6 +236,7 @@
         renderClipHotkeyDisplay();
         renderClipExclChips();
         syncTranslateControlsFromState();
+        syncCaptureControlsFromState();
         syncRepoUi();
         setToast('⚠ ' + data.notes[0], true);
       } else {
@@ -261,8 +253,9 @@
     function populate() {
       mountClipSettingsControls();
       mountTranslateSettingsControls();
+      mountCaptureSettingsControls();
       if (!state.language) state.language = 'zh';
-      document.getElementById('about-ver').textContent = 'v' + (INIT.version || '1.4.1');
+      document.getElementById('about-ver').textContent = 'v' + (INIT.version || '1.5.0');
       document.getElementById('autostart').checked = autostart;
       const hib = state.hibernate_delay_secs || 15;
       document.getElementById('hibernate').value = hib;
@@ -299,6 +292,8 @@
       state.clipboard.excluded_apps = Array.isArray(cb.excluded_apps) ? cb.excluded_apps : [];
       if (!state.translate) state.translate = { hotkey: 'Alt+T', target_lang: 'auto', engines: ['google', 'mymemory'] };
       syncTranslateControlsFromState();
+      if (!state.capture) state.capture = { hotkey: 'Alt+S', save_dir: '', pin_opacity: 100, copy_hex_lowercase: false };
+      syncCaptureControlsFromState();
 
       const upd = state.update || {};
       document.getElementById('upd_auto').checked = upd.auto_check !== false;

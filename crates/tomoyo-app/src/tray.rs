@@ -23,6 +23,7 @@ pub const MENU_ID_SHOW: u32 = 2001;
 pub const MENU_ID_SETTINGS: u32 = 2002;
 pub const MENU_ID_CLIPBOARD: u32 = 2009;
 pub const MENU_ID_TRANSLATE: u32 = 2010;
+pub const MENU_ID_CAPTURE: u32 = 2011;
 pub const MENU_ID_UPDATE: u32 = 2008;
 pub const MENU_ID_STATS: u32 = 2003;
 pub const MENU_ID_CONFIG: u32 = 2004;
@@ -118,6 +119,12 @@ impl TrayIcon {
                 MENU_ID_TRANSLATE,
                 lang.pick("多源翻译窗...", "Translator..."),
                 Some("Alt+T"),
+                false,
+            ),
+            PopupEntry::item(
+                MENU_ID_CAPTURE,
+                lang.pick("截图与贴图...", "Screenshot & Pin..."),
+                Some("Alt+S"),
                 false,
             ),
             PopupEntry::Separator,

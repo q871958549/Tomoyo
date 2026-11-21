@@ -51,6 +51,7 @@ jobs:
 
           Copy-Item target/release/tomoyo.exe $stage/
           Copy-Item target/release/tomoyo-webview-host.exe $stage/
+          Copy-Item target/release/tomoyo-capture.exe $stage/
           Copy-Item target/release/tomoyo-cli.exe $stage/
           Copy-Item target/release/tomoyo-plugin-hello.exe $stage/
           Copy-Item target/release/tomoyo-plugin-ocr.exe $stage/

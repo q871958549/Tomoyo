@@ -148,6 +148,7 @@ sequenceDiagram
 | `crates/tomoyo-webview-host` | 按需独立 WebView2 宿主（设置中心、插件清单视图、`window.utools` 兼容桥） | 独立短生命周期进程 |
 | `crates/tomoyo-cli` | 插件脚手架、检查、SHA-256 计算与 uTools 导入工具 | 命令行工具 |
 | `crates/tomoyo-app` | Windows 桌面主程序（Win32 + SDF/GDI + DPI + 托盘自愈 + CrashGuard + 休眠） | `windows` crate + `mimalloc` |
+| `crates/tomoyo-capture` | 按需原生截图、6 种标注、取色放大镜与桌面贴图独立进程 (`tomoyo-capture.exe`) | 纯 Rust BGRA + Win32 GDI，0 常驻内存 |
 | `crates/tomoyo-plugin-ocr` | 按需 Windows WinRT 离线 OCR 子进程插件 (`tomoyo-plugin-ocr.exe`) | 原生 WinRT `OcrEngine`，0 常驻内存 |
 | `crates/tomoyo-ui-shared` / `macos` / `linux` | 跨平台状态模型及 macOS / Linux 应用与文件后端适配层 | 无 OS 硬依赖 + 平台适配钩子 |
 | `plugins/example-*` & `builtin-ocr` | Rust / Python / WASM / WebView / WinRT OCR 参考示例 | 用于插件接口与回归验证 |
@@ -195,3 +196,7 @@ sequenceDiagram
 - **v1.4.1 — 自动更新根治重构（零 API 限额回退 + 进度条 + 安装自重启）**
   - **消除 `GitHub API HTTP 403`**：在 `tomoyo-core::updater` 引入 `If-None-Match` (`ETag`) 条件请求缓存（`304` 零额度）及无配额限制的 GitHub Web 多级回退（`releases/latest` + `releases.atom` + `expanded_assets`），并模块化拆分为 `http/{mod,download}.rs` 与 `updater/{mod,web_feed,cache,installer}.rs`（严守 `<= 450` 行上限）。
   - **全闭环自升级 UX**：支持下载阶段百分比/MB 实时进度推送、点击底部 `↑ vX.Y.Z` 徽标直达 `:update`、自动识别 Inno Setup / 便携 ZIP 安装形态并在静默升级完成后自动重启拉起新版（`--updated` toast 提示），彻底告别手动前往仓库下载与升级后托盘消失问题。
+- **v1.5.0 — 设置中心运行时门禁根治、原生按需截图/标注/贴图（替代 PixPin）与多热键冲突可观测**
+  - **设置中心前端根治与自动化运行时烟雾门禁**：拆分 `settings_boot.js` 提前声明共享状态（`INIT`/`state`/helpers），根治 `translate_controls.js` 触发 ES6 TDZ `ReferenceError` 导致点击无响应的缺陷；新增零依赖 [`scripts/check_webview_ui.mjs`](../scripts/check_webview_ui.mjs) 接入 `check_hygiene.ps1` 与 CI，强制在 Node `vm` + 轻量 DOM 中真实执行全部 4 个 WebView 页面脚本与 10 个设置页签点击交互。
+  - **独立按需截图与桌面贴图子系统（`tomoyo-capture.exe`）**：零常驻内存独立 Win32 + 纯 Rust 32-bit BGRA 引擎，支持 Per-Monitor V2 虚拟桌面冻结截屏、`DWMWA_EXTENDED_FRAME_BOUNDS` 窗口吸附、`11×11` 放大镜与 `#HEX` 取色、6 种标注工具（矩形/椭圆/箭头/画笔/马赛克/序号）+ Undo/Redo、无边框置顶贴图浮窗（滚轮缩放、`Ctrl+滚轮` 透明度、右键 OCR/翻译/复制/保存）以及与离线 OCR / 多源翻译工作台的直连链路。
+  - **多热键冲突统一可观测**：主启动器、剪贴板（`Alt+V`）、划词翻译（`Alt+T`）与截图（`Alt+S`）的注册冲突全部汇总并在首次唤起时明确提示，设置中心新增「截图与贴图」面板（热键录入、贴图默认透明度、小写 HEX、系统目录选择器及一键触发按钮）。

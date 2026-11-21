@@ -41,7 +41,8 @@ pub fn normalize_exe_name(raw: &str) -> Option<String> {
 }
 
 const RESERVED_KEYWORDS: &[&str] = &[
-    "f", "ev", "cb", "tr", "fy", "w", "kill", "ps", "snip", "=", "b64", "b64d",
+    "f", "ev", "cb", "tr", "fy", "cap", "shot", "jt", "pin", "jtocr", "jtfy", "w", "kill", "ps",
+    "snip", "=", "b64", "b64d",
 ];
 
 /// Validates a candidate custom scan directory path.
@@ -311,6 +312,13 @@ pub fn sanitize_config(cfg: &mut TomoyoConfig) -> Vec<String> {
         &cfg.clipboard.hotkey,
         &mut notes,
     );
+    super::sanitize_capture_config(
+        &mut cfg.capture,
+        &cfg.hotkey,
+        &cfg.clipboard.hotkey,
+        &cfg.translate.hotkey,
+        &mut notes,
+    );
 
     cfg.update.check_interval_hours = cfg.update.check_interval_hours.clamp(6, 720);
     if !is_valid_github_repo(&cfg.update.repo) {
@@ -382,6 +390,9 @@ mod tests {
             "Bitwarden.EXE".into(),
         ];
         cfg.window.width_dip = 99_999;
+        cfg.capture.hotkey = "Alt+T".into();
+        cfg.capture.pin_opacity = 5;
+        cfg.capture.save_dir = r"\\evil\share".into();
         cfg.update.repo = "https://evil.com/../../etc/passwd".into();
         cfg.web_searches.push(WebSearchEngine {
             keyword: "bad".into(),
@@ -404,6 +415,9 @@ mod tests {
         assert_eq!(cfg.clipboard.hotkey, "Alt+V");
         assert_eq!(cfg.clipboard.excluded_apps, vec!["keepass.exe", "bitwarden.exe"]);
         assert_eq!(cfg.window.width_dip, 1280);
+        assert_eq!(cfg.capture.hotkey, "Alt+S");
+        assert_eq!(cfg.capture.pin_opacity, 30);
+        assert!(cfg.capture.save_dir.is_empty());
         assert_eq!(cfg.update.repo, "q871958549/Tomoyo");
         assert!(!cfg.web_searches.iter().any(|w| w.keyword == "bad" || w.keyword == "f"));
     }

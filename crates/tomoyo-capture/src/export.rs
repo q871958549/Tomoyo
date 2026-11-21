@@ -1,0 +1,298 @@
+//! Image clipboard (`CF_DIB`), PNG persistence, and direct OCR / Screenshot-Translate handoff.
+
+use std::path::{Path, PathBuf};
+use tomoyo_core::{data_dir, logs_dir, TomoyoConfig};
+
+pub fn default_save_path(custom_dir: &str) -> PathBuf {
+    let dir = if !custom_dir.trim().is_empty() && Path::new(custom_dir.trim()).is_dir() {
+        PathBuf::from(custom_dir.trim())
+    } else if let Ok(profile) = std::env::var("USERPROFILE") {
+        PathBuf::from(profile).join("Pictures").join("Tomoyo")
+    } else {
+        data_dir().join("screenshots")
+    };
+    let _ = std::fs::create_dir_all(&dir);
+    let ts = chrono::Local::now().format("%Y%m%d_%H%M%S");
+    dir.join(format!("Tomoyo_{ts}.png"))
+}
+
+pub fn save_bgra_as_png(path: &Path, width: u32, height: u32, bgra: &[u8]) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let mut rgba = Vec::with_capacity((width as usize) * (height as usize) * 4);
+    for px in bgra.chunks_exact(4) {
+        rgba.push(px[2]);
+        rgba.push(px[1]);
+        rgba.push(px[0]);
+        rgba.push(255);
+    }
+    let file = std::fs::File::create(path).map_err(|e| format!("create png: {e}"))?;
+    let mut enc = png::Encoder::new(std::io::BufWriter::new(file), width, height);
+    enc.set_color(png::ColorType::Rgba);
+    enc.set_depth(png::BitDepth::Eight);
+    let mut writer = enc.write_header().map_err(|e| format!("png header: {e}"))?;
+    writer
+        .write_image_data(&rgba)
+        .map_err(|e| format!("png data: {e}"))
+}
+
+pub fn load_png_as_bgra(path: &Path) -> Result<(u32, u32, Vec<u8>), String> {
+    let file = std::fs::File::open(path).map_err(|e| format!("open png: {e}"))?;
+    let mut dec = png::Decoder::new(std::io::BufReader::new(file));
+    dec.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
+    let mut reader = dec.read_info().map_err(|e| format!("decode png info: {e}"))?;
+    let mut buf = vec![0u8; reader.output_buffer_size().unwrap_or(0)];
+    let info = reader.next_frame(&mut buf).map_err(|e| format!("decode png frame: {e}"))?;
+    let (w, h) = (info.width, info.height);
+    let mut bgra = Vec::with_capacity((w as usize) * (h as usize) * 4);
+    match info.color_type {
+        png::ColorType::Rgba => {
+            for px in buf[..info.buffer_size()].chunks_exact(4) {
+                bgra.extend_from_slice(&[px[2], px[1], px[0], 255]);
+            }
+        }
+        png::ColorType::Rgb => {
+            for px in buf[..info.buffer_size()].chunks_exact(3) {
+                bgra.extend_from_slice(&[px[2], px[1], px[0], 255]);
+            }
+        }
+        png::ColorType::GrayscaleAlpha => {
+            for px in buf[..info.buffer_size()].chunks_exact(2) {
+                bgra.extend_from_slice(&[px[0], px[0], px[0], 255]);
+            }
+        }
+        png::ColorType::Grayscale => {
+            for &g in &buf[..info.buffer_size()] {
+                bgra.extend_from_slice(&[g, g, g, 255]);
+            }
+        }
+        _ => return Err("Unsupported PNG color layout".into()),
+    }
+    Ok((w, h, bgra))
+}
+
+#[cfg(windows)]
+pub fn copy_bgra_to_clipboard(width: u32, height: u32, bgra: &[u8]) -> Result<(), String> {
+    use windows::Win32::Foundation::HANDLE;
+    use windows::Win32::Graphics::Gdi::{BITMAPINFOHEADER, BI_RGB};
+    use windows::Win32::System::DataExchange::{
+        CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData,
+    };
+    use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
+
+    let hdr_size = std::mem::size_of::<BITMAPINFOHEADER>();
+    let row_bytes = (width as usize) * 4;
+    let total = hdr_size + row_bytes * (height as usize);
+    let bmi = BITMAPINFOHEADER {
+        biSize: hdr_size as u32,
+        biWidth: width as i32,
+        biHeight: height as i32, // bottom-up standard CF_DIB for maximum app compatibility
+        biPlanes: 1,
+        biBitCount: 32,
+        biCompression: BI_RGB.0,
+        biSizeImage: (row_bytes * height as usize) as u32,
+        ..Default::default()
+    };
+
+    unsafe {
+        if OpenClipboard(None).is_err() {
+            return Err("OpenClipboard failed".into());
+        }
+        let _ = EmptyClipboard();
+        let Ok(hmem) = GlobalAlloc(GMEM_MOVEABLE, total) else {
+            let _ = CloseClipboard();
+            return Err("GlobalAlloc CF_DIB failed".into());
+        };
+        let ptr = GlobalLock(hmem) as *mut u8;
+        if ptr.is_null() {
+            let _ = CloseClipboard();
+            return Err("GlobalLock failed".into());
+        }
+        std::ptr::copy_nonoverlapping(&bmi as *const _ as *const u8, ptr, hdr_size);
+        let dst_pixels = std::slice::from_raw_parts_mut(ptr.add(hdr_size), row_bytes * height as usize);
+        for y in 0..(height as usize) {
+            let src_y = (height as usize - 1) - y;
+            let src = &bgra[src_y * row_bytes..(src_y + 1) * row_bytes];
+            dst_pixels[y * row_bytes..(y + 1) * row_bytes].copy_from_slice(src);
+        }
+        let _ = GlobalUnlock(hmem);
+        let ok = SetClipboardData(8, Some(HANDLE(hmem.0))).is_ok(); // CF_DIB = 8
+        let _ = CloseClipboard();
+        if ok { Ok(()) } else { Err("SetClipboardData(CF_DIB) failed".into()) }
+    }
+}
+
+#[cfg(windows)]
+pub fn copy_text_to_clipboard(text: &str) {
+    use windows::Win32::Foundation::HANDLE;
+    use windows::Win32::System::DataExchange::{
+        CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData,
+    };
+    use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
+
+    let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
+    let bytes = wide.len() * 2;
+    unsafe {
+        if OpenClipboard(None).is_err() {
+            return;
+        }
+        let _ = EmptyClipboard();
+        if let Ok(hmem) = GlobalAlloc(GMEM_MOVEABLE, bytes) {
+            let ptr = GlobalLock(hmem) as *mut u16;
+            if !ptr.is_null() {
+                std::ptr::copy_nonoverlapping(wide.as_ptr(), ptr, wide.len());
+                let _ = GlobalUnlock(hmem);
+                let _ = SetClipboardData(13, Some(HANDLE(hmem.0))); // CF_UNICODETEXT = 13
+            }
+        }
+        let _ = CloseClipboard();
+    }
+}
+
+#[cfg(windows)]
+pub fn read_clipboard_image_bgra() -> Option<(u32, u32, Vec<u8>)> {
+    use windows::Win32::Foundation::HGLOBAL;
+    use windows::Win32::Graphics::Gdi::BITMAPINFOHEADER;
+    use windows::Win32::System::DataExchange::{
+        CloseClipboard, GetClipboardData, IsClipboardFormatAvailable, OpenClipboard,
+    };
+    use windows::Win32::System::Memory::{GlobalLock, GlobalSize, GlobalUnlock};
+
+    unsafe {
+        if IsClipboardFormatAvailable(8).is_err() || OpenClipboard(None).is_err() {
+            return None;
+        }
+        let res = (|| -> Option<(u32, u32, Vec<u8>)> {
+            let h = GetClipboardData(8).ok()?;
+            let hg = HGLOBAL(h.0);
+            let total = GlobalSize(hg);
+            let min_hdr = std::mem::size_of::<BITMAPINFOHEADER>();
+            if total < min_hdr {
+                return None;
+            }
+            let ptr = GlobalLock(hg) as *const u8;
+            if ptr.is_null() {
+                return None;
+            }
+            let hdr = &*(ptr as *const BITMAPINFOHEADER);
+            let w = hdr.biWidth.unsigned_abs();
+            let h_px = hdr.biHeight.unsigned_abs();
+            let bpp = hdr.biBitCount as usize;
+            let top_down = hdr.biHeight < 0;
+            let out = if (bpp == 24 || bpp == 32) && w > 0 && h_px > 0 && w <= 8192 && h_px <= 8192 {
+                let mut offset = hdr.biSize as usize;
+                if hdr.biCompression == 3 && hdr.biSize == 40 {
+                    offset += 12;
+                }
+                let src_stride = (w as usize * bpp).div_ceil(32) * 4;
+                if offset + src_stride * (h_px as usize) <= total {
+                    let pixels = std::slice::from_raw_parts(ptr.add(offset), src_stride * (h_px as usize));
+                    let mut bgra = vec![0u8; (w as usize) * (h_px as usize) * 4];
+                    for y in 0..(h_px as usize) {
+                        let sy = if top_down { y } else { (h_px as usize - 1) - y };
+                        let row = &pixels[sy * src_stride..(sy + 1) * src_stride];
+                        for x in 0..(w as usize) {
+                            let s = x * (bpp / 8);
+                            let d = (y * (w as usize) + x) * 4;
+                            bgra[d] = row[s];
+                            bgra[d + 1] = row[s + 1];
+                            bgra[d + 2] = row[s + 2];
+                            bgra[d + 3] = 255;
+                        }
+                    }
+                    Some((w, h_px, bgra))
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            let _ = GlobalUnlock(hg);
+            out
+        })();
+        let _ = CloseClipboard();
+        res
+    }
+}
+
+fn find_sibling_exe(name: &str) -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let dir = exe.parent()?;
+    let direct = dir.join(name);
+    if direct.is_file() {
+        return Some(direct);
+    }
+    let debug = dir.join("target").join("release").join(name);
+    if debug.is_file() {
+        return Some(debug);
+    }
+    None
+}
+
+/// Saves screenshot PNG, invokes `tomoyo-plugin-ocr.exe` offline, and opens either
+/// `__tomoyo_ocr_viewer__` (OCR inspection) or `__tomoyo_translator__` (Screenshot Translate).
+#[cfg(windows)]
+pub fn handoff_to_ocr_or_translate(width: u32, height: u32, bgra: &[u8], translate: bool) -> Result<(), String> {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+    let img_dir = data_dir().join("clipboard-images");
+    let _ = std::fs::create_dir_all(&img_dir);
+    let ts = chrono::Local::now().format("%Y%m%d_%H%M%S_%3f");
+    let img_path = img_dir.join(format!("capture_{ts}.png"));
+    save_bgra_as_png(&img_path, width, height, bgra)?;
+
+    let ocr_exe = find_sibling_exe("tomoyo-plugin-ocr.exe")
+        .ok_or_else(|| "未找到 tomoyo-plugin-ocr.exe".to_string())?;
+    let out = std::process::Command::new(&ocr_exe)
+        .args(["--recognize", &img_path.to_string_lossy()])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .map_err(|e| format!("运行 OCR 失败: {e}"))?;
+    let recognized = String::from_utf8_lossy(&out.stdout).trim().to_string();
+
+    let cfg = TomoyoConfig::load_or_create();
+    let host_exe = find_sibling_exe("tomoyo-webview-host.exe")
+        .ok_or_else(|| "未找到 tomoyo-webview-host.exe".to_string())?;
+
+    if translate {
+        let req_path = logs_dir().join("last_translate_req.json");
+        let payload = serde_json::json!({
+            "text": recognized,
+            "target_lang": cfg.translate.target_lang,
+        });
+        let _ = std::fs::write(&req_path, payload.to_string());
+        std::process::Command::new(host_exe)
+            .args([
+                "--entry", "__tomoyo_translator__",
+                "--title", "Tomoyo 截图翻译",
+                "--theme", &cfg.theme,
+                "--width", "860",
+                "--height", "640",
+            ])
+            .spawn()
+            .map_err(|e| format!("拉起翻译窗口失败: {e}"))?;
+    } else {
+        let snap = serde_json::json!({
+            "image_path": img_path.to_string_lossy(),
+            "text": recognized,
+            "raw_text": recognized,
+            "lang": "auto",
+            "elapsed_ms": 0,
+        });
+        let _ = std::fs::write(logs_dir().join("last_ocr.json"), snap.to_string());
+        std::process::Command::new(host_exe)
+            .args([
+                "--entry", "__tomoyo_ocr_viewer__",
+                "--title", "Tomoyo OCR 审校",
+                "--theme", &cfg.theme,
+                "--query", &img_path.to_string_lossy(),
+                "--width", "980",
+                "--height", "660",
+            ])
+            .spawn()
+            .map_err(|e| format!("拉起 OCR 审校窗口失败: {e}"))?;
+    }
+    Ok(())
+}

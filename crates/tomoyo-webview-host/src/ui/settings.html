@@ -21,6 +21,7 @@
       <button data-tab="appearance" data-i18n="nav_appearance">外观与窗口</button>
       <button data-tab="search" data-i18n="nav_search">应用、文件与剪贴板</button>
       <button data-tab="translate" data-i18n="nav_translate">翻译引擎</button>
+      <button data-tab="capture" data-i18n="nav_capture">截图与贴图</button>
       <button data-tab="web" data-i18n="nav_web">快捷网页搜索</button>
       <button data-tab="store" data-i18n="nav_store">插件清单</button>
       <button data-tab="plugins" data-i18n="nav_plugins">已安装与路径</button>
@@ -263,6 +264,8 @@
 
       <!-- TRANSLATION ENGINES -->
       <section id="tab-translate"><div id="translate-mount"></div></section>
+      <!-- SCREENSHOT & PIN -->
+      <section id="tab-capture"><div id="capture-mount"></div></section>
 
       <!-- WEB SEARCH -->
       <section id="tab-web">
@@ -372,7 +375,7 @@
         <div class="card">
           <div class="row">
             <div>
-              <div class="label-title">Tomoyo <span id="about-ver" class="pill">v1.4.1</span></div>
+              <div class="label-title">Tomoyo <span id="about-ver" class="pill">v1.5.0</span></div>
               <div class="label-desc" data-i18n="about_desc">MIT / Apache-2.0 开源协议 · Windows Rust 桌面启动器</div>
             </div>
             <div style="display:flex;gap:8px">
@@ -431,10 +434,12 @@
 
   <script>
 /*__SETTINGS_I18N__*/
+/*__SETTINGS_BOOT_JS__*/
 /*__SETTINGS_STORE_JS__*/
 /*__SETTINGS_CONTROLS_JS__*/
 /*__SETTINGS_CLIP_JS__*/
 /*__SETTINGS_TRANSLATE_JS__*/
+/*__SETTINGS_CAPTURE_JS__*/
 /*__SETTINGS_JS__*/
   </script>
 </body>

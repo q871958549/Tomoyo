@@ -1,8 +1,10 @@
 //! Hot-reloadable `config.toml`, hotkey parser, and Windows login autostart management.
 
+mod capture;
 mod hotkey;
 mod sanitize;
 
+pub use capture::{sanitize_capture_config, CaptureConfig};
 pub use crate::translate::TranslateConfig;
 pub use hotkey::{is_autostart_enabled, parse_hotkey, set_autostart_enabled, ParsedHotkey};
 pub use sanitize::{
@@ -48,6 +50,9 @@ pub struct TomoyoConfig {
     /// Multi-engine translation settings (Pot replacement).
     #[serde(default)]
     pub translate: TranslateConfig,
+    /// On-demand native screenshot & Pin-to-Desktop settings (PixPin replacement).
+    #[serde(default)]
+    pub capture: CaptureConfig,
     /// Auto-update check settings (GitHub Releases).
     #[serde(default)]
     pub update: UpdateConfig,
@@ -352,6 +357,7 @@ impl Default for TomoyoConfig {
             everything: EverythingConfig::default(),
             clipboard: ClipboardConfig::default(),
             translate: TranslateConfig::default(),
+            capture: CaptureConfig::default(),
             update: UpdateConfig::default(),
             plugin_registries: default_plugin_registries(),
             web_searches: default_web_searches(),

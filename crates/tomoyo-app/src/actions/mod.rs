@@ -10,7 +10,8 @@ pub use clipboard_win::{
 };
 pub use shell_win::{
     kill_process_by_pid, paste_into_previous_window_async, shell_open, shell_open_as_admin,
-    spawn_clipboard_manager_window, spawn_settings_window, spawn_translator_window,
+    spawn_capture_tool, spawn_clipboard_manager_window, spawn_settings_window,
+    spawn_translator_window,
 };
 
 use shell_win::{focus_window, run_system_command, spawn_ephemeral_webview};

@@ -17,6 +17,8 @@ pub enum HostMessage {
     DbRemove { id: String },
     SaveSettings { config: tomoyo_core::TomoyoConfig, autostart: bool },
     PickFolder,
+    PickCaptureDir,
+    StartCapture { #[serde(default)] mode: String },
     SyncTheme { theme: String },
     TogglePinTopmost,
     CheckUpdates { repo: String },
@@ -70,7 +72,8 @@ pub struct HostAction {
     pub should_close: bool,
     pub apply_theme: Option<String>,
     pub toggle_topmost: bool,
-    pub pick_folder: bool,
+    /// `0` = none, `1` = app scan folder, `2` = capture save folder.
+    pub pick_folder_mode: u8,
     pub reply_json: Option<String>,
     pub async_check_updates: Option<String>,
     pub async_install_update: Option<tomoyo_core::ReleaseInfo>,
@@ -87,69 +90,38 @@ pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isi
         }
     };
     match msg {
-        HostMessage::CopyText { text } => {
-            set_clipboard_text(&text);
-            HostAction::default()
-        }
+        HostMessage::CopyText { text } => { set_clipboard_text(&text); HostAction::default() }
         HostMessage::CopyAndPaste { text } => {
             set_clipboard_text(&text);
-            HostAction {
-                should_close: true,
-                ..Default::default()
-            }
+            HostAction { should_close: true, ..Default::default() }
         }
         HostMessage::OpenExternal { url } => {
-            if tomoyo_core::is_safe_http_url(&url) {
-                shell_open(&url);
-            }
+            if tomoyo_core::is_safe_http_url(&url) { shell_open(&url); }
             HostAction::default()
         }
         HostMessage::OpenPath { path } => {
-            if std::path::Path::new(&path).exists() {
-                shell_open(&path);
-            }
+            if std::path::Path::new(&path).exists() { shell_open(&path); }
             HostAction::default()
         }
-        HostMessage::DbPut { id, doc } => {
-            db.put(id, doc);
-            HostAction::default()
-        }
-        HostMessage::DbRemove { id } => {
-            db.remove(&id);
-            HostAction::default()
-        }
+        HostMessage::DbPut { id, doc } => { db.put(id, doc); HostAction::default() }
+        HostMessage::DbRemove { id } => { db.remove(&id); HostAction::default() }
         HostMessage::SaveSettings { mut config, autostart } => {
             let notes = config.sanitize();
             let theme = config.theme.clone();
             let _ = config.save();
             let _ = tomoyo_core::set_autostart_enabled(autostart);
-            if let Some(target) = notify_hwnd {
-                notify_parent_reload(target, false);
-            }
-            let evt = serde_json::json!({
-                "event": "settings_saved",
-                "config": config,
-                "notes": notes,
-            })
-            .to_string();
-            HostAction {
-                apply_theme: Some(theme),
-                reply_json: Some(evt),
-                ..Default::default()
-            }
+            if let Some(target) = notify_hwnd { notify_parent_reload(target, false); }
+            let evt = serde_json::json!({ "event": "settings_saved", "config": config, "notes": notes }).to_string();
+            HostAction { apply_theme: Some(theme), reply_json: Some(evt), ..Default::default() }
         }
-        HostMessage::PickFolder => HostAction {
-            pick_folder: true,
-            ..Default::default()
-        },
-        HostMessage::SyncTheme { theme } => HostAction {
-            apply_theme: Some(theme),
-            ..Default::default()
-        },
-        HostMessage::TogglePinTopmost => HostAction {
-            toggle_topmost: true,
-            ..Default::default()
-        },
+        HostMessage::PickFolder => HostAction { pick_folder_mode: 1, ..Default::default() },
+        HostMessage::PickCaptureDir => HostAction { pick_folder_mode: 2, ..Default::default() },
+        HostMessage::StartCapture { mode } => {
+            crate::bridge_os::spawn_capture_tool(&mode);
+            HostAction::default()
+        }
+        HostMessage::SyncTheme { theme } => HostAction { apply_theme: Some(theme), ..Default::default() },
+        HostMessage::TogglePinTopmost => HostAction { toggle_topmost: true, ..Default::default() },
         HostMessage::CheckUpdates { repo } => {
             let safe_repo = if tomoyo_core::is_valid_github_repo(&repo) {
                 repo.trim().to_string()

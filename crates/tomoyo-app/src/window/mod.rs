@@ -206,12 +206,7 @@ impl AppShell {
             SendMessageW(self.edit_hwnd, EM_SETSEL, Some(WPARAM(0)), Some(LPARAM(-1)));
             let _ = InvalidateRect(Some(self.hwnd), None, false);
         }
-        if let Some(orig) = self.hotkey_conflict.take() {
-            let active = self.hotkey_label.clone();
-            let msg = match self.lang {
-                Lang::Zh => format!("热键 {orig} 被其他软件占用，已改用 {active}（按 Ctrl+, 重设）"),
-                Lang::En => format!("Hotkey {orig} is busy; using {active} (Ctrl+, to change)"),
-            };
+        if let Some(msg) = self.hotkey_conflict.take() {
             self.show_toast(&msg);
         }
     }

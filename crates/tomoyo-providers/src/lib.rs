@@ -2,6 +2,7 @@
 
 pub mod apps;
 pub mod calc;
+pub mod capture;
 pub mod clipboard;
 pub mod everything;
 pub mod everything_history;
@@ -15,6 +16,7 @@ pub mod windows_switcher;
 
 pub use apps::AppsProvider;
 pub use calc::CalcProvider;
+pub use capture::CaptureProvider;
 pub use clipboard::{
     normalize_single_line, sanitize_note, sanitize_tag, ClipboardEntry, ClipboardPayload,
     ClipboardProvider, ClipboardStore, ClipboardSubtype, ParsedClipQuery,

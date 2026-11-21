@@ -127,7 +127,7 @@
       } else if (st.state === 'up_to_date') {
         const meta = [st.note || '', checkedStr ? t('upd_last_checked')(checkedStr) : ''].filter(Boolean).join(' · ');
         const extra = meta ? `<div class="upd-meta-line">${esc(meta)}</div>` : '';
-        box.innerHTML = `<div style="color:var(--ok);font-weight:600">${esc(t('upd_latest')(st.current || INIT.version || '1.4.1'))}</div>${extra}`;
+        box.innerHTML = `<div style="color:var(--ok);font-weight:600">${esc(t('upd_latest')(st.current || INIT.version || '1.5.0'))}</div>${extra}`;
       } else if (st.state === 'error') {
         box.innerHTML = `
           <div style="color:#ef4444;font-weight:500">${esc(t('upd_err')(st.message || 'Unknown error'))}</div>
@@ -160,6 +160,8 @@
           renderUpdateStatus(data.status);
         } else if (data.event === 'folder_picked') {
           if (typeof onFolderPicked === 'function') onFolderPicked(data);
+        } else if (data.event === 'capture_dir_picked') {
+          if (typeof onCaptureDirPicked === 'function') onCaptureDirPicked(data);
         } else if (data.event === 'settings_saved') {
           if (typeof onSettingsSavedAck === 'function') onSettingsSavedAck(data);
         } else if (data.event === 'store_loaded') {

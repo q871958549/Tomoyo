@@ -4,7 +4,7 @@ param(
     [string]$InstallDir = (Join-Path $env:LOCALAPPDATA "Programs\Tomoyo")
 )
 
-Stop-Process -Name "tomoyo","tomoyo-webview-host" -Force -ErrorAction SilentlyContinue
+Stop-Process -Name "tomoyo","tomoyo-webview-host","tomoyo-capture" -Force -ErrorAction SilentlyContinue
 Start-Sleep -Milliseconds 300
 
 Remove-Item -Path (Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\Tomoyo") -Recurse -Force -ErrorAction SilentlyContinue

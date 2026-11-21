@@ -1,6 +1,6 @@
     // --- Translation Engine Settings Controls (Hotkey Recorder, Engines, DPAPI Secrets) ---
     let recordingTrHotkey = false;
-    let secretStatus = Object.assign({ deepl: false, openai: false }, INIT.secrets_status || {});
+    let secretStatus = { deepl: false, openai: false };
 
     const TR_ENGINE_META = [
       { id: 'google', zh: 'Google 翻译（免费免密钥）', en: 'Google Translate (Free)' },
@@ -133,6 +133,10 @@
     }
 
     function mountTranslateSettingsControls() {
+      secretStatus = Object.assign(
+        { deepl: false, openai: false },
+        (typeof INIT !== 'undefined' && INIT && INIT.secrets_status) || {}
+      );
       const host = document.getElementById('translate-mount');
       if (!host) return;
       host.innerHTML = `

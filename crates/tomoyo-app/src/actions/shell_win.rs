@@ -223,22 +223,46 @@ pub fn spawn_ephemeral_webview(
     Ok(())
 }
 
-fn locate_webview_host() -> Result<std::path::PathBuf, String> {
+fn locate_sibling_exe(name: &str) -> Result<std::path::PathBuf, String> {
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
-            let sib = dir.join("tomoyo-webview-host.exe");
+            let sib = dir.join(name);
             if sib.is_file() {
                 return Ok(sib);
             }
             if let Some(parent) = dir.parent() {
-                let p = parent.join("tomoyo-webview-host.exe");
+                let p = parent.join(name);
                 if p.is_file() {
                     return Ok(p);
                 }
             }
         }
     }
-    Err("tomoyo-webview-host.exe not found next to tomoyo.exe".into())
+    Err(format!("{name} not found next to tomoyo.exe"))
+}
+
+fn locate_webview_host() -> Result<std::path::PathBuf, String> {
+    locate_sibling_exe("tomoyo-webview-host.exe")
+}
+
+pub fn spawn_capture_tool(mode: &str) -> Result<(), String> {
+    let cap_exe = locate_sibling_exe("tomoyo-capture.exe")?;
+    let flag = match mode {
+        "ocr" => "--ocr",
+        "translate" => "--translate",
+        "pin_clipboard" | "pin" => "--pin-clipboard",
+        _ => "--capture",
+    };
+    let mut child = Command::new(&cap_exe)
+        .arg(flag)
+        .spawn()
+        .map_err(|e| format!("failed to launch {}: {e}", cap_exe.display()))?;
+    let _ = std::thread::Builder::new()
+        .name("tomoyo-cap-reaper".into())
+        .spawn(move || {
+            let _ = child.wait();
+        });
+    Ok(())
 }
 
 /// Restores the previously focused window and simulates `Ctrl+V` via native `SendInput`.

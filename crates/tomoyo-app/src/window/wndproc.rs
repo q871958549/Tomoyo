@@ -1,6 +1,7 @@
 //! Pure Win32 `main_wndproc` message dispatcher delegating into cohesive `AppShell` methods.
 
 use super::commands::{dispatch_menu_id, dispatch_wm_command};
+use super::input::{unregister_all_hotkeys, HOTKEY_CAPTURE_ID};
 use super::updater_ctrl::WM_APP_UPDATE_PROGRESS;
 use super::{
     AppShell, HOTKEY_CLIPBOARD_ID, HOTKEY_ID, HOTKEY_TRANSLATE_ID, TIMER_CLEAR_TOAST,
@@ -23,8 +24,7 @@ use windows::Win32::Graphics::Gdi::{
 use windows::Win32::System::DataExchange::RemoveClipboardFormatListener;
 use windows::Win32::UI::Controls::WM_MOUSELEAVE;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    ReleaseCapture, SetCapture, SetFocus, TrackMouseEvent, UnregisterHotKey, TME_LEAVE,
-    TRACKMOUSEEVENT,
+    ReleaseCapture, SetCapture, SetFocus, TrackMouseEvent, TME_LEAVE, TRACKMOUSEEVENT,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     DefWindowProcW, GetClientRect, GetCursorPos, GetWindowLongPtrW, IsWindowVisible, KillTimer,
@@ -137,14 +137,12 @@ pub(super) unsafe extern "system" fn main_wndproc(
                 HOTKEY_ID => app.toggle_launcher(),
                 HOTKEY_CLIPBOARD_ID => app.toggle_clipboard_launcher(),
                 HOTKEY_TRANSLATE_ID => app.trigger_selection_translate(),
+                HOTKEY_CAPTURE_ID => app.trigger_capture("region"),
                 _ => {}
             }
             LRESULT(0)
         }
-        WM_CLIPBOARDUPDATE => {
-            app.on_clipboard_update();
-            LRESULT(0)
-        }
+        WM_CLIPBOARDUPDATE => { app.on_clipboard_update(); LRESULT(0) }
         WM_ACTIVATE => {
             if (wparam.0 & 0xFFFF) == 0 {
                 if app.inter.suppress_next_deactivate {
@@ -174,58 +172,25 @@ pub(super) unsafe extern "system" fn main_wndproc(
             }
             LRESULT(0)
         }
-        WM_APP_RESULTS_READY => {
-            app.on_results_ready();
-            LRESULT(0)
-        }
-        WM_APP_ICON_READY => {
-            app.on_icons_ready();
-            LRESULT(0)
-        }
-        WM_APP_PREVIEW_READY => {
-            app.on_preview_ready();
-            LRESULT(0)
-        }
+        WM_APP_RESULTS_READY => { app.on_results_ready(); LRESULT(0) }
+        WM_APP_ICON_READY => { app.on_icons_ready(); LRESULT(0) }
+        WM_APP_PREVIEW_READY => { app.on_preview_ready(); LRESULT(0) }
         WM_APP_EDIT_KEY => {
             let vk = (wparam.0 & 0xFFFF) as u16;
-            app.handle_nav_key(
-                vk,
-                (lparam.0 & 1) != 0,
-                (lparam.0 & 2) != 0,
-                (lparam.0 & 4) != 0,
-            );
+            app.handle_nav_key(vk, (lparam.0 & 1) != 0, (lparam.0 & 2) != 0, (lparam.0 & 4) != 0);
             LRESULT(0)
         }
-        WM_APP_PASTE_INTERCEPT => {
-            app.on_paste_intercept();
-            LRESULT(0)
-        }
-        WM_APP_UPDATE_READY => {
-            app.on_update_ready();
-            LRESULT(0)
-        }
-        WM_APP_UPDATE_PROGRESS => {
-            app.on_update_progress();
-            LRESULT(0)
-        }
-        WM_APP_UPDATE_INSTALLED => {
-            app.on_update_installed();
-            LRESULT(0)
-        }
+        WM_APP_PASTE_INTERCEPT => { app.on_paste_intercept(); LRESULT(0) }
+        WM_APP_UPDATE_READY => { app.on_update_ready(); LRESULT(0) }
+        WM_APP_UPDATE_PROGRESS => { app.on_update_progress(); LRESULT(0) }
+        WM_APP_UPDATE_INSTALLED => { app.on_update_installed(); LRESULT(0) }
         WM_DPICHANGED => {
             let new_dpi = (wparam.0 & 0xFFFF) as u32;
-            let suggested = if lparam.0 != 0 {
-                Some(unsafe { &*(lparam.0 as *const RECT) })
-            } else {
-                None
-            };
+            let suggested = (lparam.0 != 0).then(|| unsafe { &*(lparam.0 as *const RECT) });
             app.handle_dpi_changed(new_dpi, suggested);
             LRESULT(0)
         }
-        WM_APP_WAKE_EXISTING => {
-            app.show_launcher();
-            LRESULT(0)
-        }
+        WM_APP_WAKE_EXISTING => { app.show_launcher(); LRESULT(0) }
         WM_NCRBUTTONUP => {
             if wparam.0 as u32 == HTCAPTION {
                 app.show_logo_context_menu();
@@ -321,10 +286,8 @@ pub(super) unsafe extern "system" fn main_wndproc(
         }
         WM_DESTROY => {
             app.shutdown_clean();
+            unregister_all_hotkeys(hwnd);
             unsafe {
-                let _ = UnregisterHotKey(Some(hwnd), HOTKEY_ID);
-                let _ = UnregisterHotKey(Some(hwnd), HOTKEY_CLIPBOARD_ID);
-                let _ = UnregisterHotKey(Some(hwnd), HOTKEY_TRANSLATE_ID);
                 let _ = RemoveClipboardFormatListener(hwnd);
                 PostQuitMessage(0);
             }

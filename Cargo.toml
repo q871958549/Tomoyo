@@ -11,6 +11,7 @@ members = [
     "crates/tomoyo-webview-host",
     "crates/tomoyo-cli",
     "crates/tomoyo-app",
+    "crates/tomoyo-capture",
     "crates/tomoyo-plugin-ocr",
     "crates/tomoyo-ui-shared",
     "crates/tomoyo-ui-macos",
@@ -22,7 +23,7 @@ exclude = [
 ]
 
 [workspace.package]
-version = "1.4.1"
+version = "1.5.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 

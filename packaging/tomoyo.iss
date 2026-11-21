@@ -2,7 +2,7 @@
 ; Zero-UAC per-user install to %LOCALAPPDATA%\Programs\Tomoyo with clean uninstaller.
 
 #ifndef AppVersion
-  #define AppVersion "1.4.1"
+  #define AppVersion "1.5.0"
 #endif
 
 #ifndef StageDir
@@ -65,5 +65,6 @@ begin
   // Gracefully terminate any running Tomoyo processes before replacing binaries
   Exec('taskkill.exe', '/F /IM tomoyo.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Exec('taskkill.exe', '/F /IM tomoyo-webview-host.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec('taskkill.exe', '/F /IM tomoyo-capture.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Result := True;
 end;

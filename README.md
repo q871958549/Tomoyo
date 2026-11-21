@@ -11,7 +11,7 @@
   <a href="https://github.com/q871958549/Tomoyo/actions/workflows/ci.yml"><img src="https://github.com/q871958549/Tomoyo/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="LICENSE-MIT"><img src="https://img.shields.io/badge/license-MIT%20%2F%20Apache--2.0-blue.svg" alt="License" /></a>
   <img src="https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-0078D6.svg" alt="Windows" />
-  <img src="https://img.shields.io/badge/version-v1.4.1-7c6af7.svg" alt="Version" />
+  <img src="https://img.shields.io/badge/version-v1.5.0-7c6af7.svg" alt="Version" />
 </p>
 
 ---
@@ -39,17 +39,18 @@
 
 ---
 
-## 实测数据与自检阈值 (`v1.4.1` Release)
+## 实测数据与自检阈值 (`v1.5.0` Release)
 
 | 指标 | 实测记录 | 自检阈值 (`--strict-budget`) |
 |---|---|---|
-| `tomoyo.exe` 主程序体积 | **5.45 MB** (`5581.0 KB`) | — |
-| `tomoyo-webview-host.exe` 设置、剪贴板、多源翻译、OCR 审校与插件宿主 | **3.88 MB**（关闭即退出） | 0 MB 常驻 |
+| `tomoyo.exe` 主程序体积 | **5.48 MB** (`5610.5 KB`) | — |
+| `tomoyo-webview-host.exe` 设置、剪贴板、多源翻译、OCR 审校与插件宿主 | **3.91 MB**（关闭即退出） | 0 MB 常驻 |
+| `tomoyo-capture.exe` 原生按需截图、6 种标注、取色与桌面贴图 | **0.94 MB**（关闭即退出） | 0 MB 常驻 |
 | `tomoyo-plugin-ocr.exe` 离线 WinRT OCR 插件 | **0.36 MB**（空闲 15 秒自动回收） | 0 MB 常驻 |
 | 休眠态 Working Set 内存占用 (`--self-test`) | **1.49–1.52 MB** | ≤ 2.0 MB |
-| 休眠态 Private Commit（含 345 应用/桌面条目索引、SQLite 与字体） | **22.52 MB** | ≤ 28.0 MB |
-| 100 轮查询 / 绘制 / 预览 / 休眠压测 Delta | **GDI `+0` · USER `+0` · Handles `+0` · Private `+0.11 MB`** | 句柄 0 增长 / 内存 ≤ +0.50 MB |
-| 源码规范检查（[编码规范](docs/CODING_STANDARDS.md) / [UI 规范](docs/UI_DESIGN_STANDARDS.md)） | **全仓 147 个源码文件均 ≤ 450 行** | ≤ 450 行/文件 |
+| 休眠态 Private Commit（含 345 应用/桌面条目索引、SQLite 与字体） | **22.76 MB** | ≤ 28.0 MB |
+| 100 轮查询 / 绘制 / 预览 / 休眠压测 Delta | **GDI `+0` · USER `+0` · Handles `+0` · Private `-0.03 MB`** | 句柄 0 增长 / 内存 ≤ +0.50 MB |
+| 源码规范与 WebView 运行时门禁（[编码规范](docs/CODING_STANDARDS.md) / [UI 规范](docs/UI_DESIGN_STANDARDS.md)） | **全仓 159 个源码文件均 ≤ 450 行 · 4 个 WebView UI 烟雾门禁全绿** | ≤ 450 行/文件 · 0 JS 异常 |
 
 ---
 
@@ -71,6 +72,7 @@ pwsh -File scripts\install-local.ps1
 pwsh -File scripts\check_hygiene.ps1
 .\target\release\tomoyo.exe --self-test --strict-budget
 .\target\release\tomoyo-webview-host.exe --self-test
+.\target\release\tomoyo-capture.exe --self-test
 ```
 
 ---
@@ -86,6 +88,7 @@ pwsh -File scripts\check_hygiene.ps1
 | `snip <词>` / `:reload` | 代码片段与动态模板扩展（支持 `{{date}}`/`{{datetime}}`/`{{unix}}`/`{{uuid}}`/`{{clipboard}}`） |
 | `ocr` / `ocr en` / `Ctrl+V` 贴图 | 按需拉起原生 WinRT 离线 OCR（自适应 2× 放大与标点清理、支持免贴图直识最近截图、原图对照审校编辑窗、一键翻译与单行复制，15s 自动释放） |
 | `Alt+T` / `tr <文本>` / `fy <文本>` | 多引擎划词/输入/OCR 联动翻译（原生 WinHTTP 并行查询 Google、MyMemory+有道音标词典、DeepL、OpenAI 兼容接口与本地 Ollama，Windows DPAPI 加密保存 API 密钥，无损恢复剪贴板且不污染历史，内置生词本与历史抽屉） |
+| `Alt+S` / `cap` / `pin` / `jtocr` / `jtfy` | 原生按需截图、6 种标注（矩形/椭圆/箭头/画笔/马赛克/序号 + Undo/Redo）、`11×11` 像素取色放大镜（按 `C` 复制 `#HEX`）、无边框置顶桌面贴图（滚轮缩放、`Ctrl+滚轮` 调透明度）以及一键截图识字/截图翻译，关闭即释放 100% 内存 |
 | `Alt+V` / `cb <词>` | 增强剪贴板管理中心（文本/图片/文件、语义分类、来源应用、`@pin/@img/@link/@file/@code/#标签` 与拼音检索、`Shift+Enter` 单行纯文本贴回或图片一键 OCR、`Ctrl+E` 工作台、`Ctrl+D` 删除、`Ctrl+Shift+P` 置顶，自动屏蔽密码管理器机密剪贴板） |
 | `kill <词>` / `ps <词>` | 进程列表查看与终止进程（按内存占用降序排列） |
 | `g` / `gh` / `crates` / `docs` / `bd` / `zh` / `mdn` | 可在设置中心自定义的快捷网页搜索前缀 |
@@ -110,6 +113,7 @@ pwsh -File scripts\check_hygiene.ps1
 - [`crates/tomoyo-webview-host`](crates/tomoyo-webview-host) — 按需短生命周期 WebView2 宿主，承载设置中心、插件清单视图、`window.utools` 兼容层与更新检查
 - [`crates/tomoyo-cli`](crates/tomoyo-cli) — 插件脚手架、验证工具、SHA-256 校验、uTools 导入与插件安装 CLI
 - [`crates/tomoyo-app`](crates/tomoyo-app) — Windows 桌面启动器主程序（SDF + GDI 渲染、异步图标/预览加载、自定义弹出菜单、DPI 重缩放、`TaskbarCreated` 托盘自愈与崩溃滚动日志守护）
+- [`crates/tomoyo-capture`](crates/tomoyo-capture) — 按需原生截图、6 种标注、取色放大镜与桌面贴图子进程（`tomoyo-capture.exe`，0 常驻内存）
 - [`crates/tomoyo-plugin-ocr`](crates/tomoyo-plugin-ocr) — 基于 Windows 10/11 原生 WinRT `OcrEngine` 的按需离线 OCR 子进程插件（0 常驻内存）
 - [`crates/tomoyo-ui-shared`](crates/tomoyo-ui-shared)、[`crates/tomoyo-ui-macos`](crates/tomoyo-ui-macos)、[`crates/tomoyo-ui-linux`](crates/tomoyo-ui-linux) — 跨平台 UI 状态模型与 macOS (`.app` / Spotlight) / Linux (XDG `.desktop` / `fd`) 适配底座
 - [`packaging/`](packaging) — Inno Setup 安装包、Winget / Scoop 清单与 MSIX 打包脚本

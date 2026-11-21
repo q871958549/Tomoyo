@@ -75,3 +75,20 @@ pub fn set_clipboard_text(text: &str) {
 
 #[cfg(not(windows))]
 pub fn set_clipboard_text(_text: &str) {}
+
+pub fn spawn_capture_tool(mode: &str) {
+    let Ok(exe) = std::env::current_exe() else { return };
+    let Some(dir) = exe.parent() else { return };
+    let cap_exe = dir.join("tomoyo-capture.exe");
+    if !cap_exe.is_file() {
+        tracing::warn!("tomoyo-capture.exe not found at {}", cap_exe.display());
+        return;
+    }
+    let flag = match mode {
+        "ocr" => "--ocr",
+        "translate" => "--translate",
+        "pin_clipboard" | "pin" => "--pin-clipboard",
+        _ => "--capture",
+    };
+    let _ = std::process::Command::new(cap_exe).arg(flag).spawn();
+}

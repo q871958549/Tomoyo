@@ -92,7 +92,11 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 let st = unsafe { &mut *ptr };
                 if !st.picking_folder {
                     st.picking_folder = true;
-                    let reply = crate::folder_picker::pick_scan_folder(hwnd);
+                    let reply = if wparam.0 == 2 {
+                        crate::folder_picker::pick_capture_save_folder(hwnd)
+                    } else {
+                        crate::folder_picker::pick_scan_folder(hwnd)
+                    };
                     st.picking_folder = false;
                     if let Some(wv) = &st.webview {
                         let rw = HSTRING::from(&reply);
@@ -327,9 +331,9 @@ pub fn run_windows_host(opts: LaunchArgs) {
                                             if act.toggle_topmost {
                                                 toggle_pin_topmost(hwnd, &mut *state_ptr);
                                             }
-                                            if act.pick_folder {
+                                            if act.pick_folder_mode != 0 {
                                                 // Defer modal IFileOpenDialog out of WebMessageReceived to avoid WebView2 COM reentrancy.
-                                                let _ = PostMessageW(Some(hwnd), WM_APP_PICK_FOLDER, WPARAM(0), LPARAM(0));
+                                                let _ = PostMessageW(Some(hwnd), WM_APP_PICK_FOLDER, WPARAM(act.pick_folder_mode as usize), LPARAM(0));
                                             }
                                             if let Some(reply) = &act.reply_json {
                                                 if let Some(wv) = &wv_sender {

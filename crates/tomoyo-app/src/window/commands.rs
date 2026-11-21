@@ -4,15 +4,16 @@ use super::{AppShell, EDIT_CTRL_ID};
 use crate::actions::{
     copy_image_as_base64_uri, execute_action, kill_process_by_pid,
     paste_into_previous_window_async, read_clipboard_files, read_clipboard_image_png,
+    spawn_capture_tool,
 };
 use crate::tray::{
-    MENU_ID_CLIPBOARD, MENU_ID_CONFIG, MENU_ID_GC, MENU_ID_QUIT, MENU_ID_RELOAD, MENU_ID_SETTINGS,
-    MENU_ID_SHOW, MENU_ID_STATS, MENU_ID_TRANSLATE, MENU_ID_UPDATE,
+    MENU_ID_CAPTURE, MENU_ID_CLIPBOARD, MENU_ID_CONFIG, MENU_ID_GC, MENU_ID_QUIT, MENU_ID_RELOAD,
+    MENU_ID_SETTINGS, MENU_ID_SHOW, MENU_ID_STATS, MENU_ID_TRANSLATE, MENU_ID_UPDATE,
 };
 use tomoyo_core::{is_autostart_enabled, set_autostart_enabled, Lang};
 use tomoyo_protocol::{ActionKind, AttachedContext, InternalCommandKind};
 use windows::Win32::Foundation::{HWND, LRESULT, WPARAM};
-use windows::Win32::UI::WindowsAndMessaging::{DestroyWindow, EN_CHANGE};
+use windows::Win32::UI::WindowsAndMessaging::{DestroyWindow, IsWindowVisible, EN_CHANGE};
 
 pub(super) fn dispatch_wm_command(hwnd: HWND, app: &mut AppShell, wparam: WPARAM) -> LRESULT {
     let id = (wparam.0 & 0xFFFF) as u32;
@@ -31,6 +32,7 @@ pub(super) fn dispatch_menu_id(hwnd: HWND, app: &mut AppShell, id: u32) {
         MENU_ID_SETTINGS => app.open_settings_center(),
         MENU_ID_CLIPBOARD => app.open_clipboard_workbench(None),
         MENU_ID_TRANSLATE => app.open_translator_window("", None),
+        MENU_ID_CAPTURE => app.trigger_capture("region"),
         MENU_ID_UPDATE => {
             app.inter.suppress_next_deactivate = true;
             app.show_launcher();
@@ -243,6 +245,7 @@ impl AppShell {
             InternalCommandKind::OpenTranslator { text, target_lang } => {
                 self.open_translator_window(&text, target_lang.as_deref());
             }
+            InternalCommandKind::StartCapture { mode } => self.trigger_capture(&mode),
             InternalCommandKind::CheckForUpdates => self.trigger_update_check_async(),
             InternalCommandKind::InstallUpdate => self.trigger_update_install_async(),
             InternalCommandKind::ClearAttachedContext => {
@@ -289,6 +292,29 @@ impl AppShell {
                 self.resize_to_fit_results();
                 self.invalidate();
             }
+        }
+    }
+
+    /// Hides the launcher if visible and launches the ephemeral `tomoyo-capture.exe` tool.
+    pub fn trigger_capture(&mut self, mode: &str) {
+        let was_visible = unsafe { IsWindowVisible(self.hwnd).as_bool() };
+        if was_visible {
+            self.hide_launcher();
+        }
+        let mode_owned = mode.to_string();
+        if was_visible && mode_owned != "pin_clipboard" {
+            // Allow DWM 110ms to finish hiding Tomoyo's launcher before BitBlt captures the screen.
+            let _ = std::thread::Builder::new()
+                .name("tomoyo-cap-delay".into())
+                .spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_millis(110));
+                    if let Err(e) = spawn_capture_tool(&mode_owned) {
+                        tracing::error!("Failed to launch tomoyo-capture.exe: {e}");
+                    }
+                });
+        } else if let Err(e) = spawn_capture_tool(&mode_owned) {
+            tracing::error!("Failed to launch tomoyo-capture.exe: {e}");
+            self.show_toast(&format!("截图工具启动失败: {e}"));
         }
     }
 }

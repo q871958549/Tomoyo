@@ -84,20 +84,24 @@ fn init_webview_logging() {
 const SETTINGS_HTML_TPL: &str = include_str!("ui/settings.html");
 const SETTINGS_CSS: &str = include_str!("ui/settings.css");
 const SETTINGS_I18N_JS: &str = include_str!("ui/i18n.js");
+const SETTINGS_BOOT_JS: &str = include_str!("ui/settings_boot.js");
 const SETTINGS_STORE_JS: &str = include_str!("ui/store_updater.js");
 const SETTINGS_CONTROLS_JS: &str = include_str!("ui/controls.js");
 const SETTINGS_CLIP_JS: &str = include_str!("ui/clip_controls.js");
 const SETTINGS_TRANSLATE_JS: &str = include_str!("ui/translate_controls.js");
+const SETTINGS_CAPTURE_JS: &str = include_str!("ui/capture_controls.js");
 const SETTINGS_APP_JS: &str = include_str!("ui/settings.js");
 
 pub fn assemble_settings_html() -> String {
     SETTINGS_HTML_TPL
         .replace("/*__SETTINGS_CSS__*/", SETTINGS_CSS)
         .replace("/*__SETTINGS_I18N__*/", SETTINGS_I18N_JS)
+        .replace("/*__SETTINGS_BOOT_JS__*/", SETTINGS_BOOT_JS)
         .replace("/*__SETTINGS_STORE_JS__*/", SETTINGS_STORE_JS)
         .replace("/*__SETTINGS_CONTROLS_JS__*/", SETTINGS_CONTROLS_JS)
         .replace("/*__SETTINGS_CLIP_JS__*/", SETTINGS_CLIP_JS)
         .replace("/*__SETTINGS_TRANSLATE_JS__*/", SETTINGS_TRANSLATE_JS)
+        .replace("/*__SETTINGS_CAPTURE_JS__*/", SETTINGS_CAPTURE_JS)
         .replace("/*__SETTINGS_JS__*/", SETTINGS_APP_JS)
 }
 
@@ -251,6 +255,8 @@ fn main() {
         assert!(html.contains("clip-excl-search"));
         assert!(html.contains("tab-translate"));
         assert!(html.contains("tr-hotkey-recorder"));
+        assert!(html.contains("tab-capture"));
+        assert!(html.contains("cap-hotkey-recorder"));
         assert!(html.contains("tab-updates"));
         assert!(ocr_view::assemble_ocr_viewer_html().contains("__TOMOYO_OCR_DATA__"));
         assert!(clip_view::assemble_clip_manager_html().contains("__TOMOYO_CLIP_INIT__"));

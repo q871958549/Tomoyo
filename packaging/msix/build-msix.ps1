@@ -1,8 +1,8 @@
 # Builds a staged Windows MSIX package from target\release using Windows SDK MakeAppx.exe
 param(
-    [string]$Version = "1.4.1",
+    [string]$Version = "1.5.0",
     [string]$StageDir = "dist\msix-stage",
-    [string]$OutPath = "dist\Tomoyo-v1.4.1-x64.msix"
+    [string]$OutPath = "dist\Tomoyo-v1.5.0-x64.msix"
 )
 
 $ErrorActionPreference = "Stop"
@@ -16,7 +16,7 @@ if (-not (Test-Path (Join-Path $rel "tomoyo.exe"))) {
 $stageAbs = Join-Path $repoRoot $StageDir
 New-Item -ItemType Directory -Force -Path $stageAbs, (Join-Path $stageAbs "assets\fonts") | Out-Null
 
-foreach ($bin in @("tomoyo.exe", "tomoyo-webview-host.exe", "tomoyo-cli.exe", "tomoyo-plugin-hello.exe", "tomoyo-plugin-ocr.exe")) {
+foreach ($bin in @("tomoyo.exe", "tomoyo-webview-host.exe", "tomoyo-capture.exe", "tomoyo-cli.exe", "tomoyo-plugin-hello.exe", "tomoyo-plugin-ocr.exe")) {
     if (Test-Path (Join-Path $rel $bin)) {
         Copy-Item (Join-Path $rel $bin) $stageAbs -Force
     }
