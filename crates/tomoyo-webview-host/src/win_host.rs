@@ -14,11 +14,9 @@ use crate::tr_view::{
     assemble_translator_html, is_translator_entry, load_translator_bootstrap,
     read_latest_translate_req_event,
 };
+use crate::hotkey_capture::HotkeyCaptureController;
 use crate::win_theme::{apply_host_window_theme, map_vdir, to_file_url};
-use crate::win_workers::{
-    spawn_hotkey_health_worker, spawn_install_update_worker, spawn_store_worker,
-    spawn_translate_worker, spawn_update_worker,
-};
+use crate::win_workers::dispatch_async_workers;
 use crate::{assemble_settings_html, build_settings_init_script, LaunchArgs};
 use std::cell::RefCell;
 use std::ffi::c_void;
@@ -60,6 +58,7 @@ struct HostWindowState {
     base_title: String,
     is_topmost: bool,
     picking_folder: bool,
+    hk_capture: HotkeyCaptureController,
 }
 
 unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
@@ -127,6 +126,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         WM_CLOSE => {
             if !ptr.is_null() {
                 let st = unsafe { &mut *ptr };
+                st.hk_capture.stop();
                 st.webview = None;
                 if let Some(ctrl) = st.controller.take() {
                     let _ = unsafe { ctrl.Close() };
@@ -233,6 +233,7 @@ pub fn run_windows_host(opts: LaunchArgs) {
         base_title: opts.title.clone(),
         is_topmost: false,
         picking_folder: false,
+        hk_capture: HotkeyCaptureController::new(opts.notify_hwnd),
     });
     let state_ptr = &mut *state as *mut HostWindowState;
     unsafe {
@@ -342,22 +343,14 @@ pub fn run_windows_host(opts: LaunchArgs) {
                                                     let _ = wv.PostWebMessageAsJson(PCWSTR(rw.as_ptr()));
                                                 }
                                             }
-                                            if let Some(repo) = act.async_check_updates {
-                                                spawn_update_worker(repo, tx_cb.clone(), hwnd_raw, WM_APP_WEBVIEW_EVENT);
+                                            if act.hotkey_capture_cmd > 0 {
+                                                (*state_ptr).hk_capture.start(hwnd_raw, tx_cb.clone(), WM_APP_WEBVIEW_EVENT);
+                                            } else if act.hotkey_capture_cmd < 0 {
+                                                (*state_ptr).hk_capture.stop();
                                             }
-                                            if let Some(rel) = act.async_install_update {
-                                                spawn_install_update_worker(rel, tx_cb.clone(), hwnd_raw, WM_APP_WEBVIEW_EVENT);
-                                            }
-                                            if let Some(sources) = act.async_fetch_store {
-                                                spawn_store_worker(sources, tx_cb.clone(), hwnd_raw, WM_APP_WEBVIEW_EVENT);
-                                            }
-                                            if let Some((txt, src, tgt)) = act.async_translate {
-                                                spawn_translate_worker(txt, src, tgt, tx_cb.clone(), hwnd_raw, WM_APP_WEBVIEW_EVENT);
-                                            }
-                                            if act.async_refresh_hotkey_health {
-                                                spawn_hotkey_health_worker(tx_cb.clone(), hwnd_raw, WM_APP_WEBVIEW_EVENT);
-                                            }
-                                            if act.should_close {
+                                            let should_close = act.should_close;
+                                            dispatch_async_workers(act, notify_hwnd, &tx_cb, hwnd_raw, WM_APP_WEBVIEW_EVENT);
+                                            if should_close {
                                                 let _ = PostMessageW(Some(hwnd), WM_CLOSE, WPARAM(0), LPARAM(0));
                                             }
                                         }

@@ -27,6 +27,11 @@ const CODE_MAP: Record<string, string> = {
   Slash: '/',
 };
 
+const STANDALONE_KEYS = new Set([
+  'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12',
+  'PrintScreen',
+]);
+
 export function keyEventToName(e: KeyboardEvent): string | null {
   const code = e.code || '';
   if (code in CODE_MAP) return CODE_MAP[code];
@@ -45,6 +50,9 @@ export function buildComboFromEvent(e: KeyboardEvent): { combo?: string; needMod
   if (e.altKey) mods.push('Alt');
   if (e.shiftKey) mods.push('Shift');
   if (e.metaKey) mods.push('Win');
-  if (mods.length === 0) return { needMod: true };
+  if (mods.length === 0) {
+    if (STANDALONE_KEYS.has(mainKey)) return { combo: mainKey };
+    return { needMod: true };
+  }
   return { combo: [...mods, mainKey].join('+') };
 }

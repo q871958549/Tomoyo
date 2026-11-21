@@ -5,6 +5,7 @@ export const OFFICIAL_REPO = 'q871958549/Tomoyo';
 const ZH: Record<string, string> = {
   brand_sub: '设置中心 · 按需运行',
   nav_general: '常规设置',
+  nav_hotkeys: '热键治理',
   nav_appearance: '外观与窗口',
   nav_search: '应用、文件与剪贴板',
   nav_translate: '翻译引擎',
@@ -20,7 +21,7 @@ const ZH: Record<string, string> = {
   lbl_lang: '界面语言',
   desc_lang: '支持简体中文与英文即时切换',
   lbl_hotkey: '全局呼出快捷键',
-  desc_hotkey: '点击录入框直接按下组合键，支持字母、数字、F1–F12 及常用标点',
+  desc_hotkey: '点击录入框独占捕获，不误触任何软件；支持单键 F1–F12 / PrintScreen 及任意组合键',
   lbl_autostart: '开机静默自启',
   desc_autostart: '写入 HKCU\\...\\Run\\Tomoyo，开机以 --silent 驻留托盘',
   lbl_hibernate: '隐藏后自动休眠延迟',
@@ -159,13 +160,16 @@ const ZH: Record<string, string> = {
   hk_off: '已停用',
   hk_ok: '已生效',
   hk_conflict: '已被其他软件占用',
-  rec_prompt: '请按下组合快捷键…',
-  rec_need_mod: '需包含 Alt / Ctrl / Shift / Win',
+  rec_prompt: '独占捕获中，请按键 (Esc 取消)…',
+  rec_need_mod: '普通键需加修饰键（F1–F12 / PrintScreen 可单键）',
+  h_hotkeys: '全局热键治理中心',
+  lead_hotkeys: '扫描系统热键占用矩阵，静默归因嫌疑程序，并支持「抓现行」实测定位热键冲突真凶。',
 };
 
 const EN: Record<string, string> = {
   brand_sub: 'Settings · On-Demand',
   nav_general: 'General',
+  nav_hotkeys: 'Hotkey Doctor',
   nav_appearance: 'Appearance & Window',
   nav_search: 'Apps, Files & Clipboard',
   nav_translate: 'Translation',
@@ -320,8 +324,10 @@ const EN: Record<string, string> = {
   hk_off: 'Disabled',
   hk_ok: 'Active',
   hk_conflict: 'Occupied by another app',
-  rec_prompt: 'Press shortcut combo…',
-  rec_need_mod: 'Include Alt / Ctrl / Shift / Win',
+  rec_prompt: 'Exclusive capture… Press key (Esc cancels)',
+  rec_need_mod: 'Add modifier (F1–F12 / PrintScreen allow single key)',
+  h_hotkeys: 'Global Hotkey Doctor',
+  lead_hotkeys: 'Audit OS shortcut occupancy, attribute suspect apps, and run live culprit probes.',
 };
 
 export function tr(lang: Lang, key: string): string {

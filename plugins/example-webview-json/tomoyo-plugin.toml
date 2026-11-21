@@ -1,7 +1,7 @@
 id = "dev.tomoyo.example-webview-json"
-name = "JSON Inspector & Formatter (uTools Bridge)"
+name = "JSON 格式化与树形检视器 (WebView)"
 version = "0.2.0"
-description = "Interactive JSON formatter & tree viewer using window.utools + window.tomoyo (0 idle RAM)"
+description = "基于按需 WebView 宿主与 window.utools / window.tomoyo 桥接的交互式 JSON 美化与树形检视工具（关闭即释放 0 常驻内存）"
 author = "Tomoyo Contributors"
 license = "MIT"
 

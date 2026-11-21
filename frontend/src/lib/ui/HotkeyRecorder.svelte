@@ -1,6 +1,8 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte';
   import { AlertTriangle, CheckCircle2, X } from '@lucide/svelte';
   import { buildComboFromEvent } from '../hotkeys';
+  import { postHost, subscribeHost } from '../ipc';
   import type { HotkeySlotStatus, SelectOption } from '../types';
   import Select from './Select.svelte';
 
@@ -16,6 +18,7 @@
     recordPrompt?: string;
     needModPrompt?: string;
     onchange: (next: string) => void;
+    onJumpDoctor?: () => void;
   }
 
   let {
@@ -27,14 +30,16 @@
     disabledLabel = '已停用',
     okLabel = '已生效',
     conflictLabel = '已被其他软件占用',
-    recordPrompt = '请按下组合键…',
-    needModPrompt = '需含 Alt/Ctrl/Shift/Win',
+    recordPrompt = '独占捕获中，请按键…',
+    needModPrompt = '普通键需加修饰键（F1–F12 / PrintScreen 可单键）',
     onchange,
+    onJumpDoctor = undefined,
   }: Props = $props();
 
   let recording = $state(false);
   let promptMsg = $state('');
   let recEl: HTMLDivElement | undefined = $state();
+  let unsubHost: (() => void) | null = null;
 
   let parts = $derived(value ? value.split('+').map((p) => p.trim()).filter(Boolean) : []);
 
@@ -44,7 +49,6 @@
     return base;
   });
 
-  // Match status only when the reported spec corresponds to the current value (or main fallback)
   let showConflict = $derived(
     !!value && !!status && !status.disabled && !status.ok && status.spec.toLowerCase() === value.toLowerCase()
   );
@@ -53,15 +57,39 @@
   );
 
   function startRecording() {
+    if (recording) return;
     recording = true;
     promptMsg = recordPrompt;
     recEl?.focus();
+    unsubHost?.();
+    unsubHost = subscribeHost((data) => {
+      if (!recording || data.event !== 'hotkey_captured') return;
+      if (data.cancelled) {
+        stopRecording();
+      } else if (data.need_mod) {
+        promptMsg = needModPrompt;
+      } else if (typeof data.combo === 'string' && data.combo) {
+        const picked = data.combo;
+        stopRecording();
+        onchange(picked);
+      }
+    });
+    postHost({ cmd: 'start_hotkey_capture' });
   }
 
   function stopRecording() {
+    if (!recording) return;
     recording = false;
     promptMsg = '';
+    unsubHost?.();
+    unsubHost = null;
+    postHost({ cmd: 'stop_hotkey_capture' });
   }
+
+  onDestroy(() => {
+    if (recording) postHost({ cmd: 'stop_hotkey_capture' });
+    unsubHost?.();
+  });
 
   function onKeyDown(e: KeyboardEvent) {
     if (!recording) return;
@@ -77,8 +105,9 @@
       return;
     }
     if (res.combo) {
+      const picked = res.combo;
       stopRecording();
-      onchange(res.combo);
+      onchange(picked);
     }
   }
 
@@ -136,9 +165,14 @@
   </div>
 
   {#if showConflict}
-    <div class="t-hk-badge is-conflict" title={status?.reason || conflictLabel}>
-      <AlertTriangle size={12} />
-      <span>{status?.reason || conflictLabel}</span>
+    <div class="t-hk-status-line">
+      <div class="t-hk-badge is-conflict" title={status?.reason || conflictLabel}>
+        <AlertTriangle size={12} />
+        <span>{status?.reason || conflictLabel}</span>
+      </div>
+      {#if onJumpDoctor}
+        <button type="button" class="t-hk-jump" onclick={onJumpDoctor}>定位真凶 →</button>
+      {/if}
     </div>
   {:else if showOk}
     <div class="t-hk-badge is-ok">
@@ -149,81 +183,41 @@
 </div>
 
 <style>
-  .t-hk-col {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 5px;
-    flex-shrink: 0;
-  }
-  .t-hk-row {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
+  .t-hk-col { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; flex-shrink: 0; }
+  .t-hk-row { display: flex; align-items: center; gap: 6px; }
   .t-hk-box {
-    position: relative;
-    min-width: 168px;
-    height: 34px;
-    padding: 0 28px 0 12px;
-    border-radius: 7px;
-    border: 1px solid var(--border);
-    background: var(--canvas);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    user-select: none;
-    outline: none;
+    position: relative; min-width: 176px; height: 34px; padding: 0 28px 0 12px;
+    border-radius: 7px; border: 1px solid var(--border); background: var(--canvas);
+    display: inline-flex; align-items: center; justify-content: center;
+    cursor: pointer; user-select: none; outline: none;
     transition: border-color 0.12s ease, box-shadow 0.12s ease, background-color 0.12s ease;
   }
   .t-hk-box:hover { border-color: var(--border-strong); background: var(--surface); }
   .t-hk-box.is-rec {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 3px var(--ring);
-    background: var(--surface);
-    padding: 0 12px;
+    border-color: var(--accent); box-shadow: 0 0 0 3px var(--ring);
+    background: var(--surface); padding: 0 12px;
   }
-  .t-hk-box.is-conflict {
-    border-color: var(--danger);
-    background: var(--danger-soft);
-  }
+  .t-hk-box.is-conflict { border-color: var(--danger); background: var(--danger-soft); }
   .t-hk-keys { display: inline-flex; align-items: center; gap: 4px; }
   .t-hk-plus { font-size: 11px; color: var(--muted); }
-  .t-hk-prompt { font-size: 12px; color: var(--accent); font-weight: 500; white-space: nowrap; }
+  .t-hk-prompt { font-size: 11.5px; color: var(--accent); font-weight: 500; white-space: nowrap; }
   .t-hk-off { font-size: 12.5px; color: var(--muted); }
   .t-hk-clr {
-    position: absolute;
-    right: 6px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 18px;
-    height: 18px;
-    border: 0;
-    border-radius: 4px;
-    background: transparent;
-    color: var(--muted);
-    cursor: pointer;
+    position: absolute; right: 6px; display: inline-flex; align-items: center; justify-content: center;
+    width: 18px; height: 18px; border: 0; border-radius: 4px; background: transparent;
+    color: var(--muted); cursor: pointer;
   }
   .t-hk-clr:hover { background: var(--hover); color: var(--text); }
-
+  .t-hk-status-line { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
   .t-hk-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    font-size: 11.5px;
-    font-weight: 500;
-    padding: 2px 8px;
-    border-radius: 999px;
-    white-space: nowrap;
+    display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; font-weight: 500;
+    padding: 2px 8px; border-radius: 999px; white-space: nowrap;
   }
-  .t-hk-badge.is-ok {
-    background: var(--ok-soft);
-    color: var(--ok);
+  .t-hk-badge.is-ok { background: var(--ok-soft); color: var(--ok); }
+  .t-hk-badge.is-conflict { background: var(--danger-soft); color: var(--danger); }
+  .t-hk-jump {
+    border: 0; background: transparent; color: var(--accent); font-family: inherit;
+    font-size: 11.5px; font-weight: 500; cursor: pointer; padding: 2px 4px; white-space: nowrap;
   }
-  .t-hk-badge.is-conflict {
-    background: var(--danger-soft);
-    color: var(--danger);
-  }
+  .t-hk-jump:hover { text-decoration: underline; }
 </style>

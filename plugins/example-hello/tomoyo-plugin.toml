@@ -1,7 +1,7 @@
 id = "dev.tomoyo.example-hello"
-name = "Rust Hello & Case Converter"
+name = "文本大小写转换示例 (Rust 原生)"
 version = "0.1.0"
-description = "Reference native Rust plugin (written with tomoyo-sdk): instant string transformations"
+description = "基于 tomoyo-sdk 编写的 Rust 原生 STDIO 参考插件：即时完成大小写、蛇形/驼峰命名与反转转换"
 author = "Tomoyo Contributors"
 license = "MIT"
 

@@ -4,6 +4,7 @@
     Camera,
     FileText,
     Globe,
+    Keyboard,
     Languages,
     Package,
     Palette,
@@ -12,12 +13,14 @@
     SlidersHorizontal,
     Store,
   } from '@lucide/svelte';
+  import { hydrateSettingsInit } from '../../lib/defaults';
   import { applyThemeClass, installErrorTelemetry, postHost, subscribeHost } from '../../lib/ipc';
   import { OFFICIAL_REPO, tr, type Lang } from '../../lib/i18n';
   import type {
+    HotkeyAuditReport,
     HotkeyHealthReport,
+    LiveProbeResult,
     ReleaseInfo,
-    SettingsInitPayload,
     TomoyoConfig,
     UpdateStatus,
   } from '../../lib/types';
@@ -25,6 +28,7 @@
   import AppearanceTab from './AppearanceTab.svelte';
   import CaptureTab from './CaptureTab.svelte';
   import GeneralTab from './GeneralTab.svelte';
+  import HotkeysTab from './HotkeysTab.svelte';
   import LogsTab from './LogsTab.svelte';
   import PluginsTab from './PluginsTab.svelte';
   import SearchClipTab from './SearchClipTab.svelte';
@@ -33,71 +37,7 @@
   import UpdatesTab from './UpdatesTab.svelte';
   import WebSearchTab from './WebSearchTab.svelte';
 
-  function makeDefaultConfig(): TomoyoConfig {
-    return {
-      language: 'zh',
-      hotkey: 'Alt+Space',
-      theme: 'light',
-      hibernate_delay_secs: 15,
-      auto_preview: true,
-      show_filter_bar: true,
-      window: { width_dip: 720, max_visible_rows: 8, preview_width_dip: 310, custom_x: null, custom_y: null },
-      apps: { extra_dirs: [], auto_detect_desktop_organizers: true, extra_scan_depth: 2 },
-      everything: { max_global_results: 6, max_dedicated_results: 30, extra_filter: '' },
-      clipboard: {
-        persist_sqlite: true,
-        max_persisted_items: 500,
-        hotkey: 'Alt+V',
-        capture_enabled: true,
-        capture_images: true,
-        excluded_apps: [],
-      },
-      translate: {
-        hotkey: 'Alt+T',
-        target_lang: 'auto',
-        engines: ['google', 'mymemory'],
-        openai_base_url: 'https://api.openai.com/v1',
-        openai_model: 'gpt-4o-mini',
-        ollama_url: 'http://127.0.0.1:11434',
-        ollama_model: 'qwen2.5:7b',
-      },
-      capture: { hotkey: 'Alt+S', save_dir: '', pin_opacity: 100, copy_hex_lowercase: false },
-      update: { auto_check: true, check_interval_hours: 24, repo: OFFICIAL_REPO, last_checked_unix: 0 },
-      web_searches: [],
-    };
-  }
-
-  function hydrateInit(): SettingsInitPayload {
-    const raw = (window.__TOMOYO_SETTINGS_INIT__ ?? {}) as Partial<SettingsInitPayload>;
-    const def = makeDefaultConfig();
-    const rc = (raw.config ?? {}) as Partial<TomoyoConfig>;
-    return {
-      version: raw.version || '1.6.0',
-      autostart: !!raw.autostart,
-      plugins: Array.isArray(raw.plugins) ? raw.plugins : [],
-      config_path: raw.config_path || '',
-      plugins_dir: raw.plugins_dir || '',
-      logs_dir: raw.logs_dir || '',
-      running_apps: Array.isArray(raw.running_apps) ? raw.running_apps : [],
-      secrets_status: { deepl: !!raw.secrets_status?.deepl, openai: !!raw.secrets_status?.openai },
-      hotkey_health: raw.hotkey_health || {},
-      cached_update: raw.cached_update ?? null,
-      config: {
-        ...def,
-        ...rc,
-        window: { ...def.window, ...(rc.window || {}) },
-        apps: { ...def.apps, ...(rc.apps || {}) },
-        everything: { ...def.everything, ...(rc.everything || {}) },
-        clipboard: { ...def.clipboard, ...(rc.clipboard || {}) },
-        translate: { ...def.translate, ...(rc.translate || {}) },
-        capture: { ...def.capture, ...(rc.capture || {}) },
-        update: { ...def.update, ...(rc.update || {}) },
-        web_searches: Array.isArray(rc.web_searches) ? rc.web_searches : def.web_searches,
-      },
-    };
-  }
-
-  const init = hydrateInit();
+  const init = hydrateSettingsInit();
 
   let cfg = $state<TomoyoConfig>(init.config);
   let autostart = $state(init.autostart);
@@ -109,19 +49,21 @@
   let toastWarn = $state(false);
   let folderErr = $state('');
 
-  // Store state
+  // Hotkey Doctor state
+  let hotkeyAudit = $state<HotkeyAuditReport | null>(null);
+  let auditingHotkeys = $state(false);
+  let probingSpec = $state('');
+  let probeResult = $state<LiveProbeResult | null>(null);
+
+  // Store / Logs / Updates state
   let storeLoaded = $state(false);
   let storeLoading = $state(false);
   let storeItems = $state<StoreItem[]>([]);
   let storeStatus = $state('');
-
-  // Logs state
   let logSource = $state('tomoyo.log');
   let logErrorsOnly = $state(false);
   let logContent = $state('');
   let logMeta = $state('');
-
-  // Updater state
   let updateStatus = $state<UpdateStatus | null>(init.cached_update ?? null);
   let checkingUpdates = $state(false);
   let updatesCheckedOnce = $state(false);
@@ -132,6 +74,7 @@
 
   const navItems = [
     { id: 'general', key: 'nav_general', icon: SlidersHorizontal },
+    { id: 'hotkeys', key: 'nav_hotkeys', icon: Keyboard },
     { id: 'appearance', key: 'nav_appearance', icon: Palette },
     { id: 'search', key: 'nav_search', icon: Search },
     { id: 'translate', key: 'nav_translate', icon: Languages },
@@ -159,9 +102,31 @@
     else saveTimer = setTimeout(saveNow, delayMs);
   }
 
+  function runHotkeyAudit() {
+    auditingHotkeys = true;
+    postHost({ cmd: 'audit_hotkeys' });
+  }
+
+  function probeHotkeyOwner(spec: string) {
+    probingSpec = spec;
+    probeResult = null;
+    postHost({ cmd: 'probe_hotkey_owner', spec });
+  }
+
+  function applyFreeKey(slot: 'main' | 'clipboard' | 'translate' | 'capture', key: string) {
+    if (slot === 'main') cfg.hotkey = key;
+    else if (slot === 'clipboard') cfg.clipboard.hotkey = key;
+    else if (slot === 'translate') cfg.translate.hotkey = key;
+    else cfg.capture.hotkey = key;
+    scheduleSave(0);
+    setTimeout(runHotkeyAudit, 260);
+  }
+
   function switchTab(id: string) {
     activeTab = id;
-    if (id === 'store' && !storeLoaded) {
+    if (id === 'hotkeys' && !hotkeyAudit && !auditingHotkeys) {
+      runHotkeyAudit();
+    } else if (id === 'store' && !storeLoaded) {
       storeLoaded = true;
       fetchStore();
     } else if (id === 'logs') {
@@ -213,9 +178,7 @@
   }
 
   function checkHotkeyConflictsToast(h: HotkeyHealthReport) {
-    const bad = [h.main, h.clipboard, h.translate, h.capture].filter(
-      (s) => s && !s.disabled && !s.ok && s.spec
-    );
+    const bad = [h.main, h.clipboard, h.translate, h.capture].filter((s) => s && !s.disabled && !s.ok && s.spec);
     if (bad.length > 0) {
       const first = bad[0]!;
       setToast(`⚠ ${first.reason || `${first.spec} 已被其他软件占用`}`, true);
@@ -238,6 +201,12 @@
       } else if (ev === 'hotkey_health' && data.health) {
         hotkeyHealth = data.health as HotkeyHealthReport;
         checkHotkeyConflictsToast(hotkeyHealth);
+      } else if (ev === 'hotkey_audit' && data.report) {
+        auditingHotkeys = false;
+        hotkeyAudit = data.report as HotkeyAuditReport;
+      } else if (ev === 'hotkey_probe_result' && data.result) {
+        probingSpec = '';
+        probeResult = data.result as LiveProbeResult;
       } else if (ev === 'folder_picked') {
         if (data.cancelled) return;
         if (data.ok && typeof data.path === 'string') {
@@ -246,16 +215,12 @@
             cfg.apps.extra_dirs = [...cfg.apps.extra_dirs, data.path];
             scheduleSave(0);
           }
-        } else if (data.error) {
-          folderErr = String(data.error);
-        }
+        } else if (data.error) folderErr = String(data.error);
       } else if (ev === 'capture_dir_picked') {
         if (!data.cancelled && data.ok && typeof data.path === 'string') {
           cfg.capture.save_dir = data.path;
           scheduleSave(0);
-        } else if (data.error) {
-          setToast(`✗ ${data.error}`, true);
-        }
+        } else if (data.error) setToast(`✗ ${data.error}`, true);
       } else if (ev === 'secrets_status') {
         if (data.status) secretsStatus = { ...secretsStatus, ...(data.status as { deepl: boolean; openai: boolean }) };
         if (data.message) setToast(`${data.ok ? '✓ ' : '✗ '}${data.message}`, !data.ok);
@@ -294,9 +259,7 @@
     });
 
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !e.defaultPrevented) {
-        postHost({ cmd: 'close' });
-      }
+      if (e.key === 'Escape' && !e.defaultPrevented) postHost({ cmd: 'close' });
     };
     window.addEventListener('keydown', onKey);
     return () => {
@@ -339,36 +302,34 @@
       <div class="container">
         {#if activeTab === 'general'}
           <GeneralTab
-            {cfg}
-            {lang}
-            {autostart}
-            hotkeyStatus={hotkeyHealth.main}
-            {onLanguageChange}
-            {onAutostartChange}
-            onSave={scheduleSave}
+            {cfg} {lang} {autostart} hotkeyStatus={hotkeyHealth.main}
+            {onLanguageChange} {onAutostartChange}
+            onJumpDoctor={() => switchTab('hotkeys')} onSave={scheduleSave}
+          />
+        {:else if activeTab === 'hotkeys'}
+          <HotkeysTab
+            {cfg} {lang} health={hotkeyHealth} audit={hotkeyAudit} auditing={auditingHotkeys}
+            {probingSpec} {probeResult}
+            onRunAudit={runHotkeyAudit} onProbe={probeHotkeyOwner} onApplyFreeKey={applyFreeKey}
           />
         {:else if activeTab === 'appearance'}
           <AppearanceTab {cfg} {lang} {onThemePick} onSave={scheduleSave} />
         {:else if activeTab === 'search'}
           <SearchClipTab
-            {cfg}
-            {lang}
-            runningApps={init.running_apps}
-            {folderErr}
+            {cfg} {lang} runningApps={init.running_apps} {folderErr}
             clipHotkeyStatus={hotkeyHealth.clipboard}
-            onSave={scheduleSave}
+            onJumpDoctor={() => switchTab('hotkeys')} onSave={scheduleSave}
           />
         {:else if activeTab === 'translate'}
           <TranslateTab
-            {cfg}
-            {lang}
-            {secretsStatus}
-            trHotkeyStatus={hotkeyHealth.translate}
-            onToast={setToast}
-            onSave={scheduleSave}
+            {cfg} {lang} {secretsStatus} trHotkeyStatus={hotkeyHealth.translate}
+            onJumpDoctor={() => switchTab('hotkeys')} onToast={setToast} onSave={scheduleSave}
           />
         {:else if activeTab === 'capture'}
-          <CaptureTab {cfg} {lang} capHotkeyStatus={hotkeyHealth.capture} onSave={scheduleSave} />
+          <CaptureTab
+            {cfg} {lang} capHotkeyStatus={hotkeyHealth.capture}
+            onJumpDoctor={() => switchTab('hotkeys')} onSave={scheduleSave}
+          />
         {:else if activeTab === 'web'}
           <WebSearchTab {cfg} {lang} onSave={scheduleSave} />
         {:else if activeTab === 'store'}
@@ -377,26 +338,15 @@
           <PluginsTab {lang} {plugins} configPath={init.config_path} pluginsDir={init.plugins_dir} />
         {:else if activeTab === 'logs'}
           <LogsTab
-            {lang}
-            source={logSource}
-            errorsOnly={logErrorsOnly}
-            content={logContent}
-            metaLine={logMeta}
+            {lang} source={logSource} errorsOnly={logErrorsOnly} content={logContent} metaLine={logMeta}
             onSourceChange={(s) => { logSource = s; refreshLogs(); }}
             onErrorsOnlyChange={(v) => { logErrorsOnly = v; refreshLogs(); }}
             onRefresh={refreshLogs}
           />
         {:else if activeTab === 'updates'}
           <UpdatesTab
-            {cfg}
-            {lang}
-            version={init.version}
-            {updateStatus}
-            checking={checkingUpdates}
-            {installProgress}
-            onCheckNow={checkUpdatesNow}
-            onInstall={installRelease}
-            onSave={scheduleSave}
+            {cfg} {lang} version={init.version} {updateStatus} checking={checkingUpdates}
+            {installProgress} onCheckNow={checkUpdatesNow} onInstall={installRelease} onSave={scheduleSave}
           />
         {/if}
       </div>
@@ -440,11 +390,7 @@
     cursor: pointer; transition: background-color 0.12s ease, color 0.12s ease;
   }
   .nav-item:hover:not(.is-active) { background: var(--hover); color: var(--text); }
-  .nav-item.is-active {
-    background: var(--accent-soft);
-    color: var(--accent);
-    font-weight: 600;
-  }
+  .nav-item.is-active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
   .nav-item.is-active::before {
     content: ""; position: absolute; left: 0; top: 7px; bottom: 7px; width: 3px;
     border-radius: 999px; background: var(--accent);
@@ -456,7 +402,7 @@
   }
   .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
   .scroll { flex: 1; overflow-y: auto; padding: 24px 28px; }
-  .container { max-width: 720px; }
+  .container { max-width: 740px; }
   .bottom-bar {
     height: 46px; padding: 0 24px; border-top: 1px solid var(--border);
     background: var(--sidebar); display: flex; align-items: center; justify-content: space-between;

@@ -17,10 +17,11 @@
     runningApps: string[];
     folderErr: string;
     clipHotkeyStatus?: HotkeySlotStatus;
+    onJumpDoctor?: () => void;
     onSave: (delayMs?: number) => void;
   }
 
-  let { cfg, lang, runningApps, folderErr, clipHotkeyStatus, onSave }: Props = $props();
+  let { cfg, lang, runningApps, folderErr, clipHotkeyStatus, onJumpDoctor, onSave }: Props = $props();
 
   const evPresets = [
     { tok: '!*.tmp', zh: '临时文件 (.tmp)', en: 'Temp (.tmp)' },
@@ -211,6 +212,7 @@
       conflictLabel={tr(lang, 'hk_conflict')}
       recordPrompt={tr(lang, 'rec_prompt')}
       needModPrompt={tr(lang, 'rec_need_mod')}
+      {onJumpDoctor}
       onchange={(v) => { cfg.clipboard.hotkey = v; onSave(0); }}
     />
   </div>

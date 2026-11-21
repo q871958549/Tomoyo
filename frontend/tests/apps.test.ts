@@ -4,6 +4,7 @@ import SettingsApp from '../src/apps/settings/SettingsApp.svelte';
 import TranslatorApp from '../src/apps/translator/TranslatorApp.svelte';
 import ClipboardApp from '../src/apps/clipboard/ClipboardApp.svelte';
 import OcrApp from '../src/apps/ocr/OcrApp.svelte';
+import { buildComboFromEvent } from '../src/lib/hotkeys';
 
 function setupMockWebView() {
   const posted: Array<Record<string, unknown>> = [];
@@ -75,7 +76,7 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
     flushSync();
 
     const navBtns = document.querySelectorAll<HTMLButtonElement>('nav button[data-tab]');
-    expect(navBtns.length).toBe(10);
+    expect(navBtns.length).toBe(11);
 
     // Click every tab and assert zero errors + tab activates
     for (const btn of navBtns) {
@@ -95,6 +96,10 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
     }
 
     expect(wv.posted.some((m) => m.cmd === 'check_hotkey_health')).toBe(true);
+    expect(wv.posted.some((m) => m.cmd === 'audit_hotkeys')).toBe(true);
+    expect(buildComboFromEvent(new KeyboardEvent('keydown', { code: 'F1' })).combo).toBe('F1');
+    expect(buildComboFromEvent(new KeyboardEvent('keydown', { code: 'PrintScreen' })).combo).toBe('PrintScreen');
+    expect(buildComboFromEvent(new KeyboardEvent('keydown', { code: 'KeyA' })).needMod).toBe(true);
     unmount(app);
   });
 

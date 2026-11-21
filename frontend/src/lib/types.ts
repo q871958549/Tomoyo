@@ -14,6 +14,39 @@ export interface HotkeyHealthReport {
   updated_at_unix?: number;
 }
 
+export interface SuspectProcess {
+  process_name: string;
+  pid: number;
+  exe_path: string;
+  reason: string;
+  confidence: 'high' | 'medium' | string;
+}
+
+export interface HotkeyAuditItem {
+  spec: string;
+  status: 'free' | 'tomoyo' | 'occupied_external' | 'conflict';
+  tomoyo_slot?: string | null;
+  suspects: SuspectProcess[];
+}
+
+export interface HotkeyAuditReport {
+  items: HotkeyAuditItem[];
+  recommended_free: Record<string, string[]>;
+  total_probed: number;
+  external_occupied: number;
+  conflicts: number;
+}
+
+export interface LiveProbeResult {
+  spec: string;
+  found: boolean;
+  pid: number;
+  process_name: string;
+  window_title: string;
+  exe_path: string;
+  detail: string;
+}
+
 export interface WebSearchEngine {
   keyword: string;
   name: string;

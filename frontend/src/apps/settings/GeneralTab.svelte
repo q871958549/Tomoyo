@@ -13,10 +13,11 @@
     hotkeyStatus?: HotkeySlotStatus;
     onLanguageChange: (code: Lang) => void;
     onAutostartChange: (checked: boolean) => void;
+    onJumpDoctor?: () => void;
     onSave: (delayMs?: number) => void;
   }
 
-  let { cfg, lang, autostart, hotkeyStatus, onLanguageChange, onAutostartChange, onSave }: Props = $props();
+  let { cfg, lang, autostart, hotkeyStatus, onLanguageChange, onAutostartChange, onJumpDoctor, onSave }: Props = $props();
 
   const mainPresets = [
     { value: 'Alt+Space', label: 'Alt+Space' },
@@ -61,6 +62,7 @@
       conflictLabel={tr(lang, 'hk_conflict')}
       recordPrompt={tr(lang, 'rec_prompt')}
       needModPrompt={tr(lang, 'rec_need_mod')}
+      {onJumpDoctor}
       onchange={(v) => { cfg.hotkey = v; onSave(0); }}
     />
   </div>

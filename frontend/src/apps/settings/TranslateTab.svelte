@@ -13,11 +13,12 @@
     lang: Lang;
     secretsStatus: { deepl: boolean; openai: boolean };
     trHotkeyStatus?: HotkeySlotStatus;
+    onJumpDoctor?: () => void;
     onToast: (msg: string, warn?: boolean) => void;
     onSave: (delayMs?: number) => void;
   }
 
-  let { cfg, lang, secretsStatus, trHotkeyStatus, onToast, onSave }: Props = $props();
+  let { cfg, lang, secretsStatus, trHotkeyStatus, onJumpDoctor, onToast, onSave }: Props = $props();
 
   let deeplDraft = $state('');
   let openaiDraft = $state('');
@@ -100,6 +101,7 @@
       conflictLabel={tr(lang, 'hk_conflict')}
       recordPrompt={tr(lang, 'rec_prompt')}
       needModPrompt={tr(lang, 'rec_need_mod')}
+      {onJumpDoctor}
       onchange={(v) => { cfg.translate.hotkey = v; onSave(0); }}
     />
   </div>

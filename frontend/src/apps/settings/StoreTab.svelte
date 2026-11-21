@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Download, RefreshCw, Trash2 } from '@lucide/svelte';
+  import { localizeRuntime } from '../../lib/defaults';
   import { postHost } from '../../lib/ipc';
   import { tr, type Lang } from '../../lib/i18n';
   import Button from '../../lib/ui/Button.svelte';
@@ -57,7 +58,7 @@
         <div class="store-info">
           <div class="store-title">
             <span class="t-label">{p.name}</span>
-            <span class="t-pill">{p.runtime_kind}</span>
+            <span class="t-pill">{localizeRuntime(p.runtime_kind, lang === 'en')}</span>
             <span class="store-ver">v{p.version}</span>
           </div>
           <div class="t-desc">{p.description}</div>

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { FileCode, FolderOpen } from '@lucide/svelte';
+  import { localizePermission, localizeRuntime } from '../../lib/defaults';
   import { postHost } from '../../lib/ipc';
   import { tr, type Lang } from '../../lib/i18n';
   import type { PluginEntry } from '../../lib/types';
@@ -43,7 +44,7 @@
         <div class="t-label">{p.name}</div>
         <div class="plug-id">{p.id}</div>
       </div>
-      <div><span class="t-pill">{p.runtime}</span></div>
+      <div><span class="t-pill">{localizeRuntime(p.runtime, lang === 'en')}</span></div>
       <div class="plug-kw">{(p.keywords || []).join(', ')}</div>
       <div class="plug-perms">
         {#if (p.declared_permissions || []).length === 0}
@@ -53,7 +54,7 @@
             {@const granted = (p.granted_permissions || []).includes(perm)}
             <div class="perm-item">
               <Switch checked={granted} onchange={(v) => togglePerm(p, perm, v)} />
-              <span>{perm}</span>
+              <span>{localizePermission(perm, lang === 'en')}</span>
             </div>
           {/each}
         {/if}

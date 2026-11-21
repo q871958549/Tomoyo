@@ -14,6 +14,10 @@ mod clip_view;
 mod db;
 #[cfg(windows)]
 mod folder_picker;
+#[cfg(windows)]
+mod hotkey_capture;
+#[cfg(windows)]
+mod hotkey_doctor;
 mod ocr_view;
 mod shim_js;
 #[cfg(windows)]

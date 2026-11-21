@@ -2,7 +2,7 @@
 ; Zero-UAC per-user install to %LOCALAPPDATA%\Programs\Tomoyo with clean uninstaller.
 
 #ifndef AppVersion
-  #define AppVersion "1.6.0"
+  #define AppVersion "1.6.1"
 #endif
 
 #ifndef StageDir

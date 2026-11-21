@@ -179,20 +179,97 @@ pub fn spawn_hotkey_health_worker(tx: mpsc::Sender<String>, hwnd_raw: usize, not
         .name("tomoyo-hotkey-health".into())
         .spawn(move || {
             std::thread::sleep(std::time::Duration::from_millis(180));
-            let evt = serde_json::json!({
-                "event": "hotkey_health",
-                "health": tomoyo_core::load_hotkey_health(),
-            })
-            .to_string();
-            if tx.send(evt).is_ok() {
-                unsafe {
-                    let _ = PostMessageW(
-                        Some(HWND(hwnd_raw as *mut c_void)),
-                        notify_msg,
-                        WPARAM(0),
-                        LPARAM(0),
-                    );
-                }
-            }
+            push_evt(
+                &tx,
+                hwnd_raw,
+                notify_msg,
+                serde_json::json!({
+                    "event": "hotkey_health",
+                    "health": tomoyo_core::load_hotkey_health(),
+                })
+                .to_string(),
+            );
         });
+}
+
+pub fn spawn_hotkey_audit_worker(
+    parent_hwnd: Option<isize>,
+    tx: mpsc::Sender<String>,
+    hwnd_raw: usize,
+    notify_msg: u32,
+) {
+    let _ = std::thread::Builder::new()
+        .name("tomoyo-hotkey-audit".into())
+        .spawn(move || {
+            let report = crate::hotkey_doctor::audit_system_hotkeys(parent_hwnd);
+            push_evt(
+                &tx,
+                hwnd_raw,
+                notify_msg,
+                serde_json::json!({ "event": "hotkey_audit", "report": report }).to_string(),
+            );
+        });
+}
+
+pub fn spawn_hotkey_probe_worker(
+    spec: String,
+    parent_hwnd: Option<isize>,
+    tx: mpsc::Sender<String>,
+    hwnd_raw: usize,
+    notify_msg: u32,
+) {
+    let _ = std::thread::Builder::new()
+        .name("tomoyo-hotkey-probe".into())
+        .spawn(move || {
+            let result = crate::hotkey_doctor::probe_hotkey_owner_live(&spec, hwnd_raw, parent_hwnd);
+            push_evt(
+                &tx,
+                hwnd_raw,
+                notify_msg,
+                serde_json::json!({ "event": "hotkey_probe_result", "result": result }).to_string(),
+            );
+        });
+}
+
+pub fn dispatch_async_workers(
+    act: crate::bridge::HostAction,
+    parent_hwnd: Option<isize>,
+    tx: &mpsc::Sender<String>,
+    hwnd_raw: usize,
+    notify_msg: u32,
+) {
+    if let Some(repo) = act.async_check_updates {
+        spawn_update_worker(repo, tx.clone(), hwnd_raw, notify_msg);
+    }
+    if let Some(rel) = act.async_install_update {
+        spawn_install_update_worker(rel, tx.clone(), hwnd_raw, notify_msg);
+    }
+    if let Some(sources) = act.async_fetch_store {
+        spawn_store_worker(sources, tx.clone(), hwnd_raw, notify_msg);
+    }
+    if let Some((txt, src, tgt)) = act.async_translate {
+        spawn_translate_worker(txt, src, tgt, tx.clone(), hwnd_raw, notify_msg);
+    }
+    if act.async_refresh_hotkey_health {
+        spawn_hotkey_health_worker(tx.clone(), hwnd_raw, notify_msg);
+    }
+    if act.async_audit_hotkeys {
+        spawn_hotkey_audit_worker(parent_hwnd, tx.clone(), hwnd_raw, notify_msg);
+    }
+    if let Some(spec) = act.async_probe_hotkey {
+        spawn_hotkey_probe_worker(spec, parent_hwnd, tx.clone(), hwnd_raw, notify_msg);
+    }
+}
+
+fn push_evt(tx: &mpsc::Sender<String>, hwnd_raw: usize, notify_msg: u32, evt: String) {
+    if tx.send(evt).is_ok() {
+        unsafe {
+            let _ = PostMessageW(
+                Some(HWND(hwnd_raw as *mut c_void)),
+                notify_msg,
+                WPARAM(0),
+                LPARAM(0),
+            );
+        }
+    }
 }

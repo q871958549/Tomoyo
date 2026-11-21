@@ -65,6 +65,11 @@ pub enum HostMessage {
     SetSecret { key: String, value: String },
     DeleteSecret { key: String },
     CheckHotkeyHealth,
+    StartHotkeyCapture,
+    StopHotkeyCapture,
+    AuditHotkeys,
+    ProbeHotkeyOwner { spec: String },
+    RevealPath { path: String },
     Close,
 }
 
@@ -81,6 +86,10 @@ pub struct HostAction {
     pub async_fetch_store: Option<Vec<String>>,
     pub async_translate: Option<(String, String, String)>,
     pub async_refresh_hotkey_health: bool,
+    /// `1` = start temporary exclusive WH_KEYBOARD_LL capture, `-1` = stop.
+    pub hotkey_capture_cmd: i8,
+    pub async_audit_hotkeys: bool,
+    pub async_probe_hotkey: Option<String>,
 }
 
 pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isize>) -> HostAction {
@@ -356,38 +365,26 @@ pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isi
             async_translate: Some((text, source_lang, target_lang)),
             ..Default::default()
         },
-        HostMessage::TrSaveWord { word, translation, phonetic, note } => HostAction {
-            reply_json: Some(crate::tr_view::handle_tr_word_save(&word, &translation, &phonetic, &note)),
+        HostMessage::TrSaveWord { word, translation, phonetic, note } => HostAction { reply_json: Some(crate::tr_view::handle_tr_word_save(&word, &translation, &phonetic, &note)), ..Default::default() },
+        HostMessage::TrDeleteWord { word } => HostAction { reply_json: Some(crate::tr_view::handle_tr_word_delete(&word)), ..Default::default() },
+        HostMessage::TrClearHistory => HostAction { reply_json: Some(crate::tr_view::handle_tr_history_clear()), ..Default::default() },
+        HostMessage::SetSecret { key, value } => HostAction { reply_json: Some(crate::tr_view::handle_set_secret(&key, &value)), ..Default::default() },
+        HostMessage::DeleteSecret { key } => HostAction { reply_json: Some(crate::tr_view::handle_delete_secret(&key)), ..Default::default() },
+        HostMessage::CheckHotkeyHealth => HostAction {
+            reply_json: Some(serde_json::json!({ "event": "hotkey_health", "health": tomoyo_core::load_hotkey_health() }).to_string()),
             ..Default::default()
         },
-        HostMessage::TrDeleteWord { word } => HostAction {
-            reply_json: Some(crate::tr_view::handle_tr_word_delete(&word)),
-            ..Default::default()
-        },
-        HostMessage::TrClearHistory => HostAction {
-            reply_json: Some(crate::tr_view::handle_tr_history_clear()),
-            ..Default::default()
-        },
-        HostMessage::SetSecret { key, value } => HostAction {
-            reply_json: Some(crate::tr_view::handle_set_secret(&key, &value)),
-            ..Default::default()
-        },
-        HostMessage::DeleteSecret { key } => HostAction {
-            reply_json: Some(crate::tr_view::handle_delete_secret(&key)),
-            ..Default::default()
-        },
-        HostMessage::CheckHotkeyHealth => {
-            let evt = serde_json::json!({
-                "event": "hotkey_health",
-                "health": tomoyo_core::load_hotkey_health(),
-            })
-            .to_string();
-            HostAction { reply_json: Some(evt), ..Default::default() }
+        HostMessage::StartHotkeyCapture => HostAction { hotkey_capture_cmd: 1, ..Default::default() },
+        HostMessage::StopHotkeyCapture => HostAction { hotkey_capture_cmd: -1, ..Default::default() },
+        HostMessage::AuditHotkeys => HostAction { async_audit_hotkeys: true, ..Default::default() },
+        HostMessage::ProbeHotkeyOwner { spec } => HostAction { async_probe_hotkey: Some(spec), ..Default::default() },
+        HostMessage::RevealPath { path } => {
+            #[cfg(windows)]
+            crate::hotkey_doctor::reveal_file_in_explorer(&path);
+            let _ = path;
+            HostAction::default()
         }
-        HostMessage::Close => HostAction {
-            should_close: true,
-            ..Default::default()
-        },
+        HostMessage::Close => HostAction { should_close: true, ..Default::default() },
     }
 }
 

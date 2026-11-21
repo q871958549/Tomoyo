@@ -1,7 +1,7 @@
 id = "dev.tomoyo.example-wasm"
-name = "WASM Sandbox Toolkit (JWT & Byte Units)"
+name = "JWT 解析与存储单位换算 (WASM 沙箱)"
 version = "0.2.0"
-description = "Fuel-metered, zero-ambient-permission WebAssembly plugin: inspect JWTs & convert byte units"
+description = "零环境权限与指令燃料计量的 WebAssembly 沙箱插件：即时解码 JWT 令牌与换算 B/KB/MB/GB/TB 单位"
 author = "Tomoyo Contributors"
 license = "MIT"
 

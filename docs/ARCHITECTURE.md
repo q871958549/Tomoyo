@@ -205,3 +205,7 @@ sequenceDiagram
   - **双层渲染架构下的前端现代化重构（`frontend/`）**：坚持主进程 `tomoyo.exe` 与截屏进程 `tomoyo-capture.exe` 纯 Rust Win32 SDF/GDI 零 GPU 膨胀，同时将短生命周期 `tomoyo-webview-host.exe` 全部 4 个内置页面升级为 **Svelte 5 + Tailwind CSS v4 + TypeScript + `@lucide/svelte` + Vite 单文件 IIFE**（`settings.html` / `translator.html` / `clipboard.html` / `ocr.html`，移除旧手写 HTML/JS 目录），完整实现 10 类极简现代受控原语与三主题语义令牌体系，全流程接入 `svelte-check`、`Vitest` 与 `happy-dom` 编译产物烟雾门禁。
   - **全局热键真实系统状态回执与键位扩展**：`tomoyo-core::config::hotkey` 扩展支持 OEM 标点与导航键并持久化 `%LOCALAPPDATA%\Tomoyo\hotkey_status.json`；主进程在启动与热重载时落盘全部 4 个热键的真实 Win32 `RegisterHotKey` 结果，设置中心保存后自动回读并在 `HotkeyRecorder` 内实时渲染绿/红冲突徽标与一键推荐键，根治组合键被占静默失效。
   - **原生截图胶囊工具栏与右键菜单视觉统一**：`tomoyo-capture.exe` 新增纯 Rust 抗锯齿 SDF 图形原语与 16×16 矢量图标模块（`overlay_icons.rs`），重构为深色半透明圆角胶囊工具栏、按需展开的二级属性胶囊（3 档线宽点 + 6 色圆形色板）、悬浮 Tooltip 气泡、圆角尺寸徽标与支持 `Shift` 切换 HEX/RGB 的 `11×11` 放大镜 HUD；`tomoyo-app` 原生弹出菜单统一 32px 无框悬停高亮与 `danger` / `disabled` 视觉规范。
+- **v1.6.1 — 全局热键秩序治理中心、录制态独占捕获、`F1` 单键与插件清单中文化**
+  - **录制态静音与临时 `WH_KEYBOARD_LL` 独占捕获（`hotkey_capture.rs`）**：仅在录入框激活期间挂起主进程热键并启用短生命周期 `WH_KEYBOARD_LL`（完成/取消/失焦即卸载，平时 0 常驻钩子），优先于内核 `RegisterHotKey` 吞掉按键，彻底消除录入快捷键反被 Tomoyo 或微信/PixPin/Pot 等第三方工具唤起的痛点。
+  - **纯用户态全局热键治理中心（`hotkey_doctor.rs` + `HotkeysTab.svelte`）**：支持 22+ 高频热键矩阵探测、基于活跃进程特征库与主流工具本地配置文件的静态归因、交互式「抓现行」焦点/弹窗真凶定位（精确到 PID、窗口标题与程序目录定位），以及冲突槽位一键换用实测空闲热键。
+  - **`F1`–`F12` / `PrintScreen` 单键支持与插件清单全面中文化**：前后端放行无修饰功能单键绑定并加入截图预设；`registry/index.json` 与全部 5 个插件清单及 UI 运行时/权限标签统一中文化并同步刷新 SHA-256。

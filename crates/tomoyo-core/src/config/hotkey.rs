@@ -53,6 +53,62 @@ pub fn load_hotkey_health() -> HotkeyHealthReport {
         .unwrap_or_default()
 }
 
+/// Keys that Win32 `RegisterHotKey` may safely bind without Ctrl/Alt/Shift/Win modifiers.
+pub fn is_standalone_allowed_vk(vk: u32) -> bool {
+    (0x70..=0x7B).contains(&vk) || vk == 0x2C
+}
+
+/// Converts a Win32 virtual-key code into Tomoyo's canonical hotkey token name.
+pub fn vk_to_key_name(vk: u32) -> Option<String> {
+    let s = match vk {
+        0x20 => "Space",
+        0x09 => "Tab",
+        0x0D => "Enter",
+        0x2D => "Insert",
+        0x2E => "Delete",
+        0x24 => "Home",
+        0x23 => "End",
+        0x21 => "PageUp",
+        0x22 => "PageDown",
+        0x2C => "PrintScreen",
+        0x26 => "Up",
+        0x28 => "Down",
+        0x25 => "Left",
+        0x27 => "Right",
+        0xC0 => "`",
+        0xBD => "-",
+        0xBB => "=",
+        0xDB => "[",
+        0xDD => "]",
+        0xDC => "\\",
+        0xBA => ";",
+        0xDE => "'",
+        0xBC => ",",
+        0xBE => ".",
+        0xBF => "/",
+        0x30..=0x39 | 0x41..=0x5A => return Some((vk as u8 as char).to_string()),
+        0x70..=0x7B => return Some(format!("F{}", vk - 0x6F)),
+        _ => return None,
+    };
+    Some(s.to_string())
+}
+
+/// Formats Win32 modifier bits (`ALT=1, CTRL=2, SHIFT=4, WIN=8`) and a VK code into canonical spec.
+pub fn format_hotkey(mods: u32, vk: u32) -> Option<String> {
+    let key = vk_to_key_name(vk)?;
+    let has_mod = (mods & 0x000F) != 0;
+    if !has_mod && !is_standalone_allowed_vk(vk) {
+        return None;
+    }
+    let mut parts: Vec<String> = Vec::with_capacity(5);
+    if (mods & 0x0002) != 0 { parts.push("Ctrl".into()); }
+    if (mods & 0x0001) != 0 { parts.push("Alt".into()); }
+    if (mods & 0x0004) != 0 { parts.push("Shift".into()); }
+    if (mods & 0x0008) != 0 { parts.push("Win".into()); }
+    parts.push(key);
+    Some(parts.join("+"))
+}
+
 pub fn parse_hotkey(spec: &str) -> Option<ParsedHotkey> {
     let mut mods = 0x4000u32; // MOD_NOREPEAT
     let mut vk: Option<u32> = None;
@@ -113,7 +169,7 @@ pub fn parse_hotkey(spec: &str) -> Option<ParsedHotkey> {
     }
 
     let vk = vk?;
-    if (mods & 0x000F) == 0 {
+    if (mods & 0x000F) == 0 && !is_standalone_allowed_vk(vk) {
         return None;
     }
     Some(ParsedHotkey { modifiers: mods, vk })
@@ -224,6 +280,17 @@ mod tests {
         let h4 = parse_hotkey("Ctrl+Shift+PrintScreen").unwrap();
         assert_eq!(h4.vk, 0x2C);
 
+        let f1 = parse_hotkey("F1").unwrap();
+        assert_eq!(f1.modifiers, 0x4000);
+        assert_eq!(f1.vk, 0x70);
+        let prt = parse_hotkey("PrintScreen").unwrap();
+        assert_eq!(prt.modifiers, 0x4000);
+        assert_eq!(prt.vk, 0x2C);
+        assert_eq!(format_hotkey(0, 0x70).as_deref(), Some("F1"));
+        assert_eq!(format_hotkey(0x0003, b'C' as u32).as_deref(), Some("Ctrl+Alt+C"));
+        assert!(format_hotkey(0, b'A' as u32).is_none());
+
         assert!(parse_hotkey("Space").is_none());
+        assert!(parse_hotkey("A").is_none());
     }
 }

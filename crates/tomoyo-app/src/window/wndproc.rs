@@ -1,7 +1,7 @@
 //! Pure Win32 `main_wndproc` message dispatcher delegating into cohesive `AppShell` methods.
 
 use super::commands::{dispatch_menu_id, dispatch_wm_command};
-use super::input::{unregister_all_hotkeys, HOTKEY_CAPTURE_ID};
+use super::input::{register_all_hotkeys, unregister_all_hotkeys, HOTKEY_CAPTURE_ID};
 use super::updater_ctrl::WM_APP_UPDATE_PROGRESS;
 use super::{
     AppShell, HOTKEY_CLIPBOARD_ID, HOTKEY_ID, HOTKEY_TRANSLATE_ID, TIMER_CLEAR_TOAST,
@@ -120,6 +120,15 @@ pub(super) unsafe extern "system" fn main_wndproc(
         WM_COMMAND => dispatch_wm_command(hwnd, app, wparam),
         WM_APP_CONFIG_SAVED => {
             match wparam.0 {
+                4 => {
+                    let cfg = app.config.read().unwrap().clone();
+                    unregister_all_hotkeys(hwnd);
+                    let (active, _) = register_all_hotkeys(hwnd, &cfg);
+                    if let Some(t) = app.tray.as_mut() {
+                        t.update_tooltip(&active);
+                    }
+                }
+                3 => unregister_all_hotkeys(hwnd),
                 2 => app.on_clipboard_db_external_change(),
                 1 => {
                     app.reload_config_and_all();

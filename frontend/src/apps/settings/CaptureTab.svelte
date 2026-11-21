@@ -13,12 +13,15 @@
     cfg: TomoyoConfig;
     lang: Lang;
     capHotkeyStatus?: HotkeySlotStatus;
+    onJumpDoctor?: () => void;
     onSave: (delayMs?: number) => void;
   }
 
-  let { cfg, lang, capHotkeyStatus, onSave }: Props = $props();
+  let { cfg, lang, capHotkeyStatus, onJumpDoctor, onSave }: Props = $props();
 
   const capPresets = [
+    { value: 'F1', label: 'F1（推荐单键）' },
+    { value: 'PrintScreen', label: 'PrintScreen' },
     { value: 'Alt+S', label: 'Alt+S' },
     { value: 'Alt+1', label: 'Alt+1' },
     { value: 'Alt+A', label: 'Alt+A' },
@@ -71,6 +74,7 @@
       conflictLabel={tr(lang, 'hk_conflict')}
       recordPrompt={tr(lang, 'rec_prompt')}
       needModPrompt={tr(lang, 'rec_need_mod')}
+      {onJumpDoctor}
       onchange={(v) => { cfg.capture.hotkey = v; onSave(0); }}
     />
   </div>
