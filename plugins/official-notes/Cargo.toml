@@ -1,0 +1,10 @@
+[package]
+name = "tomoyo-plugin-notes"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Official optional Tomoyo plugin: pure-local Markdown Notes (0 idle RAM, standalone STDIO process)"
+
+[dependencies]
+tomoyo-sdk = { workspace = true }
+serde_json = { workspace = true }

@@ -32,9 +32,9 @@ pub struct TomoyoConfig {
     /// Global summon shortcut, e.g. `"Alt+Space"`, `"Ctrl+Space"`, `"Ctrl+Shift+Space"`.
     #[serde(default = "default_hotkey")]
     pub hotkey: String,
-    /// Opt-in: mount an ultra-lightweight low-level keyboard hook ONLY for conflicted Tomoyo
-    /// shortcuts when Win32 `RegisterHotKey` fails (occupied by silent background apps).
-    #[serde(default)]
+    /// Automatically rescue conflicted Tomoyo shortcuts via a zero-thread low-level hook ONLY when
+    /// Win32 `RegisterHotKey` fails (zero hooks mounted when no shortcut conflicts exist).
+    #[serde(default = "default_true")]
     pub override_conflict_hotkeys: bool,
     /// UI theme preset: `"dark"`, `"light"`, or `"midnight"`.
     #[serde(default = "default_theme")]
@@ -343,7 +343,7 @@ impl Default for TomoyoConfig {
         Self {
             language: default_language(),
             hotkey: default_hotkey(),
-            override_conflict_hotkeys: false,
+            override_conflict_hotkeys: true,
             theme: default_theme(),
             hibernate_delay_secs: default_hibernate_secs(),
             auto_preview: true,

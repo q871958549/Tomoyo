@@ -1,0 +1,19 @@
+id = "dev.tomoyo.notes"
+name = "本地 Markdown 备忘录 (官方插件)"
+version = "1.0.0"
+description = "纯本地 Markdown 备忘录插件（零核心膨胀、零私有库锁定）：支持 note/memo 全文检索、#标签过滤、一键新建、剪贴板转存与外部编辑器直达"
+author = "Tomoyo Contributors"
+license = "MIT"
+
+[runtime]
+kind = "stdio_jsonrpc"
+command = "tomoyo-plugin-notes"
+args = []
+
+[triggers]
+keywords = ["note", "memo", "bw"]
+
+[resources]
+max_memory_mb = 48
+idle_timeout_secs = 30
+query_timeout_ms = 1200

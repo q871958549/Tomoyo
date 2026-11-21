@@ -11,7 +11,7 @@
   <a href="https://github.com/q871958549/Tomoyo/actions/workflows/ci.yml"><img src="https://github.com/q871958549/Tomoyo/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="LICENSE-MIT"><img src="https://img.shields.io/badge/license-MIT%20%2F%20Apache--2.0-blue.svg" alt="License" /></a>
   <img src="https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-0078D6.svg" alt="Windows" />
-  <img src="https://img.shields.io/badge/version-v1.8.0-7c6af7.svg" alt="Version" />
+  <img src="https://img.shields.io/badge/version-v1.9.0-7c6af7.svg" alt="Version" />
 </p>
 
 ---
@@ -39,18 +39,18 @@
 
 ---
 
-## 实测数据与自检阈值 (`v1.8.0` Release)
+## 实测数据与自检阈值 (`v1.9.0` Release)
 
 | 指标 | 实测记录 | 自检阈值 (`--strict-budget`) |
 |---|---|---|
-| `tomoyo.exe` 微内核主程序体积 | **5.54 MB** (`5,674.0 KB`) | — |
-| `tomoyo-webview-host.exe` Svelte 5 设置中心（含官方插件按需启停、热键治理与强行接管）、剪贴板、翻译、OCR 与插件宿主 | **4.42 MB**（关闭即退出） | 0 MB 常驻 |
+| `tomoyo.exe` 微内核主程序体积 | **5.57 MB** (`5,701.5 KB`) | — |
+| `tomoyo-webview-host.exe` Svelte 5 设置中心（含官方插件启停、基线差分热键治理与脱敏配置备份）、剪贴板、翻译、OCR 与插件宿主 | **4.54 MB**（关闭即退出） | 0 MB 常驻 |
 | `tomoyo-capture.exe` 极简矢量标注（8 手柄拖放 / 解析三次方程零折角平滑弯折箭头）+ 白底高适应长截图实时预览条 + 双击关闭贴图 | **1.05 MB**（关闭即退出） | 0 MB 常驻 |
-| `tomoyo-plugin-ocr.exe` 离线 WinRT OCR 插件 | **0.36 MB**（空闲 15 秒自动回收） | 0 MB 常驻 |
-| 休眠态 Working Set 内存占用 (`--self-test`) | **1.53–1.56 MB** | ≤ 2.0 MB |
-| 休眠态 Private Commit（含 345 应用/桌面条目索引、SQLite 与字体） | **22.21 MB** | ≤ 28.0 MB |
+| `tomoyo-plugin-ocr.exe` / `tomoyo-plugin-notes.exe` 官方独立按需 STDIO 插件（离线 OCR / 本地 Markdown 备忘录） | **0.36 MB** / **0.32 MB**（空闲自动回收） | 0 MB 常驻 |
+| 休眠态 Working Set 内存占用 (`--self-test`) | **1.55–1.57 MB** | ≤ 2.0 MB |
+| 休眠态 Private Commit（含 343 应用/桌面条目索引、SQLite 与字体） | **22.65 MB** | ≤ 28.0 MB |
 | 100 轮查询 / 绘制 / 预览 / 休眠压测 Delta | **GDI `+0` · USER `+0` · Handles `+0` · Private `+0.08 MB`** | 句柄 0 增长 / 内存 ≤ +0.50 MB |
-| 源码规范与前端编译产物门禁（[编码规范](docs/CODING_STANDARDS.md) / [UI 规范](docs/UI_DESIGN_STANDARDS.md)） | **全仓 193 个源码文件均 ≤ 450 行 · `svelte-check`/`Vitest`/4 份 Svelte 5 单文件产物 `happy-dom` 门禁全绿** | ≤ 450 行/文件 · 0 JS 异常 |
+| 源码规范与前端编译产物门禁（[编码规范](docs/CODING_STANDARDS.md) / [UI 规范](docs/UI_DESIGN_STANDARDS.md)） | **全仓 197 个源码文件均 ≤ 450 行 · `svelte-check`/`Vitest`/4 份 Svelte 5 单文件产物 `happy-dom` 门禁全绿** | ≤ 450 行/文件 · 0 JS 异常 |
 
 ---
 
@@ -92,7 +92,8 @@ pwsh -File scripts\check_hygiene.ps1
 | `ocr` / `ocr en` / `Ctrl+V` 贴图 | 按需拉起原生 WinRT 离线 OCR（自适应 2× 放大与标点清理、支持免贴图直识最近截图、原图对照审校编辑窗、一键翻译与单行复制，15s 自动释放） |
 | `Alt+T` / `tr <文本>` / `fy <文本>` | 多引擎划词/输入/OCR 联动翻译（原生 WinHTTP 并行查询 Google、MyMemory+有道音标词典、DeepL、OpenAI 兼容接口与本地 Ollama，Windows DPAPI 加密保存 API 密钥，无损恢复剪贴板且不污染历史，内置生词本与历史抽屉） |
 | `F1` / `Alt+S` / `cap` / `pin` / `jtocr` / `jtfy` | 原生按需截图插件（可在「插件管理」按需启停）：始终直控 8 手柄矢量画布、解析三次方程零折角平滑弯折箭头、梯度归一化等宽椭圆、马赛克/模糊、序号、中文批注、白底高适应纵/横向长截图与侧边实时可视化预览条、双击关闭置顶贴图及 12 项小工具快捷键全量可配置（0 常驻内存） |
-| `Alt+V` / `cb <词>` | 增强剪贴板管理中心（文本/图片/文件、语义分类、来源应用、`@pin/@img/@link/@file/@code/#标签` 与拼音检索、`Shift+Enter` 单行纯文本贴回或图片一键 OCR、`Ctrl+E` 工作台、`Ctrl+D` 删除、`Ctrl+Shift+P` 置顶，自动屏蔽密码管理器机密剪贴板） |
+| `Alt+V` / `Alt+C` / `cb` / `clip` | 增强剪贴板管理中心（文本/图片/文件、语义分类、来源应用、`@pin/@img/@link/@file/@code/#标签` 与拼音检索、`Shift+Enter` 单行纯文本贴回或图片一键 OCR、`Ctrl+E` 工作台；遇外部热键冲突自动高优先级无损接管并突破 Windows 前台锁，确保随时秒唤） |
+| `note` / `memo` / `bw` | 纯外部独立官方插件 **本地 Markdown 备忘录 (`dev.tomoyo.notes`)**（`0.32 MB`、闲置 30 秒回收 0 MB 常驻）：支持全文/#标签检索、`note + 标题 :: 内容` 一键新建、`note clip` 剪贴板转存、复制与外部编辑器直达 |
 | `kill <词>` / `ps <词>` | 进程列表查看与终止进程（按内存占用降序排列） |
 | `g` / `gh` / `crates` / `docs` / `bd` / `zh` / `mdn` | 可在设置中心自定义的快捷网页搜索前缀 |
 | `w <词>` | 已打开窗口列表筛选与切换 |

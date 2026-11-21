@@ -71,12 +71,13 @@ jobs:
           Copy-Item target/release/tomoyo-cli.exe $stage/
           Copy-Item target/release/tomoyo-plugin-hello.exe $stage/
           Copy-Item target/release/tomoyo-plugin-ocr.exe $stage/
+          Copy-Item target/release/tomoyo-plugin-notes.exe $stage/
           Copy-Item LICENSE-MIT, LICENSE-APACHE, README.md $stage/
           Copy-Item assets/fonts/*.ttf "$stage/assets/fonts/"
           Copy-Item assets/tomoyo.ico "$stage/assets/"
           Copy-Item registry/index.json "$stage/registry/"
 
-          foreach ($p in @("example-hello", "example-python", "example-wasm", "example-webview-json", "builtin-ocr")) {
+          foreach ($p in @("example-hello", "example-python", "example-wasm", "example-webview-json", "builtin-ocr", "official-notes")) {
             New-Item -ItemType Directory -Force -Path "$stage/plugins/$p" | Out-Null
             Get-ChildItem "plugins/$p" -Exclude "target","__pycache__" | Copy-Item -Destination "$stage/plugins/$p" -Recurse -Force
           }

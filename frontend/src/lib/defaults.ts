@@ -5,6 +5,7 @@ export const PLUGIN_CLIPBOARD = 'dev.tomoyo.clipboard';
 export const PLUGIN_TRANSLATE = 'dev.tomoyo.translate';
 export const PLUGIN_CAPTURE = 'dev.tomoyo.capture';
 export const PLUGIN_OCR = 'dev.tomoyo.ocr';
+export const PLUGIN_NOTES = 'dev.tomoyo.notes';
 
 export interface OfficialPluginMeta {
   id: string;
@@ -48,6 +49,14 @@ export const OFFICIAL_PLUGINS: OfficialPluginMeta[] = [
     enDesc: 'Local Windows WinRT OCR & proofreading panel (isolated STDIO plugin)',
     triggers: 'ocr',
   },
+  {
+    id: PLUGIN_NOTES,
+    zhName: '本地 Markdown 备忘录',
+    enName: 'Local Markdown Notes',
+    zhDesc: '纯外部独立插件：本地 .md 文件全文/标签检索、一键新建与剪贴板转存（0 常驻内存）',
+    enDesc: 'Pure standalone STDIO plugin: local .md full-text/tag search & quick capture (0 idle RAM)',
+    triggers: 'note / memo',
+  },
 ];
 
 export function isPluginEnabled(cfg: Pick<TomoyoConfig, 'disabled_plugins'>, id: string): boolean {
@@ -77,7 +86,7 @@ export function makeDefaultConfig(): TomoyoConfig {
   return {
     language: 'zh',
     hotkey: 'Alt+Space',
-    override_conflict_hotkeys: false,
+    override_conflict_hotkeys: true,
     theme: 'light',
     hibernate_delay_secs: 15,
     auto_preview: true,
@@ -122,7 +131,7 @@ export function hydrateSettingsInit(): SettingsInitPayload {
   const def = makeDefaultConfig();
   const rc = (raw.config ?? {}) as Partial<TomoyoConfig>;
   return {
-    version: raw.version || '1.8.0',
+    version: raw.version || '1.9.0',
     autostart: !!raw.autostart,
     plugins: Array.isArray(raw.plugins) ? raw.plugins : [],
     config_path: raw.config_path || '',

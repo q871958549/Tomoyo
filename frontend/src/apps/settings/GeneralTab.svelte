@@ -1,6 +1,9 @@
 <script lang="ts">
+  import { Download, Upload } from '@lucide/svelte';
+  import { postHost } from '../../lib/ipc';
   import type { HotkeySlotStatus, TomoyoConfig } from '../../lib/types';
   import { tr, type Lang } from '../../lib/i18n';
+  import Button from '../../lib/ui/Button.svelte';
   import HotkeyRecorder from '../../lib/ui/HotkeyRecorder.svelte';
   import Segmented from '../../lib/ui/Segmented.svelte';
   import Slider from '../../lib/ui/Slider.svelte';
@@ -18,6 +21,8 @@
   }
 
   let { cfg, lang, autostart, hotkeyStatus, onLanguageChange, onAutostartChange, onJumpDoctor, onSave }: Props = $props();
+  let fileInput: HTMLInputElement | undefined = $state();
+  let isEn = $derived(lang === 'en');
 
   const mainPresets = [
     { value: 'Alt+Space', label: 'Alt+Space' },
@@ -25,6 +30,15 @@
     { value: 'Ctrl+Shift+Space', label: 'Ctrl+Shift+Space' },
     { value: 'Alt+Q', label: 'Alt+Q' },
   ];
+
+  async function onPickBackupFile(ev: Event) {
+    const input = ev.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    const text = await file.text();
+    input.value = '';
+    postHost({ cmd: 'import_config_backup', json: text });
+  }
 </script>
 
 <div class="tab-head">
@@ -107,8 +121,33 @@
   </div>
 </div>
 
+<div class="t-card" style="margin-top:14px">
+  <div class="t-row">
+    <div>
+      <div class="t-label">{isEn ? 'Desensitized Config Backup & Migration' : '脱敏配置备份与一键换机迁移'}</div>
+      <div class="t-desc">
+        {isEn
+          ? 'Exports config.toml & snippets.toml as a single JSON (DPAPI API keys are stripped). Imports run full sanitization.'
+          : '单文件 JSON 导出 config.toml 与 snippets.toml（自动剥离本机 DPAPI API 密钥），导入经安全校验后即时生效。'}
+      </div>
+    </div>
+    <div class="bak-acts">
+      <Button variant="secondary" size="sm" class="btn-export-backup" onclick={() => postHost({ cmd: 'export_config_backup' })}>
+        <Download size={13} />
+        {isEn ? 'Export' : '导出备份'}
+      </Button>
+      <Button variant="secondary" size="sm" onclick={() => fileInput?.click()}>
+        <Upload size={13} />
+        {isEn ? 'Import' : '导入恢复'}
+      </Button>
+      <input bind:this={fileInput} type="file" accept=".json,application/json" style="display:none" onchange={onPickBackupFile} />
+    </div>
+  </div>
+</div>
+
 <style>
   .tab-head { margin-bottom: 18px; }
   .tab-head h2 { margin: 0 0 4px; font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
   .tab-lead { margin: 0; font-size: 12.5px; color: var(--muted); }
+  .bak-acts { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 </style>

@@ -256,6 +256,22 @@
         logContent = String(data.content || '');
       } else if (ev === 'diag_bundle_copied') {
         setToast(lang === 'en' ? '✓ Diagnostic bundle copied' : '✓ 已复制脱敏诊断报告到剪贴板');
+      } else if (ev === 'config_backup_exported' && typeof data.json === 'string') {
+        const blob = new Blob([data.json], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `tomoyo-backup-${new Date().toISOString().slice(0, 10)}.json`;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        setToast(lang === 'en' ? '✓ Desensitized backup exported' : '✓ 已导出脱敏配置备份（不含 DPAPI 密钥）');
+      } else if (ev === 'config_backup_imported') {
+        if (data.ok && data.config) {
+          cfg = data.config as TomoyoConfig;
+          applyThemeClass(cfg.theme);
+          document.documentElement.lang = cfg.language === 'en' ? 'en' : 'zh-CN';
+        }
+        setToast(`${data.ok ? '✓ ' : '✗ '}${data.message || ''}`, !data.ok);
       } else if (ev === 'update_status') {
         checkingUpdates = false;
         updateStatus = (data.status as UpdateStatus) || null;

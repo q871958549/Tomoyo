@@ -16,6 +16,7 @@ pub mod matcher_highlight;
 pub mod permissions;
 pub mod pkg_zip;
 pub mod preview;
+mod preview_docs;
 pub mod telemetry;
 pub mod translate;
 pub mod updater;

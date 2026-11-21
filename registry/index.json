@@ -4,6 +4,18 @@
   "updated_at": "2026-11-21",
   "plugins": [
     {
+      "id": "dev.tomoyo.notes",
+      "name": "本地 Markdown 备忘录 (官方插件)",
+      "version": "1.0.0",
+      "description": "纯本地 Markdown 备忘录插件（零核心膨胀、零私有库锁定）：支持 note/memo 全文检索、#标签过滤、一键新建、剪贴板转存与外部编辑器直达",
+      "author": "Tomoyo 贡献者",
+      "license": "MIT",
+      "runtime_kind": "stdio_jsonrpc",
+      "keywords": ["note", "memo", "bw"],
+      "source": "plugins/official-notes",
+      "sha256": "2bc9d70eb04bb29e25ab51672daa089f1deba1fc5e49db269b12773454ed8945"
+    },
+    {
       "id": "dev.tomoyo.example-hello",
       "name": "文本大小写转换示例 (Rust 原生)",
       "version": "0.1.0",

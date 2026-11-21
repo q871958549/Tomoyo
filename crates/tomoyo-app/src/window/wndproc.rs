@@ -154,13 +154,15 @@ pub(super) unsafe extern "system" fn main_wndproc(
         }
         WM_CLIPBOARDUPDATE => { app.on_clipboard_update(); LRESULT(0) }
         WM_ACTIVATE => {
-            if (wparam.0 & 0xFFFF) == 0 && !app.inter.in_modal_overlay && unsafe { IsWindowVisible(hwnd).as_bool() } {
+            let in_grace = app.inter.last_shown_at.is_some_and(|t| t.elapsed().as_millis() < 140);
+            if (wparam.0 & 0xFFFF) == 0 && !in_grace && !app.inter.in_modal_overlay && unsafe { IsWindowVisible(hwnd).as_bool() } {
                 app.hide_launcher();
             }
             LRESULT(0)
         }
         WM_ACTIVATEAPP => {
-            if wparam.0 == 0 && !app.inter.in_modal_overlay && unsafe { IsWindowVisible(hwnd).as_bool() } {
+            let in_grace = app.inter.last_shown_at.is_some_and(|t| t.elapsed().as_millis() < 140);
+            if wparam.0 == 0 && !in_grace && !app.inter.in_modal_overlay && unsafe { IsWindowVisible(hwnd).as_bool() } {
                 app.hide_launcher();
             }
             LRESULT(0)
@@ -173,11 +175,14 @@ pub(super) unsafe extern "system" fn main_wndproc(
                     } else if !app.inter.in_modal_overlay && !app.inter.in_size_move {
                         let fg = unsafe { GetForegroundWindow() };
                         let mut fg_pid = 0u32;
-                        if !fg.is_invalid() {
-                            unsafe { GetWindowThreadProcessId(fg, Some(&mut fg_pid)); }
-                        }
+                        if !fg.is_invalid() { unsafe { GetWindowThreadProcessId(fg, Some(&mut fg_pid)); } }
                         if fg != hwnd && fg_pid != std::process::id() {
-                            app.hide_launcher();
+                            if app.inter.last_shown_at.is_some_and(|t| t.elapsed().as_millis() < 420) {
+                                super::hotkey_override::force_foreground_window(hwnd);
+                                unsafe { let _ = SetFocus(Some(app.edit_hwnd)); }
+                            } else {
+                                app.hide_launcher();
+                            }
                         }
                     }
                 }
@@ -350,24 +355,16 @@ fn hit_test_window_chrome(hwnd: HWND, app: &AppShell, lparam: LPARAM) -> LRESULT
     let (w, h) = (rc.right - rc.left, rc.bottom - rc.top);
     let grip = (6.0 * app.dpi_scale.max(1.0)).round() as i32;
     let hit = match (pt.x < grip, pt.x >= w - grip, pt.y < grip, pt.y >= h - grip) {
-        (true, _, true, _) => HTTOPLEFT,
-        (_, true, true, _) => HTTOPRIGHT,
-        (true, _, _, true) => HTBOTTOMLEFT,
-        (_, true, _, true) => HTBOTTOMRIGHT,
-        (true, _, _, _) => HTLEFT,
-        (_, true, _, _) => HTRIGHT,
-        (_, _, true, _) => HTTOP,
-        (_, _, _, true) => HTBOTTOM,
+        (true, _, true, _) => HTTOPLEFT,   (_, true, true, _) => HTTOPRIGHT,
+        (true, _, _, true) => HTBOTTOMLEFT, (_, true, _, true) => HTBOTTOMRIGHT,
+        (true, _, _, _) => HTLEFT,         (_, true, _, _) => HTRIGHT,
+        (_, _, true, _) => HTTOP,          (_, _, _, true) => HTBOTTOM,
         _ => {
             let header_px = (HEADER_HEIGHT_DIP as f32 * app.dpi_scale.max(1.0)) as i32;
             let footer_px = (FOOTER_HEIGHT_DIP as f32 * app.dpi_scale.max(1.0)) as i32;
-            if app.hit_test_update_badge(pt.x, pt.y) {
-                HTCLIENT
-            } else if pt.y < header_px || pt.y >= h - footer_px {
-                HTCAPTION
-            } else {
-                HTCLIENT
-            }
+            if app.hit_test_update_badge(pt.x, pt.y) { HTCLIENT }
+            else if pt.y < header_px || pt.y >= h - footer_px { HTCAPTION }
+            else { HTCLIENT }
         }
     };
     LRESULT(hit as isize)

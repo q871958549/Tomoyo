@@ -118,7 +118,7 @@ impl Provider for ClipboardProvider {
     }
 
     fn prefixes(&self) -> &'static [&'static str] {
-        &["cb"]
+        &["cb", "clip"]
     }
 
     fn matches_prefix(&self, token_lower: &str) -> bool {

@@ -28,20 +28,12 @@
   }
 
   let {
-    cfg,
-    lang,
-    health,
-    audit,
-    auditing,
-    probingSpec,
-    probeResult,
-    onRunAudit,
-    onProbe,
-    onApplyFreeKey,
-    onToggleOverride,
+    cfg, lang, health, audit, auditing, probingSpec, probeResult,
+    onRunAudit, onProbe, onApplyFreeKey, onToggleOverride,
   }: Props = $props();
 
   let filter = $state('all');
+  let customSpec = $state('');
   let isEn = $derived(lang === 'en');
 
   let slots = $derived([
@@ -53,7 +45,7 @@
 
   let filteredMatrix = $derived.by(() => {
     const list = audit?.items || [];
-    if (filter === 'busy') return list.filter((i) => i.status === 'conflict' || i.status === 'occupied_external');
+    if (filter === 'busy') return list.filter((i) => i.status === 'conflict' || i.status === 'occupied_external' || i.status === 'overridden');
     if (filter === 'free') return list.filter((i) => i.status === 'free');
     return list;
   });
@@ -61,14 +53,22 @@
   function statusLabel(st: string): string {
     if (isEn) {
       if (st === 'conflict') return 'Conflict';
+      if (st === 'overridden') return 'Rescued';
       if (st === 'occupied_external') return 'Occupied';
       if (st === 'tomoyo') return 'Tomoyo';
       return 'Free';
     }
     if (st === 'conflict') return '冲突被占';
+    if (st === 'overridden') return '已强行接管';
     if (st === 'occupied_external') return '外部占用';
     if (st === 'tomoyo') return 'Tomoyo 已占';
     return '当前空闲';
+  }
+
+  function runCustomProbe() {
+    const clean = customSpec.trim();
+    if (!clean || probingSpec) return;
+    onProbe(clean);
   }
 </script>
 
@@ -83,14 +83,26 @@
   </Button>
 </div>
 
+{#if audit}
+  <div class="kpi-strip">
+    <div class="kpi-pill"><span>{isEn ? 'Probed' : '已扫描'}</span><strong>{audit.total_probed}</strong></div>
+    <div class="kpi-pill"><span>{isEn ? 'External' : '外部占用'}</span><strong>{audit.external_occupied}</strong></div>
+    <div class="kpi-pill is-ov"><span>{isEn ? 'Rescued' : '高优接管'}</span><strong>{audit.overridden || 0}</strong></div>
+    <div class="kpi-pill {audit.conflicts > 0 ? 'is-bad' : 'is-ok'}">
+      <span>{isEn ? 'Conflicts' : '未解决冲突'}</span><strong>{audit.conflicts}</strong>
+    </div>
+  </div>
+{/if}
+
 <div class="t-card sec-card">
   <div class="sec-title">
     <ShieldAlert size={14} />
-    <span>{isEn ? 'Tomoyo Core Hotkeys & One-Click Free Replacements' : 'Tomoyo 核心热键状态与一键换空闲键'}</span>
+    <span>{isEn ? 'Tomoyo Core Hotkeys · Auto-Rescue & Free Replacements' : 'Tomoyo 核心热键状态 · 自动接管与一键换空闲键'}</span>
   </div>
 
   {#each slots as s}
     {@const isBad = !!s.spec && !!s.st && !s.st.disabled && !s.st.ok}
+    {@const isOv = !!s.spec && !!s.st?.ok && !!s.st?.overridden}
     {@const freeList = audit?.recommended_free?.[s.id] || []}
     <div class="slot-row">
       <div class="slot-main">
@@ -103,31 +115,34 @@
           {/if}
           {#if isBad}
             <span class="pill is-bad"><AlertTriangle size={11} /> {s.st?.reason || tr(lang, 'hk_conflict')}</span>
-          {:else if s.spec && s.st?.ok && s.st?.overridden}
-            <span class="pill is-override"><Zap size={11} /> {isEn ? 'Overridden' : '已高优先级接管'}</span>
+          {:else if isOv}
+            <span class="pill is-override"><Zap size={11} /> {isEn ? 'Auto-Rescued (Working)' : '已高优先级接管生效'}</span>
           {:else if s.spec && s.st?.ok}
             <span class="pill is-ok"><CheckCircle2 size={11} /> {tr(lang, 'hk_ok')}</span>
           {/if}
         </div>
-        {#if isBad && freeList.length > 0}
+        {#if (isBad || isOv) && freeList.length > 0}
           <div class="rec-line">
-            <span class="rec-hint">{isEn ? 'Verified free:' : '实测空闲可一键切换：'}</span>
+            <span class="rec-hint">{isEn ? 'Zero-conflict free keys:' : '实测空闲可一键换无冲突键：'}</span>
             {#each freeList as fk}
               <button type="button" class="free-chip" onclick={() => onApplyFreeKey(s.id, fk)}>{fk}</button>
             {/each}
           </div>
         {/if}
       </div>
-      {#if isBad && s.spec}
-        <Button
-          variant="secondary"
-          size="sm"
-          disabled={!!probingSpec}
-          onclick={() => onProbe(s.spec)}
-        >
-          <Crosshair size={13} />
-          {probingSpec === s.spec ? (isEn ? 'Probing…' : '探测中…') : (isEn ? 'Catch Owner' : '抓现行定位')}
-        </Button>
+      {#if (isBad || isOv) && s.spec}
+        <div class="slot-acts">
+          {#if isBad}
+            <Button variant="primary" size="sm" class="btn-rescue-{s.id}" onclick={() => onToggleOverride(true)}>
+              <Zap size={12} />
+              {isEn ? 'Rescue Now' : '一键接管'}
+            </Button>
+          {/if}
+          <Button variant="secondary" size="sm" disabled={!!probingSpec} onclick={() => onProbe(s.spec)}>
+            <Crosshair size={13} />
+            {probingSpec === s.spec ? (isEn ? 'Probing…' : '基线探测中…') : (isEn ? 'Catch Owner' : '抓现行')}
+          </Button>
+        </div>
       {/if}
     </div>
   {/each}
@@ -136,12 +151,12 @@
     <div class="slot-main">
       <div class="slot-top">
         <Zap size={14} class="ov-ico" />
-        <span class="t-label">{isEn ? 'High-Priority Conflict Override (Opt-In)' : '高优先级强行接管冲突热键'}</span>
+        <span class="t-label">{isEn ? 'Auto High-Priority Conflict Rescue' : '高优先级强行接管冲突热键'}</span>
       </div>
       <div class="t-desc">
         {isEn
-          ? 'Mounts a tiny hook ONLY for conflicted shortcuts when RegisterHotKey fails (zero hook/thread when off or conflict-free).'
-          : '仅在快捷键被未知后台服务静默占用导致注册失败时，为冲突键挂载极轻量底层钩子立即恢复使用；无冲突或关闭时零挂载。'}
+          ? 'Mounts a zero-thread hook with MenuMaskKey ONLY for conflicted keys when RegisterHotKey fails; zero hook when conflict-free.'
+          : '仅对被外部静默占用的冲突热键挂载零线程底层钩子（含防 Alt 菜单抢焦点与前台锁突破），无冲突时零挂载。'}
       </div>
     </div>
     <Switch checked={!!cfg.override_conflict_hotkeys} onchange={onToggleOverride} />
@@ -149,12 +164,21 @@
 </div>
 
 {#if probeResult}
-  <div class="t-card probe-card {probeResult.found ? 'is-hit' : ''}">
+  <div class="t-card probe-card {probeResult.is_free ? 'is-free-hit' : probeResult.found ? 'is-hit' : ''}">
     <div class="probe-head">
-      <strong>
-        {isEn ? 'Live Culprit Probe:' : '实测「抓现行」结果：'}
+      <div class="probe-title">
+        <strong>{isEn ? 'Differential Probe:' : '差分「抓现行」结果：'}</strong>
         <kbd class="t-kbd">{probeResult.spec}</kbd>
-      </strong>
+        {#if probeResult.is_free}
+          <span class="pill is-ok">{isEn ? 'Verified Free' : '实测空闲'}</span>
+        {:else if probeResult.confidence === 'confirmed'}
+          <span class="pill is-tomoyo">{isEn ? 'Confirmed Owner' : '实锤窗口捕获'}</span>
+        {:else if probeResult.confidence === 'likely'}
+          <span class="pill is-occupied_external">{isEn ? 'CPU Spike Suspect' : '基线差分唤醒嫌疑'}</span>
+        {:else}
+          <span class="pill is-override">{isEn ? 'Silent / Driver Hold' : '静默底层占位'}</span>
+        {/if}
+      </div>
       {#if probeResult.found && probeResult.exe_path}
         <Button variant="secondary" size="sm" onclick={() => postHost({ cmd: 'reveal_path', path: probeResult.exe_path })}>
           <FolderOpen size={13} />
@@ -179,13 +203,9 @@
     <div>
       <div class="t-label">{isEn ? 'System Shortcut Occupancy Matrix' : '系统高频热键全景占用矩阵'}</div>
       <div class="t-desc">
-        {#if audit}
-          {isEn
-            ? `Probed ${audit.total_probed} shortcuts · ${audit.external_occupied} occupied externally · ${audit.conflicts} Tomoyo conflicts`
-            : `已探测 ${audit.total_probed} 组热键 · 外部占用 ${audit.external_occupied} 组 · Tomoyo 冲突 ${audit.conflicts} 组（点击「探测」可模拟触发抓真凶）`}
-        {:else}
-          {isEn ? 'Running side-effect-free Win32 probe…' : '正在静默探测系统热键状态…'}
-        {/if}
+        {isEn
+          ? 'Side-effect-free Win32 probe + 3-stage baseline-calibrated culprit finder (filters out live wallpapers & OS daemons).'
+          : '零副作用扫描 + 三阶段基线校准抓现行（自动过滤动态壁纸与系统服务噪音）。'}
       </div>
     </div>
     <Segmented
@@ -199,6 +219,19 @@
     />
   </div>
 
+  <div class="custom-probe">
+    <input
+      class="t-input probe-inp"
+      placeholder={isEn ? 'Probe any shortcut (e.g. Alt+C, Ctrl+Alt+V, F1)…' : '输入任意组合键实测是否空闲或抓占用真凶（如 Alt+C、Ctrl+Alt+V）…'}
+      bind:value={customSpec}
+      onkeydown={(e) => e.key === 'Enter' && runCustomProbe()}
+    />
+    <Button variant="secondary" size="sm" disabled={!customSpec.trim() || !!probingSpec} onclick={runCustomProbe}>
+      <Crosshair size={13} />
+      {probingSpec && probingSpec === customSpec.trim() ? (isEn ? 'Probing…' : '探测中…') : (isEn ? 'Probe Key' : '探测此键')}
+    </Button>
+  </div>
+
   {#if auditing && !audit}
     <div class="t-skeleton" style="height:120px"></div>
   {:else}
@@ -206,9 +239,7 @@
       {#each filteredMatrix as item}
         <div class="mat-row">
           <div class="mat-key"><kbd class="t-kbd">{item.spec}</kbd></div>
-          <div>
-            <span class="pill is-{item.status}">{statusLabel(item.status)}</span>
-          </div>
+          <div><span class="pill is-{item.status}">{statusLabel(item.status)}</span></div>
           <div class="mat-sus">
             {#if item.suspects.length > 0}
               {#each item.suspects as sus}
@@ -221,8 +252,10 @@
                   {sus.process_name} · {sus.reason}
                 </button>
               {/each}
+            {:else if item.status === 'overridden'}
+              <span class="t-desc">{isEn ? `Tomoyo (${item.tomoyo_slot}) rescued over silent external hold` : `Tomoyo (${item.tomoyo_slot}) 已自动高优接管 · 可点右侧「探测」追踪外部占位`}</span>
             {:else if item.status === 'conflict' || item.status === 'occupied_external'}
-              <span class="t-desc">{isEn ? 'Unknown owner — use Catch Probe' : '未知程序占用 · 可点右侧「探测」抓现行'}</span>
+              <span class="t-desc">{isEn ? 'Silent external hold — click Probe' : '外部程序占用 · 可点右侧「探测」抓现行'}</span>
             {:else if item.tomoyo_slot}
               <span class="t-desc">Tomoyo ({item.tomoyo_slot})</span>
             {:else}
@@ -230,13 +263,8 @@
             {/if}
           </div>
           <div class="mat-act">
-            {#if item.status === 'conflict' || item.status === 'occupied_external'}
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={!!probingSpec}
-                onclick={() => onProbe(item.spec)}
-              >
+            {#if item.status === 'conflict' || item.status === 'occupied_external' || item.status === 'overridden'}
+              <Button variant="ghost" size="sm" disabled={!!probingSpec} onclick={() => onProbe(item.spec)}>
                 <Crosshair size={12} />
                 {probingSpec === item.spec ? '…' : (isEn ? 'Probe' : '探测')}
               </Button>
@@ -249,17 +277,24 @@
 </div>
 
 <style>
-  .tab-head-bar { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+  .tab-head-bar { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
   .tab-head-bar h2 { margin: 0 0 4px; font-size: 18px; font-weight: 600; }
   .tab-lead { margin: 0; font-size: 12.5px; color: var(--muted); }
+  .kpi-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-bottom: 14px; }
+  .kpi-pill {
+    display: flex; align-items: center; justify-content: space-between; padding: 9px 12px;
+    border-radius: 9px; background: var(--surface); border: 1px solid var(--border); font-size: 12px; color: var(--muted);
+  }
+  .kpi-pill strong { font-size: 15px; color: var(--text); font-variant-numeric: tabular-nums; }
+  .kpi-pill.is-ov strong { color: #7c3aed; }
+  .kpi-pill.is-bad strong { color: var(--danger); }
+  .kpi-pill.is-ok strong { color: var(--ok); }
   .sec-card { padding: 14px 16px; }
   .sec-title { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 600; margin-bottom: 10px; }
-  .slot-row {
-    display: flex; align-items: center; justify-content: space-between; gap: 12px;
-    padding: 10px 0; border-top: 1px solid var(--border);
-  }
+  .slot-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-top: 1px solid var(--border); }
   .slot-main { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
   .slot-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .slot-acts { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
   .rec-line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
   .rec-hint { font-size: 11.5px; color: var(--muted); }
   .free-chip {
@@ -268,33 +303,26 @@
     font-size: 11.5px; font-weight: 500; cursor: pointer;
   }
   .free-chip:hover { border-color: var(--accent); background: var(--accent-soft); }
-
   .probe-card { margin-top: 14px; padding: 14px 16px; border-color: var(--border-strong); }
   .probe-card.is-hit { border-color: var(--accent); background: var(--accent-soft); }
-  .probe-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
+  .probe-card.is-free-hit { border-color: var(--ok); background: var(--ok-soft); }
+  .probe-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; flex-wrap: wrap; }
+  .probe-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .probe-body { font-size: 12.5px; display: flex; flex-direction: column; gap: 3px; }
   .probe-meta { font-size: 11.5px; color: var(--text-secondary); word-break: break-all; }
   .mono { font-family: "Cascadia Mono", Consolas, monospace; }
-
-  .mat-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+  .mat-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }
+  .custom-probe { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .probe-inp { flex: 1; font-family: "Cascadia Mono", Consolas, monospace; font-size: 12px; }
   .mat-list { display: flex; flex-direction: column; }
-  .mat-row {
-    display: grid; grid-template-columns: 128px 88px 1fr 78px; gap: 10px; align-items: center;
-    padding: 8px 0; border-top: 1px solid var(--border); font-size: 12px;
-  }
+  .mat-row { display: grid; grid-template-columns: 128px 94px 1fr 74px; gap: 10px; align-items: center; padding: 8px 0; border-top: 1px solid var(--border); font-size: 12px; }
   .mat-sus { display: flex; flex-wrap: wrap; gap: 5px; min-width: 0; }
   .mat-act { display: flex; justify-content: flex-end; }
-  .sus-tag {
-    border: 1px solid var(--border); background: var(--canvas); color: var(--text-secondary);
-    border-radius: 6px; padding: 2px 7px; font-family: inherit; font-size: 11.5px; cursor: pointer;
-  }
+  .sus-tag { border: 1px solid var(--border); background: var(--canvas); color: var(--text-secondary); border-radius: 6px; padding: 2px 7px; font-family: inherit; font-size: 11.5px; cursor: pointer; }
   .sus-tag:hover { border-color: var(--accent); color: var(--accent); }
-  .pill {
-    display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px;
-    border-radius: 999px; font-size: 11px; font-weight: 500; white-space: nowrap;
-  }
+  .pill { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 500; white-space: nowrap; }
   .pill.is-ok, .pill.is-free { background: var(--ok-soft); color: var(--ok); }
-  .pill.is-override { background: rgba(124, 58, 237, 0.12); color: #7c3aed; }
+  .pill.is-override, .pill.is-overridden { background: rgba(124, 58, 237, 0.12); color: #7c3aed; }
   .pill.is-bad, .pill.is-conflict { background: var(--danger-soft); color: var(--danger); }
   .pill.is-occupied_external { background: var(--warn-soft); color: var(--warn); }
   .pill.is-tomoyo { background: var(--accent-soft); color: var(--accent); }

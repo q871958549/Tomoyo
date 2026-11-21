@@ -64,8 +64,8 @@
   {/each}
   <div class="mod-note">
     {isEn
-      ? 'Pure launcher core: future Notes (dev.tomoyo.notes) will also ship exclusively as an optional installable plugin — never forced into tomoyo.exe.'
-      : '坚守初衷：规划中的「本地备忘录 (dev.tomoyo.notes)」亦将作为独立可选插件按需安装，永不强制膨胀 Tomoyo 主进程。'}
+      ? 'Pure launcher core: OCR (dev.tomoyo.ocr) and Local Markdown Notes (dev.tomoyo.notes) run strictly as isolated on-demand external STDIO plugins with 0 MB idle RAM.'
+      : '坚守微内核初衷：离线 OCR (dev.tomoyo.ocr) 与本地 Markdown 备忘录 (dev.tomoyo.notes) 均以纯外部独立按需插件运行，闲置 0 MB 常驻，随时可一键启停。'}
   </div>
 </div>
 

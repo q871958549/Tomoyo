@@ -70,6 +70,8 @@ pub enum HostMessage {
     AuditHotkeys,
     ProbeHotkeyOwner { spec: String },
     RevealPath { path: String },
+    ExportConfigBackup,
+    ImportConfigBackup { json: String },
     Close,
 }
 
@@ -383,6 +385,17 @@ pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isi
             crate::hotkey_doctor::reveal_file_in_explorer(&path);
             let _ = path;
             HostAction::default()
+        }
+        HostMessage::ExportConfigBackup => HostAction {
+            reply_json: Some(crate::backup::export_desensitized_backup_json()),
+            ..Default::default()
+        },
+        HostMessage::ImportConfigBackup { json } => {
+            let (reply, ok) = crate::backup::import_desensitized_backup_json(&json);
+            if ok {
+                if let Some(t) = notify_hwnd { notify_parent_reload(t, true); }
+            }
+            HostAction { reply_json: Some(reply), async_refresh_hotkey_health: ok && notify_hwnd.is_some(), ..Default::default() }
         }
         HostMessage::Close => HostAction { should_close: true, ..Default::default() },
     }

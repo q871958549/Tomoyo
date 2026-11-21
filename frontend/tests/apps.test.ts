@@ -94,6 +94,12 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
     flushSync();
     expect(document.querySelector('button[data-tab="hotkeys"]')?.classList.contains('is-active')).toBe(true);
     expect(document.body.textContent).toContain('高优先级强行接管冲突热键');
+    // Direct 1-click rescue button must appear directly on conflicted clipboard slot!
+    const rescueClip = document.querySelector<HTMLButtonElement>('button.btn-rescue-clipboard');
+    expect(rescueClip).not.toBeNull();
+    rescueClip?.click();
+    flushSync();
+    expect(wv.posted.some((m) => m.cmd === 'save_settings' && (m.config as { override_conflict_hotkeys?: boolean })?.override_conflict_hotkeys === true)).toBe(true);
 
     // Simulate enabling high-priority override: conflict bar disappears and overridden pill appears
     wv.emit({

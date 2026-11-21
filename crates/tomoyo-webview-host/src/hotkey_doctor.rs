@@ -1,21 +1,27 @@
 //! Pure-user-mode Windows Global Hotkey Governance Engine ("Hotkey Doctor").
 //!
-//! 1. Audits Tomoyo's 4 configured hotkeys + 22 high-frequency shortcuts via side-effect-free
+//! 1. Audits Tomoyo's enabled hotkeys + 22 high-frequency shortcuts via side-effect-free
 //!    Win32 `RegisterHotKey` + immediate `UnregisterHotKey` probing.
 //! 2. Static Attribution: cross-references running processes, local config files (high confidence),
-//!    and curated default-hotkey references (medium confidence).
-//! 3. Live "Catch-in-the-Act" Probe: monitors foreground HWND, newly shown visible windows, AND
-//!    per-process CPU wake deltas (`GetProcessTimes`) to expose even silent background occupiers.
+//!    and curated default-hotkey signatures (`hotkey_signatures.rs`).
+//! 3. 3-Stage Differential "Catch-in-the-Act" Probe:
+//!    - Stage 1: 300ms idle baseline CPU calibration (eliminates continuous renderers like Wallpaper Engine).
+//!    - Stage 2: Active chord injection monitoring Foreground HWND, new visible windows & clipboard sequence.
+//!    - Stage 3: Baseline-subtracted CPU spike + post-quiet verification to eliminate random timer noise.
 
 #![cfg(windows)]
 
 use crate::bridge_os::notify_parent_mode;
+use crate::hotkey_signatures::{
+    guess_suspects, is_background_noise_process, scan_known_local_configs, ProcInfo,
+};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::ffi::c_void;
 use tomoyo_core::{parse_hotkey, TomoyoConfig, PLUGIN_CAPTURE, PLUGIN_CLIPBOARD, PLUGIN_TRANSLATE};
 use windows::core::PWSTR;
 use windows::Win32::Foundation::{CloseHandle, FILETIME, HWND, LPARAM};
+use windows::Win32::System::DataExchange::GetClipboardSequenceNumber;
 use windows::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS,
 };
@@ -57,12 +63,15 @@ pub struct HotkeyAuditReport {
     pub total_probed: usize,
     pub external_occupied: usize,
     pub conflicts: usize,
+    pub overridden: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct LiveProbeResult {
     pub spec: String,
     pub found: bool,
+    pub is_free: bool,
+    pub confidence: &'static str,
     pub pid: u32,
     pub process_name: String,
     pub window_title: String,
@@ -70,49 +79,11 @@ pub struct LiveProbeResult {
     pub detail: String,
 }
 
-#[derive(Clone)]
-struct ProcInfo {
-    pid: u32,
-    name: String,
-    name_lower: String,
-    exe_path: String,
-}
-
 const AUDIT_CANDIDATES: &[&str] = &[
     "F1", "F2", "F3", "F4", "PrintScreen",
     "Alt+Space", "Alt+A", "Alt+C", "Alt+Q", "Alt+S", "Alt+T", "Alt+V", "Alt+1", "Alt+2", "Alt+Z",
     "Ctrl+Alt+A", "Ctrl+Alt+V", "Ctrl+Shift+A", "Ctrl+Shift+S", "Ctrl+Shift+T", "Ctrl+Shift+V",
     "Ctrl+Shift+Space",
-];
-
-/// Curated reference table `(exe_substring_lower, display_label, default_hotkeys)`.
-/// Only verified factory defaults are listed to prevent false attribution.
-const KNOWN_SIGNATURES: &[(&str, &str, &[&str])] = &[
-    ("wechat", "微信 (WeChat)", &["Alt+A", "Ctrl+Alt+W"]),
-    ("weixin", "微信 (WeChat)", &["Alt+A", "Ctrl+Alt+W"]),
-    ("qq.exe", "QQ", &["Ctrl+Alt+A", "Ctrl+Alt+Z"]),
-    ("pixpin", "PixPin 截图", &["Ctrl+1", "F1", "Ctrl+2"]),
-    ("snipaste", "Snipaste", &["F1", "F3", "Shift+F1"]),
-    ("pot.exe", "Pot 翻译", &["Alt+T", "Alt+Q", "Alt+D"]),
-    ("copyq", "CopyQ 剪贴板", &["Alt+V", "Ctrl+Shift+V"]),
-    ("ditto", "Ditto 剪贴板", &["Ctrl+`", "Alt+V"]),
-    ("utools", "uTools", &["Alt+Space"]),
-    ("powertoys", "Microsoft PowerToys", &["Alt+Space", "Win+Shift+T", "Win+Shift+C"]),
-    ("sharex", "ShareX", &["PrintScreen", "Ctrl+PrintScreen", "Alt+PrintScreen"]),
-    ("flameshot", "Flameshot", &["PrintScreen"]),
-    ("nvdisplay", "NVIDIA Overlay", &["Alt+Z", "Alt+R", "Alt+F1", "Alt+F9"]),
-    ("nvidia share", "NVIDIA Overlay", &["Alt+Z", "Alt+R", "Alt+F1"]),
-    ("igcc", "Intel 显卡控制中心", &["Ctrl+Alt+F12", "Ctrl+Alt+F1"]),
-    ("radeonsoftware", "AMD Adrenalin", &["Alt+R", "Alt+Z"]),
-    ("dingtalk", "钉钉", &["Ctrl+Shift+A", "Alt+A"]),
-    ("feishu", "飞书", &["Ctrl+Shift+A", "Alt+A"]),
-    ("lark", "Lark / 飞书", &["Ctrl+Shift+A"]),
-    ("quicker", "Quicker", &["Alt+Q", "Ctrl+Shift+V"]),
-    ("listary", "Listary", &["Alt+Space", "Ctrl+Space"]),
-    ("youdao", "有道词典", &["Ctrl+Alt+D", "Alt+T"]),
-    ("saladict", "沙拉查词", &["Alt+T", "Alt+C"]),
-    ("screenclippinghost", "Windows 截图工具", &["PrintScreen"]),
-    ("snippingtool", "Windows 截图工具", &["PrintScreen"]),
 ];
 
 pub fn audit_system_hotkeys(parent_hwnd: Option<isize>) -> HotkeyAuditReport {
@@ -142,7 +113,7 @@ pub fn audit_system_hotkeys(parent_hwnd: Option<isize>) -> HotkeyAuditReport {
     }
 
     let mut items = Vec::with_capacity(ordered.len());
-    let (mut external_occupied, mut conflicts) = (0usize, 0usize);
+    let (mut external_occupied, mut conflicts, mut overridden) = (0usize, 0usize, 0usize);
 
     for (idx, spec) in ordered.into_iter().enumerate() {
         let slot = tomoyo_slots
@@ -156,8 +127,13 @@ pub fn audit_system_hotkeys(parent_hwnd: Option<isize>) -> HotkeyAuditReport {
             external_occupied += 1;
             let s = guess_suspects(&spec, &procs, &cfg_hits);
             if slot.is_some() {
-                conflicts += 1;
-                ("conflict", s)
+                if cfg.override_conflict_hotkeys {
+                    overridden += 1;
+                    ("overridden", s)
+                } else {
+                    conflicts += 1;
+                    ("conflict", s)
+                }
             } else {
                 ("occupied_external", s)
             }
@@ -179,7 +155,7 @@ pub fn audit_system_hotkeys(parent_hwnd: Option<isize>) -> HotkeyAuditReport {
     recommended_free.insert("translate".into(), pick_free(&["Ctrl+Shift+T", "Alt+T", "Alt+Q", "F4", "Alt+2"]));
     recommended_free.insert("capture".into(), pick_free(&["F1", "PrintScreen", "Alt+1", "Alt+S", "Ctrl+Shift+S", "Ctrl+Shift+A"]));
 
-    HotkeyAuditReport { total_probed: items.len(), external_occupied, conflicts, items, recommended_free }
+    HotkeyAuditReport { total_probed: items.len(), external_occupied, conflicts, overridden, items, recommended_free }
 }
 
 fn probe_register_free(spec: &str, id: i32) -> bool {
@@ -239,56 +215,12 @@ fn query_proc_cpu_100ns(pid: u32) -> Option<u64> {
     }
 }
 
-fn scan_known_local_configs(procs: &[ProcInfo]) -> Vec<(String, String, String)> {
-    let mut hits = Vec::new();
-    let appdata = std::env::var("APPDATA").unwrap_or_default();
-    let home = std::env::var("USERPROFILE").unwrap_or_default();
-    let candidates: &[(&str, &str, String)] = &[
-        ("pot.exe", "Pot 本地配置", format!("{appdata}\\com.pot-app.desktop\\config.json")),
-        ("copyq", "CopyQ 本地配置", format!("{appdata}\\copyq\\copyq-commands.ini")),
-        ("pixpin", "PixPin 本地配置", format!("{appdata}\\PixPin\\Config\\config.ini")),
-        ("snipaste", "Snipaste 本地配置", format!("{home}\\.snipaste\\config.ini")),
-    ];
-    for (proc_key, label, path) in candidates {
-        if !procs.iter().any(|p| p.name_lower.contains(proc_key)) { continue; }
-        if std::fs::metadata(path).is_ok_and(|m| m.len() <= 262_144) {
-            if let Ok(raw) = std::fs::read_to_string(path) {
-                hits.push(((*proc_key).to_string(), (*label).to_string(), raw.to_ascii_lowercase()));
-            }
-        }
-    }
-    hits
-}
-
-fn guess_suspects(spec: &str, procs: &[ProcInfo], cfg_hits: &[(String, String, String)]) -> Vec<SuspectProcess> {
-    let mut out = Vec::new();
-    let mut seen_pids = HashSet::new();
-    let spec_lower = spec.to_ascii_lowercase();
-
-    for (proc_key, label, content) in cfg_hits {
-        if content.contains(&spec_lower) {
-            if let Some(p) = procs.iter().find(|pr| pr.name_lower.contains(proc_key)) {
-                if seen_pids.insert(p.pid) {
-                    out.push(SuspectProcess {
-                        process_name: p.name.clone(), pid: p.pid, exe_path: p.exe_path.clone(),
-                        reason: format!("{label}命中 {spec}（配置文件实锤）"), confidence: "high",
-                    });
-                }
-            }
-        }
-    }
-    for &(key, label, defaults) in KNOWN_SIGNATURES {
-        if !defaults.iter().any(|d| d.eq_ignore_ascii_case(spec)) { continue; }
-        if let Some(p) = procs.iter().find(|pr| pr.name_lower.contains(key)) {
-            if seen_pids.insert(p.pid) {
-                out.push(SuspectProcess {
-                    process_name: p.name.clone(), pid: p.pid, exe_path: p.exe_path.clone(),
-                    reason: format!("{label} 常见默认键参考"), confidence: "medium",
-                });
-            }
-        }
-    }
-    out
+fn sample_cpu_map(procs: &[ProcInfo]) -> HashMap<u32, u64> {
+    procs
+        .iter()
+        .filter(|p| p.pid > 4 && !is_background_noise_process(&p.name_lower))
+        .filter_map(|p| query_proc_cpu_100ns(p.pid).map(|t| (p.pid, t)))
+        .collect()
 }
 
 #[derive(Clone)]
@@ -317,13 +249,24 @@ fn snapshot_visible_windows() -> HashMap<isize, WinSnap> {
 pub fn probe_hotkey_owner_live(spec: &str, host_hwnd: usize, parent_hwnd: Option<isize>) -> LiveProbeResult {
     let Some(parsed) = parse_hotkey(spec) else {
         return LiveProbeResult {
-            spec: spec.into(), found: false, pid: 0, process_name: String::new(),
-            window_title: String::new(), exe_path: String::new(), detail: format!("无法解析快捷键 {spec}"),
+            spec: spec.into(), found: false, is_free: false, confidence: "none", pid: 0,
+            process_name: String::new(), window_title: String::new(), exe_path: String::new(),
+            detail: format!("无法解析快捷键 {spec}"),
         };
     };
     if let Some(p) = parent_hwnd {
         notify_parent_mode(p, 3);
         std::thread::sleep(std::time::Duration::from_millis(80));
+    }
+
+    // Fast path: check if the probed shortcut is actually FREE right now!
+    if probe_register_free(spec, 0x54FE) {
+        if let Some(p) = parent_hwnd { notify_parent_mode(p, 4); }
+        return LiveProbeResult {
+            spec: spec.into(), found: false, is_free: true, confidence: "confirmed", pid: 0,
+            process_name: String::new(), window_title: String::new(), exe_path: String::new(),
+            detail: format!("实测空闲：{spec} 当前未被任何外部程序占用，可直接安全绑定！"),
+        };
     }
 
     let self_pid = std::process::id();
@@ -334,20 +277,23 @@ pub fn probe_hotkey_owner_live(spec: &str, host_hwnd: usize, parent_hwnd: Option
             l.ends_with("\\tomoyo.exe") || l.ends_with("\\tomoyo-webview-host.exe") || l.ends_with("\\msedgewebview2.exe")
         })
     };
-    let procs_before = snapshot_processes();
-    let cpu_before: HashMap<u32, u64> = procs_before
-        .iter()
-        .filter(|p| !is_ignored(p.pid))
-        .filter_map(|p| query_proc_cpu_100ns(p.pid).map(|t| (p.pid, t)))
-        .collect();
+
+    // Stage 1: 300ms idle baseline CPU calibration (eliminates live wallpapers / video renderers!)
+    let procs = snapshot_processes();
+    let cpu_t0 = sample_cpu_map(&procs);
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    let cpu_t1 = sample_cpu_map(&procs);
+
+    // Stage 2: Active chord injection monitoring Foreground HWND, new popups & clipboard sequence
     let before_fg = unsafe { GetForegroundWindow().0 as isize };
     let before_wins = snapshot_visible_windows();
+    let before_clip_seq = unsafe { GetClipboardSequenceNumber() };
 
     send_hotkey_chord(parsed.modifiers, parsed.vk);
 
     let mut caught: Option<(u32, String)> = None;
-    for _ in 0..9 {
-        std::thread::sleep(std::time::Duration::from_millis(55));
+    for _ in 0..8 {
+        std::thread::sleep(std::time::Duration::from_millis(48));
         let fg = unsafe { GetForegroundWindow() };
         if fg.0 as isize != 0 && fg.0 as isize != before_fg && fg.0 as isize != host_hwnd as isize {
             let mut pid = 0u32;
@@ -368,6 +314,8 @@ pub fn probe_hotkey_owner_live(spec: &str, host_hwnd: usize, parent_hwnd: Option
         }
         if caught.is_some() { break; }
     }
+    let cpu_t2 = sample_cpu_map(&procs);
+    let clip_mutated = unsafe { GetClipboardSequenceNumber() } != before_clip_seq;
 
     if let Some(p) = parent_hwnd { notify_parent_mode(p, 4); }
     unsafe { let _ = SetForegroundWindow(HWND(host_hwnd as *mut c_void)); }
@@ -376,44 +324,52 @@ pub fn probe_hotkey_owner_live(spec: &str, host_hwnd: usize, parent_hwnd: Option
         let exe_path = query_exe_path(pid).unwrap_or_default();
         let name = std::path::Path::new(&exe_path).file_name().and_then(|s| s.to_str()).map(ToString::to_string).unwrap_or_else(|| format!("PID {pid}"));
         return LiveProbeResult {
-            spec: spec.into(), found: true, pid, process_name: name.clone(), window_title: title, exe_path,
-            detail: format!("已捕获前台响应进程：{name} (PID {pid})"),
+            spec: spec.into(), found: true, is_free: false, confidence: "confirmed", pid,
+            process_name: name.clone(), window_title: title, exe_path,
+            detail: format!("实锤捕获前台响应进程：{name} (PID {pid})"),
         };
     }
 
-    // Fallback: detect silent non-OS background process CPU wakeup during the 495ms probe window
-    let mut cpu_spikes: Vec<(&ProcInfo, u64)> = procs_before
+    // Stage 3: Baseline-subtracted CPU spike + 220ms post-quiet verification (zero false positives!)
+    let mut spikes: Vec<(&ProcInfo, u64, u64)> = procs
         .iter()
-        .filter(|p| {
-            p.pid > 4
-                && !matches!(
-                    p.name_lower.as_str(),
-                    "system" | "registry" | "idle" | "system idle process" | "svchost.exe"
-                        | "csrss.exe" | "smss.exe" | "dwm.exe" | "explorer.exe" | "audiodg.exe"
-                        | "antimalware service executable" | "msmpeng.exe"
-                )
-                && !p.name_lower.contains("msedgewebview2")
-        })
         .filter_map(|p| {
-            let prev = *cpu_before.get(&p.pid)?;
-            let now = query_proc_cpu_100ns(p.pid)?;
-            let delta = now.saturating_sub(prev);
-            (delta >= 120_000).then_some((p, delta)) // >= 12 ms CPU wakeup
+            let t0 = *cpu_t0.get(&p.pid)?;
+            let t1 = *cpu_t1.get(&p.pid)?;
+            let t2 = *cpu_t2.get(&p.pid)?;
+            let base = t1.saturating_sub(t0);
+            let probe = t2.saturating_sub(t1);
+            // Must be genuinely quiet at rest (< 6ms in 300ms) and spike >= 15ms & >= 4x baseline
+            (base < 60_000 && probe >= (base * 4).max(base + 150_000)).then_some((p, base, probe))
         })
         .collect();
-    cpu_spikes.sort_by(|a, b| b.1.cmp(&a.1));
-    if let Some((top, delta)) = cpu_spikes.first() {
-        return LiveProbeResult {
-            spec: spec.into(), found: true, pid: top.pid, process_name: top.name.clone(),
-            window_title: String::new(), exe_path: top.exe_path.clone(),
-            detail: format!("未见弹窗，但触发瞬间后台进程 {} (PID {}) CPU 唤醒 +{}ms（静默占用嫌疑；也可直接开启上方「高优先级强行接管」）", top.name, top.pid, delta / 10_000),
-        };
+    spikes.sort_by(|a, b| b.2.cmp(&a.2));
+
+    if let Some((top, base, probe)) = spikes.first().copied() {
+        std::thread::sleep(std::time::Duration::from_millis(220));
+        let post_quiet = query_proc_cpu_100ns(top.pid)
+            .and_then(|t3| cpu_t2.get(&top.pid).map(|&t2| t3.saturating_sub(t2)))
+            .unwrap_or(0);
+        if post_quiet < probe / 2 {
+            let clip_hint = if clip_mutated { "且触发瞬间改动了系统剪贴板" } else { "触发后已恢复静默" };
+            return LiveProbeResult {
+                spec: spec.into(), found: true, is_free: false, confidence: "likely", pid: top.pid,
+                process_name: top.name.clone(), window_title: String::new(), exe_path: top.exe_path.clone(),
+                detail: format!(
+                    "差分探针命中后台进程 {} (PID {})：静息 {}ms → 触发瞬峰 +{}ms（{}）",
+                    top.name, top.pid, base / 10_000, probe / 10_000, clip_hint
+                ),
+            };
+        }
     }
 
+    let clip_note = if clip_mutated { "检测到剪贴板被静默改写，但未见前台窗口。" } else { "" };
     LiveProbeResult {
-        spec: spec.into(), found: false, pid: 0, process_name: String::new(),
-        window_title: String::new(), exe_path: String::new(),
-        detail: "未检测到弹窗或明显后台唤醒（通常为无窗口系统服务/驱动或管理员权限进程静默占用；可直接开启上方「高优先级强行接管」立即恢复该键）".into(),
+        spec: spec.into(), found: false, is_free: false, confidence: "none", pid: 0,
+        process_name: String::new(), window_title: String::new(), exe_path: String::new(),
+        detail: format!(
+            "{clip_note}经静息基线校准后未见弹窗或可复现后台唤醒（通常为输入法/显卡驱动/无窗口服务静默注册）。开启「高优先级自动接管冲突热键」即可让 Tomoyo 无视外部静默占位、照常唤起！"
+        ),
     }
 }
 

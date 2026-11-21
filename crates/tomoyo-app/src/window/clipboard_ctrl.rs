@@ -17,19 +17,23 @@ impl AppShell {
     }
 
     pub fn toggle_clipboard_launcher(&mut self) {
+        let enabled = self
+            .config
+            .read()
+            .map(|c| c.is_plugin_enabled(tomoyo_core::PLUGIN_CLIPBOARD))
+            .unwrap_or(true);
+        if !enabled {
+            return;
+        }
         let visible = unsafe { IsWindowVisible(self.hwnd).as_bool() };
-        let in_cb = self
-            .current_query
-            .trim_start()
-            .to_ascii_lowercase()
-            .starts_with("cb");
+        let q_low = self.current_query.trim_start().to_ascii_lowercase();
+        let in_cb = q_low.starts_with("cb") || q_low.starts_with("clip");
         if visible && in_cb {
             self.hide_launcher();
-        } else {
-            if !visible {
-                self.show_launcher();
-            }
+        } else if visible {
             self.set_query_text("cb ");
+        } else {
+            self.show_launcher_with_query(Some("cb "));
         }
     }
 

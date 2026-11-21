@@ -8,6 +8,7 @@
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
+mod backup;
 mod bridge;
 mod bridge_os;
 mod clip_view;
@@ -18,6 +19,8 @@ mod folder_picker;
 mod hotkey_capture;
 #[cfg(windows)]
 mod hotkey_doctor;
+#[cfg(windows)]
+mod hotkey_signatures;
 mod ocr_view;
 mod shim_js;
 #[cfg(windows)]

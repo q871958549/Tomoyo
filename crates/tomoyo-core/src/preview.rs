@@ -182,6 +182,10 @@ pub fn read_file_preview(path_str: &str) -> ResolvedPreview {
         return read_image_thumbnail(path_str, 280, 220);
     }
 
+    if let Some(rich) = crate::preview_docs::try_preview_document(path, &ext, &title, size, &size_str, &modified) {
+        return rich;
+    }
+
     let meta_line = format!(
         "{} · {} · {}",
         if ext.is_empty() { "FILE".into() } else { ext.to_uppercase() },

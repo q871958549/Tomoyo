@@ -33,7 +33,7 @@ New-Item -ItemType Directory -Force -Path (Join-Path $InstallDir "assets\fonts")
 New-Item -ItemType Directory -Force -Path (Join-Path $InstallDir "registry") | Out-Null
 
 # Copy executables & license/docs
-foreach ($bin in @("tomoyo.exe", "tomoyo-webview-host.exe", "tomoyo-capture.exe", "tomoyo-cli.exe", "tomoyo-plugin-hello.exe", "tomoyo-plugin-ocr.exe")) {
+foreach ($bin in @("tomoyo.exe", "tomoyo-webview-host.exe", "tomoyo-capture.exe", "tomoyo-cli.exe", "tomoyo-plugin-hello.exe", "tomoyo-plugin-ocr.exe", "tomoyo-plugin-notes.exe")) {
     Copy-Item (Join-Path $releaseDir $bin) $InstallDir -Force
 }
 Copy-Item (Join-Path $repoRoot "LICENSE-MIT"), (Join-Path $repoRoot "LICENSE-APACHE"), (Join-Path $repoRoot "README.md") $InstallDir -Force
@@ -43,7 +43,7 @@ Copy-Item (Join-Path $repoRoot "registry\index.json") (Join-Path $InstallDir "re
 Copy-Item (Join-Path $PSScriptRoot "uninstall-local.ps1") (Join-Path $InstallDir "uninstall.ps1") -Force
 
 # Copy bundled reference plugins (excluding build caches)
-foreach ($p in @("example-hello", "example-python", "example-wasm", "example-webview-json", "builtin-ocr")) {
+foreach ($p in @("example-hello", "example-python", "example-wasm", "example-webview-json", "builtin-ocr", "official-notes")) {
     $dstP = Join-Path $InstallDir "plugins\$p"
     New-Item -ItemType Directory -Force -Path $dstP | Out-Null
     Get-ChildItem (Join-Path $repoRoot "plugins\$p") -Exclude "target","__pycache__" |

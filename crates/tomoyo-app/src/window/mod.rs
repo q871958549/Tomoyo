@@ -12,14 +12,14 @@ mod translate_ctrl;
 mod updater_ctrl;
 mod wndproc;
 
-use crate::actions::spawn_settings_window;
 use crate::preview_loader::AsyncPreviewLoader;
 use crate::renderer::{compute_filter_counts, FilterCounts, FluentRenderer, RenderState, ThemePalette};
 use crate::tray::TrayIcon;
-use bootstrap::{apply_cue_banner, apply_dwm_attributes, detect_everything_label, read_edit_text};
+use bootstrap::{detect_everything_label, read_edit_text};
 use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex, RwLock};
+use std::time::Instant;
 use tomoyo_core::{Lang, QueryRouter, ResolvedPreview, TomoyoConfig, UpdateManager};
 use tomoyo_plugin_host::PluginHost;
 use tomoyo_protocol::{
@@ -29,13 +29,11 @@ use tomoyo_protocol::{
 use tomoyo_providers::ClipboardProvider;
 use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
-use windows::Win32::Graphics::Gdi::{CreateSolidBrush, DeleteObject, InvalidateRect, HBRUSH, HDC, HFONT};
-use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
+use windows::Win32::Graphics::Gdi::{DeleteObject, InvalidateRect, HBRUSH, HDC, HFONT};
 use windows::Win32::UI::Input::KeyboardAndMouse::SetFocus;
 use windows::Win32::UI::WindowsAndMessaging::{
-    BringWindowToTop, DispatchMessageW, GetForegroundWindow, GetMessageW, GetWindowThreadProcessId,
-    IsWindowVisible, KillTimer, SendMessageW, SetForegroundWindow, SetTimer, SetWindowTextW,
-    ShowWindow, TranslateMessage, MSG, SW_HIDE, SW_SHOW, WM_APP,
+    DispatchMessageW, GetForegroundWindow, GetMessageW, IsWindowVisible, KillTimer, SendMessageW,
+    SetTimer, SetWindowTextW, ShowWindow, TranslateMessage, MSG, SW_HIDE, SW_SHOW, WM_APP,
 };
 
 pub(super) const HOTKEY_ID: i32 = 1;
@@ -95,6 +93,8 @@ pub(super) struct InteractionState {
     pub prev_foreground_hwnd: isize,
     pub in_modal_overlay: bool,
     pub suppress_next_clip_img: bool,
+    pub suppress_edit_change: bool,
+    pub last_shown_at: Option<Instant>,
 }
 
 pub struct AppShell {
@@ -147,49 +147,11 @@ impl AppShell {
     pub fn hotkey_label(&self) -> &str { &self.hotkey_label }
     pub fn hwnd_raw(&self) -> usize { self.hwnd.0 as usize }
 
-    pub fn apply_theme(&mut self, theme_name: &str, persist: bool) {
-        let new_theme = ThemePalette::from_name(theme_name);
-        self.theme = new_theme;
-        self.theme_name = theme_name.to_string();
-        apply_dwm_attributes(self.hwnd, new_theme.is_dark);
-        unsafe {
-            if !self.edit_bg_brush.is_invalid() {
-                let _ = DeleteObject(self.edit_bg_brush.into());
-            }
-            self.edit_bg_brush = CreateSolidBrush(new_theme.bg.to_colorref());
-            let _ = InvalidateRect(Some(self.edit_hwnd), None, true);
-        }
-        if persist {
-            if let Ok(mut cfg) = self.config.write() {
-                cfg.theme = theme_name.to_string();
-                let _ = cfg.save();
-            }
-        }
-        self.invalidate();
-    }
-
-    pub fn apply_language(&mut self, lang_code: &str, persist: bool) {
-        let new_lang = Lang::from_code(lang_code);
-        self.lang = new_lang;
-        unsafe { apply_cue_banner(self.edit_hwnd, new_lang); }
-        if persist {
-            if let Ok(mut cfg) = self.config.write() {
-                cfg.language = new_lang.code().to_string();
-                let _ = cfg.save();
-            }
-        }
-        self.dispatch_query();
-        self.invalidate();
-    }
-
-    pub fn open_settings_center(&mut self) {
-        match spawn_settings_window(self.hwnd.0 as isize, &self.theme_name) {
-            Ok(()) => self.hide_launcher(),
-            Err(e) => self.show_toast(&format!("设置中心启动失败: {e}")),
-        }
-    }
-
     pub fn show_launcher(&mut self) {
+        self.show_launcher_with_query(None);
+    }
+
+    pub fn show_launcher_with_query(&mut self, initial_query: Option<&str>) {
         unsafe {
             let fg = GetForegroundWindow();
             if !fg.is_invalid() && fg != self.hwnd {
@@ -203,24 +165,29 @@ impl AppShell {
         self.inter.hovered = None;
         self.inter.hovered_filter = None;
         self.inter.filter_counts = None;
+        if let Some(q) = initial_query {
+            self.active_filter = SearchFilter::All;
+            self.attached = None;
+            let wide: Vec<u16> = q.encode_utf16().chain(std::iter::once(0)).collect();
+            self.inter.suppress_edit_change = true;
+            unsafe { let _ = SetWindowTextW(self.edit_hwnd, PCWSTR(wide.as_ptr())); }
+            self.inter.suppress_edit_change = false;
+            self.current_query = q.to_string();
+        }
         self.position_on_active_monitor();
         self.dispatch_query();
+        self.inter.in_modal_overlay = false;
+        self.inter.last_shown_at = Some(Instant::now());
         unsafe {
-            self.inter.in_modal_overlay = false;
             let _ = ShowWindow(self.hwnd, SW_SHOW);
-            let _ = SetForegroundWindow(self.hwnd);
-            if GetForegroundWindow() != self.hwnd {
-                let fg = GetForegroundWindow();
-                let fg_tid = if !fg.is_invalid() { GetWindowThreadProcessId(fg, None) } else { 0 };
-                let my_tid = GetCurrentThreadId();
-                if fg_tid != 0 && fg_tid != my_tid && AttachThreadInput(my_tid, fg_tid, true).as_bool() {
-                    let _ = BringWindowToTop(self.hwnd);
-                    let _ = SetForegroundWindow(self.hwnd);
-                    let _ = AttachThreadInput(my_tid, fg_tid, false);
-                }
-            }
+            hotkey_override::force_foreground_window(self.hwnd);
             let _ = SetFocus(Some(self.edit_hwnd));
-            SendMessageW(self.edit_hwnd, EM_SETSEL, Some(WPARAM(0)), Some(LPARAM(-1)));
+            if let Some(q) = initial_query {
+                let len = q.encode_utf16().count() as isize;
+                SendMessageW(self.edit_hwnd, EM_SETSEL, Some(WPARAM(len as usize)), Some(LPARAM(len)));
+            } else {
+                SendMessageW(self.edit_hwnd, EM_SETSEL, Some(WPARAM(0)), Some(LPARAM(-1)));
+            }
             let _ = SetTimer(Some(self.hwnd), TIMER_FOCUS_GUARD, 160, None);
             let _ = InvalidateRect(Some(self.hwnd), None, false);
         }
@@ -247,10 +214,13 @@ impl AppShell {
         unsafe {
             let _ = KillTimer(Some(self.hwnd), TIMER_FOCUS_GUARD);
             let _ = ShowWindow(self.hwnd, SW_HIDE);
+            self.inter.suppress_edit_change = true;
             let _ = SetWindowTextW(self.edit_hwnd, w!(""));
+            self.inter.suppress_edit_change = false;
             let _ = KillTimer(Some(self.hwnd), TIMER_HIBERNATE);
             let _ = SetTimer(Some(self.hwnd), TIMER_HIBERNATE, delay_ms, None);
         }
+        self.inter.last_shown_at = None;
         self.current_query.clear();
         self.attached = None;
         self.active_filter = SearchFilter::All;
@@ -270,40 +240,15 @@ impl AppShell {
         }
     }
 
-    pub fn run_hibernate(&mut self) -> u64 {
-        unsafe { let _ = KillTimer(Some(self.hwnd), TIMER_HIBERNATE); }
-        self.preview_loader.purge_worker();
-        self.renderer.hibernate_release();
-        self.results.clear();
-        self.results.shrink_to_fit();
-        self.cached_preview_id = None;
-        self.cached_preview = None;
-        let cycles = self.router.hibernate_trim();
-        unsafe {
-            windows::Win32::System::Com::CoFreeUnusedLibraries();
-            mi_collect(true);
-        }
-        cycles
-    }
-
-    pub(super) fn shutdown_clean(&mut self) {
-        if self.shutting_down {
-            return;
-        }
-        self.shutting_down = true;
-        self.plugin_host.shutdown_all();
-        self.clipboard.shutdown_checkpoint();
-        self.preview_loader.cancel_all();
-        self.tray = None;
-    }
-
     pub fn set_query_text(&mut self, text: &str) {
         let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
+        self.inter.suppress_edit_change = true;
         unsafe {
             let _ = SetWindowTextW(self.edit_hwnd, PCWSTR(wide.as_ptr()));
             let len = text.encode_utf16().count() as isize;
             SendMessageW(self.edit_hwnd, EM_SETSEL, Some(WPARAM(len as usize)), Some(LPARAM(len)));
         }
+        self.inter.suppress_edit_change = false;
         self.current_query = text.to_string();
         self.dispatch_query();
     }
@@ -397,6 +342,9 @@ impl AppShell {
     }
 
     pub(super) fn on_edit_changed(&mut self) {
+        if self.inter.suppress_edit_change {
+            return;
+        }
         self.current_query = read_edit_text(self.edit_hwnd);
         self.inter.filter_counts = None;
         self.dispatch_query();

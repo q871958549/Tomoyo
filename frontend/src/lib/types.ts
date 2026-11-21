@@ -25,7 +25,7 @@ export interface SuspectProcess {
 
 export interface HotkeyAuditItem {
   spec: string;
-  status: 'free' | 'tomoyo' | 'occupied_external' | 'conflict';
+  status: 'free' | 'tomoyo' | 'overridden' | 'occupied_external' | 'conflict';
   tomoyo_slot?: string | null;
   suspects: SuspectProcess[];
 }
@@ -36,11 +36,14 @@ export interface HotkeyAuditReport {
   total_probed: number;
   external_occupied: number;
   conflicts: number;
+  overridden?: number;
 }
 
 export interface LiveProbeResult {
   spec: string;
   found: boolean;
+  is_free?: boolean;
+  confidence?: 'confirmed' | 'likely' | 'none' | string;
   pid: number;
   process_name: string;
   window_title: string;

@@ -1,13 +1,75 @@
-//! Self-test, soak diagnostics, and live hot-reload synchronization for `AppShell`.
+//! Lifecycle (theme/language/hibernation/shutdown), self-test, and hot-reload synchronization.
 
+use super::bootstrap::{apply_cue_banner, apply_dwm_attributes};
 use super::input::{register_all_hotkeys, unregister_all_hotkeys};
-use super::{bootstrap::apply_cue_banner, AppShell};
-use crate::renderer::{compute_filter_counts, MIN_WINDOW_WIDTH_DIP};
-use tomoyo_core::TomoyoConfig;
+use super::{mi_collect, AppShell, TIMER_HIBERNATE};
+use crate::actions::spawn_settings_window;
+use crate::renderer::{compute_filter_counts, ThemePalette, MIN_WINDOW_WIDTH_DIP};
+use tomoyo_core::{Lang, TomoyoConfig};
 use tomoyo_protocol::{AttachedContext, SearchFilter};
-use windows::Win32::UI::WindowsAndMessaging::IsWindowVisible;
+use windows::Win32::Graphics::Gdi::{CreateSolidBrush, DeleteObject, InvalidateRect};
+use windows::Win32::UI::WindowsAndMessaging::{IsWindowVisible, KillTimer};
 
 impl AppShell {
+    pub fn apply_theme(&mut self, theme_name: &str, persist: bool) {
+        let new_theme = ThemePalette::from_name(theme_name);
+        self.theme = new_theme;
+        self.theme_name = theme_name.to_string();
+        apply_dwm_attributes(self.hwnd, new_theme.is_dark);
+        unsafe {
+            if !self.edit_bg_brush.is_invalid() { let _ = DeleteObject(self.edit_bg_brush.into()); }
+            self.edit_bg_brush = CreateSolidBrush(new_theme.bg.to_colorref());
+            let _ = InvalidateRect(Some(self.edit_hwnd), None, true);
+        }
+        if persist {
+            if let Ok(mut cfg) = self.config.write() { cfg.theme = theme_name.to_string(); let _ = cfg.save(); }
+        }
+        self.invalidate();
+    }
+
+    pub fn apply_language(&mut self, lang_code: &str, persist: bool) {
+        let new_lang = Lang::from_code(lang_code);
+        self.lang = new_lang;
+        unsafe { apply_cue_banner(self.edit_hwnd, new_lang); }
+        if persist {
+            if let Ok(mut cfg) = self.config.write() { cfg.language = new_lang.code().to_string(); let _ = cfg.save(); }
+        }
+        self.dispatch_query();
+        self.invalidate();
+    }
+
+    pub fn open_settings_center(&mut self) {
+        match spawn_settings_window(self.hwnd.0 as isize, &self.theme_name) {
+            Ok(()) => self.hide_launcher(),
+            Err(e) => self.show_toast(&format!("设置中心启动失败: {e}")),
+        }
+    }
+
+    pub fn run_hibernate(&mut self) -> u64 {
+        unsafe { let _ = KillTimer(Some(self.hwnd), TIMER_HIBERNATE); }
+        self.preview_loader.purge_worker();
+        self.renderer.hibernate_release();
+        self.results.clear();
+        self.results.shrink_to_fit();
+        self.cached_preview_id = None;
+        self.cached_preview = None;
+        let cycles = self.router.hibernate_trim();
+        unsafe {
+            windows::Win32::System::Com::CoFreeUnusedLibraries();
+            mi_collect(true);
+        }
+        cycles
+    }
+
+    pub(super) fn shutdown_clean(&mut self) {
+        if self.shutting_down { return; }
+        self.shutting_down = true;
+        self.plugin_host.shutdown_all();
+        self.clipboard.shutdown_checkpoint();
+        self.preview_loader.cancel_all();
+        self.tray = None;
+    }
+
     pub fn is_renderer_hibernated(&self) -> bool {
         self.renderer.is_hibernated()
     }
