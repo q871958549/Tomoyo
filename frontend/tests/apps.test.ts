@@ -100,6 +100,7 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
 
     const navBtns = document.querySelectorAll<HTMLButtonElement>('nav button[data-tab]');
     expect(navBtns.length).toBe(12);
+    expect(document.querySelector<HTMLImageElement>('img.brand-logo')?.getAttribute('src')).toBeTruthy();
 
     // Bottom conflict bar must be a clickable button pointing directly to the conflicted slot!
     const conflictBtn = document.querySelector<HTMLButtonElement>('button#toast.conflict-bar-btn');

@@ -13,6 +13,7 @@
     CustomFilterTab, HotkeyAuditReport, HotkeyHealthReport, LiveProbeResult,
     ReleaseInfo, TomoyoConfig, UpdateStatus, WorkflowDef,
   } from '../../lib/types';
+  import tomoyoLogo from '../../assets/tomoyo-logo.png';
   import Button from '../../lib/ui/Button.svelte';
   import AppearanceTab from './AppearanceTab.svelte';
   import CaptureTab from './CaptureTab.svelte';
@@ -265,7 +266,7 @@
 <div class="shell">
   <aside class="sidebar">
     <div class="brand">
-      <div class="brand-tile">T</div>
+      <img class="brand-logo" src={tomoyoLogo} alt="Tomoyo" width="32" height="32" draggable="false" />
       <div>
         <div class="brand-name">Tomoyo</div>
         <div class="brand-sub">{tr(lang, 'brand_sub')}</div>
@@ -377,7 +378,7 @@
   .shell { display: flex; height: 100%; width: 100%; overflow: hidden; }
   .sidebar { width: 216px; flex-shrink: 0; background: var(--sidebar); border-right: 1px solid var(--border); display: flex; flex-direction: column; padding: 16px 10px 14px; }
   .brand { display: flex; align-items: center; gap: 10px; padding: 2px 8px 14px; border-bottom: 1px solid var(--border); margin-bottom: 10px; }
-  .brand-tile { width: 30px; height: 30px; border-radius: 8px; background: linear-gradient(155deg, #ffffff 0%, #eaeef6 100%); border: 1px solid #d5dce9; color: #111827; font-family: Georgia, serif; font-weight: 700; font-size: 17px; display: grid; place-items: center; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.1); }
+  .brand-logo { width: 32px; height: 32px; border-radius: 8px; display: block; flex-shrink: 0; filter: drop-shadow(0 1px 2px rgba(15, 23, 42, 0.14)); }
   .brand-name { font-size: 14.5px; font-weight: 600; letter-spacing: 0.2px; }
   .brand-sub { font-size: 11px; color: var(--muted); }
   .nav { display: flex; flex-direction: column; gap: 2px; overflow-y: auto; }

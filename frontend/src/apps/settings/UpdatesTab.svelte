@@ -1,5 +1,6 @@
 <script lang="ts">
   import { CheckCircle2, Download, ExternalLink, RefreshCw, AlertCircle } from '@lucide/svelte';
+  import tomoyoLogo from '../../assets/tomoyo-logo.png';
   import { postHost } from '../../lib/ipc';
   import { OFFICIAL_REPO, tr, type Lang } from '../../lib/i18n';
   import type { ReleaseInfo, TomoyoConfig, UpdateStatus } from '../../lib/types';
@@ -101,12 +102,15 @@
 
 <div class="t-card upd-hero">
   <div class="hero-top">
-    <div>
-      <div class="hero-title">
-        <span>Tomoyo</span>
-        <span class="t-pill">v{version}</span>
+    <div class="hero-brand">
+      <img class="hero-logo" src={tomoyoLogo} alt="Tomoyo" width="38" height="38" draggable="false" />
+      <div>
+        <div class="hero-title">
+          <span>Tomoyo</span>
+          <span class="t-pill">v{version}</span>
+        </div>
+        <div class="t-desc">{tr(lang, 'about_desc')}</div>
       </div>
-      <div class="t-desc">{tr(lang, 'about_desc')}</div>
     </div>
     <div class="hero-acts">
       <Button variant="secondary" onclick={openRepo}>
@@ -233,6 +237,8 @@
   .tab-lead { margin: 0; font-size: 12.5px; color: var(--muted); }
   .upd-hero { padding: 16px; }
   .hero-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .hero-brand { display: flex; align-items: center; gap: 12px; }
+  .hero-logo { width: 38px; height: 38px; border-radius: 9px; display: block; flex-shrink: 0; filter: drop-shadow(0 1px 3px rgba(15, 23, 42, 0.16)); }
   .hero-title { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; }
   .hero-acts { display: flex; align-items: center; gap: 8px; }
   .status-box {

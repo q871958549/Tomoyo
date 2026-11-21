@@ -15,7 +15,7 @@ use crate::tr_view::{
     read_latest_translate_req_event,
 };
 use crate::hotkey_capture::HotkeyCaptureController;
-use crate::win_theme::{apply_host_window_theme, map_vdir, to_file_url};
+use crate::win_theme::{apply_host_window_theme, load_embedded_window_icons, map_vdir, to_file_url};
 use crate::win_workers::dispatch_async_workers;
 use crate::{assemble_settings_html, build_settings_init_script, LaunchArgs};
 use std::cell::RefCell;
@@ -41,12 +41,12 @@ use windows::Win32::UI::HiDpi::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetClientRect, GetMessageW,
-    GetSystemMetrics, GetWindowLongPtrW, IsIconic, LoadCursorW, LoadIconW, PostMessageW,
-    PostQuitMessage, RegisterClassW, SendMessageW, SetForegroundWindow, SetWindowLongPtrW,
-    SetWindowPos, SetWindowTextW, ShowWindow, TranslateMessage, GWLP_USERDATA, HWND_NOTOPMOST,
-    HWND_TOPMOST, ICON_BIG, ICON_SMALL, IDC_ARROW, MSG, SM_CXSCREEN, SM_CYSCREEN, SWP_NOACTIVATE,
-    SWP_NOMOVE, SWP_NOSIZE, SW_RESTORE, SW_SHOW, WM_ACTIVATE, WM_CLOSE, WM_DESTROY, WM_SETICON,
-    WM_SIZE, WNDCLASSW, WS_OVERLAPPEDWINDOW, WS_VISIBLE,
+    GetSystemMetrics, GetWindowLongPtrW, IsIconic, LoadCursorW, PostMessageW, PostQuitMessage,
+    RegisterClassExW, SendMessageW, SetForegroundWindow, SetWindowLongPtrW, SetWindowPos,
+    SetWindowTextW, ShowWindow, TranslateMessage, GWLP_USERDATA, HWND_NOTOPMOST, HWND_TOPMOST,
+    ICON_BIG, ICON_SMALL, IDC_ARROW, MSG, SM_CXSCREEN, SM_CYSCREEN, SWP_NOACTIVATE, SWP_NOMOVE,
+    SWP_NOSIZE, SW_RESTORE, SW_SHOW, WM_ACTIVATE, WM_CLOSE, WM_DESTROY, WM_SETICON, WM_SIZE,
+    WNDCLASSEXW, WS_OVERLAPPEDWINDOW, WS_VISIBLE,
 };
 
 const WM_APP_WEBVIEW_EVENT: u32 = 0x8000 + 31;
@@ -202,7 +202,7 @@ pub fn run_windows_host(opts: LaunchArgs) {
     }
 
     let hinst = unsafe { GetModuleHandleW(None).unwrap() };
-    let embedded_icon = unsafe { LoadIconW(Some(hinst.into()), PCWSTR(std::ptr::dangling::<u16>())).ok() };
+    let (big_icon, small_icon) = load_embedded_window_icons(hinst);
     let cls = if opts.settings_mode {
         SETTINGS_WINDOW_CLASS
     } else if clip_mode {
@@ -213,15 +213,17 @@ pub fn run_windows_host(opts: LaunchArgs) {
         EPHEMERAL_WINDOW_CLASS
     };
     unsafe {
-        let wc = WNDCLASSW {
+        let wc = WNDCLASSEXW {
+            cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
             lpfnWndProc: Some(wndproc),
             hInstance: hinst.into(),
-            hIcon: embedded_icon.unwrap_or_default(),
+            hIcon: big_icon.unwrap_or_default(),
+            hIconSm: small_icon.unwrap_or_default(),
             hCursor: LoadCursorW(None, IDC_ARROW).unwrap_or_default(),
             lpszClassName: cls,
             ..Default::default()
         };
-        let _ = RegisterClassW(&wc);
+        let _ = RegisterClassExW(&wc);
     }
 
     let sw = unsafe { GetSystemMetrics(SM_CXSCREEN) };
@@ -239,9 +241,11 @@ pub fn run_windows_host(opts: LaunchArgs) {
         .expect("CreateWindowExW failed")
     };
 
-    if let Some(ic) = embedded_icon {
-        unsafe {
+    unsafe {
+        if let Some(ic) = small_icon {
             SendMessageW(hwnd, WM_SETICON, Some(WPARAM(ICON_SMALL as usize)), Some(LPARAM(ic.0 as isize)));
+        }
+        if let Some(ic) = big_icon {
             SendMessageW(hwnd, WM_SETICON, Some(WPARAM(ICON_BIG as usize)), Some(LPARAM(ic.0 as isize)));
         }
     }

@@ -6,13 +6,45 @@ use webview2_com::Microsoft::Web::WebView2::Win32::{
     ICoreWebView2_3, COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_ALLOW,
 };
 use windows::core::{HSTRING, PCWSTR};
-use windows::Win32::Foundation::{COLORREF, HWND};
+use windows::Win32::Foundation::{COLORREF, HMODULE, HWND};
 use windows::Win32::Graphics::Dwm::{
     DwmSetWindowAttribute, DWMWA_CAPTION_COLOR, DWMWA_TEXT_COLOR, DWMWA_USE_IMMERSIVE_DARK_MODE,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    SetWindowPos, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
+    GetSystemMetrics, LoadImageW, SetWindowPos, HICON, IMAGE_ICON, LR_SHARED, SM_CXICON,
+    SM_CXSMICON, SM_CYICON, SM_CYSMICON, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+    SWP_NOZORDER,
 };
+
+/// Loads the embedded Tomoyo application logo (`RT_GROUP_ICON` ID `1` from `winresource`)
+/// at both standard taskbar (`SM_CXICON`) and titlebar (`SM_CXSMICON`) DPI-matched sizes.
+pub fn load_embedded_window_icons(hinst: HMODULE) -> (Option<HICON>, Option<HICON>) {
+    let res_id_1 = PCWSTR(std::ptr::without_provenance::<u16>(1));
+    unsafe {
+        let big = LoadImageW(
+            Some(hinst.into()),
+            res_id_1,
+            IMAGE_ICON,
+            GetSystemMetrics(SM_CXICON),
+            GetSystemMetrics(SM_CYICON),
+            LR_SHARED,
+        )
+        .ok()
+        .map(|h| HICON(h.0));
+        let small = LoadImageW(
+            Some(hinst.into()),
+            res_id_1,
+            IMAGE_ICON,
+            GetSystemMetrics(SM_CXSMICON),
+            GetSystemMetrics(SM_CYSMICON),
+            LR_SHARED,
+        )
+        .ok()
+        .map(|h| HICON(h.0))
+        .or(big);
+        (big, small)
+    }
+}
 
 pub fn apply_host_window_theme(hwnd: HWND, theme: &str) {
     let (is_dark, caption_bgr, text_bgr) = match theme.trim().to_ascii_lowercase().as_str() {

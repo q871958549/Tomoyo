@@ -294,6 +294,12 @@ fn main() {
             Some("light")
         );
         assert!(fetch_store_catalog_json(&["registry/index.json".into()]).contains("dev.tomoyo.example-wasm"));
+        #[cfg(windows)]
+        {
+            let hinst = unsafe { windows::Win32::System::LibraryLoader::GetModuleHandleW(None).unwrap() };
+            let (big_ic, small_ic) = win_theme::load_embedded_window_icons(hinst);
+            assert!(big_ic.is_some() && small_ic.is_some(), "Embedded app logo icon (ID 1) missing from tomoyo-webview-host.exe");
+        }
         let _ = std::fs::remove_file(&tmp);
         println!(
             "[OK] tomoyo-webview-host v{} self-test passed (uTools bridge {}B, Settings UI {}B, Store & Updater verified, Alibaba font={})",
