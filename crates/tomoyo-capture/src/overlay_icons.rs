@@ -265,6 +265,22 @@ pub fn draw_toolbar_icon(
             ln(dst, 2.8, -4.8, -4.5, 2.5, 1.6);
             ln(dst, -4.5, 2.5, -5.5, 5.5, 1.4);
         }
+        ToolbarCmd::Tool(ToolKind::Highlighter) => {
+            ln(dst, -4.5, 3.0, 2.5, -4.5, 3.0);
+            ln(dst, -5.5, 5.2, 5.5, 5.2, 2.2);
+        }
+        ToolbarCmd::Tool(ToolKind::Text) => {
+            ln(dst, -5.0, -4.8, 5.0, -4.8, 1.7);
+            ln(dst, 0.0, -4.8, 0.0, 5.2, 1.7);
+            ln(dst, -2.5, 5.2, 2.5, 5.2, 1.4);
+        }
+        ToolbarCmd::ScrollLong => {
+            let r = ScreenRect { x: (cx - 5.0).round() as i32, y: (cy - 6.0).round() as i32, w: 10, h: 12 };
+            stroke_rounded_rect_aa(dst, w, h, r, 2.0, 1.3, fg, 0.9);
+            ln(dst, 0.0, -3.2, 0.0, 3.2, 1.4);
+            ln(dst, -2.2, 1.2, 0.0, 3.5, 1.4);
+            ln(dst, 2.2, 1.2, 0.0, 3.5, 1.4);
+        }
         ToolbarCmd::Tool(ToolKind::Mosaic) => {
             for row in 0..3 {
                 for col in 0..3 {
@@ -341,7 +357,12 @@ pub fn draw_toolbar_icon(
             ln(dst, -5.0, 0.2, -1.4, 4.0, 2.0);
             ln(dst, -1.4, 4.0, 5.4, -3.8, 2.0);
         }
-        ToolbarCmd::Tool(ToolKind::Select) | ToolbarCmd::Color(_) | ToolbarCmd::Thickness(_) => {}
+        ToolbarCmd::Tool(ToolKind::Select)
+        | ToolbarCmd::Color(_)
+        | ToolbarCmd::Thickness(_)
+        | ToolbarCmd::ShapeStyle(_)
+        | ToolbarCmd::ArrowStyle(_)
+        | ToolbarCmd::MosaicBlur(_) => {}
     }
 }
 

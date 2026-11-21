@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-//! Ephemeral On-Demand Native Screenshot, Annotation, Color Picker & Pin-to-Desktop (`tomoyo-capture.exe`).
+//! Ephemeral On-Demand Native Screenshot, Editable Vector Annotation, Color Picker,
+//! Vertical/Horizontal Long Screenshot & Pin-to-Desktop (`tomoyo-capture.exe`).
 //!
 //! Zero-idle-RAM architecture: exits completely (0 MB) once copy/save/OCR/translate finishes,
 //! or stays alive solely while a user-pinned desktop image window remains open.
@@ -9,22 +10,32 @@
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 mod annotate;
+mod annotate_render;
 mod export;
 #[cfg(windows)]
 mod overlay;
 mod overlay_draw;
 mod overlay_icons;
 #[cfg(windows)]
+mod overlay_input;
+#[cfg(windows)]
+mod overlay_text;
+#[cfg(windows)]
 mod pin_window;
 mod screen;
+#[cfg(windows)]
+mod scroll_capture;
+mod stitch;
 
 #[cfg(windows)]
 fn run_windows_main() {
-    use annotate::{render_annotations, Annotation, AnnotationStack, COLOR_PRESETS};
+    use annotate::{Annotation, AnnotationStack, ArrowStyle, ShapeStyle, COLOR_PRESETS};
+    use annotate_render::render_annotations;
     use export::{load_png_as_bgra, read_clipboard_image_bgra, save_bgra_as_png};
     use overlay::{run_capture_overlay, CaptureMode, CaptureOutcome};
     use pin_window::run_pin_window;
     use screen::{capture_virtual_desktop, synthetic_dib_snapshot, ScreenRect};
+    use scroll_capture::{run_scroll_capture, ScrollOutcome};
     use std::path::Path;
     use tomoyo_core::current_process_stats;
     use windows::Win32::UI::HiDpi::{
@@ -59,16 +70,14 @@ fn run_windows_main() {
             rect: ScreenRect { x: 4, y: 4, w: 40, h: 30 },
             color: COLOR_PRESETS[0],
             thickness: 3,
+            style: ShapeStyle::Rounded,
         });
-        stack.push(Annotation::Arrow {
-            x0: 10, y0: 50, x1: 70, y1: 60, color: COLOR_PRESETS[2], thickness: 3,
-        });
-        stack.push(Annotation::Mosaic {
-            rect: ScreenRect { x: 50, y: 10, w: 30, h: 30 },
-            block: 10,
-        });
-        stack.push(Annotation::StepNumber { cx: 90, cy: 25, number: 1, color: COLOR_PRESETS[3] });
+        stack.push(Annotation::straight_arrow(10, 50, 70, 60, COLOR_PRESETS[2], 3, ArrowStyle::Curved));
+        stack.push(Annotation::Mosaic { rect: ScreenRect { x: 50, y: 10, w: 30, h: 30 }, block: 10, blur: true });
+        stack.push(Annotation::StepNumber { cx: 90, cy: 25, number: 1, radius: 13, color: COLOR_PRESETS[3] });
+        stack.push(Annotation::Text { x: 12, y: 80, text: "Tomoyo".into(), size: 16, color: COLOR_PRESETS[0] });
         render_annotations(&mut crop, cw as i32, ch as i32, 0, 0, stack.items());
+        overlay_text::bake_text_annotations_into_bgra(&mut crop, cw as i32, ch as i32, 0, 0, stack.items());
 
         let tmp = std::env::temp_dir().join(format!("tomoyo_cap_test_{}.png", std::process::id()));
         save_bgra_as_png(&tmp, cw, ch, &crop).expect("PNG save failed");
@@ -83,12 +92,9 @@ fn run_windows_main() {
         assert_eq!(d_gdi, 0, "GDI leak in capture self-test: {d_gdi:+}");
         assert_eq!(d_user, 0, "USER leak in capture self-test: {d_user:+}");
         println!(
-            "[OK] tomoyo-capture v{} self-test passed ({cap_mode} {}x{}, crop {}x{}, PNG roundtrip OK, GDI {d_gdi:+}, USER {d_user:+})",
+            "[OK] tomoyo-capture v{} self-test passed ({cap_mode} {}x{}, crop {}x{}, curved-arrow+blur+text+PNG OK, GDI {d_gdi:+}, USER {d_user:+})",
             env!("CARGO_PKG_VERSION"),
-            snap.width,
-            snap.height,
-            cw,
-            ch
+            snap.width, snap.height, cw, ch
         );
         return;
     }
@@ -117,8 +123,18 @@ fn run_windows_main() {
         CaptureMode::Region
     };
 
-    if let Ok(CaptureOutcome::Pin { width, height, bgra, screen_x, screen_y }) = run_capture_overlay(mode) {
-        let _ = run_pin_window(width, height, bgra, screen_x, screen_y);
+    match run_capture_overlay(mode) {
+        Ok(CaptureOutcome::Pin { width, height, bgra, screen_x, screen_y }) => {
+            let _ = run_pin_window(width, height, bgra, screen_x, screen_y);
+        }
+        Ok(CaptureOutcome::ScrollLong { screen_x, screen_y, width, height, save_dir }) => {
+            if let Ok(ScrollOutcome::Pin { width, height, bgra, screen_x, screen_y }) =
+                run_scroll_capture(screen_x, screen_y, width, height, save_dir)
+            {
+                let _ = run_pin_window(width, height, bgra, screen_x, screen_y);
+            }
+        }
+        _ => {}
     }
 }
 

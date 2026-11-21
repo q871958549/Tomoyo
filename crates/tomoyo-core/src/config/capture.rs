@@ -1,7 +1,120 @@
-//! Screenshot & Pin-to-Desktop (`tomoyo-capture.exe`) configuration and sanitization.
+//! Screenshot & Pin-to-Desktop (`tomoyo-capture.exe`) configuration, tool hotkeys, and sanitization.
 
 use super::{parse_hotkey, validate_scan_dir};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CaptureToolHotkeys {
+    #[serde(default = "hk_rect")]
+    pub rect: String,
+    #[serde(default = "hk_ellipse")]
+    pub ellipse: String,
+    #[serde(default = "hk_arrow")]
+    pub arrow: String,
+    #[serde(default = "hk_pen")]
+    pub pen: String,
+    #[serde(default = "hk_highlighter")]
+    pub highlighter: String,
+    #[serde(default = "hk_mosaic")]
+    pub mosaic: String,
+    #[serde(default = "hk_step")]
+    pub step: String,
+    #[serde(default = "hk_text")]
+    pub text: String,
+    #[serde(default = "hk_scroll")]
+    pub scroll: String,
+    #[serde(default = "hk_pin")]
+    pub pin: String,
+    #[serde(default = "hk_ocr")]
+    pub ocr: String,
+    #[serde(default = "hk_translate")]
+    pub translate: String,
+}
+
+fn hk_rect() -> String { "R".into() }
+fn hk_ellipse() -> String { "E".into() }
+fn hk_arrow() -> String { "A".into() }
+fn hk_pen() -> String { "B".into() }
+fn hk_highlighter() -> String { "H".into() }
+fn hk_mosaic() -> String { "M".into() }
+fn hk_step() -> String { "N".into() }
+fn hk_text() -> String { "X".into() }
+fn hk_scroll() -> String { "L".into() }
+fn hk_pin() -> String { "P".into() }
+fn hk_ocr() -> String { "O".into() }
+fn hk_translate() -> String { "T".into() }
+
+impl Default for CaptureToolHotkeys {
+    fn default() -> Self {
+        Self {
+            rect: hk_rect(),
+            ellipse: hk_ellipse(),
+            arrow: hk_arrow(),
+            pen: hk_pen(),
+            highlighter: hk_highlighter(),
+            mosaic: hk_mosaic(),
+            step: hk_step(),
+            text: hk_text(),
+            scroll: hk_scroll(),
+            pin: hk_pin(),
+            ocr: hk_ocr(),
+            translate: hk_translate(),
+        }
+    }
+}
+
+impl CaptureToolHotkeys {
+    /// Normalizes a single-key tool binding (`A`–`Z` / `0`–`9`), returning `None` if invalid.
+    pub fn normalize_key(raw: &str) -> Option<String> {
+        let trimmed = raw.trim();
+        if trimmed.len() == 1 {
+            let b = trimmed.as_bytes()[0].to_ascii_uppercase();
+            if b.is_ascii_alphanumeric() {
+                return Some((b as char).to_string());
+            }
+        }
+        None
+    }
+
+    pub fn matches_vk(binding: &str, vk: u8) -> bool {
+        binding.len() == 1 && binding.as_bytes()[0].eq_ignore_ascii_case(&vk)
+    }
+
+    pub fn sanitize(&mut self, notes: &mut Vec<String>) {
+        let defaults = Self::default();
+        let mut used: HashSet<String> = HashSet::new();
+        let fields: [(&mut String, &str, &str); 12] = [
+            (&mut self.rect, &defaults.rect, "矩形"),
+            (&mut self.ellipse, &defaults.ellipse, "椭圆"),
+            (&mut self.arrow, &defaults.arrow, "箭头"),
+            (&mut self.pen, &defaults.pen, "画笔"),
+            (&mut self.highlighter, &defaults.highlighter, "荧光笔"),
+            (&mut self.mosaic, &defaults.mosaic, "马赛克"),
+            (&mut self.step, &defaults.step, "序号"),
+            (&mut self.text, &defaults.text, "文字"),
+            (&mut self.scroll, &defaults.scroll, "长截图"),
+            (&mut self.pin, &defaults.pin, "贴图"),
+            (&mut self.ocr, &defaults.ocr, "识字 OCR"),
+            (&mut self.translate, &defaults.translate, "翻译"),
+        ];
+        for (slot, def, label) in fields {
+            if let Some(norm) = Self::normalize_key(slot) {
+                if used.insert(norm.clone()) {
+                    *slot = norm;
+                    continue;
+                }
+            }
+            let fb = def.to_string();
+            if used.insert(fb.clone()) {
+                *slot = fb;
+            } else {
+                slot.clear();
+            }
+            notes.push(format!("截图工具「{label}」快捷键无效或重复，已恢复默认"));
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CaptureConfig {
@@ -17,6 +130,9 @@ pub struct CaptureConfig {
     /// Copy picked color hex in lowercase (`#ff6b6b` vs `#FF6B6B`).
     #[serde(default)]
     pub copy_hex_lowercase: bool,
+    /// Customizable single-key shortcuts for in-capture annotation & action tools.
+    #[serde(default)]
+    pub tool_hotkeys: CaptureToolHotkeys,
 }
 
 fn default_capture_hotkey() -> String {
@@ -34,6 +150,7 @@ impl Default for CaptureConfig {
             save_dir: String::new(),
             pin_opacity: default_pin_opacity(),
             copy_hex_lowercase: false,
+            tool_hotkeys: CaptureToolHotkeys::default(),
         }
     }
 }
@@ -85,4 +202,6 @@ pub fn sanitize_capture_config(
             }
         }
     }
+
+    cap.tool_hotkeys.sanitize(notes);
 }

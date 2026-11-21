@@ -1,5 +1,22 @@
 import { OFFICIAL_REPO } from './i18n';
-import type { SettingsInitPayload, TomoyoConfig } from './types';
+import type { CaptureToolHotkeys, SettingsInitPayload, TomoyoConfig } from './types';
+
+export function defaultCaptureToolHotkeys(): CaptureToolHotkeys {
+  return {
+    rect: 'R',
+    ellipse: 'E',
+    arrow: 'A',
+    pen: 'B',
+    highlighter: 'H',
+    mosaic: 'M',
+    step: 'N',
+    text: 'X',
+    scroll: 'L',
+    pin: 'P',
+    ocr: 'O',
+    translate: 'T',
+  };
+}
 
 export function makeDefaultConfig(): TomoyoConfig {
   return {
@@ -29,7 +46,13 @@ export function makeDefaultConfig(): TomoyoConfig {
       ollama_url: 'http://127.0.0.1:11434',
       ollama_model: 'qwen2.5:7b',
     },
-    capture: { hotkey: 'Alt+S', save_dir: '', pin_opacity: 100, copy_hex_lowercase: false },
+    capture: {
+      hotkey: 'Alt+S',
+      save_dir: '',
+      pin_opacity: 100,
+      copy_hex_lowercase: false,
+      tool_hotkeys: defaultCaptureToolHotkeys(),
+    },
     update: { auto_check: true, check_interval_hours: 24, repo: OFFICIAL_REPO, last_checked_unix: 0 },
     web_searches: [],
   };
@@ -40,7 +63,7 @@ export function hydrateSettingsInit(): SettingsInitPayload {
   const def = makeDefaultConfig();
   const rc = (raw.config ?? {}) as Partial<TomoyoConfig>;
   return {
-    version: raw.version || '1.6.1',
+    version: raw.version || '1.7.0',
     autostart: !!raw.autostart,
     plugins: Array.isArray(raw.plugins) ? raw.plugins : [],
     config_path: raw.config_path || '',
@@ -58,7 +81,14 @@ export function hydrateSettingsInit(): SettingsInitPayload {
       everything: { ...def.everything, ...(rc.everything || {}) },
       clipboard: { ...def.clipboard, ...(rc.clipboard || {}) },
       translate: { ...def.translate, ...(rc.translate || {}) },
-      capture: { ...def.capture, ...(rc.capture || {}) },
+      capture: {
+        ...def.capture,
+        ...(rc.capture || {}),
+        tool_hotkeys: {
+          ...def.capture.tool_hotkeys,
+          ...(rc.capture?.tool_hotkeys || {}),
+        },
+      },
       update: { ...def.update, ...(rc.update || {}) },
       web_searches: Array.isArray(rc.web_searches) ? rc.web_searches : def.web_searches,
     },

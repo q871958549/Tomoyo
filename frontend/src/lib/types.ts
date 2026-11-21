@@ -53,6 +53,21 @@ export interface WebSearchEngine {
   url: string;
 }
 
+export interface CaptureToolHotkeys {
+  rect: string;
+  ellipse: string;
+  arrow: string;
+  pen: string;
+  highlighter: string;
+  mosaic: string;
+  step: string;
+  text: string;
+  scroll: string;
+  pin: string;
+  ocr: string;
+  translate: string;
+}
+
 export interface TomoyoConfig {
   language: string;
   hotkey: string;
@@ -100,6 +115,7 @@ export interface TomoyoConfig {
     save_dir: string;
     pin_opacity: number;
     copy_hex_lowercase: boolean;
+    tool_hotkeys: CaptureToolHotkeys;
   };
   update: {
     auto_check: boolean;

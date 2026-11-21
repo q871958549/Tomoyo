@@ -4,7 +4,7 @@ mod capture;
 mod hotkey;
 mod sanitize;
 
-pub use capture::{sanitize_capture_config, CaptureConfig};
+pub use capture::{sanitize_capture_config, CaptureConfig, CaptureToolHotkeys};
 pub use crate::translate::TranslateConfig;
 pub use hotkey::{
     format_hotkey, is_autostart_enabled, is_standalone_allowed_vk, load_hotkey_health, parse_hotkey,
