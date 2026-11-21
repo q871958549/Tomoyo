@@ -32,8 +32,8 @@ pub const COLOR_PRESETS: [AnnotColor; 6] = [
 pub enum Annotation {
     Rect { rect: ScreenRect, color: AnnotColor, thickness: i32, filled: bool },
     Ellipse { rect: ScreenRect, color: AnnotColor, thickness: i32, filled: bool },
-    /// Unified modern tapered arrow: straight when `(cx, cy)` is midpoint, smoothly curves when
-    /// the user drags the middle handle `(cx, cy)` freely in any direction.
+    /// Unified modern tapered arrow: `(cx, cy)` is the **on-curve midpoint** (`B(0.5)`), so the
+    /// amber bend handle stays glued directly onto the shaft under the cursor!
     Arrow { x0: i32, y0: i32, cx: i32, cy: i32, x1: i32, y1: i32, color: AnnotColor, thickness: i32 },
     Pen { points: Vec<(i32, i32)>, color: AnnotColor, thickness: i32, highlighter: bool },
     Mosaic { rect: ScreenRect, block: i32, blur: bool },
@@ -54,6 +54,7 @@ impl Annotation {
     }
 
     /// True if the arrow's bend control point is offset meaningfully from the straight chord.
+    #[cfg(test)]
     pub fn is_arrow_curved(&self) -> bool {
         if let Self::Arrow { x0, y0, cx, cy, x1, y1, .. } = *self {
             let (mx, my) = ((x0 + x1) as f32 * 0.5, (y0 + y1) as f32 * 0.5);
@@ -124,15 +125,25 @@ impl Annotation {
                 if rect.w < 4 || rect.h < 4 { return false; }
                 let (rx, ry) = (rect.w as f32 * 0.5, rect.h as f32 * 0.5);
                 let (dx, dy) = (px as f32 - (rect.x as f32 + rx), py as f32 - (rect.y as f32 + ry));
-                let norm = ((dx / rx).powi(2) + (dy / ry).powi(2)).sqrt();
-                if *filled { norm <= 1.05 } else { ((norm - 1.0) * rx.min(ry)).abs() <= (*thickness as f32 * 0.5 + 8.0) }
+                let (ux, uy) = (dx / rx, dy / ry);
+                let k1 = (ux * ux + uy * uy).sqrt();
+                if *filled {
+                    k1 <= 1.04
+                } else {
+                    let k2 = ((ux / rx).powi(2) + (uy / ry).powi(2)).sqrt();
+                    let sd = if k2 > 1e-6 { k1 * (k1 - 1.0) / k2 } else { -rx.min(ry) };
+                    sd.abs() <= (*thickness as f32 * 0.5 + 8.0)
+                }
             }
             Self::Arrow { x0, y0, cx, cy, x1, y1, thickness, .. } => {
                 let tol = (*thickness as f32 * 0.9 + 10.0).max(12.0);
-                let mut prev = (*x0 as f32, *y0 as f32);
+                let p0 = (*x0 as f32, *y0 as f32);
+                let p1 = (*x1 as f32, *y1 as f32);
+                let pc = bezier_ctrl_from_midpoint(p0, (*cx as f32, *cy as f32), p1);
+                let mut prev = p0;
                 for i in 1..=20 {
                     let t = i as f32 / 20.0;
-                    let pt = eval_quad_bezier((*x0 as f32, *y0 as f32), (*cx as f32, *cy as f32), (*x1 as f32, *y1 as f32), t);
+                    let pt = eval_quad_bezier(p0, pc, p1, t);
                     if point_seg_dist(px as f32, py as f32, prev.0, prev.1, pt.0, pt.1) <= tol {
                         return true;
                     }
@@ -189,19 +200,20 @@ impl Annotation {
                 *rect = ScreenRect::from_points(l, t, r, b);
             }
             Self::Arrow { x0, y0, cx, cy, x1, y1, .. } => {
-                let curved = (((*cx as f32) - (*x0 + *x1) as f32 * 0.5).powi(2)
-                    + ((*cy as f32) - (*y0 + *y1) as f32 * 0.5).powi(2))
-                    .sqrt()
-                    > 3.5;
+                // Keep relative bend offset when moving endpoints, or move on-curve midpoint directly
+                let (old_mx, old_my) = ((*x0 + *x1) / 2, (*y0 + *y1) / 2);
+                let (off_x, off_y) = (*cx - old_mx, *cy - old_my);
                 match idx {
                     0 => {
                         *x0 = nx; *y0 = ny;
-                        if !curved { *cx = (*x0 + *x1) / 2; *cy = (*y0 + *y1) / 2; }
+                        *cx = (*x0 + *x1) / 2 + off_x;
+                        *cy = (*y0 + *y1) / 2 + off_y;
                     }
                     1 => { *cx = nx; *cy = ny; }
                     2 => {
                         *x1 = nx; *y1 = ny;
-                        if !curved { *cx = (*x0 + *x1) / 2; *cy = (*y0 + *y1) / 2; }
+                        *cx = (*x0 + *x1) / 2 + off_x;
+                        *cy = (*y0 + *y1) / 2 + off_y;
                     }
                     _ => {}
                 }
@@ -329,6 +341,12 @@ impl AnnotationStack {
     pub fn items_mut(&mut self) -> &mut [Annotation] { &mut self.items }
 }
 
+/// Converts an on-curve midpoint `M = B(0.5)` into the quadratic Bezier control point `Pc`.
+#[inline]
+pub fn bezier_ctrl_from_midpoint(p0: (f32, f32), mid: (f32, f32), p1: (f32, f32)) -> (f32, f32) {
+    (2.0 * mid.0 - 0.5 * (p0.0 + p1.0), 2.0 * mid.1 - 0.5 * (p0.1 + p1.1))
+}
+
 pub fn eval_quad_bezier(p0: (f32, f32), pc: (f32, f32), p1: (f32, f32), t: f32) -> (f32, f32) {
     let u = 1.0 - t;
     (u * u * p0.0 + 2.0 * u * t * pc.0 + t * t * p1.0, u * u * p0.1 + 2.0 * u * t * pc.1 + t * t * p1.1)
@@ -381,5 +399,39 @@ mod tests {
         render_annotations(&mut buf, 160, 120, 0, 0, stack.items());
         stack.items_mut()[1].straighten_arrow();
         assert!(!stack.items()[1].is_arrow_curved());
+    }
+
+    #[test]
+    fn arrow_drag_sweep_never_panics_and_wide_ellipse_has_uniform_unclipped_stroke() {
+        // 1. Live drag progression from 0px to 320px across all thicknesses (catches short-arrow clamp bugs)
+        let mut buf = vec![0xFFu8; 640 * 360 * 4];
+        for t in [1, 2, 4, 8, 14, 20] {
+            for len in [0, 1, 2, 3, 4, 5, 6, 8, 12, 18, 30, 80, 240] {
+                let mut a = Annotation::arrow(40, 40, 40 + len, 40 + len / 4, COLOR_PRESETS[0], t);
+                render_annotations(&mut buf, 640, 360, 0, 0, &[a.clone()]);
+                a.move_control(1, 40 + len / 2, 10);
+                render_annotations(&mut buf, 640, 360, 0, 0, &[a]);
+            }
+        }
+
+        // 2. Extreme wide ellipse (460x56, t=4): verify uniform stroke width at TOP vs LEFT pole (no bloat/clipping!)
+        let mut ebuf = vec![0xFFu8; 600 * 200 * 4];
+        let ell = Annotation::Ellipse {
+            rect: ScreenRect { x: 70, y: 72, w: 460, h: 56 },
+            color: COLOR_PRESETS[0],
+            thickness: 4,
+            filled: false,
+        };
+        render_annotations(&mut ebuf, 600, 200, 0, 0, &[ell]);
+        let is_red = |x: i32, y: i32| {
+            let o = ((y as usize) * 600 + (x as usize)) * 4;
+            ebuf[o + 2] > 200 && ebuf[o] < 180
+        };
+        let top_span = (60..90).filter(|&y| is_red(300, y)).count();
+        let left_span = (55..95).filter(|&x| is_red(x, 100)).count();
+        let right_span = (510..550).filter(|&x| is_red(x, 100)).count();
+        assert!((3..=6).contains(&top_span), "unexpected top stroke width: {top_span}");
+        assert!((3..=7).contains(&left_span), "left pole bloated or clipped: {left_span}");
+        assert!((3..=7).contains(&right_span), "right pole bloated or clipped: {right_span}");
     }
 }

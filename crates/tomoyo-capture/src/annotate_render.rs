@@ -1,7 +1,8 @@
-//! Pure-Rust anti-aliased 32-bit BGRA rasterizer with modern tapered free-bend arrows,
-//! subtle rounded rects, smooth pen/highlighter, mosaic/blur, step badges & hover/selection handles.
+//! Pure-Rust anti-aliased 32-bit BGRA rasterizer with analytic-SDF modern tapered free-bend
+//! arrows, true-Euclidean uniform-stroke ellipses, rounded rects, smooth pen/highlighter,
+//! mosaic/blur, step badges & hover/selection handles.
 
-use crate::annotate::{eval_quad_bezier, AnnotColor, Annotation};
+use crate::annotate::{bezier_ctrl_from_midpoint, eval_quad_bezier, AnnotColor, Annotation};
 use crate::overlay_icons::{
     blend_px, draw_aa_line, fill_circle_aa, fill_rounded_rect_aa, stroke_circle_aa,
     stroke_rounded_rect_aa,
@@ -70,12 +71,6 @@ pub fn render_single(bgra: &mut [u8], w: i32, h: i32, ox: i32, oy: i32, ann: &An
 
 pub fn draw_selection_handles(bgra: &mut [u8], w: i32, h: i32, ann: &Annotation, is_hover_only: bool) {
     let alpha = if is_hover_only { 0.72 } else { 1.0 };
-    if let Annotation::Arrow { x0, y0, cx, cy, x1, y1, .. } = ann {
-        if ann.is_arrow_curved() {
-            draw_aa_line(bgra, w, h, *x0 as f32, *y0 as f32, *cx as f32, *cy as f32, 1.0, AnnotColor(0x60, 0xA5, 0xFA), 0.45 * alpha);
-            draw_aa_line(bgra, w, h, *cx as f32, *cy as f32, *x1 as f32, *y1 as f32, 1.0, AnnotColor(0x60, 0xA5, 0xFA), 0.45 * alpha);
-        }
-    }
     let pts = ann.control_points();
     for (idx, (hx, hy)) in pts.iter().enumerate() {
         let is_bend = matches!(ann, Annotation::Arrow { .. }) && idx == 1;
@@ -87,8 +82,48 @@ pub fn draw_selection_handles(bgra: &mut [u8], w: i32, h: i32, ann: &Annotation,
     }
 }
 
+/// Analytic signed distance from point `p` to a tapered capsule `a(ra) -> b(rb)`.
+#[inline]
+fn sd_tapered_capsule(p: (f32, f32), a: (f32, f32), b: (f32, f32), ra: f32, rb: f32) -> f32 {
+    let (pax, pay) = (p.0 - a.0, p.1 - a.1);
+    let (bax, bay) = (b.0 - a.0, b.1 - a.1);
+    let l2 = bax * bax + bay * bay;
+    if l2 < 1e-5 {
+        return (pax * pax + pay * pay).sqrt() - ra.max(rb);
+    }
+    let t = ((pax * bax + pay * bay) / l2).clamp(0.0, 1.0);
+    let (dx, dy) = (pax - bax * t, pay - bay * t);
+    let r = ra + (rb - ra) * t;
+    (dx * dx + dy * dy).sqrt() - r
+}
+
+/// Exact analytic signed distance to a 4-vertex simple polygon (works cleanly for concave
+/// swept-back arrowheads with zero internal diagonals or CSG edge artifacts).
+#[inline]
+fn sd_quad_poly(p: (f32, f32), v: [(f32, f32); 4]) -> f32 {
+    let mut min_d2 = f32::MAX;
+    let mut inside = false;
+    let mut j = 3usize;
+    for i in 0..4 {
+        let (ax, ay) = v[j];
+        let (bx, by) = v[i];
+        let (ex, ey) = (bx - ax, by - ay);
+        let (wx, wy) = (p.0 - ax, p.1 - ay);
+        let t = ((wx * ex + wy * ey) / (ex * ex + ey * ey).max(1e-6)).clamp(0.0, 1.0);
+        let d2 = (wx - ex * t).powi(2) + (wy - ey * t).powi(2);
+        if d2 < min_d2 { min_d2 = d2; }
+        if (ay > p.1) != (by > p.1) && p.0 < (bx - ax) * (p.1 - ay) / (by - ay) + ax {
+            inside = !inside;
+        }
+        j = i;
+    }
+    let dist = min_d2.sqrt();
+    if inside { -dist } else { dist }
+}
+
 /// Modern tapered arrow (Snipaste / PixPin / CleanShot style):
-/// sleek pointed tail -> smoothly widens along the Bezier curve -> sharp concave swept-back head.
+/// sleek pointed tail -> smoothly widens along Bezier curve -> sharp concave swept-back head.
+/// Rendered via single-pass analytic SDF (zero seams, zero double-blending, safe at all lengths).
 #[allow(clippy::too_many_arguments)]
 fn draw_modern_tapered_arrow(
     bgra: &mut [u8],
@@ -96,113 +131,148 @@ fn draw_modern_tapered_arrow(
     h: i32,
     x0: f32,
     y0: f32,
-    cx: f32,
-    cy: f32,
+    mx: f32,
+    my: f32,
     x1: f32,
     y1: f32,
     c: AnnotColor,
     t: i32,
 ) {
+    let p0 = (x0, y0);
+    let p1 = (x1, y1);
     let chord = ((x1 - x0).powi(2) + (y1 - y0).powi(2)).sqrt();
-    if chord < 4.0 { return; }
+    if chord < 3.0 { return; }
 
-    // Approximate curve arc length
-    let mut arc = 0.0f32;
-    let mut p_prev = (x0, y0);
-    for i in 1..=16 {
-        let pt = eval_quad_bezier((x0, y0), (cx, cy), (x1, y1), i as f32 / 16.0);
-        arc += ((pt.0 - p_prev.0).powi(2) + (pt.1 - p_prev.1).powi(2)).sqrt();
-        p_prev = pt;
+    let pc = bezier_ctrl_from_midpoint(p0, (mx, my), p1);
+    const SAMPLES: usize = 32;
+    let mut curve = [(0.0f32, 0.0f32); SAMPLES + 1];
+    let mut cum_len = [0.0f32; SAMPLES + 1];
+    curve[0] = p0;
+    for i in 1..=SAMPLES {
+        let pt = eval_quad_bezier(p0, pc, p1, i as f32 / SAMPLES as f32);
+        let seg = ((pt.0 - curve[i - 1].0).powi(2) + (pt.1 - curve[i - 1].1).powi(2)).sqrt();
+        curve[i] = pt;
+        cum_len[i] = cum_len[i - 1] + seg;
     }
-    let len = arc.max(chord);
+    let total_len = cum_len[SAMPLES].max(chord);
 
-    let head_len = (t as f32 * 3.8 + len * 0.055).clamp(15.0, 46.0).min(len * 0.44);
-    let head_half_w = head_len * 0.54;
+    // Safe monotonic sizing at ALL lengths from 3px to 4000px (never panics on clamp!)
+    let head_len = (t as f32 * 3.8 + total_len * 0.052).min(46.0).max(14.0).min(total_len * 0.46);
+    let head_half_w = head_len * 0.52;
     let notch_dist = head_len * 0.72;
-    let tail_r = (t as f32 * 0.24).clamp(0.9, 2.6);
-    let neck_r = (t as f32 * 0.72 + head_len * 0.12).clamp(2.4, head_half_w * 0.46);
+    let tail_r = (t as f32 * 0.22).min(2.4).max(0.75).min(head_half_w * 0.20).max(0.5);
+    let neck_r = (t as f32 * 0.65 + head_len * 0.11).min(head_half_w * 0.44).max(tail_r + 0.35);
 
-    // Tangent at tip (from control point -> tip, or tail -> tip if degenerate)
-    let (mut tdx, mut tdy) = (x1 - cx, y1 - cy);
-    if (tdx * tdx + tdy * tdy).sqrt() < 2.0 {
-        tdx = x1 - x0;
-        tdy = y1 - y0;
+    // Locate exact notch join point along curve at arc-distance `notch_dist` back from tip
+    let target_s = (total_len - notch_dist).max(0.0);
+    let mut spine: Vec<(f32, f32, f32)> = Vec::with_capacity(24);
+    let shaft_steps = 20usize;
+    let mut notch_pt = p0;
+    let mut k = 0usize;
+    for i in 0..=shaft_steps {
+        let u = i as f32 / shaft_steps as f32;
+        let s = u * target_s;
+        while k + 1 < SAMPLES && cum_len[k + 1] < s { k += 1; }
+        let span = (cum_len[k + 1] - cum_len[k]).max(1e-5);
+        let frac = ((s - cum_len[k]) / span).clamp(0.0, 1.0);
+        let px = curve[k].0 + (curve[k + 1].0 - curve[k].0) * frac;
+        let py = curve[k].1 + (curve[k + 1].1 - curve[k].1) * frac;
+        let rad = tail_r + (neck_r - tail_r) * u.powf(0.85);
+        spine.push((px, py, rad));
+        if i == shaft_steps { notch_pt = (px, py); }
     }
-    let tnorm = (tdx * tdx + tdy * tdy).sqrt().max(1.0);
-    let (ux, uy) = (tdx / tnorm, tdy / tnorm);
 
-    // Find parameter t_end where Bezier reaches the concave arrowhead notch
-    let t_end = (1.0 - (notch_dist / len)).clamp(0.25, 0.96);
-    let steps = 36usize;
-    let mut spine = Vec::with_capacity(steps + 1);
-    for i in 0..=steps {
-        let u = i as f32 / steps as f32;
-        let pt = eval_quad_bezier((x0, y0), (cx, cy), (x1, y1), u * t_end);
-        let rad = tail_r + (neck_r - tail_r) * u.powf(0.88);
-        spine.push((pt.0, pt.1, rad));
+    // Exact tangent at tip aligned cleanly with `tip - notch_pt`
+    let (mut tdx, mut tdy) = (p1.0 - notch_pt.0, p1.1 - notch_pt.1);
+    let tnorm = (tdx * tdx + tdy * tdy).sqrt();
+    if tnorm < 1.0 {
+        tdx = p1.0 - p0.0;
+        tdy = p1.1 - p0.1;
     }
+    let norm = (tdx * tdx + tdy * tdy).sqrt().max(1e-4);
+    let (ux, uy) = (tdx / norm, tdy / norm);
 
-    // Build tapered shaft quads from consecutive spine points
-    for i in 0..steps {
-        let (ax, ay, ar) = spine[i];
-        let (bx, by, br) = spine[i + 1];
-        let (dx, dy) = (bx - ax, by - ay);
-        let sl = (dx * dx + dy * dy).sqrt();
-        if sl < 0.05 { continue; }
-        let (nx, ny) = (-dy / sl, dx / sl);
-        let a_l = (ax + nx * ar, ay + ny * ar);
-        let a_r = (ax - nx * ar, ay - ny * ar);
-        let b_l = (bx + nx * br, by + ny * br);
-        let b_r = (bx - nx * br, by - ny * br);
-        fill_triangle_aa(bgra, w, h, a_l, b_l, b_r, c);
-        fill_triangle_aa(bgra, w, h, a_l, b_r, a_r, c);
-    }
-    fill_circle_aa(bgra, w, h, x0, y0, tail_r, c, 1.0);
-
-    // Swept-back concave arrowhead: Tip -> LeftWing -> Notch -> RightWing
-    let tip = (x1, y1);
-    let notch = (x1 - ux * notch_dist, y1 - uy * notch_dist);
-    let base = (x1 - ux * head_len, y1 - uy * head_len);
+    let tip = p1;
+    let base = (tip.0 - ux * head_len, tip.1 - uy * head_len);
     let left_wing = (base.0 - uy * head_half_w, base.1 + ux * head_half_w);
     let right_wing = (base.0 + uy * head_half_w, base.1 - ux * head_half_w);
-    fill_triangle_aa(bgra, w, h, tip, left_wing, notch, c);
-    fill_triangle_aa(bgra, w, h, tip, notch, right_wing, c);
+
+    // Build 4 spatial chunks over the 20 shaft segments + 1 arrowhead chunk for fast pixel culling
+    let mut chunks: [(f32, f32, f32, f32, usize, usize); 4] = [(0.0, 0.0, 0.0, 0.0, 0, 0); 4];
+    for ci in 0..4 {
+        let (s0, s1) = (ci * 5, (ci + 1) * 5);
+        let (mut lx, mut ly, mut rx, mut ry) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
+        for &(px, py, r) in &spine[s0..=s1] {
+            let p = r + 1.5;
+            lx = lx.min(px - p); ly = ly.min(py - p);
+            rx = rx.max(px + p); ry = ry.max(py + p);
+        }
+        chunks[ci] = (lx, ly, rx, ry, s0, s1);
+    }
+    let h_lx = tip.0.min(left_wing.0).min(right_wing.0).min(notch_pt.0) - 1.5;
+    let h_ly = tip.1.min(left_wing.1).min(right_wing.1).min(notch_pt.1) - 1.5;
+    let h_rx = tip.0.max(left_wing.0).max(right_wing.0).max(notch_pt.0) + 1.5;
+    let h_ry = tip.1.max(left_wing.1).max(right_wing.1).max(notch_pt.1) + 1.5;
+
+    let min_x = chunks.iter().fold(h_lx, |a, ch| a.min(ch.0)).floor().max(0.0) as i32;
+    let min_y = chunks.iter().fold(h_ly, |a, ch| a.min(ch.1)).floor().max(0.0) as i32;
+    let max_x = chunks.iter().fold(h_rx, |a, ch| a.max(ch.2)).ceil().min((w - 1) as f32) as i32;
+    let max_y = chunks.iter().fold(h_ry, |a, ch| a.max(ch.3)).ceil().min((h - 1) as f32) as i32;
+
+    for y in min_y..=max_y {
+        let py = y as f32 + 0.5;
+        for x in min_x..=max_x {
+            let px = x as f32 + 0.5;
+            let mut d = f32::MAX;
+            for &(lx, ly, rx, ry, s0, s1) in &chunks {
+                if px >= lx && px <= rx && py >= ly && py <= ry {
+                    for i in s0..s1 {
+                        let a = spine[i];
+                        let b = spine[i + 1];
+                        let sd = sd_tapered_capsule((px, py), (a.0, a.1), (b.0, b.1), a.2, b.2);
+                        if sd < d { d = sd; }
+                    }
+                }
+            }
+            if px >= h_lx && px <= h_rx && py >= h_ly && py <= h_ry {
+                let d_head = sd_quad_poly((px, py), [tip, left_wing, notch_pt, right_wing]);
+                d = d.min(d_head);
+            }
+            if d < 0.75 {
+                blend_px(bgra, w, h, x, y, c, (0.5 - d).clamp(0.0, 1.0));
+            }
+        }
+    }
 }
 
+/// True Euclidean gradient-normalized ellipse SDF: uniform stroke width `t` around the entire
+/// perimeter at ANY aspect ratio (even 500×20), with generous unclipped bounding box.
 fn draw_ellipse(bgra: &mut [u8], w: i32, h: i32, r: ScreenRect, c: AnnotColor, t: i32, filled: bool) {
     if r.w < 4 || r.h < 4 { return; }
     let (rx, ry) = (r.w as f32 * 0.5, r.h as f32 * 0.5);
     let (cx, cy) = (r.x as f32 + rx, r.y as f32 + ry);
     let half_t = t as f32 * 0.5;
-    let (sx, sy, ex, ey) = ((r.x - t).max(0), (r.y - t).max(0), (r.right() + t).min(w), (r.bottom() + t).min(h));
-    let min_r = rx.min(ry);
+    let pad = (t + 4).max(6);
+    let (sx, sy) = ((r.x - pad).max(0), (r.y - pad).max(0));
+    let (ex, ey) = ((r.right() + pad).min(w), (r.bottom() + pad).min(h));
     for y in sy..ey {
         let dy = (y as f32 + 0.5) - cy;
+        let uy = dy / ry;
+        let gy = uy / ry;
         for x in sx..ex {
             let dx = (x as f32 + 0.5) - cx;
-            let signed_dist = (((dx / rx).powi(2) + (dy / ry).powi(2)).sqrt() - 1.0) * min_r;
-            if filled && signed_dist < -half_t { blend_px(bgra, w, h, x, y, c, 0.28); }
-            let dist = signed_dist.abs();
-            if dist <= half_t + 0.8 { blend_px(bgra, w, h, x, y, c, (half_t + 0.8 - dist).clamp(0.0, 1.0)); }
-        }
-    }
-}
-
-fn fill_triangle_aa(bgra: &mut [u8], w: i32, h: i32, a: (f32, f32), b: (f32, f32), c: (f32, f32), col: AnnotColor) {
-    let min_x = a.0.min(b.0).min(c.0).floor().max(0.0) as i32;
-    let max_x = a.0.max(b.0).max(c.0).ceil().min((w - 1) as f32) as i32;
-    let min_y = a.1.min(b.1).min(c.1).floor().max(0.0) as i32;
-    let max_y = a.1.max(b.1).max(c.1).ceil().min((h - 1) as f32) as i32;
-    let edge = |p: (f32, f32), q: (f32, f32), r: (f32, f32)| (r.0 - p.0) * (q.1 - p.1) - (r.1 - p.1) * (q.0 - p.0);
-    for y in min_y..=max_y {
-        for x in min_x..=max_x {
-            let mut hits = 0u8;
-            for &(ox, oy) in &[(0.25, 0.25), (0.75, 0.25), (0.25, 0.75), (0.75, 0.75)] {
-                let pt = (x as f32 + ox, y as f32 + oy);
-                let (e1, e2, e3) = (edge(a, b, pt), edge(b, c, pt), edge(c, a, pt));
-                if (e1 >= 0.0 && e2 >= 0.0 && e3 >= 0.0) || (e1 <= 0.0 && e2 <= 0.0 && e3 <= 0.0) { hits += 1; }
+            let ux = dx / rx;
+            let k1 = (ux * ux + uy * uy).sqrt();
+            let gx = ux / rx;
+            let k2 = (gx * gx + gy * gy).sqrt();
+            let signed_dist = if k2 > 1e-6 { k1 * (k1 - 1.0) / k2 } else { -rx.min(ry) };
+            if filled && signed_dist < -half_t {
+                blend_px(bgra, w, h, x, y, c, 0.28);
             }
-            if hits > 0 { blend_px(bgra, w, h, x, y, col, hits as f32 * 0.25); }
+            let dist = signed_dist.abs();
+            if dist <= half_t + 0.85 {
+                blend_px(bgra, w, h, x, y, c, (half_t + 0.5 - dist).clamp(0.0, 1.0));
+            }
         }
     }
 }
