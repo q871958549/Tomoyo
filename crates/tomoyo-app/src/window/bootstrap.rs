@@ -1,6 +1,7 @@
 //! Win32 window bootstrap, EDIT control creation, and two-phase async query worker setup.
 
-use super::input::{edit_subclass_proc, register_all_hotkeys};
+use super::input::register_all_hotkeys;
+use super::input_edit::edit_subclass_proc;
 use super::wndproc::main_wndproc;
 use super::{
     AppShell, InteractionState, QueryJob, QueryOutcome, WindowGeometry, EDIT_CTRL_ID,

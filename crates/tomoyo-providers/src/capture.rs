@@ -43,12 +43,12 @@ impl CaptureProvider {
             (
                 "capture:pin_clip",
                 "pin_clipboard",
-                "将剪贴板图片贴图置顶 (Pin Clipboard Image)",
-                "Pin Clipboard Image to Desktop",
-                "创建无边框置顶悬浮贴图 · 滚轮缩放 · Ctrl+滚轮调透明度 · 右键 OCR/翻译",
-                "Frameless topmost pin window · Wheel zoom · Ctrl+Wheel opacity · OCR/Translate",
+                "将最近复制内容贴图置顶 (Pin Latest Clipboard)",
+                "Pin Latest Clipboard to Desktop",
+                "支持图片、文件、色值与文本卡片 · 滚轮缩放 · Ctrl+滚轮调透明度 · Ctrl+C 复制原文",
+                "Pins images, files, color swatches & text cards · Wheel zoom · Ctrl+C copies original",
                 "PIN",
-                "贴图 置顶贴图 悬浮图片 pin tie tu clipboard",
+                "贴图 置顶贴图 悬浮图片 文本贴图 色值贴图 pin tie tu clipboard f3",
                 9_760,
             ),
             (
@@ -97,11 +97,11 @@ impl CaptureProvider {
         Self { config, commands }
     }
 
-    fn lang_and_hk(&self) -> (Lang, String) {
+    fn lang_and_hks(&self) -> (Lang, String, String) {
         self.config
             .read()
-            .map(|c| (c.lang(), c.capture.hotkey.clone()))
-            .unwrap_or((Lang::Zh, "Alt+S".into()))
+            .map(|c| (c.lang(), c.capture.hotkey.clone(), c.capture.pin_hotkey.clone()))
+            .unwrap_or((Lang::Zh, "Alt+S".into(), "F3".into()))
     }
 }
 
@@ -134,7 +134,7 @@ impl Provider for CaptureProvider {
         if !matches!(ctx.filter, SearchFilter::All | SearchFilter::App) {
             return Vec::new();
         }
-        let (lang, hk) = self.lang_and_hk();
+        let (lang, hk, pin_hk) = self.lang_and_hks();
         let dedicated_kw = ctx.keyword.as_deref().unwrap_or("").to_ascii_lowercase();
         let raw_trimmed = ctx.raw.trim();
 
@@ -174,6 +174,8 @@ impl Provider for CaptureProvider {
             };
             if cmd.mode == "region" && !hk.is_empty() {
                 subtitle.push_str(&format!(" · 全局热键 {hk}"));
+            } else if cmd.mode == "pin_clipboard" && !pin_hk.is_empty() {
+                subtitle.push_str(&format!(" · 全局热键 {pin_hk}"));
             }
             out.push(ResultItem {
                 id: cmd.id.into(),
@@ -204,6 +206,14 @@ impl Provider for CaptureProvider {
                                 lang.pick("未启用", "Disabled").into()
                             } else {
                                 hk.clone()
+                            },
+                        ),
+                        (
+                            lang.pick("全局贴图热键", "Pin Clipboard Hotkey").into(),
+                            if pin_hk.is_empty() {
+                                lang.pick("未启用", "Disabled").into()
+                            } else {
+                                pin_hk.clone()
                             },
                         ),
                         (

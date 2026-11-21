@@ -44,6 +44,7 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
       clipboard: { spec: 'Alt+C', active: '', ok: false, disabled: false, reason: '已被系统或其他软件占用（Alt+C）' },
       translate: { spec: 'Alt+T', active: '', ok: false, disabled: false, reason: '已被系统或其他软件占用（Alt+T）' },
       capture: { spec: 'Alt+1', active: 'Alt+1', ok: true, disabled: false, reason: '' },
+      pin: { spec: 'F3', active: 'F3', ok: true, disabled: false, reason: '' },
     };
     window.__TOMOYO_SETTINGS_INIT__ = {
       version: '1.8.0',
@@ -62,6 +63,7 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
         translate: { hotkey: 'Alt+T', target_lang: 'auto', engines: ['google', 'mymemory'], openai_base_url: 'https://api.openai.com/v1', openai_model: 'gpt-4o-mini', ollama_url: 'http://127.0.0.1:11434', ollama_model: 'qwen2.5:7b' },
         capture: {
           hotkey: 'Alt+1',
+          pin_hotkey: 'F3',
           save_dir: '',
           pin_opacity: 100,
           copy_hex_lowercase: false,
@@ -124,6 +126,7 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
         clipboard: { spec: 'Alt+C', active: 'Alt+C', ok: true, disabled: false, overridden: true, reason: '已高优先级接管生效' },
         translate: { spec: 'Alt+T', active: 'Alt+T', ok: true, disabled: false, overridden: false, reason: '' },
         capture: { spec: 'Alt+1', active: 'Alt+1', ok: true, disabled: false, overridden: false, reason: '' },
+        pin: { spec: 'F3', active: 'F3', ok: true, disabled: false, overridden: false, reason: '' },
       },
     });
     flushSync();
@@ -144,6 +147,10 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
       }
       if (btn.dataset.tab === 'translate') {
         expect(document.querySelectorAll('input[type="password"]').length).toBe(2);
+      }
+      if (btn.dataset.tab === 'capture') {
+        expect(document.body.textContent).toContain('全局一键贴图快捷键');
+        expect(document.body.textContent).toContain('F3');
       }
       if (btn.dataset.tab === 'web') {
         const vals = [...document.querySelectorAll<HTMLInputElement>('input')].map((el) => el.value);

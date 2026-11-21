@@ -14,13 +14,15 @@
     cfg: TomoyoConfig;
     lang: Lang;
     capHotkeyStatus?: HotkeySlotStatus;
+    pinHotkeyStatus?: HotkeySlotStatus;
     onJumpDoctor?: () => void;
     onSave: (delayMs?: number) => void;
   }
 
-  let { cfg, lang, capHotkeyStatus, onJumpDoctor, onSave }: Props = $props();
+  let { cfg, lang, capHotkeyStatus, pinHotkeyStatus, onJumpDoctor, onSave }: Props = $props();
   let isEn = $derived(lang === 'en');
   let editingToolKey = $state<keyof CaptureToolHotkeys | null>(null);
+  let toolKeyHint = $state('');
 
   const capPresets = [
     { value: 'F1', label: 'F1（推荐单键）' },
@@ -29,6 +31,15 @@
     { value: 'Alt+1', label: 'Alt+1' },
     { value: 'Alt+A', label: 'Alt+A' },
     { value: 'Ctrl+Shift+A', label: 'Ctrl+Shift+A' },
+  ];
+
+  const pinPresets = [
+    { value: 'F3', label: 'F3（推荐单键）' },
+    { value: 'F4', label: 'F4' },
+    { value: 'Alt+3', label: 'Alt+3' },
+    { value: 'Alt+P', label: 'Alt+P' },
+    { value: 'Ctrl+Shift+P', label: 'Ctrl+Shift+P' },
+    { value: 'Alt+2', label: 'Alt+2' },
   ];
 
   const toolKeyItems: Array<{ key: keyof CaptureToolHotkeys; zh: string; en: string }> = [
@@ -55,6 +66,14 @@
     e.stopPropagation();
     if (e.key === 'Escape') {
       editingToolKey = null;
+      toolKeyHint = '';
+      return;
+    }
+    if (/^F([1-9]|1[0-2])$/i.test(e.key) || e.key === 'PrintScreen') {
+      editingToolKey = null;
+      toolKeyHint = isEn
+        ? `${e.key} is a global shortcut — set it in "Global Screenshot / Pin-Clipboard Hotkey" above.`
+        : `「${e.key}」属于全局快捷键，请在上方「全局截图 / 全局一键贴图快捷键」录入框中设置。`;
       return;
     }
     const ch = (e.key || '').trim().toUpperCase();
@@ -68,6 +87,7 @@
       }
       cfg.capture.tool_hotkeys[k] = ch;
       editingToolKey = null;
+      toolKeyHint = '';
       onSave(0);
     }
   }
@@ -75,6 +95,7 @@
   function resetToolHotkeys() {
     cfg.capture.tool_hotkeys = defaultCaptureToolHotkeys();
     editingToolKey = null;
+    toolKeyHint = '';
     onSave(0);
   }
 </script>
@@ -127,6 +148,27 @@
 
   <div class="t-row">
     <div>
+      <div class="t-label">{tr(lang, 'lbl_pin_hk')}</div>
+      <div class="t-desc">{tr(lang, 'desc_pin_hk')}</div>
+    </div>
+    <HotkeyRecorder
+      value={cfg.capture.pin_hotkey}
+      presets={pinPresets}
+      allowDisable={true}
+      status={pinHotkeyStatus}
+      presetPlaceholder={tr(lang, 'preset_opt')}
+      disabledLabel={tr(lang, 'hk_off')}
+      okLabel={tr(lang, 'hk_ok')}
+      conflictLabel={tr(lang, 'hk_conflict')}
+      recordPrompt={tr(lang, 'rec_prompt')}
+      needModPrompt={tr(lang, 'rec_need_mod')}
+      {onJumpDoctor}
+      onchange={(v) => { cfg.capture.pin_hotkey = v; onSave(0); }}
+    />
+  </div>
+
+  <div class="t-row">
+    <div>
       <div class="t-label">{tr(lang, 'lbl_cap_opacity')}</div>
       <div class="t-desc">{tr(lang, 'desc_cap_opacity')}</div>
     </div>
@@ -163,14 +205,18 @@
 <div class="t-card hk-card" style="margin-top:14px">
   <div class="hk-head">
     <div>
-      <div class="t-label">{isEn ? 'In-Capture Tool Shortcuts (Click & Press A–Z / 0–9)' : '截图内小工具快捷键（点击后按任意字母或数字即改）'}</div>
-      <div class="t-desc">{isEn ? 'Duplicate keys swap automatically; tooltips inside screenshot overlay update live.' : '冲突键自动互换，截图工具栏悬停提示与按键实时同步。'}</div>
+      <div class="t-label">{isEn ? 'In-Capture Canvas Tool Keys (Overlay Only · A–Z / 0–9)' : '截图画布内小工具快捷键（仅截图选区时生效 · A–Z / 0–9）'}</div>
+      <div class="t-desc">{isEn ? 'Duplicate keys swap automatically; to bind global F1/F3 capture or pin hotkeys, use the Global Hotkey recorders above.' : '冲突键自动互换；如需绑定全局 F1/F3 截图或贴图热键，请使用上方「全局快捷键」录入框。'}</div>
     </div>
     <Button variant="ghost" size="sm" onclick={resetToolHotkeys}>
       <RotateCcw size={12} />
       {isEn ? 'Reset Defaults' : '恢复默认'}
     </Button>
   </div>
+
+  {#if toolKeyHint}
+    <div class="tool-hk-hint">{toolKeyHint}</div>
+  {/if}
 
   <div class="tool-hk-grid">
     {#each toolKeyItems as item}
@@ -204,6 +250,10 @@
   .col-row { flex-direction: column; align-items: stretch; gap: 8px; }
   .hk-card { padding: 14px 16px; }
   .hk-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+  .tool-hk-hint {
+    margin-bottom: 10px; padding: 7px 10px; border-radius: 7px;
+    background: var(--accent-soft); color: var(--accent); font-size: 12px; line-height: 1.45;
+  }
   .tool-hk-grid {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));

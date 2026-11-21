@@ -160,7 +160,20 @@ pub fn read_clipboard_image_bgra() -> Option<(u32, u32, Vec<u8>)> {
     use windows::Win32::System::Memory::{GlobalLock, GlobalSize, GlobalUnlock};
 
     unsafe {
-        if IsClipboardFormatAvailable(8).is_err() || OpenClipboard(None).is_err() {
+        if IsClipboardFormatAvailable(8).is_err() {
+            return None;
+        }
+        let mut opened = false;
+        for attempt in 0..6 {
+            if OpenClipboard(None).is_ok() {
+                opened = true;
+                break;
+            }
+            if attempt < 5 {
+                std::thread::sleep(std::time::Duration::from_millis(15));
+            }
+        }
+        if !opened {
             return None;
         }
         let res = (|| -> Option<(u32, u32, Vec<u8>)> {

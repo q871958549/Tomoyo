@@ -28,6 +28,8 @@ pub struct HotkeyHealthReport {
     pub clipboard: HotkeySlotStatus,
     pub translate: HotkeySlotStatus,
     pub capture: HotkeySlotStatus,
+    #[serde(default)]
+    pub pin: HotkeySlotStatus,
     pub updated_at_unix: u64,
 }
 

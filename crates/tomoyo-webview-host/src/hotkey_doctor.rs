@@ -91,11 +91,13 @@ pub fn audit_system_hotkeys(parent_hwnd: Option<isize>) -> HotkeyAuditReport {
     let procs = snapshot_processes();
     let cfg_hits = scan_known_local_configs(&procs);
 
+    let cap_on = cfg.is_plugin_enabled(PLUGIN_CAPTURE);
     let tomoyo_slots: Vec<(&str, String)> = vec![
         ("main", cfg.hotkey.trim().to_string()),
         ("clipboard", if cfg.is_plugin_enabled(PLUGIN_CLIPBOARD) { cfg.clipboard.hotkey.trim().to_string() } else { String::new() }),
         ("translate", if cfg.is_plugin_enabled(PLUGIN_TRANSLATE) { cfg.translate.hotkey.trim().to_string() } else { String::new() }),
-        ("capture", if cfg.is_plugin_enabled(PLUGIN_CAPTURE) { cfg.capture.hotkey.trim().to_string() } else { String::new() }),
+        ("capture", if cap_on { cfg.capture.hotkey.trim().to_string() } else { String::new() }),
+        ("pin", if cap_on { cfg.capture.pin_hotkey.trim().to_string() } else { String::new() }),
     ];
 
     if let Some(p) = parent_hwnd {
@@ -154,6 +156,7 @@ pub fn audit_system_hotkeys(parent_hwnd: Option<isize>) -> HotkeyAuditReport {
     recommended_free.insert("clipboard".into(), pick_free(&["Alt+V", "Ctrl+Shift+V", "Ctrl+Alt+V", "Alt+2", "F3"]));
     recommended_free.insert("translate".into(), pick_free(&["Ctrl+Shift+T", "Alt+T", "Alt+Q", "F4", "Alt+2"]));
     recommended_free.insert("capture".into(), pick_free(&["F1", "PrintScreen", "Alt+1", "Alt+S", "Ctrl+Shift+S", "Ctrl+Shift+A"]));
+    recommended_free.insert("pin".into(), pick_free(&["F3", "F4", "Alt+3", "Alt+P", "Ctrl+Shift+P"]));
 
     HotkeyAuditReport { total_probed: items.len(), external_occupied, conflicts, overridden, items, recommended_free }
 }

@@ -12,6 +12,7 @@ export interface HotkeyHealthReport {
   clipboard?: HotkeySlotStatus;
   translate?: HotkeySlotStatus;
   capture?: HotkeySlotStatus;
+  pin?: HotkeySlotStatus;
   updated_at_unix?: number;
 }
 
@@ -131,6 +132,7 @@ export interface TomoyoConfig {
   };
   capture: {
     hotkey: string;
+    pin_hotkey: string;
     save_dir: string;
     pin_opacity: number;
     copy_hex_lowercase: boolean;

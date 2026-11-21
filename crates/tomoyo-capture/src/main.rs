@@ -24,6 +24,10 @@ mod overlay_input;
 #[cfg(windows)]
 mod overlay_text;
 #[cfg(windows)]
+mod pin_card;
+#[cfg(windows)]
+mod pin_clipboard;
+#[cfg(windows)]
 mod pin_window;
 mod screen;
 #[cfg(windows)]
@@ -38,9 +42,11 @@ mod stitch;
 fn run_windows_main() {
     use annotate::{Annotation, AnnotationStack, COLOR_PRESETS};
     use annotate_render::render_annotations;
-    use export::{load_png_as_bgra, read_clipboard_image_bgra, save_bgra_as_png};
+    use export::{load_png_as_bgra, save_bgra_as_png};
     use overlay::{run_capture_overlay, CaptureMode, CaptureOutcome};
-    use pin_window::run_pin_window;
+    use pin_card::render_text_or_color_pin_card;
+    use pin_clipboard::read_latest_clipboard_for_pin;
+    use pin_window::{run_pin_window, run_pin_window_with_text};
     use screen::{capture_virtual_desktop, synthetic_dib_snapshot, ScreenRect};
     use scroll_capture::{run_scroll_capture, ScrollOutcome};
     use std::path::Path;
@@ -94,14 +100,34 @@ fn run_windows_main() {
         assert_eq!((dw, dh), (cw, ch));
         assert_eq!(decoded.len(), crop.len());
         let _ = std::fs::remove_file(&tmp);
-
         let after = current_process_stats();
         let d_gdi = after.gdi_objects as i64 - before.gdi_objects as i64;
         let d_user = after.user_objects as i64 - before.user_objects as i64;
         assert_eq!(d_gdi, 0, "GDI leak in capture self-test: {d_gdi:+}");
         assert_eq!(d_user, 0, "USER leak in capture self-test: {d_user:+}");
+
+        // Warm up one-time OS CJK font-link handle, then verify 0 GDI/USER drift over 5 pin renders.
+        let text_card = render_text_or_color_pin_card("Tomoyo Pin Text Self-Test\n#2563EB", "light", 1.0)
+            .expect("text pin card failed");
+        assert!(text_card.width >= 240 && text_card.height >= 60);
+        let color_card = render_text_or_color_pin_card("#10B981", "dark", 1.0)
+            .expect("color pin card failed");
+        assert_eq!((color_card.width, color_card.height), (290, 124));
+        let pin_before = current_process_stats();
+        for _ in 0..5 {
+            let _ = render_text_or_color_pin_card("Tomoyo F3 贴图零泄露校验\nfn main() {}", "midnight", 1.0)
+                .expect("repeated text pin card failed");
+            let _ = render_text_or_color_pin_card("rgb(37, 99, 235)", "light", 1.0)
+                .expect("repeated color pin card failed");
+        }
+        let pin_after = current_process_stats();
+        let pin_dgdi = pin_after.gdi_objects as i64 - pin_before.gdi_objects as i64;
+        let pin_duser = pin_after.user_objects as i64 - pin_before.user_objects as i64;
+        assert_eq!(pin_dgdi, 0, "GDI leak in pin-card self-test: {pin_dgdi:+}");
+        assert_eq!(pin_duser, 0, "USER leak in pin-card self-test: {pin_duser:+}");
+
         println!(
-            "[OK] tomoyo-capture v{} self-test passed ({cap_mode} {}x{}, crop {}x{}, curved-arrow+blur+text+PNG OK, GDI {d_gdi:+}, USER {d_user:+})",
+            "[OK] tomoyo-capture v{} self-test passed ({cap_mode} {}x{}, crop {}x{}, curved-arrow+blur+text+pin-card+PNG OK, GDI {d_gdi:+}/{pin_dgdi:+}, USER {d_user:+}/{pin_duser:+})",
             env!("CARGO_PKG_VERSION"),
             snap.width, snap.height, cw, ch
         );
@@ -109,8 +135,9 @@ fn run_windows_main() {
     }
 
     if args.iter().any(|a| a == "--pin-clipboard") {
-        if let Some((w, h, bgra)) = read_clipboard_image_bgra() {
-            let _ = run_pin_window(w, h, bgra, 120, 120);
+        let cfg = tomoyo_core::TomoyoConfig::load_or_create();
+        if let Some(p) = read_latest_clipboard_for_pin(&cfg.theme) {
+            let _ = run_pin_window_with_text(p.width, p.height, p.bgra, i32::MIN, i32::MIN, p.source_text);
         }
         return;
     }

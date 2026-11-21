@@ -7,6 +7,7 @@ mod flow_exec;
 mod hotkey_avoid;
 mod hotkey_override;
 mod input;
+mod input_edit;
 mod launch_ctrl;
 mod layout;
 mod menus;

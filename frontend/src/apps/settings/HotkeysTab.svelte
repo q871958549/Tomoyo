@@ -25,7 +25,7 @@
     probeResult: LiveProbeResult | null;
     onRunAudit: () => void;
     onProbe: (spec: string) => void;
-    onApplyFreeKey: (slot: 'main' | 'clipboard' | 'translate' | 'capture', key: string) => void;
+    onApplyFreeKey: (slot: 'main' | 'clipboard' | 'translate' | 'capture' | 'pin', key: string) => void;
     onToggleOverride: (v: boolean) => void;
     onUpdateAvoidance: (fullscreen: boolean, excluded: string[]) => void;
   }
@@ -51,7 +51,8 @@
     { id: 'main' as const, label: isEn ? 'Main Launcher' : '主启动器唤起', spec: cfg.hotkey, st: health.main, on: true },
     { id: 'clipboard' as const, label: isEn ? 'Clipboard Center' : '剪贴板管理中心', spec: cfg.clipboard.hotkey, st: health.clipboard, on: isPluginEnabled(cfg, PLUGIN_CLIPBOARD) },
     { id: 'translate' as const, label: isEn ? 'Selection Translate' : '全局划词翻译', spec: cfg.translate.hotkey, st: health.translate, on: isPluginEnabled(cfg, PLUGIN_TRANSLATE) },
-    { id: 'capture' as const, label: isEn ? 'Screenshot & Pin' : '截图与桌面贴图', spec: cfg.capture.hotkey, st: health.capture, on: isPluginEnabled(cfg, PLUGIN_CAPTURE) },
+    { id: 'capture' as const, label: isEn ? 'Region Screenshot' : '全局区域截图', spec: cfg.capture.hotkey, st: health.capture, on: isPluginEnabled(cfg, PLUGIN_CAPTURE) },
+    { id: 'pin' as const, label: isEn ? 'Pin Latest Clipboard' : '全局一键贴图', spec: cfg.capture.pin_hotkey, st: health.pin, on: isPluginEnabled(cfg, PLUGIN_CAPTURE) },
   ].filter((s) => s.on));
 
   let filteredMatrix = $derived.by(() => {

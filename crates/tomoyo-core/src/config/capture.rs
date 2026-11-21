@@ -120,6 +120,9 @@ pub struct CaptureConfig {
     /// Global shortcut to start region/window screenshot (default `"Alt+S"`, empty disables).
     #[serde(default = "default_capture_hotkey")]
     pub hotkey: String,
+    /// Global shortcut to pin the latest clipboard content (image/file/text/color) to desktop (default `"F3"`, empty disables).
+    #[serde(default = "default_pin_hotkey")]
+    pub pin_hotkey: String,
     /// Optional custom save folder for PNG exports (empty = `%USERPROFILE%\Pictures\Tomoyo`).
     #[serde(default)]
     pub save_dir: String,
@@ -138,6 +141,10 @@ fn default_capture_hotkey() -> String {
     "Alt+S".into()
 }
 
+fn default_pin_hotkey() -> String {
+    "F3".into()
+}
+
 fn default_pin_opacity() -> u8 {
     100
 }
@@ -146,6 +153,7 @@ impl Default for CaptureConfig {
     fn default() -> Self {
         Self {
             hotkey: default_capture_hotkey(),
+            pin_hotkey: default_pin_hotkey(),
             save_dir: String::new(),
             pin_opacity: default_pin_opacity(),
             copy_hex_lowercase: false,
@@ -181,6 +189,21 @@ pub fn sanitize_capture_config(
         cap.hotkey = fallback;
     } else {
         cap.hotkey = hk;
+    }
+
+    let phk = cap.pin_hotkey.trim().to_string();
+    if phk.is_empty() {
+        cap.pin_hotkey.clear();
+    } else if parse_hotkey(&phk).is_none()
+        || phk.eq_ignore_ascii_case(main_hk)
+        || (!clip_hk.is_empty() && phk.eq_ignore_ascii_case(clip_hk))
+        || (!tr_hk.is_empty() && phk.eq_ignore_ascii_case(tr_hk))
+        || (!cap.hotkey.is_empty() && phk.eq_ignore_ascii_case(&cap.hotkey))
+    {
+        notes.push(format!("全局贴图快捷键 `{phk}` 无效或与已有快捷键冲突，已停用"));
+        cap.pin_hotkey.clear();
+    } else {
+        cap.pin_hotkey = phk;
     }
 
     let op = cap.pin_opacity.clamp(30, 100);

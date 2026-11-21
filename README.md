@@ -11,7 +11,7 @@
   <a href="https://github.com/q871958549/Tomoyo/actions/workflows/ci.yml"><img src="https://github.com/q871958549/Tomoyo/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="LICENSE-MIT"><img src="https://img.shields.io/badge/license-MIT%20%2F%20Apache--2.0-blue.svg" alt="License" /></a>
   <img src="https://img.shields.io/badge/platform-Windows%2010%2F11%20x64%20%2F%20ARM64-0078D6.svg" alt="Windows" />
-  <img src="https://img.shields.io/badge/version-v2.2.2-7c6af7.svg" alt="Version" />
+  <img src="https://img.shields.io/badge/version-v2.2.3-7c6af7.svg" alt="Version" />
 </p>
 
 ---
@@ -39,18 +39,18 @@
 
 ---
 
-## 实测数据与自检阈值 (`v2.2.2` Release)
+## 实测数据与自检阈值 (`v2.2.3` Release)
 
 | 指标 | 实测记录 | 自检阈值 (`--strict-budget` / `-CheckBinaries`) |
 |---|---|---|
-| `tomoyo.exe` 微内核主程序体积（含 0ms 非阻塞双击异步启动反馈、热键直达带参工作流、零常驻本地 AI 管道与混合 DPI 多屏定位） | **5.79 MB** | ≤ 6.50 MB |
-| `tomoyo-webview-host.exe` Svelte 5 设置中心（12 页签）与 3 大工作台（构建期 Gzip 压缩嵌入，4 份 HTML 净省 **66.8%**；剪贴板支持 `Ctrl+F`/`↑↓`/`Enter` 全键盘流） | **4.36 MB**（关闭即退出） | ≤ 5.50 MB / 0 MB 常驻 |
-| `tomoyo-capture.exe` 极简矢量标注 + 白底长截图实时预览 + 全格式 WIC 贴图 | **1.10 MB**（关闭即退出） | ≤ 1.50 MB / 0 MB 常驻 |
+| `tomoyo.exe` 微内核主程序体积（含静默两段式 `Esc`、全局 `F3` 一键贴图热键、0ms 非阻塞双击异步启动反馈、热键直达带参工作流与混合 DPI 多屏定位） | **5.79 MB** | ≤ 6.50 MB |
+| `tomoyo-webview-host.exe` Svelte 5 设置中心（12 页签，新增全局贴图热键槽位）与 3 大工作台（构建期 Gzip 压缩嵌入） | **4.37 MB**（关闭即退出） | ≤ 5.50 MB / 0 MB 常驻 |
+| `tomoyo-capture.exe` 极简矢量标注 + 白底长截图实时预览 + 全格式万能贴图（图片/文件/色值/ClearType 文本卡片） | **1.13 MB**（关闭即退出） | ≤ 1.50 MB / 0 MB 常驻 |
 | `tomoyo-plugin-ocr.exe` / `tomoyo-plugin-notes.exe` 官方 Protocol v2 独立按需 STDIO 插件（离线 OCR / 本地 Markdown 备忘录） | **0.37 MB** / **0.33 MB**（空闲自动回收） | ≤ 0.80 MB / 0 MB 常驻 |
-| 休眠态 Working Set 内存占用 (`--self-test`) | **1.55–1.58 MB** | ≤ 2.0 MB |
-| 休眠态 Private Commit（含 344 应用/桌面条目索引、SQLite、工作流与字体） | **22.15 MB** | ≤ 28.0 MB |
+| 休眠态 Working Set 内存占用 (`--self-test`) | **1.54–1.57 MB** | ≤ 2.0 MB |
+| 休眠态 Private Commit（含 343 应用/桌面条目索引、SQLite、工作流与字体） | **22.04 MB** | ≤ 28.0 MB |
 | 100 轮查询 / 绘制 / 预览 / 休眠压测 Delta | **GDI `+0` · USER `+0` · Handles `+0` · Private `+0.08 MB`** | 句柄 0 增长 / 内存 ≤ +0.50 MB |
-| 7 道防膨胀卫生门禁与静态质量（[编码规范](docs/CODING_STANDARDS.md) / [分发与信任指南](docs/DISTRIBUTION.md)） | **全仓 221 源码文件 100% ≤ 450 行（双水位 380/450）· 前后端双向 IPC 1:1 契约对齐（46 指令 + 26 事件）· `cargo clippy --workspace --all-targets -- -D warnings` 0 警告 · Rust 86 单测 + 前端 10 用例 + `happy-dom` 4 产物全绿 · SLSA Provenance + ARM64 构建** | ≤ 450 行/文件 · 0 警告 · 0 JS 异常 |
+| 7 道防膨胀卫生门禁与静态质量（[编码规范](docs/CODING_STANDARDS.md) / [分发与信任指南](docs/DISTRIBUTION.md)） | **全仓 224 源码文件 100% ≤ 450 行（双水位 380/450）· 前后端双向 IPC 1:1 契约对齐（46 指令 + 26 事件）· `cargo clippy --workspace --all-targets -- -D warnings` 0 警告 · Rust 全仓单测 + 前端 10 用例 + `happy-dom` 4 产物全绿 · SLSA Provenance + ARM64 构建** | ≤ 450 行/文件 · 0 警告 · 0 JS 异常 |
 
 ---
 
@@ -92,7 +92,8 @@ pwsh -File scripts\check_hygiene.ps1
 | `flow` / `wf` / `cleanpaste` / `shottr` / `aisum` | 声明式轻量动作管道（零脚本解释器，支持为任意工作流绑定全局热键直达，配置于可同步的 `flows.toml`）：内置 6 条开箱管道（含截图识字翻译、剪贴板去换行直贴、剪贴板转存备忘、网页速查及按需调用本地 Ollama / DPAPI OpenAI 的零常驻 `llm_transform` AI 提炼要点） |
 | `ocr` / `ocr en` / `Ctrl+V` 贴图 | 按需拉起原生 WinRT 离线 OCR（自适应 2× 放大与标点清理、支持免贴图直识最近截图、原图对照审校编辑窗、一键翻译与单行复制，15s 自动释放） |
 | `Alt+T` / `tr <文本>` / `fy <文本>` | 多引擎划词/输入/OCR 联动翻译（原生 WinHTTP 并行查询 Google、MyMemory+有道音标词典、DeepL、OpenAI 兼容接口与本地 Ollama，Windows DPAPI 加密保存 API 密钥，无损恢复剪贴板且不污染历史，内置生词本与历史抽屉） |
-| `F1` / `Alt+S` / `cap` / `pin` / `jtocr` / `jtfy` | 原生按需截图插件（可在「插件管理」按需启停）：始终直控 8 手柄矢量画布、解析三次方程零折角平滑弯折箭头、梯度归一化等宽椭圆、马赛克/模糊、序号、中文批注、白底高适应纵/横向长截图与侧边实时可视化预览条、双击关闭置顶贴图及 12 项小工具快捷键全量可配置（0 常驻内存） |
+| `F1` / `Alt+S` / `F3` / `cap` / `pin` / `jtocr` / `jtfy` | 原生按需截图与万能贴图插件（可在「插件管理」按需启停）：`Alt+S`/`F1` 8 手柄矢量标注与白底长截图实时预览；**全局 `F3` 一键将最近复制的图片、本地图片文件、路径列表、`#HEX`/`rgb()` 色值卡或文本/代码卡片贴图置顶**（贴图窗内 `Ctrl+C` 复制原文/图片、`L` 直接翻译、滚轮缩放、`Ctrl+滚轮` 调透明度、双击/中键/`Esc` 关闭，0 常驻内存） |
+| `Esc` *(搜索框内)* | 零提示音两段式智能回退：有输入内容时先一键清空搜索词（保留焦点继续检索），搜索框为空时再按一次静默收起窗口；彻底消除单行编辑框系统「叮咚」蜂鸣声 |
 | `Alt+V` / `Alt+C` / `cb` / `clip` | 增强剪贴板管理中心（文本/图片/文件、语义分类、来源应用、`@pin/@img/@link/@file/@code/#标签` 与拼音检索、`Shift+Enter` 单行纯文本贴回或图片一键 OCR、`Ctrl+E` 工作台；遇外部热键冲突自动高优先级无损接管并突破 Windows 前台锁，确保随时秒唤） |
 | `note` / `memo` / `bw` | 纯外部独立官方 Protocol v2 插件 **本地 Markdown 备忘录 (`dev.tomoyo.notes`)**（`0.33 MB`、闲置 30 秒回收 0 MB 常驻）：支持在设置中心声明式配置全局热键与目录/上限/默认标签参数，支持全文/#标签检索、`note + 标题 :: 内容` 一键新建与 `note clip` 剪贴板转存 |
 | `kill <词>` / `ps <词>` | 进程列表查看与终止进程（按内存占用降序排列） |

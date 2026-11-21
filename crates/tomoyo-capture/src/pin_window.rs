@@ -4,15 +4,18 @@
 #![cfg(windows)]
 
 use crate::export::{
-    copy_bgra_to_clipboard, default_save_path, handoff_to_ocr_or_translate, save_bgra_as_png,
+    copy_bgra_to_clipboard, copy_text_to_clipboard, default_save_path, handoff_to_ocr_or_translate,
+    save_bgra_as_png,
 };
+use crate::pin_clipboard::handoff_text_to_translator;
 use tomoyo_core::TomoyoConfig;
 use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
-    BeginPaint, CreateSolidBrush, DeleteObject, EndPaint, FrameRect, InvalidateRect,
-    SetStretchBltMode, StretchDIBits, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS,
-    HALFTONE, PAINTSTRUCT, SRCCOPY,
+    BeginPaint, CreateSolidBrush, DeleteObject, EndPaint, FrameRect, GetMonitorInfoW,
+    InvalidateRect, MonitorFromPoint, SetStretchBltMode, StretchDIBits, BITMAPINFO,
+    BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS, HALFTONE, MONITORINFO, MONITOR_DEFAULTTONEAREST,
+    PAINTSTRUCT, SRCCOPY,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
@@ -32,6 +35,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 
 const CMD_COPY: u32 = 1;
+const CMD_COPY_IMG: u32 = 8;
 const CMD_SAVE: u32 = 2;
 const CMD_OCR: u32 = 3;
 const CMD_TRANSLATE: u32 = 4;
@@ -43,6 +47,7 @@ struct PinState {
     img_w: u32,
     img_h: u32,
     bgra: Vec<u8>,
+    source_text: Option<String>,
     scale: f32,
     opacity_pct: u8,
     topmost: bool,
@@ -81,11 +86,23 @@ impl PinState {
     fn show_context_menu(&mut self, hwnd: HWND) {
         unsafe {
             let Ok(menu) = CreatePopupMenu() else { return };
-            let _ = AppendMenuW(menu, MF_STRING, CMD_COPY as usize, w!("复制图片 (Ctrl+C)"));
+            if self.source_text.is_some() {
+                let _ = AppendMenuW(menu, MF_STRING, CMD_COPY as usize, w!("复制原始文本 (Ctrl+C)"));
+                let _ = AppendMenuW(menu, MF_STRING, CMD_COPY_IMG as usize, w!("复制为图片"));
+            } else {
+                let _ = AppendMenuW(menu, MF_STRING, CMD_COPY as usize, w!("复制图片 (Ctrl+C)"));
+            }
             let _ = AppendMenuW(menu, MF_STRING, CMD_SAVE as usize, w!("保存为 PNG (Ctrl+S)"));
             let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
-            let _ = AppendMenuW(menu, MF_STRING, CMD_OCR as usize, w!("OCR 识图取字 (O)"));
-            let _ = AppendMenuW(menu, MF_STRING, CMD_TRANSLATE as usize, w!("截图翻译 (L)"));
+            if self.source_text.is_none() {
+                let _ = AppendMenuW(menu, MF_STRING, CMD_OCR as usize, w!("OCR 识图取字 (O)"));
+            }
+            let _ = AppendMenuW(
+                menu,
+                MF_STRING,
+                CMD_TRANSLATE as usize,
+                if self.source_text.is_some() { w!("翻译原文 (L)") } else { w!("截图翻译 (L)") },
+            );
             let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
             let top_flag = if self.topmost { MF_STRING | MF_CHECKED } else { MF_STRING | MF_UNCHECKED };
             let _ = AppendMenuW(menu, top_flag, CMD_TOPMOST as usize, w!("窗口置顶 (Topmost)"));
@@ -100,13 +117,26 @@ impl PinState {
             let _ = DestroyMenu(menu);
 
             match cmd {
-                CMD_COPY => { let _ = copy_bgra_to_clipboard(self.img_w, self.img_h, &self.bgra); }
+                CMD_COPY => {
+                    if let Some(txt) = &self.source_text {
+                        copy_text_to_clipboard(txt);
+                    } else {
+                        let _ = copy_bgra_to_clipboard(self.img_w, self.img_h, &self.bgra);
+                    }
+                }
+                CMD_COPY_IMG => { let _ = copy_bgra_to_clipboard(self.img_w, self.img_h, &self.bgra); }
                 CMD_SAVE => {
                     let path = default_save_path(&self.save_dir);
                     let _ = save_bgra_as_png(&path, self.img_w, self.img_h, &self.bgra);
                 }
                 CMD_OCR => { let _ = handoff_to_ocr_or_translate(self.img_w, self.img_h, &self.bgra, false); }
-                CMD_TRANSLATE => { let _ = handoff_to_ocr_or_translate(self.img_w, self.img_h, &self.bgra, true); }
+                CMD_TRANSLATE => {
+                    if let Some(txt) = &self.source_text {
+                        handoff_text_to_translator(txt);
+                    } else {
+                        let _ = handoff_to_ocr_or_translate(self.img_w, self.img_h, &self.bgra, true);
+                    }
+                }
                 CMD_TOPMOST => {
                     self.topmost = !self.topmost;
                     let after = if self.topmost { HWND_TOPMOST } else { HWND_NOTOPMOST };
@@ -132,6 +162,17 @@ pub fn run_pin_window(
     screen_x: i32,
     screen_y: i32,
 ) -> Result<(), String> {
+    run_pin_window_with_text(width, height, bgra, screen_x, screen_y, None)
+}
+
+pub fn run_pin_window_with_text(
+    width: u32,
+    height: u32,
+    bgra: Vec<u8>,
+    screen_x: i32,
+    screen_y: i32,
+    source_text: Option<String>,
+) -> Result<(), String> {
     let cfg = TomoyoConfig::load_or_create();
     unsafe {
         let hinst = GetModuleHandleW(None).map_err(|e| format!("{e}"))?;
@@ -146,20 +187,35 @@ pub fn run_pin_window(
         };
         let _ = RegisterClassW(&wc);
 
-        let sw = GetSystemMetrics(SM_CXSCREEN).max(640) as f32;
-        let sh = GetSystemMetrics(SM_CYSCREEN).max(480) as f32;
+        let mut cur = POINT::default();
+        let _ = GetCursorPos(&mut cur);
+        let anchor = if screen_x == i32::MIN { cur } else { POINT { x: screen_x, y: screen_y } };
+        let mut mi = MONITORINFO {
+            cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+            ..Default::default()
+        };
+        let work = if GetMonitorInfoW(MonitorFromPoint(anchor, MONITOR_DEFAULTTONEAREST), &mut mi).as_bool() {
+            mi.rcWork
+        } else {
+            RECT { left: 0, top: 0, right: GetSystemMetrics(SM_CXSCREEN).max(640), bottom: GetSystemMetrics(SM_CYSCREEN).max(480) }
+        };
+        let sw = (work.right - work.left).max(640) as f32;
+        let sh = (work.bottom - work.top).max(480) as f32;
         let init_scale = ((sw * 0.82) / (width.max(1) as f32))
             .min((sh * 0.82) / (height.max(1) as f32))
             .clamp(0.15, 1.0);
         let init_w = ((width as f32) * init_scale).round().max(48.0) as i32;
         let init_h = ((height as f32) * init_scale).round().max(48.0) as i32;
-        let px = screen_x.clamp(16, (sw as i32 - init_w - 16).max(16));
-        let py = screen_y.clamp(16, (sh as i32 - init_h - 16).max(16));
+        let raw_x = if screen_x == i32::MIN { cur.x - init_w / 2 } else { screen_x };
+        let raw_y = if screen_y == i32::MIN { cur.y - init_h / 2 } else { screen_y };
+        let px = raw_x.clamp(work.left + 16, (work.right - init_w - 16).max(work.left + 16));
+        let py = raw_y.clamp(work.top + 16, (work.bottom - init_h - 16).max(work.top + 16));
 
         let mut st = Box::new(PinState {
             img_w: width,
             img_h: height,
             bgra,
+            source_text,
             scale: init_scale,
             opacity_pct: cfg.capture.pin_opacity.clamp(30, 100),
             topmost: true,
@@ -288,14 +344,22 @@ unsafe extern "system" fn pin_wndproc(
             if vk == VK_ESCAPE.0 {
                 unsafe { let _ = DestroyWindow(hwnd); }
             } else if ctrl && vk == b'C' as u16 {
-                let _ = copy_bgra_to_clipboard(st.img_w, st.img_h, &st.bgra);
+                if let Some(txt) = &st.source_text {
+                    copy_text_to_clipboard(txt);
+                } else {
+                    let _ = copy_bgra_to_clipboard(st.img_w, st.img_h, &st.bgra);
+                }
             } else if ctrl && vk == b'S' as u16 {
                 let path = default_save_path(&st.save_dir);
                 let _ = save_bgra_as_png(&path, st.img_w, st.img_h, &st.bgra);
             } else if vk == b'O' as u16 {
                 let _ = handoff_to_ocr_or_translate(st.img_w, st.img_h, &st.bgra, false);
             } else if vk == b'L' as u16 {
-                let _ = handoff_to_ocr_or_translate(st.img_w, st.img_h, &st.bgra, true);
+                if let Some(txt) = &st.source_text {
+                    handoff_text_to_translator(txt);
+                } else {
+                    let _ = handoff_to_ocr_or_translate(st.img_w, st.img_h, &st.bgra, true);
+                }
             }
             LRESULT(0)
         }

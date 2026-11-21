@@ -1,29 +1,22 @@
 //! Keyboard navigation, filter shortcuts, global hotkey registration, and EDIT subclassing.
 
 use super::hotkey_override::{sync_conflict_override_hook, uninstall_conflict_override_hook};
-use super::{
-    AppShell, EM_GETSEL, HOTKEY_CLIPBOARD_ID, HOTKEY_ID, HOTKEY_TRANSLATE_ID, WM_APP_EDIT_KEY,
-    WM_APP_PASTE_INTERCEPT,
-};
-use crate::actions::{clipboard_has_rich_attachment, set_clipboard_text};
-use std::ffi::c_void;
+use super::{AppShell, EM_GETSEL, HOTKEY_CLIPBOARD_ID, HOTKEY_ID, HOTKEY_TRANSLATE_ID};
+use crate::actions::set_clipboard_text;
 use tomoyo_core::{
     parse_hotkey, save_hotkey_health, HotkeyHealthReport, HotkeySlotStatus, Lang, TomoyoConfig,
     PLUGIN_CAPTURE, PLUGIN_CLIPBOARD, PLUGIN_TRANSLATE,
 };
 use tomoyo_protocol::SearchFilter;
-use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
+use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    GetKeyState, RegisterHotKey, UnregisterHotKey, HOT_KEY_MODIFIERS, MOD_CONTROL, MOD_NOREPEAT,
-    MOD_SHIFT, VK_BACK, VK_CONTROL, VK_DOWN, VK_ESCAPE, VK_RETURN, VK_SHIFT, VK_SPACE, VK_TAB,
-    VK_UP,
+    RegisterHotKey, UnregisterHotKey, HOT_KEY_MODIFIERS, MOD_CONTROL, MOD_NOREPEAT, MOD_SHIFT,
+    VK_BACK, VK_DOWN, VK_ESCAPE, VK_RETURN, VK_SPACE, VK_TAB, VK_UP,
 };
+use windows::Win32::UI::WindowsAndMessaging::SendMessageW;
 
 pub(super) const HOTKEY_CAPTURE_ID: i32 = 4;
-use windows::Win32::UI::Shell::DefSubclassProc;
-use windows::Win32::UI::WindowsAndMessaging::{
-    GetWindowTextLengthW, PostMessageW, SendMessageW, WM_KEYDOWN, WM_SYSKEYDOWN,
-};
+pub(super) const HOTKEY_PIN_ID: i32 = 5;
 
 impl AppShell {
     pub(super) fn handle_nav_key(
@@ -124,6 +117,10 @@ impl AppShell {
                 if self.action_menu_open {
                     self.action_menu_open = false;
                     self.selected_action = 0;
+                    self.invalidate();
+                } else if !self.current_query.is_empty() {
+                    self.cancel_pending_launch_hide();
+                    self.set_query_text("");
                     self.invalidate();
                 } else if self.attached.is_some() {
                     self.attached = None;
@@ -239,7 +236,7 @@ pub(super) fn unregister_all_hotkeys(hwnd: HWND) {
     uninstall_conflict_override_hook();
     super::plugin_hotkeys::unregister_plugin_hotkeys(hwnd);
     unsafe {
-        for id in [HOTKEY_ID, HOTKEY_CLIPBOARD_ID, HOTKEY_TRANSLATE_ID, HOTKEY_CAPTURE_ID] {
+        for id in [HOTKEY_ID, HOTKEY_CLIPBOARD_ID, HOTKEY_TRANSLATE_ID, HOTKEY_CAPTURE_ID, HOTKEY_PIN_ID] {
             let _ = UnregisterHotKey(Some(hwnd), id);
         }
     }
@@ -314,17 +311,20 @@ pub(super) fn register_all_hotkeys(
         HotkeySlotStatus { spec: trimmed.to_string(), active: String::new(), ok: false, disabled: false, overridden: false, reason }
     };
 
+    let cap_on = cfg.is_plugin_enabled(PLUGIN_CAPTURE);
     let clip_spec = if cfg.is_plugin_enabled(PLUGIN_CLIPBOARD) { cfg.clipboard.hotkey.as_str() } else { "" };
     let tr_spec = if cfg.is_plugin_enabled(PLUGIN_TRANSLATE) { cfg.translate.hotkey.as_str() } else { "" };
-    let cap_spec = if cfg.is_plugin_enabled(PLUGIN_CAPTURE) { cfg.capture.hotkey.as_str() } else { "" };
+    let cap_spec = if cap_on { cfg.capture.hotkey.as_str() } else { "" };
+    let pin_spec = if cap_on { cfg.capture.pin_hotkey.as_str() } else { "" };
     let mut clip_status = reg_opt(HOTKEY_CLIPBOARD_ID, clip_spec, lang.pick("剪贴板", "Clipboard"));
     let mut tr_status = reg_opt(HOTKEY_TRANSLATE_ID, tr_spec, lang.pick("划词翻译", "Translate"));
     let mut cap_status = reg_opt(HOTKEY_CAPTURE_ID, cap_spec, lang.pick("截图", "Capture"));
+    let mut pin_status = reg_opt(HOTKEY_PIN_ID, pin_spec, lang.pick("贴图", "Pin"));
     let plug_hks = super::plugin_hotkeys::register_plugin_hotkeys(hwnd, cfg, plugin_host, &mut override_entries);
     let flow_hks = super::plugin_hotkeys::register_flow_hotkeys(hwnd, cfg, &mut override_entries);
 
     if !sync_conflict_override_hook(hwnd, &override_entries) {
-        for slot in [&mut main_status, &mut clip_status, &mut tr_status, &mut cap_status] {
+        for slot in [&mut main_status, &mut clip_status, &mut tr_status, &mut cap_status, &mut pin_status] {
             if slot.overridden {
                 slot.ok = false; slot.overridden = false;
                 slot.reason = lang.pick("底层接管钩子挂载失败", "Override hook installation failed").into();
@@ -334,7 +334,7 @@ pub(super) fn register_all_hotkeys(
 
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
     save_hotkey_health(&HotkeyHealthReport {
-        main: main_status, clipboard: clip_status, translate: tr_status, capture: cap_status,
+        main: main_status, clipboard: clip_status, translate: tr_status, capture: cap_status, pin: pin_status,
         updated_at_unix: now,
     });
 
@@ -362,79 +362,4 @@ pub(super) fn register_optional_hotkey(hwnd: HWND, id: i32, spec: &str) -> bool 
         tracing::warn!(hotkey = %trimmed, id = id, "Optional hotkey registration failed (already in use)");
     }
     ok
-}
-
-pub(super) unsafe extern "system" fn edit_subclass_proc(
-    hwnd: HWND,
-    msg: u32,
-    wparam: WPARAM,
-    lparam: LPARAM,
-    _uid_subclass: usize,
-    ref_data: usize,
-) -> LRESULT {
-    let parent = HWND(ref_data as *mut c_void);
-    match msg {
-        WM_KEYDOWN => {
-            let vk = wparam.0 as u16;
-            let ctrl = unsafe { (GetKeyState(VK_CONTROL.0 as i32) as u16 & 0x8000) != 0 };
-            let shift = unsafe { (GetKeyState(VK_SHIFT.0 as i32) as u16 & 0x8000) != 0 };
-            let mod_flags = (if ctrl { 1isize } else { 0 }) | (if shift { 4isize } else { 0 });
-
-            let intercept = matches!(
-                vk,
-                x if x == VK_UP.0 || x == VK_DOWN.0 || x == VK_RETURN.0 || x == VK_ESCAPE.0 || x == VK_TAB.0
-            );
-            if intercept || (ctrl && (b'1' as u16..=b'9' as u16).contains(&vk)) {
-                unsafe {
-                    let _ = PostMessageW(Some(parent), WM_APP_EDIT_KEY, WPARAM(vk as usize), LPARAM(mod_flags));
-                }
-                return LRESULT(0);
-            }
-            if ctrl && vk == b'V' as u16 && clipboard_has_rich_attachment() {
-                unsafe {
-                    let _ = PostMessageW(Some(parent), WM_APP_PASTE_INTERCEPT, WPARAM(0), LPARAM(0));
-                }
-                return LRESULT(0);
-            }
-            if vk == VK_BACK.0 && unsafe { GetWindowTextLengthW(hwnd) } == 0 {
-                unsafe {
-                    let _ = PostMessageW(Some(parent), WM_APP_EDIT_KEY, WPARAM(vk as usize), LPARAM(0));
-                }
-            }
-            if ctrl && matches!(vk, x if x == b'P' as u16 || x == 0xBC || x == b'E' as u16 || x == b'D' as u16) {
-                unsafe {
-                    let _ = PostMessageW(Some(parent), WM_APP_EDIT_KEY, WPARAM(vk as usize), LPARAM(mod_flags));
-                }
-                return LRESULT(0);
-            }
-            if ctrl && vk == b'C' as u16 {
-                let (mut start, mut end) = (0u32, 0u32);
-                unsafe {
-                    SendMessageW(
-                        hwnd,
-                        EM_GETSEL,
-                        Some(WPARAM(&mut start as *mut _ as usize)),
-                        Some(LPARAM(&mut end as *mut _ as isize)),
-                    );
-                }
-                if start == end {
-                    unsafe {
-                        let _ = PostMessageW(Some(parent), WM_APP_EDIT_KEY, WPARAM(vk as usize), LPARAM(1));
-                    }
-                    return LRESULT(0);
-                }
-            }
-        }
-        WM_SYSKEYDOWN => {
-            let vk = wparam.0 as u16;
-            if (b'1' as u16..=b'8' as u16).contains(&vk) {
-                unsafe {
-                    let _ = PostMessageW(Some(parent), WM_APP_EDIT_KEY, WPARAM(vk as usize), LPARAM(2));
-                }
-                return LRESULT(0);
-            }
-        }
-        _ => {}
-    }
-    unsafe { DefSubclassProc(hwnd, msg, wparam, lparam) }
 }
