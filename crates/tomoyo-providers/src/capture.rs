@@ -232,30 +232,13 @@ mod tests {
         let cfg = Arc::new(RwLock::new(TomoyoConfig::default()));
         let prov = CaptureProvider::new(cfg);
 
-        let ctx_cap = QueryContext {
-            raw: "cap".into(),
-            trimmed: "cap".into(),
-            keyword: Some("cap".into()),
-            args: String::new(),
-            generation: 1,
-            limit: 10,
-            clipboard: None,
-            attached: None,
-            filter: SearchFilter::All,
-        };
+        let mut ctx_cap = QueryContext::new("cap", 1, 10);
+        ctx_cap.keyword = Some("cap".into());
+        ctx_cap.args.clear();
         assert_eq!(prov.query(&ctx_cap).len(), 4);
 
-        let ctx_zh = QueryContext {
-            raw: "截图翻译".into(),
-            trimmed: "截图翻译".into(),
-            keyword: None,
-            args: String::new(),
-            generation: 2,
-            limit: 10,
-            clipboard: None,
-            attached: None,
-            filter: SearchFilter::All,
-        };
+        let mut ctx_zh = QueryContext::new("截图翻译", 2, 10);
+        ctx_zh.args.clear();
         let hits = prov.query(&ctx_zh);
         assert!(hits.iter().any(|it| it.id == "capture:translate"));
     }

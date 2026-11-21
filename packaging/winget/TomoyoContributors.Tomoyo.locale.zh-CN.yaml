@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.6.0.schema.json
 PackageIdentifier: TomoyoContributors.Tomoyo
-PackageVersion: 1.9.1
+PackageVersion: 2.0.0
 PackageLocale: zh-CN
 Publisher: Tomoyo Open Source Contributors
 PublisherUrl: https://github.com/q871958549/Tomoyo
@@ -16,6 +16,6 @@ Tags:
   - rust
   - everything
   - open-source
-ReleaseNotesUrl: https://github.com/q871958549/Tomoyo/releases/tag/v1.9.1
+ReleaseNotesUrl: https://github.com/q871958549/Tomoyo/releases/tag/v2.0.0
 ManifestType: defaultLocale
 ManifestVersion: 1.6.0

@@ -1,6 +1,7 @@
 use crate::SearchFilter;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::BTreeMap;
 
 /// Category tag displayed as a compact pill badge on each result row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -100,6 +101,9 @@ pub struct QueryContext {
     /// Active group filter chip (`All`, `App`, `Folder`, `Pdf`, `Excel`, `Word`, `Ppt`, ...).
     #[serde(default)]
     pub filter: SearchFilter,
+    /// Protocol v2: user-configured setting values for the target plugin (populated by `PluginHost`).
+    #[serde(default)]
+    pub plugin_settings: BTreeMap<String, Value>,
 }
 
 fn default_limit() -> usize {
@@ -120,6 +124,7 @@ impl QueryContext {
             clipboard: None,
             attached: None,
             filter: SearchFilter::All,
+            plugin_settings: BTreeMap::new(),
         }
     }
 

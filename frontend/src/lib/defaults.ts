@@ -124,6 +124,8 @@ export function makeDefaultConfig(): TomoyoConfig {
       tool_hotkeys: defaultCaptureToolHotkeys(),
     },
     update: { auto_check: true, check_interval_hours: 24, repo: OFFICIAL_REPO, last_checked_unix: 0 },
+    plugin_hotkeys: {},
+    plugin_settings: {},
     web_searches: [],
   };
 }
@@ -133,7 +135,7 @@ export function hydrateSettingsInit(): SettingsInitPayload {
   const def = makeDefaultConfig();
   const rc = (raw.config ?? {}) as Partial<TomoyoConfig>;
   return {
-    version: raw.version || '1.9.1',
+    version: raw.version || '2.0.0',
     autostart: !!raw.autostart,
     plugins: Array.isArray(raw.plugins) ? raw.plugins : [],
     config_path: raw.config_path || '',
@@ -166,6 +168,8 @@ export function hydrateSettingsInit(): SettingsInitPayload {
       disabled_plugins: Array.isArray(rc.disabled_plugins) ? rc.disabled_plugins : [],
       suspend_hotkeys_in_fullscreen: rc.suspend_hotkeys_in_fullscreen ?? true,
       hotkey_excluded_apps: Array.isArray(rc.hotkey_excluded_apps) ? rc.hotkey_excluded_apps : def.hotkey_excluded_apps,
+      plugin_hotkeys: rc.plugin_hotkeys && typeof rc.plugin_hotkeys === 'object' ? rc.plugin_hotkeys : {},
+      plugin_settings: rc.plugin_settings && typeof rc.plugin_settings === 'object' ? rc.plugin_settings : {},
       web_searches: Array.isArray(rc.web_searches) ? rc.web_searches : def.web_searches,
     },
   };

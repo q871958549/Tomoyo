@@ -1,7 +1,7 @@
 //! Modular official plugin identifiers & sanitization for extensible search tabs and disabled plugins.
 
 use super::TomoyoConfig;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use tomoyo_protocol::CustomFilterTab;
 
 pub const PLUGIN_CLIPBOARD: &str = "dev.tomoyo.clipboard";
@@ -128,4 +128,47 @@ pub fn sanitize_filters_and_plugins(cfg: &mut TomoyoConfig) {
         }
     }
     cfg.custom_filters = clean_tabs;
+
+    // 4. Protocol v2: plugin_hotkeys & plugin_settings (bounded & TOML-safe primitives only)
+    let mut clean_phk = BTreeMap::new();
+    for (k, v) in std::mem::take(&mut cfg.plugin_hotkeys) {
+        let key = k.trim().to_ascii_lowercase();
+        let val = v.trim().to_string();
+        if !key.is_empty() && key.len() <= 128 && key.contains(':') && clean_phk.len() < 32 {
+            if val.is_empty() || super::parse_hotkey(&val).is_some() {
+                clean_phk.insert(key, val);
+            }
+        }
+    }
+    cfg.plugin_hotkeys = clean_phk;
+
+    let mut clean_pset = BTreeMap::new();
+    for (pid, map) in std::mem::take(&mut cfg.plugin_settings) {
+        let pid_clean = pid.trim().to_ascii_lowercase();
+        if pid_clean.is_empty() || pid_clean.len() > 96 || clean_pset.len() >= 32 {
+            continue;
+        }
+        let mut inner = BTreeMap::new();
+        for (sk, sv) in map {
+            let sk_clean = sk.trim().to_string();
+            if sk_clean.is_empty() || sk_clean.len() > 64 || inner.len() >= 24 {
+                continue;
+            }
+            let safe_val = match sv {
+                serde_json::Value::Bool(b) => Some(serde_json::Value::Bool(b)),
+                serde_json::Value::Number(n) => Some(serde_json::Value::Number(n)),
+                serde_json::Value::String(s) => Some(serde_json::Value::String(
+                    s.chars().filter(|c| !c.is_control()).take(260).collect(),
+                )),
+                _ => None,
+            };
+            if let Some(v) = safe_val {
+                inner.insert(sk_clean, v);
+            }
+        }
+        if !inner.is_empty() {
+            clean_pset.insert(pid_clean, inner);
+        }
+    }
+    cfg.plugin_settings = clean_pset;
 }

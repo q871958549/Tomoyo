@@ -1,6 +1,6 @@
 id = "dev.tomoyo.notes"
 name = "本地 Markdown 备忘录 (官方插件)"
-version = "1.0.0"
+version = "2.0.0"
 description = "纯本地 Markdown 备忘录插件（零核心膨胀、零私有库锁定）：支持 note/memo 全文检索、#标签过滤、一键新建、剪贴板转存与外部编辑器直达"
 author = "Tomoyo Contributors"
 license = "MIT"
@@ -17,3 +17,35 @@ keywords = ["note", "memo", "bw"]
 max_memory_mb = 48
 idle_timeout_secs = 30
 query_timeout_ms = 1200
+
+[[hotkeys]]
+id = "quick_note"
+label = "快速呼出本地备忘录"
+default_hotkey = ""
+trigger_query = "note "
+
+[[settings]]
+key = "notes_dir"
+label = "自定义备忘录目录"
+description = "留空则自动跟随本地同步目录或 %LOCALAPPDATA%\\Tomoyo\\notes"
+type = "text"
+placeholder = "例如 D:\\Docs\\Notes（留空使用默认目录）"
+default = ""
+
+[[settings]]
+key = "max_results"
+label = "单次最多展示条数"
+description = "检索列表最多返回的备忘录条目数"
+type = "number"
+min = 5
+max = 30
+step = 5
+default = 15
+
+[[settings]]
+key = "default_tag"
+label = "新建默认标签"
+description = "通过 note + 或 note clip 新建备忘录时自动追加的 #标签（留空则不追加）"
+type = "text"
+placeholder = "例如 #inbox 或 #work"
+default = ""

@@ -21,7 +21,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WM_HOTKEY, WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP,
 };
 
-const MAX_OVERRIDE_SLOTS: usize = 4;
+const MAX_OVERRIDE_SLOTS: usize = 12;
 /// Microsoft PowerToys / AutoHotkey `#MenuMaskKey` unassigned VK (`0xE8`) that cancels
 /// bare-`Alt` (`SC_KEYMENU`) and bare-`Win` Start Menu activation when swallowing a chord.
 const VK_MENU_MASK: u16 = 0xE8;
@@ -29,12 +29,7 @@ const VK_MENU_MASK: u16 = 0xE8;
 static TARGET_HWND: AtomicIsize = AtomicIsize::new(0);
 static HOOK_HANDLE: AtomicIsize = AtomicIsize::new(0);
 static SLOT_COUNT: AtomicUsize = AtomicUsize::new(0);
-static SLOTS: [AtomicU64; MAX_OVERRIDE_SLOTS] = [
-    AtomicU64::new(0),
-    AtomicU64::new(0),
-    AtomicU64::new(0),
-    AtomicU64::new(0),
-];
+static SLOTS: [AtomicU64; MAX_OVERRIDE_SLOTS] = [const { AtomicU64::new(0) }; MAX_OVERRIDE_SLOTS];
 static SWALLOW_UP_VK: AtomicU32 = AtomicU32::new(0);
 static SWALLOW_AT_MS: AtomicU32 = AtomicU32::new(0);
 

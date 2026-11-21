@@ -22,6 +22,7 @@ pub use sanitize::{
 pub use tomoyo_protocol::CustomFilterTab;
 
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -63,6 +64,12 @@ pub struct TomoyoConfig {
     /// Disabled official or community plugin IDs (e.g. `["dev.tomoyo.translate"]`).
     #[serde(default)]
     pub disabled_plugins: Vec<String>,
+    /// Protocol v2: per-plugin global hotkey overrides keyed by `"<plugin_id>:<hotkey_id>"`.
+    #[serde(default)]
+    pub plugin_hotkeys: BTreeMap<String, String>,
+    /// Protocol v2: declarative per-plugin settings values keyed by `plugin_id -> setting_key`.
+    #[serde(default)]
+    pub plugin_settings: BTreeMap<String, BTreeMap<String, serde_json::Value>>,
     /// Persistent window dimensions and optional user-dragged position.
     #[serde(default)]
     pub window: WindowConfig,
@@ -371,6 +378,8 @@ impl Default for TomoyoConfig {
             hidden_builtin_filters: Vec::new(),
             custom_filters: Vec::new(),
             disabled_plugins: Vec::new(),
+            plugin_hotkeys: BTreeMap::new(),
+            plugin_settings: BTreeMap::new(),
             window: WindowConfig::default(),
             apps: AppsConfig::default(),
             everything: EverythingConfig::default(),

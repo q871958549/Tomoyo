@@ -1,20 +1,24 @@
 //! Unified Multi-Runtime Plugin Host lifecycle orchestrator (lazy spawn, query, execute, idle reap).
 
 use crate::discovery::{build_webview_trigger_item, scan_plugin_dirs};
-use crate::permissions::is_bundled_plugin_dir;
 use crate::process::ProcessError;
 use crate::runtime::{ensure_live, plugin_error_result_item, LiveRuntime, RegisteredPlugin};
-use std::collections::{HashMap, HashSet};
+use crate::v2_support::{
+    build_runtime_info, collect_active_plugin_hotkeys, dispatch_plugin_event,
+    effective_plugin_settings, ActivePluginHotkey,
+};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 use tomoyo_core::{
-    next_trace_id, permission_key, ExternalPluginBridge, PermissionStore, PluginSummary,
+    next_trace_id, ExternalPluginBridge, PermissionStore, PluginSummary, TomoyoConfig,
 };
 use tomoyo_protocol::{
-    ExecuteRequest, ExecuteResponse, QueryContext, QueryResponse, ResultItem, RuntimeConfig,
-    METHOD_EXECUTE, METHOD_QUERY,
+    ExecuteRequest, ExecuteResponse, PluginEventKind, PluginEventPayload, PluginHotkeyDecl,
+    PluginSettingField, QueryContext, QueryResponse, ResultItem, RuntimeConfig, METHOD_EXECUTE,
+    METHOD_QUERY,
 };
 
 #[derive(Debug, Clone)]
@@ -33,6 +37,9 @@ pub struct PluginRuntimeInfo {
     pub declared_permissions: Vec<String>,
     pub granted_permissions: Vec<String>,
     pub bundled_trusted: bool,
+    pub declared_hotkeys: Vec<PluginHotkeyDecl>,
+    pub declared_events: Vec<PluginEventKind>,
+    pub settings_schema: Vec<PluginSettingField>,
 }
 
 struct HostState {
@@ -40,6 +47,7 @@ struct HostState {
     plugins: HashMap<String, RegisteredPlugin>,
     keyword_index: HashMap<String, Vec<String>>,
     disabled_ids: HashSet<String>,
+    plugin_settings: BTreeMap<String, BTreeMap<String, serde_json::Value>>,
     perms: PermissionStore,
     shutting_down: bool,
 }
@@ -58,6 +66,7 @@ impl PluginHost {
                 plugins: HashMap::new(),
                 keyword_index: HashMap::new(),
                 disabled_ids: HashSet::new(),
+                plugin_settings: BTreeMap::new(),
                 perms: PermissionStore::load_default(),
                 shutting_down: false,
             }),
@@ -85,6 +94,7 @@ impl PluginHost {
 
         let cfg = tomoyo_core::TomoyoConfig::load_or_create();
         st.disabled_ids = cfg.disabled_plugins.iter().map(|s| s.to_ascii_lowercase()).collect();
+        st.plugin_settings = cfg.plugin_settings.clone();
         for item in scan_plugin_dirs(&st.search_dirs) {
             let id = item.manifest.id.clone();
             if !st.disabled_ids.contains(&id.to_ascii_lowercase()) {
@@ -103,40 +113,40 @@ impl PluginHost {
         let mut list: Vec<PluginRuntimeInfo> = st
             .plugins
             .values()
-            .map(|p| {
-                let bundled = is_bundled_plugin_dir(&p.dir);
-                let granted: Vec<String> = st
-                    .perms
-                    .effective_granted(&p.manifest.id, &p.manifest.permissions, bundled)
-                    .into_iter()
-                    .map(|perm| permission_key(perm).to_string())
-                    .collect();
-                let declared: Vec<String> = p
-                    .manifest
-                    .permissions
-                    .iter()
-                    .map(|perm| permission_key(*perm).to_string())
-                    .collect();
-                PluginRuntimeInfo {
-                    id: p.manifest.id.clone(),
-                    name: p.manifest.name.clone(),
-                    version: p.manifest.version.clone(),
-                    description: p.manifest.description.clone(),
-                    runtime_badge: p.manifest.runtime.kind_badge().to_string(),
-                    keywords: p.manifest.triggers.keywords.clone(),
-                    running: p.live.is_some(),
-                    pid: p.live.as_ref().and_then(|l| l.pid()),
-                    working_set_bytes: p.live.as_ref().and_then(|l| l.memory_bytes()),
-                    max_memory_mb: p.manifest.resources.max_memory_mb,
-                    idle_timeout_secs: p.manifest.resources.idle_timeout_secs,
-                    declared_permissions: declared,
-                    granted_permissions: granted,
-                    bundled_trusted: bundled,
-                }
-            })
+            .map(|p| build_runtime_info(p, &st.perms))
             .collect();
         list.sort_by(|a, b| a.name.cmp(&b.name));
         list
+    }
+
+    pub fn active_plugin_hotkeys(&self, cfg: &TomoyoConfig) -> Vec<ActivePluginHotkey> {
+        let (lock, _) = &*self.state;
+        let st = lock.lock().unwrap();
+        collect_active_plugin_hotkeys(&st.plugins, &st.disabled_ids, cfg)
+    }
+
+    pub fn has_event_subscriber(&self, event: PluginEventKind) -> bool {
+        let (lock, _) = &*self.state;
+        let st = lock.lock().unwrap();
+        st.plugins.iter().any(|(id, p)| {
+            !st.disabled_ids.contains(&id.to_ascii_lowercase()) && p.manifest.events.contains(&event)
+        })
+    }
+
+    pub fn dispatch_event(&self, target_plugin: Option<&str>, payload: &PluginEventPayload) -> Vec<ExecuteResponse> {
+        let interactive = self.interactive_prompts.load(Ordering::Acquire);
+        let (lock, cvar) = &*self.state;
+        let mut st = lock.lock().unwrap();
+        let has_sub = st.plugins.iter().any(|(id, p)| {
+            target_plugin.is_none_or(|t| id.eq_ignore_ascii_case(t))
+                && !st.disabled_ids.contains(&id.to_ascii_lowercase())
+                && p.manifest.events.contains(&payload.event)
+        });
+        if !has_sub { return Vec::new(); }
+        let HostState { plugins, disabled_ids, perms, .. } = &mut *st;
+        let (res, spawned) = dispatch_plugin_event(plugins, disabled_ids, perms, target_plugin, payload, interactive);
+        if spawned { cvar.notify_one(); }
+        res
     }
 
     pub fn execute_action(
@@ -223,30 +233,16 @@ impl PluginHost {
         let interactive = self.interactive_prompts.load(Ordering::Acquire);
         let (lock, cvar) = &*self.state;
         let mut st = lock.lock().unwrap();
-        let HostState { plugins, perms, .. } = &mut *st;
+        let HostState { plugins, perms, plugin_settings, .. } = &mut *st;
         let mut items = Vec::new();
         let mut any_spawned = false;
 
         for id in ids {
-            let Some(plug) = plugins.get_mut(id) else {
-                continue;
-            };
-            if let RuntimeConfig::Webview {
-                entry,
-                utools_compat,
-                width,
-                height,
-            } = &plug.manifest.runtime
-            {
-                items.push(build_webview_trigger_item(
-                    &plug.manifest,
-                    &plug.dir,
-                    entry,
-                    *utools_compat,
-                    *width,
-                    *height,
-                    ctx,
-                ));
+            let Some(plug) = plugins.get_mut(id) else { continue };
+            let mut plug_ctx = ctx.clone();
+            plug_ctx.plugin_settings = effective_plugin_settings(&plug.manifest, plugin_settings);
+            if let RuntimeConfig::Webview { entry, utools_compat, width, height } = &plug.manifest.runtime {
+                items.push(build_webview_trigger_item(&plug.manifest, &plug.dir, entry, *utools_compat, *width, *height, &plug_ctx));
                 continue;
             }
 
@@ -277,12 +273,12 @@ impl PluginHost {
 
             let query_res = match plug.live.as_mut() {
                 Some(LiveRuntime::Stdio(proc)) => {
-                    let Ok(params) = serde_json::to_value(ctx) else { continue };
+                    let Ok(params) = serde_json::to_value(&plug_ctx) else { continue };
                     proc.call(METHOD_QUERY, params, timeout)
                         .and_then(|val| serde_json::from_value::<QueryResponse>(val).map_err(Into::into))
                 }
                 Some(LiveRuntime::Wasm(wasm)) => {
-                    wasm.query(ctx).map_err(|e| ProcessError::Spawn(e.to_string()))
+                    wasm.query(&plug_ctx).map_err(|e| ProcessError::Spawn(e.to_string()))
                 }
                 None => continue,
             };

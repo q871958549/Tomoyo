@@ -8,6 +8,7 @@ mod hotkey_override;
 mod input;
 mod layout;
 mod menus;
+mod plugin_hotkeys;
 mod selftest;
 mod translate_ctrl;
 mod updater_ctrl;
@@ -137,6 +138,7 @@ pub struct AppShell {
     pub(super) everything_status: Option<&'static str>,
     pub(super) hotkey_label: String,
     pub(super) hotkey_conflict: Option<String>,
+    pub(super) plugin_hotkeys: Vec<tomoyo_plugin_host::ActivePluginHotkey>,
     pub(super) pending_update_install: Arc<Mutex<updater_ctrl::UpdateInstallSlot>>,
     pub(super) dpi_scale: f32,
     pub(super) taskbar_created_msg: u32,

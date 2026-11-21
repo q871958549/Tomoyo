@@ -11,8 +11,10 @@ pub mod job;
 pub mod permissions;
 pub mod process;
 mod runtime;
+pub mod v2_support;
 pub mod wasm;
 
 pub use discovery::default_plugin_dirs;
 pub use host::{PluginHost, PluginRuntimeInfo};
 pub use job::JobGuard;
+pub use v2_support::ActivePluginHotkey;

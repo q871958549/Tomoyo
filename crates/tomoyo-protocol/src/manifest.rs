@@ -1,3 +1,4 @@
+use crate::v2::{PluginEventKind, PluginHotkeyDecl, PluginSettingField};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use thiserror::Error;
@@ -31,6 +32,15 @@ pub struct PluginManifest {
     pub permissions: Vec<Permission>,
     #[serde(default)]
     pub resources: ResourceLimits,
+    /// Protocol v2: declarative global hotkeys managed by Tomoyo's microkernel.
+    #[serde(default)]
+    pub hotkeys: Vec<PluginHotkeyDecl>,
+    /// Protocol v2: opt-in host events delivered via `tomoyo/event` JSON-RPC.
+    #[serde(default)]
+    pub events: Vec<PluginEventKind>,
+    /// Protocol v2: declarative settings schema auto-rendered in Settings Center.
+    #[serde(default)]
+    pub settings: Vec<PluginSettingField>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

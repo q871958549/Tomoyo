@@ -5,6 +5,7 @@ use serde_json::Value;
 pub const METHOD_HANDSHAKE: &str = "tomoyo/handshake";
 pub const METHOD_QUERY: &str = "tomoyo/query";
 pub const METHOD_EXECUTE: &str = "tomoyo/execute";
+pub const METHOD_EVENT: &str = "tomoyo/event";
 pub const METHOD_SHUTDOWN: &str = "tomoyo/shutdown";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -27,6 +27,21 @@ struct NoteDoc {
     modified_secs: u64,
 }
 
+fn notes_dir_from(ctx: &QueryContext) -> PathBuf {
+    ctx.plugin_settings.get("notes_dir").and_then(|v| v.as_str()).map(str::trim)
+        .filter(|s| !s.is_empty()).map(PathBuf::from).unwrap_or_else(notes_dir)
+}
+
+fn max_results_from(ctx: &QueryContext) -> usize {
+    ctx.plugin_settings.get("max_results").and_then(|v| v.as_u64())
+        .map(|n| (n as usize).clamp(5, 30)).unwrap_or(15).min(ctx.limit.max(1))
+}
+
+fn default_tag_from(ctx: &QueryContext) -> String {
+    let raw = ctx.plugin_settings.get("default_tag").and_then(|v| v.as_str()).map(str::trim).unwrap_or("");
+    if raw.is_empty() { String::new() } else if raw.starts_with('#') { raw.to_string() } else { format!("#{raw}") }
+}
+
 fn notes_dir() -> PathBuf {
     if let Ok(custom) = std::env::var("TOMOYO_NOTES_DIR") {
         let t = custom.trim();
@@ -199,16 +214,21 @@ fn build_note_item(doc: &NoteDoc, score: i64) -> ResultItem {
 
 impl TomoyoPlugin for NotesPlugin {
     fn meta(&self) -> PluginMeta {
-        PluginMeta::new("本地 Markdown 备忘录", "1.0.0")
+        PluginMeta::new("本地 Markdown 备忘录", "2.0.0")
     }
 
     fn query(&self, ctx: &QueryContext) -> Vec<ResultItem> {
-        let dir = notes_dir();
+        let dir = notes_dir_from(ctx);
+        let dir_payload = dir.to_string_lossy().into_owned();
+        let def_tag = default_tag_from(ctx);
         let args = ctx.args.trim();
         let mut out = Vec::new();
 
         // 1. Direct create mode (`note + 标题 :: 内容` or `note new ...`)
-        if let Some((title, content)) = parse_create_input(args) {
+        if let Some((title, mut content)) = parse_create_input(args) {
+            if !def_tag.is_empty() && !content.contains(&def_tag) {
+                content = if content.is_empty() { def_tag.clone() } else { format!("{content}\n\n{def_tag}") };
+            }
             out.push(ResultItem {
                 id: "note:create".into(),
                 provider_id: PLUGIN_ID.into(),
@@ -226,7 +246,7 @@ impl TomoyoPlugin for NotesPlugin {
                     kind: ActionKind::PluginExecute {
                         plugin_id: PLUGIN_ID.into(),
                         action_id: "create".into(),
-                        payload: serde_json::json!({ "title": title, "content": content }),
+                        payload: serde_json::json!({ "title": title, "content": content, "dir": dir_payload }),
                     },
                 }],
                 preview: Some(PreviewSpec::Text {
@@ -241,6 +261,11 @@ impl TomoyoPlugin for NotesPlugin {
         if args.eq_ignore_ascii_case("clip") {
             if let Some(clip) = ctx.clipboard.as_ref().filter(|c| !c.text.trim().is_empty()) {
                 let title: String = clip.text.lines().next().unwrap_or("剪贴板笔记").trim().chars().take(32).collect();
+                let body = if !def_tag.is_empty() && !clip.text.contains(&def_tag) {
+                    format!("{}\n\n{def_tag}", clip.text)
+                } else {
+                    clip.text.clone()
+                };
                 out.push(ResultItem {
                     id: "note:from_clip".into(),
                     provider_id: PLUGIN_ID.into(),
@@ -258,10 +283,10 @@ impl TomoyoPlugin for NotesPlugin {
                         kind: ActionKind::PluginExecute {
                             plugin_id: PLUGIN_ID.into(),
                             action_id: "create".into(),
-                            payload: serde_json::json!({ "title": title, "content": clip.text }),
+                            payload: serde_json::json!({ "title": title, "content": body, "dir": dir_payload }),
                         },
                     }],
-                    preview: Some(PreviewSpec::Text { title, body: clip.text.clone() }),
+                    preview: Some(PreviewSpec::Text { title, body }),
                 });
                 return out;
             }
@@ -288,12 +313,13 @@ impl TomoyoPlugin for NotesPlugin {
             .collect();
         hits.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| b.1.modified_secs.cmp(&a.1.modified_secs)));
 
-        for (i, (score, doc)) in hits.into_iter().take(ctx.limit.min(18)).enumerate() {
+        for (i, (score, doc)) in hits.into_iter().take(max_results_from(ctx)).enumerate() {
             out.push(build_note_item(doc, score - i as i64));
         }
 
         if out.is_empty() {
             let dir_str = dir.to_string_lossy().into_owned();
+            let quick_content = if def_tag.is_empty() { args.to_string() } else { format!("{args}\n\n{def_tag}") };
             out.push(ResultItem {
                 id: "note:hint".into(),
                 provider_id: PLUGIN_ID.into(),
@@ -319,7 +345,7 @@ impl TomoyoPlugin for NotesPlugin {
                         kind: ActionKind::PluginExecute {
                             plugin_id: PLUGIN_ID.into(),
                             action_id: "create".into(),
-                            payload: serde_json::json!({ "title": args, "content": args }),
+                            payload: serde_json::json!({ "title": args, "content": quick_content, "dir": dir_str }),
                         },
                     }]
                 },
@@ -334,7 +360,15 @@ impl TomoyoPlugin for NotesPlugin {
             "create" => {
                 let title = req.payload.get("title").and_then(|v| v.as_str()).unwrap_or("未命名备忘");
                 let content = req.payload.get("content").and_then(|v| v.as_str()).unwrap_or("");
-                match create_note_file(&notes_dir(), title, content) {
+                let target_dir = req
+                    .payload
+                    .get("dir")
+                    .and_then(|v| v.as_str())
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(PathBuf::from)
+                    .unwrap_or_else(notes_dir);
+                match create_note_file(&target_dir, title, content) {
                     Ok(p) => ExecuteResponse {
                         hide_window: false,
                         toast: Some(format!("已保存本地 Markdown 备忘：{}", p.file_name().unwrap_or_default().to_string_lossy())),
@@ -347,7 +381,11 @@ impl TomoyoPlugin for NotesPlugin {
             "delete" => {
                 if let Some(p) = req.payload.get("path").and_then(|v| v.as_str()) {
                     let path = PathBuf::from(p);
-                    if path.starts_with(notes_dir()) && fs::remove_file(&path).is_ok() {
+                    let is_md = path
+                        .extension()
+                        .and_then(|e| e.to_str())
+                        .is_some_and(|e| e.eq_ignore_ascii_case("md") || e.eq_ignore_ascii_case("txt"));
+                    if is_md && fs::remove_file(&path).is_ok() {
                         return ExecuteResponse {
                             hide_window: false,
                             toast: Some("已删除本地备忘录".into()),
@@ -382,6 +420,13 @@ mod tests {
         assert_eq!(docs[0].title, "架构备忘");
         assert!(docs[0].tags.contains(&"#rust".to_string()));
         assert_eq!(parse_create_input("+ 会议纪要 :: 明天上线"), Some(("会议纪要".into(), "明天上线".into())));
+        let mut ctx = QueryContext::new("note + 测试", 1, 20);
+        ctx.plugin_settings.insert("notes_dir".into(), serde_json::json!(dir.to_string_lossy()));
+        ctx.plugin_settings.insert("default_tag".into(), serde_json::json!("inbox"));
+        ctx.plugin_settings.insert("max_results".into(), serde_json::json!(10));
+        assert_eq!(notes_dir_from(&ctx), dir);
+        assert_eq!(default_tag_from(&ctx), "#inbox");
+        assert_eq!(max_results_from(&ctx), 10);
         let _ = fs::remove_dir_all(&dir);
     }
 }

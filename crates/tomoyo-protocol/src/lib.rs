@@ -7,11 +7,13 @@ pub mod filter;
 pub mod manifest;
 pub mod rpc;
 pub mod types;
+pub mod v2;
 
 pub use filter::*;
 pub use manifest::*;
 pub use rpc::*;
 pub use types::*;
+pub use v2::*;
 
-/// Current wire protocol version.
-pub const PROTOCOL_VERSION: u32 = 1;
+/// Current wire protocol version (v2 adds declarative hotkeys, events & settings schema; v1 compatible).
+pub const PROTOCOL_VERSION: u32 = 2;

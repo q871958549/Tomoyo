@@ -124,21 +124,14 @@ pub(super) unsafe extern "system" fn main_wndproc(
                 4 => {
                     let cfg = app.config.read().unwrap().clone();
                     unregister_all_hotkeys(hwnd);
-                    let (active, _) = register_all_hotkeys(hwnd, &cfg);
-                    if let Some(t) = app.tray.as_mut() {
-                        t.update_tooltip(&active);
-                    }
+                    let (active, _, plug_hks) = register_all_hotkeys(hwnd, &cfg, &app.plugin_host);
+                    app.plugin_hotkeys = plug_hks;
+                    if let Some(t) = app.tray.as_mut() { t.update_tooltip(&active); }
                 }
                 3 => unregister_all_hotkeys(hwnd),
                 2 => app.on_clipboard_db_external_change(),
-                1 => {
-                    app.reload_config_and_all();
-                    app.show_toast(app.lang.pick("设置与插件已同步生效", "Settings & plugins synced"));
-                }
-                _ => {
-                    app.reload_config_from_settings();
-                    app.show_toast(app.lang.pick("设置已实时同步生效", "Settings synced live"));
-                }
+                1 => { app.reload_config_and_all(); app.show_toast(app.lang.pick("设置与插件已同步生效", "Settings & plugins synced")); }
+                _ => { app.reload_config_from_settings(); app.show_toast(app.lang.pick("设置已实时同步生效", "Settings synced live")); }
             }
             LRESULT(0)
         }
@@ -151,6 +144,7 @@ pub(super) unsafe extern "system" fn main_wndproc(
                 HOTKEY_CLIPBOARD_ID => app.toggle_clipboard_launcher(),
                 HOTKEY_TRANSLATE_ID => app.trigger_selection_translate(),
                 HOTKEY_CAPTURE_ID => app.trigger_capture("region"),
+                id if id >= super::plugin_hotkeys::PLUGIN_HOTKEY_BASE => super::plugin_hotkeys::handle_plugin_hotkey(app, id),
                 _ => {}
             }
             LRESULT(0)

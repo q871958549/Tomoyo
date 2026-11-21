@@ -76,24 +76,20 @@
   function jumpToHotkeyConflict() { activeTab = 'hotkeys'; runHotkeyAudit(); }
   function onToggleOverride(v: boolean) { cfg.override_conflict_hotkeys = v; scheduleSave(0); setTimeout(runHotkeyAudit, 260); }
   function onUpdateFilters(hidden: string[], custom: CustomFilterTab[]) {
-    cfg.hidden_builtin_filters = hidden;
-    cfg.custom_filters = custom;
-    scheduleSave(0);
+    cfg.hidden_builtin_filters = hidden; cfg.custom_filters = custom; scheduleSave(0);
   }
   function onUpdateAvoidance(fullscreen: boolean, excluded: string[]) {
-    cfg.suspend_hotkeys_in_fullscreen = fullscreen;
-    cfg.hotkey_excluded_apps = excluded;
-    scheduleSave(0);
+    cfg.suspend_hotkeys_in_fullscreen = fullscreen; cfg.hotkey_excluded_apps = excluded; scheduleSave(0);
+  }
+  function onUpdatePluginConfig(hotkeys: Record<string, string>, settings: Record<string, Record<string, string | number | boolean>>) {
+    cfg.plugin_hotkeys = hotkeys; cfg.plugin_settings = settings; scheduleSave(120);
   }
   function onTogglePlugin(id: string, enabled: boolean) {
     const low = id.toLowerCase();
     const next = (cfg.disabled_plugins || []).filter((x) => x.toLowerCase() !== low);
     cfg.disabled_plugins = enabled ? next : [...next, low];
-    if (!enabled && ((low === PLUGIN_TRANSLATE && activeTab === 'translate') || (low === PLUGIN_CAPTURE && activeTab === 'capture'))) {
-      activeTab = 'plugins';
-    }
-    scheduleSave(0);
-    setTimeout(() => postHost({ cmd: 'check_hotkey_health' }), 260);
+    if (!enabled && ((low === PLUGIN_TRANSLATE && activeTab === 'translate') || (low === PLUGIN_CAPTURE && activeTab === 'capture'))) activeTab = 'plugins';
+    scheduleSave(0); setTimeout(() => postHost({ cmd: 'check_hotkey_health' }), 260);
   }
 
   let navItems = $derived([
@@ -110,102 +106,36 @@
     { id: 'updates', key: 'nav_updates', icon: RefreshCw, on: true },
   ].filter((n) => n.on));
 
-  function setToast(msg: string, warn = false) {
-    toastMsg = msg;
-    toastWarn = warn;
-  }
-
-  function saveNow() {
-    postHost({ cmd: 'save_settings', config: $state.snapshot(cfg), autostart });
-    setToast(`✓ ${tr(lang, 'toast_saved')} · ${new Date().toLocaleTimeString()}`);
-  }
-
-  function scheduleSave(delayMs = 0) {
-    if (saveTimer) clearTimeout(saveTimer);
-    if (delayMs <= 0) saveNow();
-    else saveTimer = setTimeout(saveNow, delayMs);
-  }
-
-  function runHotkeyAudit() {
-    auditingHotkeys = true;
-    postHost({ cmd: 'audit_hotkeys' });
-  }
-
-  function probeHotkeyOwner(spec: string) {
-    probingSpec = spec;
-    probeResult = null;
-    postHost({ cmd: 'probe_hotkey_owner', spec });
-  }
-
+  function setToast(msg: string, warn = false) { toastMsg = msg; toastWarn = warn; }
+  function saveNow() { postHost({ cmd: 'save_settings', config: $state.snapshot(cfg), autostart }); setToast(`✓ ${tr(lang, 'toast_saved')} · ${new Date().toLocaleTimeString()}`); }
+  function scheduleSave(delayMs = 0) { if (saveTimer) clearTimeout(saveTimer); if (delayMs <= 0) saveNow(); else saveTimer = setTimeout(saveNow, delayMs); }
+  function runHotkeyAudit() { auditingHotkeys = true; postHost({ cmd: 'audit_hotkeys' }); }
+  function probeHotkeyOwner(spec: string) { probingSpec = spec; probeResult = null; postHost({ cmd: 'probe_hotkey_owner', spec }); }
   function applyFreeKey(slot: 'main' | 'clipboard' | 'translate' | 'capture', key: string) {
-    if (slot === 'main') cfg.hotkey = key;
-    else if (slot === 'clipboard') cfg.clipboard.hotkey = key;
-    else if (slot === 'translate') cfg.translate.hotkey = key;
-    else cfg.capture.hotkey = key;
-    scheduleSave(0);
-    setTimeout(runHotkeyAudit, 260);
+    if (slot === 'main') cfg.hotkey = key; else if (slot === 'clipboard') cfg.clipboard.hotkey = key;
+    else if (slot === 'translate') cfg.translate.hotkey = key; else cfg.capture.hotkey = key;
+    scheduleSave(0); setTimeout(runHotkeyAudit, 260);
   }
-
   function switchTab(id: string) {
     activeTab = id;
-    if (id === 'hotkeys' && !hotkeyAudit && !auditingHotkeys) {
-      runHotkeyAudit();
-    } else if (id === 'store' && !storeLoaded) {
-      storeLoaded = true;
-      fetchStore();
-    } else if (id === 'logs') {
-      refreshLogs();
-    } else if (id === 'updates' && !updatesCheckedOnce) {
+    if (id === 'hotkeys' && !hotkeyAudit && !auditingHotkeys) runHotkeyAudit();
+    else if (id === 'store' && !storeLoaded) { storeLoaded = true; fetchStore(); }
+    else if (id === 'logs') refreshLogs();
+    else if (id === 'updates' && !updatesCheckedOnce) {
       updatesCheckedOnce = true;
-      const nowSec = Math.floor(Date.now() / 1000);
-      const last = updateStatus?.checked_at_unix || 0;
-      if (!updateStatus || nowSec - last > 300) checkUpdatesNow();
+      if (!updateStatus || Math.floor(Date.now() / 1000) - (updateStatus.checked_at_unix || 0) > 300) checkUpdatesNow();
     }
   }
-
-  function fetchStore() {
-    storeLoading = true;
-    const sources = cfg.plugin_registries?.length ? cfg.plugin_registries : ['registry/index.json'];
-    postHost({ cmd: 'fetch_store', sources });
-  }
-
-  function refreshLogs() {
-    postHost({ cmd: 'read_logs', source: logSource, errors_only: logErrorsOnly });
-  }
-
-  function checkUpdatesNow() {
-    checkingUpdates = true;
-    postHost({ cmd: 'check_updates', repo: cfg.update.repo || OFFICIAL_REPO });
-  }
-
-  function installRelease(rel: ReleaseInfo) {
-    installProgress = { percent: 4, message: lang === 'en' ? 'Downloading & verifying SHA-256…' : '正在下载安装包并校验 SHA-256…' };
-    postHost({ cmd: 'install_update', release: rel });
-  }
-
-  function onThemePick(name: string) {
-    cfg.theme = name;
-    applyThemeClass(name);
-    postHost({ cmd: 'sync_theme', theme: name });
-    scheduleSave(0);
-  }
-
-  function onLanguageChange(code: Lang) {
-    cfg.language = code;
-    document.documentElement.lang = code === 'en' ? 'en' : 'zh-CN';
-    scheduleSave(0);
-  }
-
-  function onAutostartChange(v: boolean) {
-    autostart = v;
-    scheduleSave(0);
-  }
-
+  function fetchStore() { storeLoading = true; postHost({ cmd: 'fetch_store', sources: cfg.plugin_registries?.length ? cfg.plugin_registries : ['registry/index.json'] }); }
+  function refreshLogs() { postHost({ cmd: 'read_logs', source: logSource, errors_only: logErrorsOnly }); }
+  function checkUpdatesNow() { checkingUpdates = true; postHost({ cmd: 'check_updates', repo: cfg.update.repo || OFFICIAL_REPO }); }
+  function installRelease(rel: ReleaseInfo) { installProgress = { percent: 4, message: lang === 'en' ? 'Downloading & verifying SHA-256…' : '正在下载安装包并校验 SHA-256…' }; postHost({ cmd: 'install_update', release: rel }); }
+  function onThemePick(name: string) { cfg.theme = name; applyThemeClass(name); postHost({ cmd: 'sync_theme', theme: name }); scheduleSave(0); }
+  function onLanguageChange(code: Lang) { cfg.language = code; document.documentElement.lang = code === 'en' ? 'en' : 'zh-CN'; scheduleSave(0); }
+  function onAutostartChange(v: boolean) { autostart = v; scheduleSave(0); }
   function checkHotkeyConflictsToast(h: HotkeyHealthReport) {
     const bad = [h.main, h.clipboard, h.translate, h.capture].filter((s) => s && !s.disabled && !s.ok && s.spec);
-    if (bad.length === 0 && toastWarn) {
-      setToast(lang === 'en' ? '✓ All global hotkeys active' : '✓ 所有快捷键已实时生效', false);
-    }
+    if (bad.length === 0 && toastWarn) setToast(lang === 'en' ? '✓ All global hotkeys active' : '✓ 所有快捷键已实时生效', false);
   }
 
   onMount(() => {
@@ -390,7 +320,7 @@
         {:else if activeTab === 'store'}
           <StoreTab {lang} items={storeItems} statusText={storeStatus} loading={storeLoading} onRefresh={fetchStore} />
         {:else if activeTab === 'plugins'}
-          <PluginsTab {cfg} {lang} {plugins} {configPath} pluginsDir={init.plugins_dir} {onTogglePlugin} />
+          <PluginsTab {cfg} {lang} {plugins} {configPath} pluginsDir={init.plugins_dir} {onTogglePlugin} {onUpdatePluginConfig} />
         {:else if activeTab === 'logs'}
           <LogsTab
             {lang} source={logSource} errorsOnly={logErrorsOnly} content={logContent} metaLine={logMeta}

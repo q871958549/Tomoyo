@@ -37,6 +37,10 @@ pub trait TomoyoPlugin {
     fn execute(&self, _req: &ExecuteRequest) -> ExecuteResponse {
         ExecuteResponse::default()
     }
+    /// Protocol v2 optional event hook (`tomoyo/event`, e.g. clipboard or plugin hotkey).
+    fn on_event(&self, _ev: &PluginEventPayload) -> ExecuteResponse {
+        ExecuteResponse::default()
+    }
 }
 
 /// Runs the newline-delimited JSON-RPC 2.0 stdio event loop for a Tomoyo plugin.
@@ -89,6 +93,13 @@ pub fn run<P: TomoyoPlugin>(plugin: P) {
                 Err(e) => {
                     JsonRpcResponse::err(req.id, -32602, format!("invalid execute params: {e}"))
                 }
+            },
+            METHOD_EVENT => match serde_json::from_value::<PluginEventPayload>(req.params) {
+                Ok(ev) => {
+                    let res = plugin.on_event(&ev);
+                    JsonRpcResponse::ok(req.id, serde_json::to_value(res).unwrap())
+                }
+                Err(e) => JsonRpcResponse::err(req.id, -32602, format!("invalid event params: {e}")),
             },
             METHOD_SHUTDOWN => {
                 should_exit = true;

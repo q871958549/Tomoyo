@@ -24,7 +24,7 @@ impl TomoyoPlugin for OcrPlugin {
     }
 
     fn query(&self, ctx: &QueryContext) -> Vec<ResultItem> {
-        let (pref, raw_mode, explicit_path) = parse_ocr_args(&ctx.args);
+        let (pref, raw_mode, explicit_path) = resolve_ocr_options(ctx);
         let Some((img_path, source_label)) = resolve_target_image(ctx, explicit_path.as_deref()) else {
             return vec![hint_item()];
         };
@@ -61,6 +61,23 @@ impl TomoyoPlugin for OcrPlugin {
     fn execute(&self, _req: &ExecuteRequest) -> ExecuteResponse {
         ExecuteResponse::default()
     }
+}
+
+fn resolve_ocr_options(ctx: &QueryContext) -> (LangPref, bool, Option<String>) {
+    let (mut pref, mut raw_mode, explicit_path) = parse_ocr_args(&ctx.args);
+    let tokens: Vec<String> = ctx.args.trim().split_whitespace().map(|s| s.to_ascii_lowercase()).collect();
+    let has_lang_arg = tokens.iter().any(|t| matches!(t.as_str(), "en" | "eng" | "english" | "zh" | "cn" | "chinese"));
+    if !has_lang_arg {
+        match ctx.plugin_settings.get("default_lang").and_then(|v| v.as_str()) {
+            Some("zh") => pref = LangPref::Zh,
+            Some("en") => pref = LangPref::En,
+            _ => {}
+        }
+    }
+    if !raw_mode && ctx.plugin_settings.get("raw_output").and_then(|v| v.as_bool()) == Some(true) {
+        raw_mode = true;
+    }
+    (pref, raw_mode, explicit_path)
 }
 
 fn parse_ocr_args(raw: &str) -> (LangPref, bool, Option<String>) {
@@ -388,5 +405,10 @@ mod tests {
         assert_eq!(parse_ocr_args("en"), (LangPref::En, false, None));
         assert_eq!(parse_ocr_args("raw C:\\a.png"), (LangPref::Auto, true, Some("C:\\a.png".into())));
         assert_eq!(parse_ocr_args("zh \"D:\\my shot.png\""), (LangPref::Zh, false, Some("D:\\my shot.png".into())));
+        let mut ctx = QueryContext::new("ocr", 1, 10);
+        ctx.args.clear();
+        ctx.plugin_settings.insert("default_lang".into(), serde_json::json!("en"));
+        ctx.plugin_settings.insert("raw_output".into(), serde_json::json!(true));
+        assert_eq!(resolve_ocr_options(&ctx), (LangPref::En, true, None));
     }
 }

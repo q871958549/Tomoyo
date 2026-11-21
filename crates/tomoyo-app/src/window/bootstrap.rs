@@ -142,13 +142,15 @@ impl AppShell {
 
         let mut hotkey_label = cfg_snap.hotkey.clone();
         let mut hotkey_conflict = None;
+        let mut plugin_hotkeys = Vec::new();
         let tray = if install_tray_and_hotkey {
             if cfg_snap.is_plugin_enabled(tomoyo_core::PLUGIN_CLIPBOARD) {
                 unsafe { let _ = AddClipboardFormatListener(hwnd); }
             }
-            let (active, conflict) = register_all_hotkeys(hwnd, &cfg_snap);
+            let (active, conflict, plug_hks) = register_all_hotkeys(hwnd, &cfg_snap, &plugin_host);
             hotkey_label = active;
             hotkey_conflict = conflict;
+            plugin_hotkeys = plug_hks;
             Some(TrayIcon::install(hwnd, &hotkey_label))
         } else {
             None
@@ -197,6 +199,7 @@ impl AppShell {
             everything_status: detect_everything_label(),
             hotkey_label,
             hotkey_conflict,
+            plugin_hotkeys,
             pending_update_install: Arc::new(Mutex::new(Default::default())),
             dpi_scale,
             taskbar_created_msg,

@@ -79,6 +79,7 @@ impl AppShell {
             self.clipboard.push_files_with_source(files, &src_app);
         } else if let Some(txt) = read_clipboard_text() {
             self.inter.suppress_next_clip_img = false;
+            super::plugin_hotkeys::dispatch_clipboard_text_event(self, &txt, &src_app);
             self.clipboard.push_text_with_source(txt, &src_app);
         } else if self.inter.suppress_next_clip_img {
             self.inter.suppress_next_clip_img = false;

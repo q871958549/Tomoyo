@@ -174,7 +174,7 @@ impl LivePluginProcess {
             Duration::from_millis(handshake_timeout_ms.max(2000)),
         )?;
         let hs: HandshakeResult = serde_json::from_value(hs_val)?;
-        if hs.protocol_version != PROTOCOL_VERSION {
+        if hs.protocol_version == 0 || hs.protocol_version > PROTOCOL_VERSION {
             return Err(ProcessError::Spawn(format!(
                 "unsupported plugin protocol version: {}",
                 hs.protocol_version

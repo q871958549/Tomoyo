@@ -170,6 +170,9 @@ pub fn build_settings_init_script() -> String {
                 "declared_permissions": p.declared_permissions,
                 "granted_permissions": p.granted_permissions,
                 "bundled_trusted": p.bundled_trusted,
+                "declared_hotkeys": p.declared_hotkeys,
+                "declared_events": p.declared_events,
+                "settings_schema": p.settings_schema,
             })
         })
         .collect();

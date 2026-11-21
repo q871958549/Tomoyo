@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { FileCode, FolderOpen, Layers } from '@lucide/svelte';
+  import { ChevronDown, ChevronUp, FileCode, FolderOpen, Layers, SlidersHorizontal } from '@lucide/svelte';
   import {
     isPluginEnabled,
     localizePermission,
@@ -11,6 +11,7 @@
   import type { PluginEntry, TomoyoConfig } from '../../lib/types';
   import Button from '../../lib/ui/Button.svelte';
   import Switch from '../../lib/ui/Switch.svelte';
+  import PluginConfigDrawer from './PluginConfigDrawer.svelte';
 
   interface Props {
     cfg: TomoyoConfig;
@@ -19,10 +20,32 @@
     configPath: string;
     pluginsDir: string;
     onTogglePlugin: (id: string, enabled: boolean) => void;
+    onUpdatePluginConfig: (
+      hotkeys: Record<string, string>,
+      settings: Record<string, Record<string, string | number | boolean>>
+    ) => void;
   }
 
-  let { cfg, lang, plugins, configPath, pluginsDir, onTogglePlugin }: Props = $props();
+  let { cfg, lang, plugins, configPath, pluginsDir, onTogglePlugin, onUpdatePluginConfig }: Props = $props();
   let isEn = $derived(lang === 'en');
+  let expandedId = $state<string | null>(null);
+
+  function hasV2Config(p: PluginEntry): boolean {
+    return (p.declared_hotkeys?.length || 0) > 0 || (p.settings_schema?.length || 0) > 0;
+  }
+
+  function onChangeHotkey(slotKey: string, spec: string) {
+    const next = { ...(cfg.plugin_hotkeys || {}) };
+    if (spec.trim()) next[slotKey] = spec.trim();
+    else delete next[slotKey];
+    onUpdatePluginConfig(next, { ...(cfg.plugin_settings || {}) });
+  }
+
+  function onChangeSetting(pluginId: string, key: string, value: string | number | boolean) {
+    const nextSettings = { ...(cfg.plugin_settings || {}) };
+    nextSettings[pluginId] = { ...(nextSettings[pluginId] || {}), [key]: value };
+    onUpdatePluginConfig({ ...(cfg.plugin_hotkeys || {}) }, nextSettings);
+  }
 
   function togglePerm(p: PluginEntry, perm: string, allowed: boolean) {
     const next = new Set(p.granted_permissions || []);
@@ -84,30 +107,51 @@
   {:else}
     {#each plugins as p}
       {@const enabled = isPluginEnabled(cfg, p.id)}
-      <div class="plug-grid plug-row {enabled ? '' : 'is-off'}">
-        <div class="plug-name">
-          <div class="t-label">{p.name}</div>
-          <div class="plug-id">{p.id}</div>
+      {@const configurable = hasV2Config(p)}
+      {@const isOpen = expandedId === p.id}
+      <div class="plug-item">
+        <div class="plug-grid plug-row {enabled ? '' : 'is-off'}">
+          <div class="plug-name">
+            <div class="plug-title-row">
+              <span class="t-label">{p.name}</span>
+              {#if configurable}
+                <button
+                  type="button"
+                  class="cfg-pill {isOpen ? 'is-open' : ''}"
+                  data-config-plugin={p.id}
+                  onclick={() => (expandedId = isOpen ? null : p.id)}
+                >
+                  <SlidersHorizontal size={11} />
+                  <span>{isEn ? 'Config' : '参数与热键'}</span>
+                  {#if isOpen}<ChevronUp size={11} />{:else}<ChevronDown size={11} />{/if}
+                </button>
+              {/if}
+            </div>
+            <div class="plug-id">{p.id}</div>
+          </div>
+          <div><span class="t-pill">{localizeRuntime(p.runtime, isEn)}</span></div>
+          <div class="plug-kw">{(p.keywords || []).join(', ')}</div>
+          <div class="plug-perms">
+            {#if (p.declared_permissions || []).length === 0}
+              <span class="t-desc">{tr(lang, 'perm_none')}</span>
+            {:else}
+              {#each p.declared_permissions as perm}
+                {@const granted = (p.granted_permissions || []).includes(perm)}
+                <div class="perm-item">
+                  <Switch checked={granted} onchange={(v) => togglePerm(p, perm, v)} />
+                  <span>{localizePermission(perm, isEn)}</span>
+                </div>
+              {/each}
+            {/if}
+          </div>
+          <div class="plug-mem">{p.max_memory_mb} MB</div>
+          <div class="plug-sw">
+            <Switch checked={enabled} ariaLabel={p.name} onchange={(v) => onTogglePlugin(p.id, v)} />
+          </div>
         </div>
-        <div><span class="t-pill">{localizeRuntime(p.runtime, isEn)}</span></div>
-        <div class="plug-kw">{(p.keywords || []).join(', ')}</div>
-        <div class="plug-perms">
-          {#if (p.declared_permissions || []).length === 0}
-            <span class="t-desc">{tr(lang, 'perm_none')}</span>
-          {:else}
-            {#each p.declared_permissions as perm}
-              {@const granted = (p.granted_permissions || []).includes(perm)}
-              <div class="perm-item">
-                <Switch checked={granted} onchange={(v) => togglePerm(p, perm, v)} />
-                <span>{localizePermission(perm, isEn)}</span>
-              </div>
-            {/each}
-          {/if}
-        </div>
-        <div class="plug-mem">{p.max_memory_mb} MB</div>
-        <div class="plug-sw">
-          <Switch checked={enabled} ariaLabel={p.name} onchange={(v) => onTogglePlugin(p.id, v)} />
-        </div>
+        {#if configurable && isOpen}
+          <PluginConfigDrawer plugin={p} {cfg} {lang} {onChangeHotkey} {onChangeSetting} />
+        {/if}
       </div>
     {/each}
   {/if}
@@ -163,9 +207,18 @@
     font-size: 11.5px; font-weight: 600; color: var(--muted);
     padding-bottom: 8px; border-bottom: 1px solid var(--border);
   }
-  .plug-row { padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 12.5px; }
+  .plug-item { border-bottom: 1px solid var(--border); }
+  .plug-item:last-child { border-bottom: 0; }
+  .plug-row { padding: 10px 0; font-size: 12.5px; }
   .plug-row.is-off { opacity: 0.56; }
-  .plug-row:last-child { border-bottom: 0; padding-bottom: 2px; }
+  .plug-title-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .cfg-pill {
+    display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px; border-radius: 999px;
+    border: 1px solid var(--border-strong); background: var(--surface); color: var(--text-secondary);
+    font-family: inherit; font-size: 11px; font-weight: 500; cursor: pointer;
+    transition: border-color 0.12s ease, color 0.12s ease, background-color 0.12s ease;
+  }
+  .cfg-pill:hover, .cfg-pill.is-open { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
   .empty-plug { padding: 12px 0 4px; font-size: 12px; color: var(--muted); }
   .plug-id { font-size: 11px; color: var(--muted); font-family: "Cascadia Mono", Consolas, monospace; }
   .plug-kw { font-family: "Cascadia Mono", Consolas, monospace; font-size: 12px; color: var(--text-secondary); }

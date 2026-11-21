@@ -241,6 +241,7 @@ pub(super) fn register_configured_hotkey(hwnd: HWND, spec: &str) -> (String, Opt
 
 pub(super) fn unregister_all_hotkeys(hwnd: HWND) {
     uninstall_conflict_override_hook();
+    super::plugin_hotkeys::unregister_plugin_hotkeys(hwnd);
     unsafe {
         for id in [HOTKEY_ID, HOTKEY_CLIPBOARD_ID, HOTKEY_TRANSLATE_ID, HOTKEY_CAPTURE_ID] {
             let _ = UnregisterHotKey(Some(hwnd), id);
@@ -248,11 +249,12 @@ pub(super) fn unregister_all_hotkeys(hwnd: HWND) {
     }
 }
 
-pub(super) fn register_all_hotkeys(hwnd: HWND, cfg: &TomoyoConfig) -> (String, Option<String>) {
-    super::hotkey_avoid::sync_hotkey_avoidance(
-        cfg.suspend_hotkeys_in_fullscreen,
-        &cfg.hotkey_excluded_apps,
-    );
+pub(super) fn register_all_hotkeys(
+    hwnd: HWND,
+    cfg: &TomoyoConfig,
+    plugin_host: &tomoyo_plugin_host::PluginHost,
+) -> (String, Option<String>, Vec<tomoyo_plugin_host::ActivePluginHotkey>) {
+    super::hotkey_avoid::sync_hotkey_avoidance(cfg.suspend_hotkeys_in_fullscreen, &cfg.hotkey_excluded_apps);
     let lang = cfg.lang();
     let allow_override = cfg.override_conflict_hotkeys;
     let mut override_entries: Vec<(i32, u32, u32)> = Vec::new();
@@ -323,35 +325,30 @@ pub(super) fn register_all_hotkeys(hwnd: HWND, cfg: &TomoyoConfig) -> (String, O
     let mut clip_status = reg_opt(HOTKEY_CLIPBOARD_ID, clip_spec, lang.pick("剪贴板", "Clipboard"));
     let mut tr_status = reg_opt(HOTKEY_TRANSLATE_ID, tr_spec, lang.pick("划词翻译", "Translate"));
     let mut cap_status = reg_opt(HOTKEY_CAPTURE_ID, cap_spec, lang.pick("截图", "Capture"));
+    let plug_hks = super::plugin_hotkeys::register_plugin_hotkeys(hwnd, cfg, plugin_host, &mut override_entries);
 
     if !sync_conflict_override_hook(hwnd, &override_entries) {
         for slot in [&mut main_status, &mut clip_status, &mut tr_status, &mut cap_status] {
             if slot.overridden {
-                slot.ok = false;
-                slot.overridden = false;
+                slot.ok = false; slot.overridden = false;
                 slot.reason = lang.pick("底层接管钩子挂载失败", "Override hook installation failed").into();
             }
         }
     }
 
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
     save_hotkey_health(&HotkeyHealthReport {
         main: main_status, clipboard: clip_status, translate: tr_status, capture: cap_status,
         updated_at_unix: now,
     });
 
-    let summary = if issues.is_empty() {
-        None
-    } else {
+    let summary = if issues.is_empty() { None } else {
         Some(match lang {
             Lang::Zh => format!("⚠ {}（按 Ctrl+, 调整）", issues.join("；")),
             Lang::En => format!("⚠ {} (Ctrl+, to change)", issues.join("; ")),
         })
     };
-    (active, summary)
+    (active, summary, plug_hks)
 }
 
 pub(super) fn register_optional_hotkey(hwnd: HWND, id: i32, spec: &str) -> bool {

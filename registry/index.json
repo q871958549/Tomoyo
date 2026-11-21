@@ -6,14 +6,14 @@
     {
       "id": "dev.tomoyo.notes",
       "name": "本地 Markdown 备忘录 (官方插件)",
-      "version": "1.0.0",
-      "description": "纯本地 Markdown 备忘录插件（零核心膨胀、零私有库锁定）：支持 note/memo 全文检索、#标签过滤、一键新建、剪贴板转存与外部编辑器直达",
+      "version": "2.0.0",
+      "description": "纯本地 Markdown 备忘录插件（Protocol v2 · 零核心膨胀、零私有库锁定）：支持声明式热键与参数配置、note/memo 全文检索、#标签过滤、一键新建与剪贴板转存",
       "author": "Tomoyo 贡献者",
       "license": "MIT",
       "runtime_kind": "stdio_jsonrpc",
       "keywords": ["note", "memo", "bw"],
       "source": "plugins/official-notes",
-      "sha256": "63976c2136f1a2d6e1c18ffd7caf475b1e8f746e3390c91f6d6333a9e6995333"
+      "sha256": "0bd40257978e0278f72abfabb2f5a868ce1abb5af9fe5d031f84799e3f0f1050"
     },
     {
       "id": "dev.tomoyo.example-hello",

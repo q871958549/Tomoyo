@@ -144,7 +144,34 @@ export interface TomoyoConfig {
     skipped_version?: string | null;
   };
   plugin_registries?: string[];
+  plugin_hotkeys?: Record<string, string>;
+  plugin_settings?: Record<string, Record<string, string | number | boolean>>;
   web_searches: WebSearchEngine[];
+}
+
+export interface PluginHotkeyDecl {
+  id: string;
+  label: string;
+  default_hotkey?: string;
+  trigger_query?: string;
+}
+
+export interface PluginSettingOption {
+  value: string;
+  label: string;
+}
+
+export interface PluginSettingField {
+  key: string;
+  label: string;
+  description?: string;
+  type: 'text' | 'bool' | 'number' | 'select';
+  placeholder?: string;
+  min?: number;
+  max?: number;
+  step?: number;
+  options?: PluginSettingOption[];
+  default?: string | number | boolean;
 }
 
 export interface PluginEntry {
@@ -156,6 +183,9 @@ export interface PluginEntry {
   declared_permissions: string[];
   granted_permissions: string[];
   bundled_trusted?: boolean;
+  declared_hotkeys?: PluginHotkeyDecl[];
+  declared_events?: string[];
+  settings_schema?: PluginSettingField[];
 }
 
 export interface ReleaseInfo {

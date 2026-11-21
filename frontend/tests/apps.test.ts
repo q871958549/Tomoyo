@@ -70,7 +70,15 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
         update: { auto_check: true, check_interval_hours: 24, repo: 'q871958549/Tomoyo', last_checked_unix: 0 },
         web_searches: [{ keyword: 'g', name: 'Google', url: 'https://www.google.com/search?q={q}' }],
       },
-      plugins: [{ id: 'dev.tomoyo.ocr', name: 'OCR', runtime: 'STDIO', keywords: ['ocr'], max_memory_mb: 128, declared_permissions: [], granted_permissions: [] }],
+      plugins: [{
+        id: 'dev.tomoyo.ocr', name: 'OCR', runtime: 'STDIO', keywords: ['ocr'], max_memory_mb: 128,
+        declared_permissions: [], granted_permissions: [],
+        declared_hotkeys: [{ id: 'quick_ocr', label: '快速识别截图', default_hotkey: '', trigger_query: 'ocr ' }],
+        settings_schema: [
+          { key: 'default_lang', label: '默认语言', type: 'select', default: 'auto', options: [{ value: 'auto', label: '自动' }, { value: 'en', label: '英文' }] },
+          { key: 'raw_output', label: '保留原始空格', type: 'bool', default: false },
+        ],
+      }],
       running_apps: ['code.exe', 'notepad.exe'],
       secrets_status: { deepl: false, openai: true },
       hotkey_health: origHealth,
@@ -154,6 +162,17 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
     expect(document.querySelector('button[data-tab="translate"]')).toBeNull();
     expect(document.querySelector('button[data-tab="hotkeys"] .nav-badge')?.textContent).toBe('1');
 
+    // Protocol v2 declarative plugin settings & hotkey drawer
+    const cfgBtn = document.querySelector<HTMLButtonElement>('button[data-config-plugin="dev.tomoyo.ocr"]');
+    expect(cfgBtn).not.toBeNull();
+    cfgBtn?.click();
+    flushSync();
+    expect(document.querySelector('[data-plugin-drawer="dev.tomoyo.ocr"]')).not.toBeNull();
+    const rawSw = document.querySelector<HTMLButtonElement>('button[role="switch"][aria-label="dev.tomoyo.ocr:raw_output"]');
+    expect(rawSw).not.toBeNull();
+    rawSw?.click();
+    flushSync();
+
     // User-extensible search filter tabs: one-click preset adds a custom filter tab and saves config
     document.querySelector<HTMLButtonElement>('button[data-tab="search"]')?.click();
     flushSync();
@@ -163,9 +182,14 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
     flushSync();
     expect(document.body.textContent).toContain('@code');
     const lastSave = [...wv.posted].reverse().find((m) => m.cmd === 'save_settings');
-    const savedCfg = (lastSave?.config ?? {}) as { custom_filters?: Array<{ id: string }>; disabled_plugins?: string[] };
+    const savedCfg = (lastSave?.config ?? {}) as {
+      custom_filters?: Array<{ id: string }>;
+      disabled_plugins?: string[];
+      plugin_settings?: Record<string, Record<string, unknown>>;
+    };
     expect(savedCfg.custom_filters?.some((t) => t.id === 'code')).toBe(true);
     expect(savedCfg.disabled_plugins).toContain('dev.tomoyo.translate');
+    expect(savedCfg.plugin_settings?.['dev.tomoyo.ocr']?.raw_output).toBe(true);
 
     unmount(app);
   });

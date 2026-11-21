@@ -143,7 +143,9 @@ impl AppShell {
                     old.apps.extra_dirs != fresh.apps.extra_dirs
                         || old.apps.auto_detect_desktop_organizers != fresh.apps.auto_detect_desktop_organizers
                         || old.apps.extra_scan_depth != fresh.apps.extra_scan_depth,
-                    old.disabled_plugins != fresh.disabled_plugins,
+                    old.disabled_plugins != fresh.disabled_plugins
+                        || old.plugin_settings != fresh.plugin_settings
+                        || old.plugin_hotkeys != fresh.plugin_hotkeys,
                     old.is_plugin_enabled(tomoyo_core::PLUGIN_CLIPBOARD),
                 )
             })
@@ -156,6 +158,9 @@ impl AppShell {
         self.lang = new_lang;
         unsafe { apply_cue_banner(self.edit_hwnd, new_lang); }
         self.apply_theme(&new_theme, false);
+        if force_provider_reload || apps_changed || plugins_changed {
+            self.router.reload_all();
+        }
         if self.tray.is_some() {
             if clip_was_on != clip_now_on {
                 unsafe {
@@ -167,15 +172,13 @@ impl AppShell {
                 }
             }
             unregister_all_hotkeys(self.hwnd);
-            let (active, conflict) = register_all_hotkeys(self.hwnd, &cfg_for_hk);
+            let (active, conflict, plug_hks) = register_all_hotkeys(self.hwnd, &cfg_for_hk, &self.plugin_host);
             self.hotkey_label = active;
             self.hotkey_conflict = conflict;
+            self.plugin_hotkeys = plug_hks;
             if let Some(tray) = &mut self.tray {
                 tray.update_tooltip(&self.hotkey_label);
             }
-        }
-        if force_provider_reload || apps_changed || plugins_changed {
-            self.router.reload_all();
         }
         if unsafe { IsWindowVisible(self.hwnd).as_bool() } {
             self.position_on_active_monitor();
