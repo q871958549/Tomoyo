@@ -31,6 +31,8 @@
 ├──────────────────────────────────────────────────────────────────────────────┤
 │  v2.3+  · 远期：纯外部 MCP 桥接与本地文档语义检索插件 + Ed25519 插件签名     │
 ├──────────────────────────────────────────────────────────────────────────────┤
+│  v2.2.5 · [已完成] 根治热键接管刷屏 WARN/钩子抖动与 WebView2 早关句柄竞态 │
+├──────────────────────────────────────────────────────────────────────────────┤
 │  v2.2.4 · [已完成] 统一设置中心标题栏/任务栏/侧边栏/关于页与系统托盘应用 Logo│
 ├──────────────────────────────────────────────────────────────────────────────┤
 │  v2.2.3 · [已完成] 静默两段式 Esc + 全局 F3 一键万能贴图（图片/文件/色值/文本）│
@@ -294,6 +296,15 @@
    - 升级 `tomoyo-webview-host` 至 `WNDCLASSEXW` + DPI 匹配双尺寸 `LoadImageW`（`SM_CXSMICON` 标题栏小图标 + `SM_CXICON` 任务栏大图标），并在 `--self-test` 增加真实图标句柄非空防回归断言。
 2. **设置中心侧边栏与关于页品牌 Logo 统一（`SettingsApp.svelte` + `UpdatesTab.svelte` + `tomoyo-logo.png`）**：
    - 基于 `assets/tomoyo-icon-transparent.png` 生成 `96×96` 高清透明应用 Logo（与 `tomoyo.ico` 像素一致），替换设置中心导航栏上方旧字母方块 `T` 并同步展示于关于页头图，单文件 `settings.html` 保持在 `293.9 KB / 320 KB` 预算内。
+
+### 阶段十三（稳定性与日志清净）：`v2.2.5` — 根治热键接管刷屏 WARN、钩子抖动与 WebView2 早关竞态（已完成 ✅）
+1. **日志精准分级（`input.rs` + `plugin_hotkeys.rs`）**：
+   - 移除 `register_optional_hotkey()` 内盲目打印的 `WARN`，仅在热键确实不可用（未启用接管或底层接管钩子挂载失败）时输出 `WARN`；已被高优先级钩子自动接管生效的槽位记为 `INFO`，不再误污染诊断面板告警计数。
+2. **消灭焦点切换与非热键保存引发的钩子拆装风暴（`hotkey.rs` + `win_host.rs` + `selftest.rs`）**：
+   - 新增 `HotkeyHealthReport::has_unresolved_conflicts()`：设置中心 `WM_ACTIVATE` 仅在存在真实未解决冲突（`!ok`）时才通知主进程重探热键；全部热键均已生效（含已接管）时零拆装、零热键真空期；
+   - `reload_config_internal` 引入 `hotkeys_config_changed` 与 `avoidance_config_changed` 脏位比对：修改外观、窗口尺寸、目录等非热键配置完全不触碰现有热键与钩子，修改避让名单时仅原子刷新 `sync_hotkey_avoidance`。
+3. **根治 WebView2 窗口早关引发的 `HRESULT(0x80070578)` 假 ERROR（`win_host.rs`）**：
+   - 在 `CreateCoreWebView2Controller` 调用前后及回调入口校验 `IsWindow(Some(hwnd))`；若用户于初始化前提前关窗则静默释放并退出，彻底消除无效窗口句柄 `ERROR`。
 
 ---
 

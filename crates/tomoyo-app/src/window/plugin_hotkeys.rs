@@ -33,6 +33,8 @@ pub(super) fn register_plugin_hotkeys(
             && let Some(p) = parse_hotkey(&hk.spec) {
                 override_entries.push((id, p.modifiers, p.vk));
                 tracing::info!(plugin = %hk.plugin_id, hotkey = %hk.spec, id = id, "Queued plugin hotkey for conflict rescue");
+            } else {
+                tracing::warn!(plugin = %hk.plugin_id, hotkey = %hk.spec, id = id, "Plugin hotkey registration failed (already in use)");
             }
         registered.push(hk);
     }
@@ -58,6 +60,8 @@ pub(super) fn register_flow_hotkeys(
             && let Some(p) = parse_hotkey(spec) {
                 override_entries.push((id, p.modifiers, p.vk));
                 tracing::info!(flow = %flow.id, hotkey = %spec, id = id, "Queued workflow hotkey for conflict rescue");
+            } else {
+                tracing::warn!(flow = %flow.id, hotkey = %spec, id = id, "Workflow hotkey registration failed (already in use)");
             }
         registered.push(flow.id);
     }

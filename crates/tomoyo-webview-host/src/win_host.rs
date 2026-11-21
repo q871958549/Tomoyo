@@ -41,12 +41,12 @@ use windows::Win32::UI::HiDpi::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetClientRect, GetMessageW,
-    GetSystemMetrics, GetWindowLongPtrW, IsIconic, LoadCursorW, PostMessageW, PostQuitMessage,
-    RegisterClassExW, SendMessageW, SetForegroundWindow, SetWindowLongPtrW, SetWindowPos,
-    SetWindowTextW, ShowWindow, TranslateMessage, GWLP_USERDATA, HWND_NOTOPMOST, HWND_TOPMOST,
-    ICON_BIG, ICON_SMALL, IDC_ARROW, MSG, SM_CXSCREEN, SM_CYSCREEN, SWP_NOACTIVATE, SWP_NOMOVE,
-    SWP_NOSIZE, SW_RESTORE, SW_SHOW, WM_ACTIVATE, WM_CLOSE, WM_DESTROY, WM_SETICON, WM_SIZE,
-    WNDCLASSEXW, WS_OVERLAPPEDWINDOW, WS_VISIBLE,
+    GetSystemMetrics, GetWindowLongPtrW, IsIconic, IsWindow, LoadCursorW, PostMessageW,
+    PostQuitMessage, RegisterClassExW, SendMessageW, SetForegroundWindow, SetWindowLongPtrW,
+    SetWindowPos, SetWindowTextW, ShowWindow, TranslateMessage, GWLP_USERDATA, HWND_NOTOPMOST,
+    HWND_TOPMOST, ICON_BIG, ICON_SMALL, IDC_ARROW, MSG, SM_CXSCREEN, SM_CYSCREEN, SWP_NOACTIVATE,
+    SWP_NOMOVE, SWP_NOSIZE, SW_RESTORE, SW_SHOW, WM_ACTIVATE, WM_CLOSE, WM_DESTROY, WM_SETICON,
+    WM_SIZE, WNDCLASSEXW, WS_OVERLAPPEDWINDOW, WS_VISIBLE,
 };
 
 const WM_APP_WEBVIEW_EVENT: u32 = 0x8000 + 31;
@@ -142,7 +142,9 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     && st.last_activate_probe.elapsed() >= Duration::from_millis(1200)
                 {
                     st.last_activate_probe = Instant::now();
-                    if let Some(p) = st.notify_hwnd {
+                    if tomoyo_core::load_hotkey_health().has_unresolved_conflicts()
+                        && let Some(p) = st.notify_hwnd
+                    {
                         crate::bridge_os::notify_parent_mode(p, 4);
                     }
                     crate::win_workers::spawn_hotkey_health_worker(
@@ -317,9 +319,17 @@ pub fn run_windows_host(opts: LaunchArgs) {
             let ctrl_handler = CreateCoreWebView2ControllerCompletedHandler::create(Box::new(
                 move |res, controller| {
                     let Some(controller) = controller.filter(|_| res.is_ok()) else {
-                        tracing::error!("WebView2 controller creation failed: {res:?}");
+                        if !unsafe { IsWindow(Some(hwnd)).as_bool() } {
+                            tracing::debug!("WebView2 controller aborted: host window closed early");
+                        } else {
+                            tracing::error!("WebView2 controller creation failed: {res:?}");
+                        }
                         return Ok(());
                     };
+                    if !unsafe { IsWindow(Some(hwnd)).as_bool() } {
+                        let _ = unsafe { controller.Close() };
+                        return Ok(());
+                    }
                     unsafe {
                         let mut rc = RECT::default();
                         let _ = GetClientRect(hwnd, &mut rc);
@@ -404,6 +414,10 @@ pub fn run_windows_host(opts: LaunchArgs) {
             ));
 
             unsafe {
+                if !IsWindow(Some(hwnd)).as_bool() {
+                    tracing::debug!("Skipping WebView2 controller creation: host window already closed");
+                    return Ok(());
+                }
                 let _ = env.CreateCoreWebView2Controller(hwnd, &ctrl_handler);
             }
             Ok(())

@@ -295,11 +295,13 @@ pub(super) fn register_all_hotkeys(
         if allow_override
             && let Some(p) = parse_hotkey(trimmed) {
                 override_entries.push((id, p.modifiers, p.vk));
+                tracing::info!(hotkey = %trimmed, id = id, "Hotkey occupied externally; queued for high-priority override");
                 return HotkeySlotStatus {
                     spec: trimmed.to_string(), active: trimmed.to_string(), ok: true, disabled: false, overridden: true,
                     reason: lang.pick("已高优先级接管生效", "Overridden via high-priority hook").into(),
                 };
             }
+        tracing::warn!(hotkey = %trimmed, id = id, "Optional hotkey registration failed (already in use; override disabled)");
         let reason = match lang {
             Lang::Zh => format!("已被系统或其他软件占用（{trimmed}）"),
             Lang::En => format!("Occupied by OS or another app ({trimmed})"),
@@ -324,6 +326,7 @@ pub(super) fn register_all_hotkeys(
     let flow_hks = super::plugin_hotkeys::register_flow_hotkeys(hwnd, cfg, &mut override_entries);
 
     if !sync_conflict_override_hook(hwnd, &override_entries) {
+        tracing::warn!("Failed to install low-level conflict override hook; conflicted hotkeys inactive");
         for slot in [&mut main_status, &mut clip_status, &mut tr_status, &mut cap_status, &mut pin_status] {
             if slot.overridden {
                 slot.ok = false; slot.overridden = false;
@@ -355,11 +358,7 @@ pub(super) fn register_optional_hotkey(hwnd: HWND, id: i32, spec: &str) -> bool 
     let Some(parsed) = parse_hotkey(trimmed) else {
         return false;
     };
-    let ok = unsafe {
+    unsafe {
         RegisterHotKey(Some(hwnd), id, HOT_KEY_MODIFIERS(parsed.modifiers), parsed.vk).is_ok()
-    };
-    if !ok {
-        tracing::warn!(hotkey = %trimmed, id = id, "Optional hotkey registration failed (already in use)");
     }
-    ok
 }

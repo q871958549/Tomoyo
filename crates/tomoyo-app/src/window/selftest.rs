@@ -133,7 +133,7 @@ impl AppShell {
         self.geom.max_visible_rows = fresh.window.max_visible_rows.clamp(4, 18);
         self.geom.preview_width_dip = fresh.window.preview_width_dip.clamp(220, 620);
         self.geom.custom_pos = fresh.window.custom_x.zip(fresh.window.custom_y);
-        let (apps_changed, plugins_changed, clip_was_on) = self
+        let (apps_changed, plugins_changed, clip_was_on, hotkeys_changed, avoidance_changed) = self
             .config
             .read()
             .map(|old| {
@@ -145,9 +145,11 @@ impl AppShell {
                         || old.plugin_settings != fresh.plugin_settings
                         || old.plugin_hotkeys != fresh.plugin_hotkeys,
                     old.is_plugin_enabled(tomoyo_core::PLUGIN_CLIPBOARD),
+                    hotkeys_config_changed(&old, &fresh),
+                    avoidance_config_changed(&old, &fresh),
                 )
             })
-            .unwrap_or((true, true, true));
+            .unwrap_or((true, true, true, true, true));
         let clip_now_on = fresh.is_plugin_enabled(tomoyo_core::PLUGIN_CLIPBOARD);
         let cfg_for_hk = fresh.clone();
         if let Ok(mut cfg) = self.config.write() {
@@ -169,14 +171,21 @@ impl AppShell {
                     }
                 }
             }
-            unregister_all_hotkeys(self.hwnd);
-            let (active, conflict, plug_hks, flow_hks) = register_all_hotkeys(self.hwnd, &cfg_for_hk, &self.plugin_host);
-            self.hotkey_label = active;
-            self.hotkey_conflict = conflict;
-            self.plugin_hotkeys = plug_hks;
-            self.flow_hotkeys = flow_hks;
-            if let Some(tray) = &mut self.tray {
-                tray.update_tooltip(&self.hotkey_label);
+            if force_provider_reload || hotkeys_changed {
+                unregister_all_hotkeys(self.hwnd);
+                let (active, conflict, plug_hks, flow_hks) = register_all_hotkeys(self.hwnd, &cfg_for_hk, &self.plugin_host);
+                self.hotkey_label = active;
+                self.hotkey_conflict = conflict;
+                self.plugin_hotkeys = plug_hks;
+                self.flow_hotkeys = flow_hks;
+                if let Some(tray) = &mut self.tray {
+                    tray.update_tooltip(&self.hotkey_label);
+                }
+            } else if avoidance_changed {
+                super::hotkey_avoid::sync_hotkey_avoidance(
+                    cfg_for_hk.suspend_hotkeys_in_fullscreen,
+                    &cfg_for_hk.hotkey_excluded_apps,
+                );
             }
         }
         if unsafe { IsWindowVisible(self.hwnd).as_bool() } {
@@ -184,5 +193,45 @@ impl AppShell {
             self.dispatch_query();
             self.invalidate();
         }
+    }
+}
+
+fn hotkeys_config_changed(old: &TomoyoConfig, fresh: &TomoyoConfig) -> bool {
+    old.hotkey != fresh.hotkey
+        || old.override_conflict_hotkeys != fresh.override_conflict_hotkeys
+        || old.clipboard.hotkey != fresh.clipboard.hotkey
+        || old.translate.hotkey != fresh.translate.hotkey
+        || old.capture.hotkey != fresh.capture.hotkey
+        || old.capture.pin_hotkey != fresh.capture.pin_hotkey
+        || old.disabled_plugins != fresh.disabled_plugins
+        || old.plugin_hotkeys != fresh.plugin_hotkeys
+}
+
+fn avoidance_config_changed(old: &TomoyoConfig, fresh: &TomoyoConfig) -> bool {
+    old.suspend_hotkeys_in_fullscreen != fresh.suspend_hotkeys_in_fullscreen
+        || old.hotkey_excluded_apps != fresh.hotkey_excluded_apps
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hotkey_dirty_diff_ignores_non_hotkey_ui_edits() {
+        let base = TomoyoConfig::default();
+        let mut ui_only = base.clone();
+        ui_only.theme = "dark".into();
+        ui_only.window.width_dip = 800;
+        assert!(!hotkeys_config_changed(&base, &ui_only));
+        assert!(!avoidance_config_changed(&base, &ui_only));
+
+        let mut avoid_only = base.clone();
+        avoid_only.suspend_hotkeys_in_fullscreen = !base.suspend_hotkeys_in_fullscreen;
+        assert!(!hotkeys_config_changed(&base, &avoid_only));
+        assert!(avoidance_config_changed(&base, &avoid_only));
+
+        let mut hk_edit = base.clone();
+        hk_edit.capture.pin_hotkey = "F4".into();
+        assert!(hotkeys_config_changed(&base, &hk_edit));
     }
 }

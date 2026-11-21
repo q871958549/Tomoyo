@@ -33,6 +33,16 @@ pub struct HotkeyHealthReport {
     pub updated_at_unix: u64,
 }
 
+impl HotkeyHealthReport {
+    /// Returns `true` only when at least one enabled core hotkey slot is currently failing (`!ok`).
+    /// Auto-rescued slots (`ok == true, overridden == true`) are working and do not require tear-down churn.
+    pub fn has_unresolved_conflicts(&self) -> bool {
+        [&self.main, &self.clipboard, &self.translate, &self.capture, &self.pin]
+            .into_iter()
+            .any(|s| !s.disabled && !s.spec.is_empty() && !s.ok)
+    }
+}
+
 pub fn hotkey_health_path() -> PathBuf {
     crate::data_dir().join("hotkey_status.json")
 }
@@ -296,5 +306,18 @@ mod tests {
 
         assert!(parse_hotkey("Space").is_none());
         assert!(parse_hotkey("A").is_none());
+    }
+
+    #[test]
+    fn detects_only_unresolved_conflicts() {
+        let mut rep = HotkeyHealthReport {
+            main: HotkeySlotStatus { spec: "Alt+Space".into(), active: "Alt+Space".into(), ok: true, disabled: false, overridden: false, reason: String::new() },
+            clipboard: HotkeySlotStatus { spec: "Alt+C".into(), active: "Alt+C".into(), ok: true, disabled: false, overridden: true, reason: "rescued".into() },
+            translate: HotkeySlotStatus { spec: String::new(), active: String::new(), ok: false, disabled: true, overridden: false, reason: String::new() },
+            ..Default::default()
+        };
+        assert!(!rep.has_unresolved_conflicts());
+        rep.pin = HotkeySlotStatus { spec: "F3".into(), active: String::new(), ok: false, disabled: false, overridden: false, reason: "busy".into() };
+        assert!(rep.has_unresolved_conflicts());
     }
 }
