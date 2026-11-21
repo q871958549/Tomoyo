@@ -12,8 +12,8 @@ $ErrorActionPreference = "Stop"
 $violations = 0
 
 Write-Host "=== [1/4] Checking source file line-count ceiling (<= $MaxLines lines) ==="
-$files = Get-ChildItem -Path crates, plugins, scripts -Recurse -Include *.rs,*.html,*.css,*.js,*.mjs,*.py |
-    Where-Object { $_.FullName -notmatch '\\target\\' -and $_.FullName -notmatch '\\__pycache__\\' }
+$files = Get-ChildItem -Path crates, plugins, scripts, frontend\src, frontend\scripts, frontend\tests -Recurse -Include *.rs,*.html,*.css,*.js,*.mjs,*.py,*.ts,*.svelte -ErrorAction SilentlyContinue |
+    Where-Object { $_.FullName -notmatch '\\target\\' -and $_.FullName -notmatch '\\__pycache__\\' -and $_.FullName -notmatch '\\node_modules\\' -and $_.FullName -notmatch '\\dist\\' }
 
 foreach ($f in $files) {
     $count = (Get-Content $f.FullName | Measure-Object -Line).Lines

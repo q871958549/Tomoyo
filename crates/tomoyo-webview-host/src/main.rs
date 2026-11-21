@@ -81,28 +81,10 @@ fn init_webview_logging() {
         .try_init();
 }
 
-const SETTINGS_HTML_TPL: &str = include_str!("ui/settings.html");
-const SETTINGS_CSS: &str = include_str!("ui/settings.css");
-const SETTINGS_I18N_JS: &str = include_str!("ui/i18n.js");
-const SETTINGS_BOOT_JS: &str = include_str!("ui/settings_boot.js");
-const SETTINGS_STORE_JS: &str = include_str!("ui/store_updater.js");
-const SETTINGS_CONTROLS_JS: &str = include_str!("ui/controls.js");
-const SETTINGS_CLIP_JS: &str = include_str!("ui/clip_controls.js");
-const SETTINGS_TRANSLATE_JS: &str = include_str!("ui/translate_controls.js");
-const SETTINGS_CAPTURE_JS: &str = include_str!("ui/capture_controls.js");
-const SETTINGS_APP_JS: &str = include_str!("ui/settings.js");
+const SETTINGS_HTML_BUNDLE: &str = include_str!("../../../frontend/dist/settings.html");
 
 pub fn assemble_settings_html() -> String {
-    SETTINGS_HTML_TPL
-        .replace("/*__SETTINGS_CSS__*/", SETTINGS_CSS)
-        .replace("/*__SETTINGS_I18N__*/", SETTINGS_I18N_JS)
-        .replace("/*__SETTINGS_BOOT_JS__*/", SETTINGS_BOOT_JS)
-        .replace("/*__SETTINGS_STORE_JS__*/", SETTINGS_STORE_JS)
-        .replace("/*__SETTINGS_CONTROLS_JS__*/", SETTINGS_CONTROLS_JS)
-        .replace("/*__SETTINGS_CLIP_JS__*/", SETTINGS_CLIP_JS)
-        .replace("/*__SETTINGS_TRANSLATE_JS__*/", SETTINGS_TRANSLATE_JS)
-        .replace("/*__SETTINGS_CAPTURE_JS__*/", SETTINGS_CAPTURE_JS)
-        .replace("/*__SETTINGS_JS__*/", SETTINGS_APP_JS)
+    SETTINGS_HTML_BUNDLE.to_string()
 }
 
 pub struct LaunchArgs {
@@ -202,6 +184,7 @@ pub fn build_settings_init_script() -> String {
         "log_issues": { "warnings": log_warns, "errors": log_errs, "has_crash_report": log_crash },
         "running_apps": clip_view::enumerate_running_app_exes(),
         "secrets_status": tr_view::secrets_status_json(),
+        "hotkey_health": tomoyo_core::load_hotkey_health(),
         "cached_update": cached_update,
         "has_bundled_alibaba_font": locate_fonts_dir().is_some(),
     });
@@ -241,23 +224,14 @@ fn main() {
         assert!(script.contains("window.utools"));
         assert!(script.contains("setSubInput"));
         assert!(settings_js.contains("__TOMOYO_SETTINGS_INIT__"));
+        assert!(settings_js.contains("hotkey_health"));
         assert!(html.contains("AlibabaPuHuiTi-3-55-Regular.ttf"));
-        assert!(html.contains("hotkey-recorder"));
-        assert!(html.contains("apps_dirs"));
-        assert!(html.contains("apps_depth_seg"));
-        assert!(html.contains("ev_filter_chips"));
+        assert!(html.contains("__TOMOYO_SETTINGS_INIT__"));
+        assert!(html.contains("check_hotkey_health"));
+        assert!(html.contains("start_capture"));
+        assert!(html.contains("save_settings"));
         assert!(!html.contains("type=\"number\""));
         assert!(!html.contains("<textarea"));
-        assert!(html.contains("show_filter_bar"));
-        assert!(html.contains("tab-store"));
-        assert!(html.contains("tab-logs"));
-        assert!(html.contains("clip-advanced-mount"));
-        assert!(html.contains("clip-excl-search"));
-        assert!(html.contains("tab-translate"));
-        assert!(html.contains("tr-hotkey-recorder"));
-        assert!(html.contains("tab-capture"));
-        assert!(html.contains("cap-hotkey-recorder"));
-        assert!(html.contains("tab-updates"));
         assert!(ocr_view::assemble_ocr_viewer_html().contains("__TOMOYO_OCR_DATA__"));
         assert!(clip_view::assemble_clip_manager_html().contains("__TOMOYO_CLIP_INIT__"));
         assert!(tr_view::assemble_translator_html().contains("__TOMOYO_TR_INIT__"));

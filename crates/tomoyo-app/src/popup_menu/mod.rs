@@ -32,9 +32,9 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WM_PAINT, WM_RBUTTONUP, WNDCLASSW, WS_CLIPCHILDREN, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
 };
 
-const ROW_H_DIP: f32 = 31.0;
+const ROW_H_DIP: f32 = 32.0;
 const SEP_H_DIP: f32 = 9.0;
-const PAD_Y_DIP: f32 = 6.0;
+const PAD_Y_DIP: f32 = 5.0;
 
 #[derive(Debug, Clone)]
 pub enum PopupEntry {
@@ -43,6 +43,8 @@ pub enum PopupEntry {
         label: String,
         shortcut: Option<String>,
         checked: bool,
+        danger: bool,
+        disabled: bool,
     },
     Separator,
 }
@@ -54,6 +56,19 @@ impl PopupEntry {
             label: label.into(),
             shortcut: shortcut.map(ToString::to_string),
             checked,
+            danger: false,
+            disabled: false,
+        }
+    }
+
+    pub fn danger_item(id: u32, label: impl Into<String>, shortcut: Option<&str>) -> Self {
+        Self::Item {
+            id,
+            label: label.into(),
+            shortcut: shortcut.map(ToString::to_string),
+            checked: false,
+            danger: true,
+            disabled: false,
         }
     }
 }
@@ -62,6 +77,7 @@ pub(super) struct RowMetric {
     pub y0: f32,
     pub y1: f32,
     pub is_sep: bool,
+    pub disabled: bool,
 }
 
 pub(super) struct PopupState<'a> {
@@ -204,11 +220,12 @@ fn measure_menu(entries: &[PopupEntry]) -> (f32, f32, Vec<RowMetric>) {
                     y0: y,
                     y1: y + SEP_H_DIP,
                     is_sep: true,
+                    disabled: true,
                 });
                 y += SEP_H_DIP;
             }
             PopupEntry::Item {
-                label, shortcut, ..
+                label, shortcut, disabled, ..
             } => {
                 let lw: f32 = label
                     .chars()
@@ -223,6 +240,7 @@ fn measure_menu(entries: &[PopupEntry]) -> (f32, f32, Vec<RowMetric>) {
                     y0: y,
                     y1: y + ROW_H_DIP,
                     is_sep: false,
+                    disabled: *disabled,
                 });
                 y += ROW_H_DIP;
             }
@@ -356,7 +374,7 @@ fn hit_test_item(metrics: &[RowMetric], y_dip: f32) -> Option<usize> {
     metrics
         .iter()
         .enumerate()
-        .find(|(_, m)| !m.is_sep && y_dip >= m.y0 && y_dip < m.y1)
+        .find(|(_, m)| !m.is_sep && !m.disabled && y_dip >= m.y0 && y_dip < m.y1)
         .map(|(i, _)| i)
 }
 
@@ -365,7 +383,7 @@ fn step_selection(st: &mut PopupState<'_>, down: bool) {
         .metrics
         .iter()
         .enumerate()
-        .filter(|(_, m)| !m.is_sep)
+        .filter(|(_, m)| !m.is_sep && !m.disabled)
         .map(|(i, _)| i)
         .collect();
     if valid.is_empty() {

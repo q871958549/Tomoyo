@@ -13,6 +13,7 @@ mod export;
 #[cfg(windows)]
 mod overlay;
 mod overlay_draw;
+mod overlay_icons;
 #[cfg(windows)]
 mod pin_window;
 mod screen;

@@ -6,15 +6,14 @@ use tomoyo_core::{logs_dir, TomoyoConfig};
 
 pub const TRANSLATOR_ENTRY: &str = "__tomoyo_translator__";
 
-const TRANSLATOR_HTML: &str = include_str!("ui/translator.html");
-const TRANSLATOR_JS: &str = include_str!("ui/translator.js");
+const TRANSLATOR_HTML_BUNDLE: &str = include_str!("../../../frontend/dist/translator.html");
 
 pub fn is_translator_entry(entry: &str) -> bool {
     entry == TRANSLATOR_ENTRY
 }
 
 pub fn assemble_translator_html() -> String {
-    TRANSLATOR_HTML.replace("/*__TRANSLATOR_JS__*/", TRANSLATOR_JS)
+    TRANSLATOR_HTML_BUNDLE.to_string()
 }
 
 pub fn read_last_translate_req() -> (String, String) {

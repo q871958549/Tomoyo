@@ -1,4 +1,4 @@
-//! Pure-Rust SDF background + ClearType GDI popup menu painting.
+//! Pure-Rust SDF background + ClearType GDI popup menu painting (Minimalist Modern spec).
 
 use super::{PopupEntry, PopupState};
 use crate::renderer::{dip_rect, draw_text_gdi, Canvas, DibSurface, Rgb};
@@ -22,6 +22,8 @@ pub(super) fn paint_popup(
     };
     let pal = st.pal;
     let scale = st.scale;
+    let danger_fg = if pal.is_dark { Rgb(0xF8, 0x71, 0x71) } else { Rgb(0xDC, 0x26, 0x26) };
+    let danger_bg = if pal.is_dark { Rgb(0x35, 0x19, 0x1D) } else { Rgb(0xFE, 0xF2, 0xF2) };
 
     {
         let mut canvas = Canvas {
@@ -32,26 +34,23 @@ pub(super) fn paint_popup(
         };
         canvas.clear(pal.pop_bg);
         for (idx, (ent, met)) in st.entries.iter().zip(st.metrics.iter()).enumerate() {
-            if matches!(ent, PopupEntry::Separator) {
-                let sy = (met.y0 + met.y1) * 0.5;
-                canvas.fill_rect_dip(10.0, sy, st.w_dip - 10.0, sy + 1.0, pal.divider);
-            } else if st.hovered == Some(idx) {
-                canvas.fill_rounded_rect(
-                    5.0,
-                    met.y0 + 1.0,
-                    st.w_dip - 5.0,
-                    met.y1 - 1.0,
-                    6.0,
-                    pal.chip_active_bg,
-                );
-                canvas.stroke_rounded_rect(
-                    5.0,
-                    met.y0 + 1.0,
-                    st.w_dip - 5.0,
-                    met.y1 - 1.0,
-                    6.0,
-                    pal.sel_border,
-                );
+            match ent {
+                PopupEntry::Separator => {
+                    let sy = (met.y0 + met.y1) * 0.5;
+                    canvas.fill_rect_dip(10.0, sy, st.w_dip - 10.0, sy + 1.0, pal.divider);
+                }
+                PopupEntry::Item { danger, disabled, .. } if !*disabled && st.hovered == Some(idx) => {
+                    let hover_fill = if *danger { danger_bg } else { pal.chip_active_bg };
+                    canvas.fill_rounded_rect(
+                        5.0,
+                        met.y0 + 1.0,
+                        st.w_dip - 5.0,
+                        met.y1 - 1.0,
+                        6.0,
+                        hover_fill,
+                    );
+                }
+                _ => {}
             }
         }
         canvas.fill_rect_dip(0.0, 0.0, st.w_dip, 1.0, pal.border);
@@ -68,17 +67,33 @@ pub(super) fn paint_popup(
                 label,
                 shortcut,
                 checked,
+                danger,
+                disabled,
                 ..
             } = ent
             else {
                 continue;
             };
-            let is_hov = st.hovered == Some(idx);
-            let fg: Rgb = if is_hov { pal.chip_active_text } else { pal.text_primary };
+            let is_hov = !*disabled && st.hovered == Some(idx);
+            let fg: Rgb = if *disabled {
+                pal.text_muted
+            } else if *danger {
+                danger_fg
+            } else if is_hov {
+                pal.chip_active_text
+            } else {
+                pal.text_primary
+            };
             let mut right_x = st.w_dip - 12.0;
 
             if *checked {
-                let mark_col = if is_hov { pal.chip_active_text } else { pal.accent };
+                let mark_col = if *disabled {
+                    pal.text_muted
+                } else if is_hov {
+                    pal.chip_active_text
+                } else {
+                    pal.accent
+                };
                 draw_text_gdi(
                     dc,
                     st.fonts.chip_active,
@@ -89,7 +104,15 @@ pub(super) fn paint_popup(
                 );
             }
             if let Some(sc) = shortcut {
-                let sc_col = if is_hov { pal.chip_active_text } else { pal.text_muted };
+                let sc_col = if *disabled {
+                    pal.text_muted
+                } else if *danger {
+                    danger_fg
+                } else if is_hov {
+                    pal.chip_active_text
+                } else {
+                    pal.text_muted
+                };
                 let sc_w = (sc.chars().count() as f32 * 7.2 + 8.0).clamp(32.0, 96.0);
                 draw_text_gdi(
                     dc,

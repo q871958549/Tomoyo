@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 pub const OCR_VIEWER_ENTRY: &str = "__tomoyo_ocr_viewer__";
 
-const OCR_VIEWER_HTML: &str = include_str!("ui/ocr_viewer.html");
+const OCR_VIEWER_HTML: &str = include_str!("../../../frontend/dist/ocr.html");
 
 pub fn is_ocr_viewer_entry(entry: &str) -> bool {
     entry == OCR_VIEWER_ENTRY

@@ -64,6 +64,7 @@ pub enum HostMessage {
     TrClearHistory,
     SetSecret { key: String, value: String },
     DeleteSecret { key: String },
+    CheckHotkeyHealth,
     Close,
 }
 
@@ -79,6 +80,7 @@ pub struct HostAction {
     pub async_install_update: Option<tomoyo_core::ReleaseInfo>,
     pub async_fetch_store: Option<Vec<String>>,
     pub async_translate: Option<(String, String, String)>,
+    pub async_refresh_hotkey_health: bool,
 }
 
 pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isize>) -> HostAction {
@@ -112,7 +114,12 @@ pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isi
             let _ = tomoyo_core::set_autostart_enabled(autostart);
             if let Some(target) = notify_hwnd { notify_parent_reload(target, false); }
             let evt = serde_json::json!({ "event": "settings_saved", "config": config, "notes": notes }).to_string();
-            HostAction { apply_theme: Some(theme), reply_json: Some(evt), ..Default::default() }
+            HostAction {
+                apply_theme: Some(theme),
+                reply_json: Some(evt),
+                async_refresh_hotkey_health: notify_hwnd.is_some(),
+                ..Default::default()
+            }
         }
         HostMessage::PickFolder => HostAction { pick_folder_mode: 1, ..Default::default() },
         HostMessage::PickCaptureDir => HostAction { pick_folder_mode: 2, ..Default::default() },
@@ -369,6 +376,14 @@ pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isi
             reply_json: Some(crate::tr_view::handle_delete_secret(&key)),
             ..Default::default()
         },
+        HostMessage::CheckHotkeyHealth => {
+            let evt = serde_json::json!({
+                "event": "hotkey_health",
+                "health": tomoyo_core::load_hotkey_health(),
+            })
+            .to_string();
+            HostAction { reply_json: Some(evt), ..Default::default() }
+        }
         HostMessage::Close => HostAction {
             should_close: true,
             ..Default::default()

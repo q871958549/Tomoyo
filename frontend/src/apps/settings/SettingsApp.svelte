@@ -1,0 +1,467 @@
+<script lang="ts">
+  import { onMount } from 'svelte';
+  import {
+    Camera,
+    FileText,
+    Globe,
+    Languages,
+    Package,
+    Palette,
+    RefreshCw,
+    Search,
+    SlidersHorizontal,
+    Store,
+  } from '@lucide/svelte';
+  import { applyThemeClass, installErrorTelemetry, postHost, subscribeHost } from '../../lib/ipc';
+  import { OFFICIAL_REPO, tr, type Lang } from '../../lib/i18n';
+  import type {
+    HotkeyHealthReport,
+    ReleaseInfo,
+    SettingsInitPayload,
+    TomoyoConfig,
+    UpdateStatus,
+  } from '../../lib/types';
+  import Button from '../../lib/ui/Button.svelte';
+  import AppearanceTab from './AppearanceTab.svelte';
+  import CaptureTab from './CaptureTab.svelte';
+  import GeneralTab from './GeneralTab.svelte';
+  import LogsTab from './LogsTab.svelte';
+  import PluginsTab from './PluginsTab.svelte';
+  import SearchClipTab from './SearchClipTab.svelte';
+  import StoreTab, { type StoreItem } from './StoreTab.svelte';
+  import TranslateTab from './TranslateTab.svelte';
+  import UpdatesTab from './UpdatesTab.svelte';
+  import WebSearchTab from './WebSearchTab.svelte';
+
+  function makeDefaultConfig(): TomoyoConfig {
+    return {
+      language: 'zh',
+      hotkey: 'Alt+Space',
+      theme: 'light',
+      hibernate_delay_secs: 15,
+      auto_preview: true,
+      show_filter_bar: true,
+      window: { width_dip: 720, max_visible_rows: 8, preview_width_dip: 310, custom_x: null, custom_y: null },
+      apps: { extra_dirs: [], auto_detect_desktop_organizers: true, extra_scan_depth: 2 },
+      everything: { max_global_results: 6, max_dedicated_results: 30, extra_filter: '' },
+      clipboard: {
+        persist_sqlite: true,
+        max_persisted_items: 500,
+        hotkey: 'Alt+V',
+        capture_enabled: true,
+        capture_images: true,
+        excluded_apps: [],
+      },
+      translate: {
+        hotkey: 'Alt+T',
+        target_lang: 'auto',
+        engines: ['google', 'mymemory'],
+        openai_base_url: 'https://api.openai.com/v1',
+        openai_model: 'gpt-4o-mini',
+        ollama_url: 'http://127.0.0.1:11434',
+        ollama_model: 'qwen2.5:7b',
+      },
+      capture: { hotkey: 'Alt+S', save_dir: '', pin_opacity: 100, copy_hex_lowercase: false },
+      update: { auto_check: true, check_interval_hours: 24, repo: OFFICIAL_REPO, last_checked_unix: 0 },
+      web_searches: [],
+    };
+  }
+
+  function hydrateInit(): SettingsInitPayload {
+    const raw = (window.__TOMOYO_SETTINGS_INIT__ ?? {}) as Partial<SettingsInitPayload>;
+    const def = makeDefaultConfig();
+    const rc = (raw.config ?? {}) as Partial<TomoyoConfig>;
+    return {
+      version: raw.version || '1.6.0',
+      autostart: !!raw.autostart,
+      plugins: Array.isArray(raw.plugins) ? raw.plugins : [],
+      config_path: raw.config_path || '',
+      plugins_dir: raw.plugins_dir || '',
+      logs_dir: raw.logs_dir || '',
+      running_apps: Array.isArray(raw.running_apps) ? raw.running_apps : [],
+      secrets_status: { deepl: !!raw.secrets_status?.deepl, openai: !!raw.secrets_status?.openai },
+      hotkey_health: raw.hotkey_health || {},
+      cached_update: raw.cached_update ?? null,
+      config: {
+        ...def,
+        ...rc,
+        window: { ...def.window, ...(rc.window || {}) },
+        apps: { ...def.apps, ...(rc.apps || {}) },
+        everything: { ...def.everything, ...(rc.everything || {}) },
+        clipboard: { ...def.clipboard, ...(rc.clipboard || {}) },
+        translate: { ...def.translate, ...(rc.translate || {}) },
+        capture: { ...def.capture, ...(rc.capture || {}) },
+        update: { ...def.update, ...(rc.update || {}) },
+        web_searches: Array.isArray(rc.web_searches) ? rc.web_searches : def.web_searches,
+      },
+    };
+  }
+
+  const init = hydrateInit();
+
+  let cfg = $state<TomoyoConfig>(init.config);
+  let autostart = $state(init.autostart);
+  let plugins = $state(init.plugins);
+  let secretsStatus = $state(init.secrets_status);
+  let hotkeyHealth = $state<HotkeyHealthReport>(init.hotkey_health || {});
+  let activeTab = $state('general');
+  let toastMsg = $state('');
+  let toastWarn = $state(false);
+  let folderErr = $state('');
+
+  // Store state
+  let storeLoaded = $state(false);
+  let storeLoading = $state(false);
+  let storeItems = $state<StoreItem[]>([]);
+  let storeStatus = $state('');
+
+  // Logs state
+  let logSource = $state('tomoyo.log');
+  let logErrorsOnly = $state(false);
+  let logContent = $state('');
+  let logMeta = $state('');
+
+  // Updater state
+  let updateStatus = $state<UpdateStatus | null>(init.cached_update ?? null);
+  let checkingUpdates = $state(false);
+  let updatesCheckedOnce = $state(false);
+  let installProgress = $state<{ percent: number; message: string; done?: boolean; ok?: boolean } | null>(null);
+
+  let lang = $derived<Lang>(cfg.language === 'en' ? 'en' : 'zh');
+  let saveTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const navItems = [
+    { id: 'general', key: 'nav_general', icon: SlidersHorizontal },
+    { id: 'appearance', key: 'nav_appearance', icon: Palette },
+    { id: 'search', key: 'nav_search', icon: Search },
+    { id: 'translate', key: 'nav_translate', icon: Languages },
+    { id: 'capture', key: 'nav_capture', icon: Camera },
+    { id: 'web', key: 'nav_web', icon: Globe },
+    { id: 'store', key: 'nav_store', icon: Store },
+    { id: 'plugins', key: 'nav_plugins', icon: Package },
+    { id: 'logs', key: 'nav_logs', icon: FileText },
+    { id: 'updates', key: 'nav_updates', icon: RefreshCw },
+  ];
+
+  function setToast(msg: string, warn = false) {
+    toastMsg = msg;
+    toastWarn = warn;
+  }
+
+  function saveNow() {
+    postHost({ cmd: 'save_settings', config: $state.snapshot(cfg), autostart });
+    setToast(`✓ ${tr(lang, 'toast_saved')} · ${new Date().toLocaleTimeString()}`);
+  }
+
+  function scheduleSave(delayMs = 0) {
+    if (saveTimer) clearTimeout(saveTimer);
+    if (delayMs <= 0) saveNow();
+    else saveTimer = setTimeout(saveNow, delayMs);
+  }
+
+  function switchTab(id: string) {
+    activeTab = id;
+    if (id === 'store' && !storeLoaded) {
+      storeLoaded = true;
+      fetchStore();
+    } else if (id === 'logs') {
+      refreshLogs();
+    } else if (id === 'updates' && !updatesCheckedOnce) {
+      updatesCheckedOnce = true;
+      const nowSec = Math.floor(Date.now() / 1000);
+      const last = updateStatus?.checked_at_unix || 0;
+      if (!updateStatus || nowSec - last > 300) checkUpdatesNow();
+    }
+  }
+
+  function fetchStore() {
+    storeLoading = true;
+    const sources = cfg.plugin_registries?.length ? cfg.plugin_registries : ['registry/index.json'];
+    postHost({ cmd: 'fetch_store', sources });
+  }
+
+  function refreshLogs() {
+    postHost({ cmd: 'read_logs', source: logSource, errors_only: logErrorsOnly });
+  }
+
+  function checkUpdatesNow() {
+    checkingUpdates = true;
+    postHost({ cmd: 'check_updates', repo: cfg.update.repo || OFFICIAL_REPO });
+  }
+
+  function installRelease(rel: ReleaseInfo) {
+    installProgress = { percent: 4, message: lang === 'en' ? 'Downloading & verifying SHA-256…' : '正在下载安装包并校验 SHA-256…' };
+    postHost({ cmd: 'install_update', release: rel });
+  }
+
+  function onThemePick(name: string) {
+    cfg.theme = name;
+    applyThemeClass(name);
+    postHost({ cmd: 'sync_theme', theme: name });
+    scheduleSave(0);
+  }
+
+  function onLanguageChange(code: Lang) {
+    cfg.language = code;
+    document.documentElement.lang = code === 'en' ? 'en' : 'zh-CN';
+    scheduleSave(0);
+  }
+
+  function onAutostartChange(v: boolean) {
+    autostart = v;
+    scheduleSave(0);
+  }
+
+  function checkHotkeyConflictsToast(h: HotkeyHealthReport) {
+    const bad = [h.main, h.clipboard, h.translate, h.capture].filter(
+      (s) => s && !s.disabled && !s.ok && s.spec
+    );
+    if (bad.length > 0) {
+      const first = bad[0]!;
+      setToast(`⚠ ${first.reason || `${first.spec} 已被其他软件占用`}`, true);
+    }
+  }
+
+  onMount(() => {
+    installErrorTelemetry('settings_ui');
+    applyThemeClass(cfg.theme);
+    document.documentElement.lang = lang === 'en' ? 'en' : 'zh-CN';
+    setToast(tr(lang, 'toast_ready'));
+    postHost({ cmd: 'check_hotkey_health' });
+
+    const unsub = subscribeHost((data) => {
+      const ev = String(data.event || '');
+      if (ev === 'settings_saved') {
+        if (data.config) cfg = data.config as TomoyoConfig;
+        const notes = Array.isArray(data.notes) ? (data.notes as string[]) : [];
+        if (notes.length > 0) setToast(`⚠ ${notes[0]}`, true);
+      } else if (ev === 'hotkey_health' && data.health) {
+        hotkeyHealth = data.health as HotkeyHealthReport;
+        checkHotkeyConflictsToast(hotkeyHealth);
+      } else if (ev === 'folder_picked') {
+        if (data.cancelled) return;
+        if (data.ok && typeof data.path === 'string') {
+          folderErr = '';
+          if (!cfg.apps.extra_dirs.some((d) => d.toLowerCase() === String(data.path).toLowerCase())) {
+            cfg.apps.extra_dirs = [...cfg.apps.extra_dirs, data.path];
+            scheduleSave(0);
+          }
+        } else if (data.error) {
+          folderErr = String(data.error);
+        }
+      } else if (ev === 'capture_dir_picked') {
+        if (!data.cancelled && data.ok && typeof data.path === 'string') {
+          cfg.capture.save_dir = data.path;
+          scheduleSave(0);
+        } else if (data.error) {
+          setToast(`✗ ${data.error}`, true);
+        }
+      } else if (ev === 'secrets_status') {
+        if (data.status) secretsStatus = { ...secretsStatus, ...(data.status as { deepl: boolean; openai: boolean }) };
+        if (data.message) setToast(`${data.ok ? '✓ ' : '✗ '}${data.message}`, !data.ok);
+      } else if (ev === 'store_loaded') {
+        storeLoading = false;
+        storeItems = Array.isArray(data.items) ? (data.items as StoreItem[]) : [];
+        const srcs = Array.isArray(data.sources) ? (data.sources as string[]).join(' · ') : 'Registry';
+        const errs = Array.isArray(data.errors) && data.errors.length ? ` (${(data.errors as string[]).join('; ')})` : '';
+        storeStatus = srcs + errs;
+      } else if (ev === 'store_action_result' || ev === 'perm_action_result') {
+        setToast(`${data.ok ? '✓ ' : '✗ '}${data.message || ''}`, !data.ok);
+        if (ev === 'store_action_result' && data.ok) fetchStore();
+      } else if (ev === 'logs_loaded') {
+        const iss = (data.issues || {}) as { warnings?: number; errors?: number; has_crash_report?: boolean };
+        const crash = iss.has_crash_report ? ' · 存在崩溃快照' : '';
+        logMeta = `${data.source || logSource} · ERROR ${iss.errors || 0} / WARN ${iss.warnings || 0}${crash} · ${data.logs_dir || init.logs_dir}`;
+        logContent = String(data.content || '');
+      } else if (ev === 'diag_bundle_copied') {
+        setToast(lang === 'en' ? '✓ Diagnostic bundle copied' : '✓ 已复制脱敏诊断报告到剪贴板');
+      } else if (ev === 'update_status') {
+        checkingUpdates = false;
+        updateStatus = (data.status as UpdateStatus) || null;
+      } else if (ev === 'update_install_progress' && data.progress) {
+        const p = data.progress as { percent?: number; message?: string };
+        installProgress = { percent: Number(p.percent || 5), message: String(p.message || '') };
+      } else if (ev === 'update_install_result') {
+        installProgress = {
+          percent: data.ok ? 100 : installProgress?.percent || 0,
+          message: String(data.message || ''),
+          done: true,
+          ok: !!data.ok,
+        };
+        setToast(`${data.ok ? '✓ ' : '✗ '}${data.message || ''}`, !data.ok);
+        if (data.ok && data.launched_installer) setTimeout(() => postHost({ cmd: 'close' }), 450);
+      }
+    });
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !e.defaultPrevented) {
+        postHost({ cmd: 'close' });
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      unsub();
+      window.removeEventListener('keydown', onKey);
+    };
+  });
+</script>
+
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-tile">T</div>
+      <div>
+        <div class="brand-name">Tomoyo</div>
+        <div class="brand-sub">{tr(lang, 'brand_sub')}</div>
+      </div>
+    </div>
+
+    <nav class="nav">
+      {#each navItems as item}
+        {@const Icon = item.icon}
+        <button
+          type="button"
+          data-tab={item.id}
+          class="nav-item {activeTab === item.id ? 'is-active' : ''}"
+          onclick={() => switchTab(item.id)}
+        >
+          <span class="nav-ico"><Icon size={15} /></span>
+          <span>{tr(lang, item.key)}</span>
+        </button>
+      {/each}
+    </nav>
+
+    <div class="side-foot">{tr(lang, 'sidebar_foot')}</div>
+  </aside>
+
+  <main class="main">
+    <div class="scroll">
+      <div class="container">
+        {#if activeTab === 'general'}
+          <GeneralTab
+            {cfg}
+            {lang}
+            {autostart}
+            hotkeyStatus={hotkeyHealth.main}
+            {onLanguageChange}
+            {onAutostartChange}
+            onSave={scheduleSave}
+          />
+        {:else if activeTab === 'appearance'}
+          <AppearanceTab {cfg} {lang} {onThemePick} onSave={scheduleSave} />
+        {:else if activeTab === 'search'}
+          <SearchClipTab
+            {cfg}
+            {lang}
+            runningApps={init.running_apps}
+            {folderErr}
+            clipHotkeyStatus={hotkeyHealth.clipboard}
+            onSave={scheduleSave}
+          />
+        {:else if activeTab === 'translate'}
+          <TranslateTab
+            {cfg}
+            {lang}
+            {secretsStatus}
+            trHotkeyStatus={hotkeyHealth.translate}
+            onToast={setToast}
+            onSave={scheduleSave}
+          />
+        {:else if activeTab === 'capture'}
+          <CaptureTab {cfg} {lang} capHotkeyStatus={hotkeyHealth.capture} onSave={scheduleSave} />
+        {:else if activeTab === 'web'}
+          <WebSearchTab {cfg} {lang} onSave={scheduleSave} />
+        {:else if activeTab === 'store'}
+          <StoreTab {lang} items={storeItems} statusText={storeStatus} loading={storeLoading} onRefresh={fetchStore} />
+        {:else if activeTab === 'plugins'}
+          <PluginsTab {lang} {plugins} configPath={init.config_path} pluginsDir={init.plugins_dir} />
+        {:else if activeTab === 'logs'}
+          <LogsTab
+            {lang}
+            source={logSource}
+            errorsOnly={logErrorsOnly}
+            content={logContent}
+            metaLine={logMeta}
+            onSourceChange={(s) => { logSource = s; refreshLogs(); }}
+            onErrorsOnlyChange={(v) => { logErrorsOnly = v; refreshLogs(); }}
+            onRefresh={refreshLogs}
+          />
+        {:else if activeTab === 'updates'}
+          <UpdatesTab
+            {cfg}
+            {lang}
+            version={init.version}
+            {updateStatus}
+            checking={checkingUpdates}
+            {installProgress}
+            onCheckNow={checkUpdatesNow}
+            onInstall={installRelease}
+            onSave={scheduleSave}
+          />
+        {/if}
+      </div>
+    </div>
+
+    <footer class="bottom-bar">
+      <span id="toast" class="toast {toastWarn ? 'is-warn' : ''}">{toastMsg}</span>
+      <Button variant="secondary" size="sm" onclick={() => postHost({ cmd: 'close' })}>
+        {tr(lang, 'btn_close')}
+      </Button>
+    </footer>
+  </main>
+</div>
+
+<style>
+  .shell { display: flex; height: 100%; width: 100%; overflow: hidden; }
+  .sidebar {
+    width: 216px; flex-shrink: 0; background: var(--sidebar);
+    border-right: 1px solid var(--border); display: flex; flex-direction: column;
+    padding: 16px 10px 14px;
+  }
+  .brand {
+    display: flex; align-items: center; gap: 10px; padding: 2px 8px 14px;
+    border-bottom: 1px solid var(--border); margin-bottom: 10px;
+  }
+  .brand-tile {
+    width: 30px; height: 30px; border-radius: 8px;
+    background: linear-gradient(155deg, #ffffff 0%, #eaeef6 100%);
+    border: 1px solid #d5dce9; color: #111827; font-family: Georgia, serif;
+    font-weight: 700; font-size: 17px; display: grid; place-items: center;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.1);
+  }
+  .brand-name { font-size: 14.5px; font-weight: 600; letter-spacing: 0.2px; }
+  .brand-sub { font-size: 11px; color: var(--muted); }
+  .nav { display: flex; flex-direction: column; gap: 2px; overflow-y: auto; }
+  .nav-item {
+    position: relative; display: flex; align-items: center; gap: 9px; width: 100%;
+    height: 34px; padding: 0 10px; border: 0; border-radius: 7px;
+    background: transparent; color: var(--text-secondary); font-family: inherit;
+    font-size: 13px; font-weight: 500; text-align: left; white-space: nowrap;
+    cursor: pointer; transition: background-color 0.12s ease, color 0.12s ease;
+  }
+  .nav-item:hover:not(.is-active) { background: var(--hover); color: var(--text); }
+  .nav-item.is-active {
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .nav-item.is-active::before {
+    content: ""; position: absolute; left: 0; top: 7px; bottom: 7px; width: 3px;
+    border-radius: 999px; background: var(--accent);
+  }
+  .nav-ico { display: inline-flex; opacity: 0.85; flex-shrink: 0; }
+  .side-foot {
+    margin-top: auto; padding: 10px 8px 0; border-top: 1px solid var(--border);
+    font-size: 11px; color: var(--muted); line-height: 1.55;
+  }
+  .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .scroll { flex: 1; overflow-y: auto; padding: 24px 28px; }
+  .container { max-width: 720px; }
+  .bottom-bar {
+    height: 46px; padding: 0 24px; border-top: 1px solid var(--border);
+    background: var(--sidebar); display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; flex-shrink: 0;
+  }
+  .toast { font-size: 12.5px; color: var(--ok); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .toast.is-warn { color: var(--warn); }
+</style>

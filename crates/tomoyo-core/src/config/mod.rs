@@ -6,7 +6,10 @@ mod sanitize;
 
 pub use capture::{sanitize_capture_config, CaptureConfig};
 pub use crate::translate::TranslateConfig;
-pub use hotkey::{is_autostart_enabled, parse_hotkey, set_autostart_enabled, ParsedHotkey};
+pub use hotkey::{
+    is_autostart_enabled, load_hotkey_health, parse_hotkey, save_hotkey_health,
+    set_autostart_enabled, HotkeyHealthReport, HotkeySlotStatus, ParsedHotkey,
+};
 pub use sanitize::{
     is_safe_http_url, is_valid_github_repo, normalize_exe_name, sanitize_config, validate_scan_dir,
     validate_web_search, MAX_EXTRA_DIRS, MAX_SCAN_DEPTH,

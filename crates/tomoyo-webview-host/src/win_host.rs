@@ -16,7 +16,8 @@ use crate::tr_view::{
 };
 use crate::win_theme::{apply_host_window_theme, map_vdir, to_file_url};
 use crate::win_workers::{
-    spawn_install_update_worker, spawn_store_worker, spawn_translate_worker, spawn_update_worker,
+    spawn_hotkey_health_worker, spawn_install_update_worker, spawn_store_worker,
+    spawn_translate_worker, spawn_update_worker,
 };
 use crate::{assemble_settings_html, build_settings_init_script, LaunchArgs};
 use std::cell::RefCell;
@@ -352,6 +353,9 @@ pub fn run_windows_host(opts: LaunchArgs) {
                                             }
                                             if let Some((txt, src, tgt)) = act.async_translate {
                                                 spawn_translate_worker(txt, src, tgt, tx_cb.clone(), hwnd_raw, WM_APP_WEBVIEW_EVENT);
+                                            }
+                                            if act.async_refresh_hotkey_health {
+                                                spawn_hotkey_health_worker(tx_cb.clone(), hwnd_raw, WM_APP_WEBVIEW_EVENT);
                                             }
                                             if act.should_close {
                                                 let _ = PostMessageW(Some(hwnd), WM_CLOSE, WPARAM(0), LPARAM(0));

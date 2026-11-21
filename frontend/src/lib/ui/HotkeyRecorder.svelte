@@ -1,0 +1,229 @@
+<script lang="ts">
+  import { AlertTriangle, CheckCircle2, X } from '@lucide/svelte';
+  import { buildComboFromEvent } from '../hotkeys';
+  import type { HotkeySlotStatus, SelectOption } from '../types';
+  import Select from './Select.svelte';
+
+  interface Props {
+    value: string;
+    presets: SelectOption[];
+    allowDisable?: boolean;
+    status?: HotkeySlotStatus;
+    presetPlaceholder?: string;
+    disabledLabel?: string;
+    okLabel?: string;
+    conflictLabel?: string;
+    recordPrompt?: string;
+    needModPrompt?: string;
+    onchange: (next: string) => void;
+  }
+
+  let {
+    value,
+    presets,
+    allowDisable = false,
+    status = undefined,
+    presetPlaceholder = '预设',
+    disabledLabel = '已停用',
+    okLabel = '已生效',
+    conflictLabel = '已被其他软件占用',
+    recordPrompt = '请按下组合键…',
+    needModPrompt = '需含 Alt/Ctrl/Shift/Win',
+    onchange,
+  }: Props = $props();
+
+  let recording = $state(false);
+  let promptMsg = $state('');
+  let recEl: HTMLDivElement | undefined = $state();
+
+  let parts = $derived(value ? value.split('+').map((p) => p.trim()).filter(Boolean) : []);
+
+  let presetOptions = $derived.by(() => {
+    const base = [...presets];
+    if (allowDisable) base.push({ value: '__off__', label: disabledLabel });
+    return base;
+  });
+
+  // Match status only when the reported spec corresponds to the current value (or main fallback)
+  let showConflict = $derived(
+    !!value && !!status && !status.disabled && !status.ok && status.spec.toLowerCase() === value.toLowerCase()
+  );
+  let showOk = $derived(
+    !!value && !!status && !status.disabled && status.ok && status.spec.toLowerCase() === value.toLowerCase()
+  );
+
+  function startRecording() {
+    recording = true;
+    promptMsg = recordPrompt;
+    recEl?.focus();
+  }
+
+  function stopRecording() {
+    recording = false;
+    promptMsg = '';
+  }
+
+  function onKeyDown(e: KeyboardEvent) {
+    if (!recording) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.key === 'Escape') {
+      stopRecording();
+      return;
+    }
+    const res = buildComboFromEvent(e);
+    if (res.needMod) {
+      promptMsg = needModPrompt;
+      return;
+    }
+    if (res.combo) {
+      stopRecording();
+      onchange(res.combo);
+    }
+  }
+
+  function pickPreset(v: string) {
+    stopRecording();
+    onchange(v === '__off__' ? '' : v);
+  }
+</script>
+
+<div class="t-hk-col">
+  <div class="t-hk-row">
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+    <div
+      bind:this={recEl}
+      role="button"
+      tabindex="0"
+      class="t-hk-box {recording ? 'is-rec' : ''} {showConflict ? 'is-conflict' : ''}"
+      onclick={startRecording}
+      onblur={stopRecording}
+      onkeydown={onKeyDown}
+    >
+      {#if recording}
+        <span class="t-hk-prompt">{promptMsg}</span>
+      {:else if parts.length > 0}
+        <span class="t-hk-keys">
+          {#each parts as p, idx}
+            {#if idx > 0}<span class="t-hk-plus">+</span>{/if}
+            <kbd class="t-kbd">{p}</kbd>
+          {/each}
+        </span>
+      {:else}
+        <span class="t-hk-off">{disabledLabel}</span>
+      {/if}
+
+      {#if allowDisable && value && !recording}
+        <button
+          type="button"
+          class="t-hk-clr"
+          title={disabledLabel}
+          onclick={(e) => { e.stopPropagation(); onchange(''); }}
+        >
+          <X size={12} />
+        </button>
+      {/if}
+    </div>
+
+    <Select
+      value=""
+      options={presetOptions}
+      placeholder={presetPlaceholder}
+      align="right"
+      minWidth="104px"
+      onchange={pickPreset}
+    />
+  </div>
+
+  {#if showConflict}
+    <div class="t-hk-badge is-conflict" title={status?.reason || conflictLabel}>
+      <AlertTriangle size={12} />
+      <span>{status?.reason || conflictLabel}</span>
+    </div>
+  {:else if showOk}
+    <div class="t-hk-badge is-ok">
+      <CheckCircle2 size={12} />
+      <span>{okLabel}</span>
+    </div>
+  {/if}
+</div>
+
+<style>
+  .t-hk-col {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 5px;
+    flex-shrink: 0;
+  }
+  .t-hk-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .t-hk-box {
+    position: relative;
+    min-width: 168px;
+    height: 34px;
+    padding: 0 28px 0 12px;
+    border-radius: 7px;
+    border: 1px solid var(--border);
+    background: var(--canvas);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    user-select: none;
+    outline: none;
+    transition: border-color 0.12s ease, box-shadow 0.12s ease, background-color 0.12s ease;
+  }
+  .t-hk-box:hover { border-color: var(--border-strong); background: var(--surface); }
+  .t-hk-box.is-rec {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--ring);
+    background: var(--surface);
+    padding: 0 12px;
+  }
+  .t-hk-box.is-conflict {
+    border-color: var(--danger);
+    background: var(--danger-soft);
+  }
+  .t-hk-keys { display: inline-flex; align-items: center; gap: 4px; }
+  .t-hk-plus { font-size: 11px; color: var(--muted); }
+  .t-hk-prompt { font-size: 12px; color: var(--accent); font-weight: 500; white-space: nowrap; }
+  .t-hk-off { font-size: 12.5px; color: var(--muted); }
+  .t-hk-clr {
+    position: absolute;
+    right: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .t-hk-clr:hover { background: var(--hover); color: var(--text); }
+
+  .t-hk-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11.5px;
+    font-weight: 500;
+    padding: 2px 8px;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+  .t-hk-badge.is-ok {
+    background: var(--ok-soft);
+    color: var(--ok);
+  }
+  .t-hk-badge.is-conflict {
+    background: var(--danger-soft);
+    color: var(--danger);
+  }
+</style>

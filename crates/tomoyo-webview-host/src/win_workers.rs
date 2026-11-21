@@ -171,3 +171,28 @@ pub fn spawn_translate_worker(
             }
         });
 }
+
+/// Waits briefly for `tomoyo.exe` to re-register Win32 global hotkeys after `SaveSettings`,
+/// then pushes the authoritative `hotkey_status.json` health report back to Settings Center.
+pub fn spawn_hotkey_health_worker(tx: mpsc::Sender<String>, hwnd_raw: usize, notify_msg: u32) {
+    let _ = std::thread::Builder::new()
+        .name("tomoyo-hotkey-health".into())
+        .spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(180));
+            let evt = serde_json::json!({
+                "event": "hotkey_health",
+                "health": tomoyo_core::load_hotkey_health(),
+            })
+            .to_string();
+            if tx.send(evt).is_ok() {
+                unsafe {
+                    let _ = PostMessageW(
+                        Some(HWND(hwnd_raw as *mut c_void)),
+                        notify_msg,
+                        WPARAM(0),
+                        LPARAM(0),
+                    );
+                }
+            }
+        });
+}

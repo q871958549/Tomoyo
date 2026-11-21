@@ -6,7 +6,9 @@ use super::{
 };
 use crate::actions::{clipboard_has_rich_attachment, set_clipboard_text};
 use std::ffi::c_void;
-use tomoyo_core::{parse_hotkey, Lang, TomoyoConfig};
+use tomoyo_core::{
+    parse_hotkey, save_hotkey_health, HotkeyHealthReport, HotkeySlotStatus, Lang, TomoyoConfig,
+};
 use tomoyo_protocol::SearchFilter;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
@@ -245,26 +247,83 @@ pub(super) fn register_all_hotkeys(hwnd: HWND, cfg: &TomoyoConfig) -> (String, O
     let lang = cfg.lang();
     let (active, main_conflict) = register_configured_hotkey(hwnd, &cfg.hotkey);
     let mut issues = Vec::new();
-    if let Some(orig) = main_conflict {
-        issues.push(match lang {
+    let main_status = if let Some(orig) = main_conflict {
+        let msg = match lang {
             Lang::Zh => format!("主热键 {orig} 被占用，已改用 {active}"),
             Lang::En => format!("Main hotkey {orig} busy; using {active}"),
-        });
-    }
-    let extras = [
-        (HOTKEY_CLIPBOARD_ID, &cfg.clipboard.hotkey, lang.pick("剪贴板", "Clipboard")),
-        (HOTKEY_TRANSLATE_ID, &cfg.translate.hotkey, lang.pick("划词翻译", "Translate")),
-        (HOTKEY_CAPTURE_ID, &cfg.capture.hotkey, lang.pick("截图", "Capture")),
-    ];
-    for (id, spec, label) in extras {
+        };
+        issues.push(msg.clone());
+        HotkeySlotStatus {
+            spec: cfg.hotkey.clone(),
+            active: active.clone(),
+            ok: false,
+            disabled: false,
+            reason: msg,
+        }
+    } else {
+        HotkeySlotStatus {
+            spec: cfg.hotkey.clone(),
+            active: active.clone(),
+            ok: true,
+            disabled: false,
+            reason: String::new(),
+        }
+    };
+
+    let mut reg_opt = |id: i32, spec: &str, label: &str| -> HotkeySlotStatus {
         let trimmed = spec.trim();
-        if !trimmed.is_empty() && !register_optional_hotkey(hwnd, id, trimmed) {
+        if trimmed.is_empty() {
+            return HotkeySlotStatus {
+                spec: String::new(),
+                active: String::new(),
+                ok: true,
+                disabled: true,
+                reason: String::new(),
+            };
+        }
+        if register_optional_hotkey(hwnd, id, trimmed) {
+            HotkeySlotStatus {
+                spec: trimmed.to_string(),
+                active: trimmed.to_string(),
+                ok: true,
+                disabled: false,
+                reason: String::new(),
+            }
+        } else {
+            let reason = match lang {
+                Lang::Zh => format!("已被系统或其他软件占用（{trimmed}）"),
+                Lang::En => format!("Occupied by OS or another app ({trimmed})"),
+            };
             issues.push(match lang {
                 Lang::Zh => format!("{label}热键 {trimmed} 被其他软件占用"),
                 Lang::En => format!("{label} hotkey {trimmed} is busy"),
             });
+            HotkeySlotStatus {
+                spec: trimmed.to_string(),
+                active: String::new(),
+                ok: false,
+                disabled: false,
+                reason,
+            }
         }
-    }
+    };
+
+    let clip_status = reg_opt(HOTKEY_CLIPBOARD_ID, &cfg.clipboard.hotkey, lang.pick("剪贴板", "Clipboard"));
+    let tr_status = reg_opt(HOTKEY_TRANSLATE_ID, &cfg.translate.hotkey, lang.pick("划词翻译", "Translate"));
+    let cap_status = reg_opt(HOTKEY_CAPTURE_ID, &cfg.capture.hotkey, lang.pick("截图", "Capture"));
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    save_hotkey_health(&HotkeyHealthReport {
+        main: main_status,
+        clipboard: clip_status,
+        translate: tr_status,
+        capture: cap_status,
+        updated_at_unix: now,
+    });
+
     let summary = if issues.is_empty() {
         None
     } else {

@@ -11,7 +11,7 @@ use crate::export::{
 };
 use crate::overlay_draw::{
     build_toolbar_layout, compose_overlay_pixels, hit_test_handle, paint_overlay_gdi_labels,
-    precompute_dimmed, resize_rect_by_handle, ToolbarCmd, ToolbarHit,
+    precompute_dimmed, resize_rect_by_handle, ToolbarCmd, ToolbarLayout,
 };
 use crate::screen::{capture_virtual_desktop, enumerate_snap_windows, DesktopSnapshot, ScreenRect};
 use std::ffi::c_void;
@@ -26,7 +26,7 @@ use windows::Win32::Graphics::Gdi::{
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    GetKeyState, ReleaseCapture, SetCapture, VK_CONTROL, VK_ESCAPE, VK_RETURN,
+    GetKeyState, ReleaseCapture, SetCapture, VK_CONTROL, VK_ESCAPE, VK_RETURN, VK_SHIFT,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetMessageW,
@@ -64,6 +64,7 @@ struct OverlayState {
     mode: CaptureMode,
     save_dir: String,
     hex_lower: bool,
+    rgb_mode: bool,
     sel: Option<ScreenRect>,
     hover_snap: Option<ScreenRect>,
     tool: ToolKind,
@@ -74,7 +75,8 @@ struct OverlayState {
     pen_pts: Vec<(i32, i32)>,
     drag: DragMode,
     cursor: (i32, i32),
-    toolbar_hits: Vec<ToolbarHit>,
+    hovered_cmd: Option<ToolbarCmd>,
+    layout: ToolbarLayout,
     mem_dc: HDC,
     dib_bmp: HBITMAP,
     dib_bits: *mut u8,
@@ -107,6 +109,7 @@ impl OverlayState {
         match cmd {
             ToolbarCmd::Tool(t) => self.tool = if self.tool == t { ToolKind::Select } else { t },
             ToolbarCmd::Color(i) => self.color_idx = i.min(COLOR_PRESETS.len() - 1),
+            ToolbarCmd::Thickness(t) => self.thickness = t.clamp(2, 8),
             ToolbarCmd::Undo => { self.stack.undo(); }
             ToolbarCmd::Cancel => {
                 self.outcome = Some(CaptureOutcome::Done);
@@ -180,7 +183,7 @@ pub fn run_capture_overlay(mode: CaptureMode) -> Result<CaptureOutcome, String> 
 
         let face: Vec<u16> = "Microsoft YaHei UI".encode_utf16().chain(std::iter::once(0)).collect();
         let font = CreateFontW(
-            -14, 0, 0, 0, FW_NORMAL.0 as i32, 0, 0, 0, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
+            -13, 0, 0, 0, FW_NORMAL.0 as i32, 0, 0, 0, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
             CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, (DEFAULT_PITCH.0 | FF_DONTCARE.0) as u32,
             PCWSTR(face.as_ptr()),
         );
@@ -200,11 +203,11 @@ pub fn run_capture_overlay(mode: CaptureMode) -> Result<CaptureOutcome, String> 
         let (ox, oy, w, h) = (snap.origin_x, snap.origin_y, snap.width, snap.height);
         let mut st = Box::new(OverlayState {
             snap, dimmed, snap_windows, mode,
-            save_dir: cfg.capture.save_dir, hex_lower: cfg.capture.copy_hex_lowercase,
-            sel: None, hover_snap: None, tool: ToolKind::Select, color_idx: 0, thickness: 3,
+            save_dir: cfg.capture.save_dir, hex_lower: cfg.capture.copy_hex_lowercase, rgb_mode: false,
+            sel: None, hover_snap: None, tool: ToolKind::Select, color_idx: 0, thickness: 4,
             stack: AnnotationStack::default(), live_ann: None, pen_pts: Vec::new(),
-            drag: DragMode::None, cursor: (w / 2, h / 2), toolbar_hits: Vec::new(),
-            mem_dc, dib_bmp, dib_bits: bits as *mut u8, font, outcome: None,
+            drag: DragMode::None, cursor: (w / 2, h / 2), hovered_cmd: None,
+            layout: ToolbarLayout::default(), mem_dc, dib_bmp, dib_bits: bits as *mut u8, font, outcome: None,
         });
         let hwnd = CreateWindowExW(
             WS_EX_TOPMOST | WS_EX_TOOLWINDOW, cls, w!("Tomoyo Capture"), WS_POPUP,
@@ -242,38 +245,19 @@ unsafe extern "system" fn overlay_wndproc(
         WM_PAINT => {
             let mut ps = PAINTSTRUCT::default();
             let hdc = unsafe { BeginPaint(hwnd, &mut ps) };
-            let (bar_rect, hits) = if let Some(s) = st.sel.filter(|r| r.is_valid()) {
-                let (br, h) = build_toolbar_layout(s, st.snap.width, st.snap.height, st.tool, st.color_idx);
-                (Some(br), h)
-            } else {
-                (None, Vec::new())
-            };
-            st.toolbar_hits = hits;
+            st.layout = st.sel.filter(|r| r.is_valid()).map_or_else(ToolbarLayout::default, |s| {
+                build_toolbar_layout(s, st.snap.width, st.snap.height, st.tool, st.color_idx, st.thickness)
+            });
             let show_loupe = st.sel.is_none() || matches!(st.drag, DragMode::Creating(_, _) | DragMode::Resizing(_, _));
             let byte_len = (st.snap.width as usize) * (st.snap.height as usize) * 4;
             let dst = unsafe { std::slice::from_raw_parts_mut(st.dib_bits, byte_len) };
             compose_overlay_pixels(
-                dst,
-                &st.snap,
-                &st.dimmed,
-                st.sel,
-                st.hover_snap,
-                st.stack.items(),
-                st.live_ann.as_ref(),
-                st.cursor,
-                show_loupe,
-                bar_rect,
-                &st.toolbar_hits,
+                dst, &st.snap, &st.dimmed, st.sel, st.hover_snap, st.stack.items(),
+                st.live_ann.as_ref(), st.cursor, show_loupe, &st.layout, st.hovered_cmd,
             );
             paint_overlay_gdi_labels(
-                st.mem_dc,
-                st.font,
-                &st.snap,
-                st.sel,
-                st.cursor,
-                show_loupe,
-                &st.toolbar_hits,
-                st.hex_lower,
+                st.mem_dc, st.font, &st.snap, st.sel, st.cursor, show_loupe,
+                &st.layout, st.hovered_cmd, st.hex_lower, st.rgb_mode,
             );
             unsafe {
                 let _ = BitBlt(hdc, 0, 0, st.snap.width, st.snap.height, Some(st.mem_dc), 0, 0, SRCCOPY);
@@ -284,7 +268,7 @@ unsafe extern "system" fn overlay_wndproc(
         WM_LBUTTONDOWN => {
             let (x, y) = xy();
             st.cursor = (x, y);
-            if let Some(hit) = st.toolbar_hits.iter().find(|h| h.rect.contains(x, y)).copied() {
+            if let Some(hit) = st.layout.hits.iter().find(|h| h.rect.contains(x, y)).copied() {
                 st.execute_action(hwnd, hit.cmd);
                 return LRESULT(0);
             }
@@ -321,6 +305,11 @@ unsafe extern "system" fn overlay_wndproc(
         WM_MOUSEMOVE => {
             let (x, y) = xy();
             st.cursor = (x, y);
+            st.hovered_cmd = if st.drag == DragMode::None {
+                st.layout.hits.iter().find(|h| h.rect.contains(x, y)).map(|h| h.cmd)
+            } else {
+                None
+            };
             match st.drag {
                 DragMode::None => {
                     if st.sel.is_none() {
@@ -340,11 +329,12 @@ unsafe extern "system" fn overlay_wndproc(
                 }
                 DragMode::Drawing(sx, sy) => {
                     let col = COLOR_PRESETS[st.color_idx];
+                    let mosaic_blk = match st.thickness { 2 => 8, 4 => 12, _ => 18 };
                     st.live_ann = match st.tool {
                         ToolKind::Rect => Some(Annotation::Rect { rect: ScreenRect::from_points(sx, sy, x, y), color: col, thickness: st.thickness }),
                         ToolKind::Ellipse => Some(Annotation::Ellipse { rect: ScreenRect::from_points(sx, sy, x, y), color: col, thickness: st.thickness }),
                         ToolKind::Arrow => Some(Annotation::Arrow { x0: sx, y0: sy, x1: x, y1: y, color: col, thickness: st.thickness }),
-                        ToolKind::Mosaic => Some(Annotation::Mosaic { rect: ScreenRect::from_points(sx, sy, x, y), block: 10 }),
+                        ToolKind::Mosaic => Some(Annotation::Mosaic { rect: ScreenRect::from_points(sx, sy, x, y), block: mosaic_blk }),
                         ToolKind::Pen => {
                             st.pen_pts.push((x, y));
                             Some(Annotation::Pen { points: st.pen_pts.clone(), color: col, thickness: st.thickness })
@@ -414,10 +404,19 @@ unsafe extern "system" fn overlay_wndproc(
                 unsafe { let _ = InvalidateRect(Some(hwnd), None, false); }
             } else if ctrl && vk == b'S' as u16 {
                 st.execute_action(hwnd, ToolbarCmd::Save);
+            } else if vk == VK_SHIFT.0 && st.sel.is_none() {
+                st.rgb_mode = !st.rgb_mode;
+                unsafe { let _ = InvalidateRect(Some(hwnd), None, false); }
             } else if vk == b'C' as u16 && st.sel.is_none() {
                 let (r, g, b) = st.snap.pixel_rgb(st.cursor.0, st.cursor.1);
-                let hex = if st.hex_lower { format!("#{r:02x}{g:02x}{b:02x}") } else { format!("#{r:02X}{g:02X}{b:02X}") };
-                copy_text_to_clipboard(&hex);
+                let txt = if st.rgb_mode {
+                    format!("rgb({r}, {g}, {b})")
+                } else if st.hex_lower {
+                    format!("#{r:02x}{g:02x}{b:02x}")
+                } else {
+                    format!("#{r:02X}{g:02X}{b:02X}")
+                };
+                copy_text_to_clipboard(&txt);
                 st.execute_action(hwnd, ToolbarCmd::Cancel);
             } else if !ctrl {
                 match vk as u8 {

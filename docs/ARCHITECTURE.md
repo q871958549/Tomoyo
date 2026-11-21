@@ -145,7 +145,8 @@ sequenceDiagram
 | `crates/tomoyo-plugin-host` | 插件发现、按需加载、Job Object 隔离、JSON-RPC、`wasmi`、Idle Reaper | 进程与沙箱隔离 |
 | `crates/tomoyo-sdk` | Rust STDIO 插件开发包 (`TomoyoPlugin` trait) | 依赖 `tomoyo-protocol` |
 | `crates/tomoyo-wasm-sdk` | WebAssembly 插件开发包 | 依赖 `tomoyo-protocol` |
-| `crates/tomoyo-webview-host` | 按需独立 WebView2 宿主（设置中心、插件清单视图、`window.utools` 兼容桥） | 独立短生命周期进程 |
+| `crates/tomoyo-webview-host` | 按需独立 WebView2 宿主（承载设置中心、剪贴板工作台、多源翻译、OCR 审校与 `window.utools` 兼容桥） | 独立短生命周期进程（嵌入 `frontend/dist/*.html`） |
+| `frontend/` | 极简现代风格工程化前端（Svelte 5 + Tailwind CSS v4 + TypeScript + `@lucide/svelte`） | Vite 单文件 IIFE 打包（0 后端常驻依赖），经 `svelte-check`/`Vitest`/`happy-dom` 门禁验证 |
 | `crates/tomoyo-cli` | 插件脚手架、检查、SHA-256 计算与 uTools 导入工具 | 命令行工具 |
 | `crates/tomoyo-app` | Windows 桌面主程序（Win32 + SDF/GDI + DPI + 托盘自愈 + CrashGuard + 休眠） | `windows` crate + `mimalloc` |
 | `crates/tomoyo-capture` | 按需原生截图、6 种标注、取色放大镜与桌面贴图独立进程 (`tomoyo-capture.exe`) | 纯 Rust BGRA + Win32 GDI，0 常驻内存 |
@@ -200,3 +201,7 @@ sequenceDiagram
   - **设置中心前端根治与自动化运行时烟雾门禁**：拆分 `settings_boot.js` 提前声明共享状态（`INIT`/`state`/helpers），根治 `translate_controls.js` 触发 ES6 TDZ `ReferenceError` 导致点击无响应的缺陷；新增零依赖 [`scripts/check_webview_ui.mjs`](../scripts/check_webview_ui.mjs) 接入 `check_hygiene.ps1` 与 CI，强制在 Node `vm` + 轻量 DOM 中真实执行全部 4 个 WebView 页面脚本与 10 个设置页签点击交互。
   - **独立按需截图与桌面贴图子系统（`tomoyo-capture.exe`）**：零常驻内存独立 Win32 + 纯 Rust 32-bit BGRA 引擎，支持 Per-Monitor V2 虚拟桌面冻结截屏、`DWMWA_EXTENDED_FRAME_BOUNDS` 窗口吸附、`11×11` 放大镜与 `#HEX` 取色、6 种标注工具（矩形/椭圆/箭头/画笔/马赛克/序号）+ Undo/Redo、无边框置顶贴图浮窗（滚轮缩放、`Ctrl+滚轮` 透明度、右键 OCR/翻译/复制/保存）以及与离线 OCR / 多源翻译工作台的直连链路。
   - **多热键冲突统一可观测**：主启动器、剪贴板（`Alt+V`）、划词翻译（`Alt+T`）与截图（`Alt+S`）的注册冲突全部汇总并在首次唤起时明确提示，设置中心新增「截图与贴图」面板（热键录入、贴图默认透明度、小写 HEX、系统目录选择器及一键触发按钮）。
+- **v1.6.0 — 极简现代 UI/UX 全栈重构、Svelte 5 前端工程化、全局热键健康闭环与原生视觉统一**
+  - **双层渲染架构下的前端现代化重构（`frontend/`）**：坚持主进程 `tomoyo.exe` 与截屏进程 `tomoyo-capture.exe` 纯 Rust Win32 SDF/GDI 零 GPU 膨胀，同时将短生命周期 `tomoyo-webview-host.exe` 全部 4 个内置页面升级为 **Svelte 5 + Tailwind CSS v4 + TypeScript + `@lucide/svelte` + Vite 单文件 IIFE**（`settings.html` / `translator.html` / `clipboard.html` / `ocr.html`，移除旧手写 HTML/JS 目录），完整实现 10 类极简现代受控原语与三主题语义令牌体系，全流程接入 `svelte-check`、`Vitest` 与 `happy-dom` 编译产物烟雾门禁。
+  - **全局热键真实系统状态回执与键位扩展**：`tomoyo-core::config::hotkey` 扩展支持 OEM 标点与导航键并持久化 `%LOCALAPPDATA%\Tomoyo\hotkey_status.json`；主进程在启动与热重载时落盘全部 4 个热键的真实 Win32 `RegisterHotKey` 结果，设置中心保存后自动回读并在 `HotkeyRecorder` 内实时渲染绿/红冲突徽标与一键推荐键，根治组合键被占静默失效。
+  - **原生截图胶囊工具栏与右键菜单视觉统一**：`tomoyo-capture.exe` 新增纯 Rust 抗锯齿 SDF 图形原语与 16×16 矢量图标模块（`overlay_icons.rs`），重构为深色半透明圆角胶囊工具栏、按需展开的二级属性胶囊（3 档线宽点 + 6 色圆形色板）、悬浮 Tooltip 气泡、圆角尺寸徽标与支持 `Shift` 切换 HEX/RGB 的 `11×11` 放大镜 HUD；`tomoyo-app` 原生弹出菜单统一 32px 无框悬停高亮与 `danger` / `disabled` 视觉规范。

@@ -17,11 +17,12 @@ pub enum ToolKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AnnotColor(pub u8, pub u8, pub u8);
 
-pub const COLOR_PRESETS: [AnnotColor; 5] = [
+pub const COLOR_PRESETS: [AnnotColor; 6] = [
     AnnotColor(0xEF, 0x44, 0x44), // Red
     AnnotColor(0xF5, 0x9E, 0x0B), // Amber
     AnnotColor(0x10, 0xB9, 0x81), // Green
     AnnotColor(0x3B, 0x82, 0xF6), // Blue
+    AnnotColor(0x18, 0x18, 0x1B), // Ink
     AnnotColor(0xFF, 0xFF, 0xFF), // White
 ];
 

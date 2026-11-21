@@ -8,15 +8,14 @@ use tomoyo_providers::{ClipboardEntry, ClipboardPayload, ClipboardStore, ParsedC
 
 pub const CLIP_MANAGER_ENTRY: &str = "__tomoyo_clipboard_manager__";
 
-const CLIP_HTML_TPL: &str = include_str!("ui/clipboard_manager.html");
-const CLIP_APP_JS: &str = include_str!("ui/clipboard_manager.js");
+const CLIP_HTML_BUNDLE: &str = include_str!("../../../frontend/dist/clipboard.html");
 
 pub fn is_clip_manager_entry(entry: &str) -> bool {
     entry == CLIP_MANAGER_ENTRY
 }
 
 pub fn assemble_clip_manager_html() -> String {
-    CLIP_HTML_TPL.replace("/*__CLIP_JS__*/", CLIP_APP_JS)
+    CLIP_HTML_BUNDLE.to_string()
 }
 
 pub struct ClipManagerBootstrap {

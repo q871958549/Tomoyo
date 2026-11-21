@@ -102,7 +102,7 @@ impl AppShell {
                 false,
             ),
             PopupEntry::Separator,
-            PopupEntry::item(CMD_QUIT, l.pick("退出 Tomoyo", "Exit Tomoyo"), None, false),
+            PopupEntry::danger_item(CMD_QUIT, l.pick("退出 Tomoyo", "Exit Tomoyo"), None),
         ];
 
         self.inter.suppress_next_deactivate = true;
