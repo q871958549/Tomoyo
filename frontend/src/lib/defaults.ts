@@ -87,6 +87,8 @@ export function makeDefaultConfig(): TomoyoConfig {
     language: 'zh',
     hotkey: 'Alt+Space',
     override_conflict_hotkeys: true,
+    suspend_hotkeys_in_fullscreen: true,
+    hotkey_excluded_apps: ['raylink.exe', 'mstsc.exe', 'parsec.exe', 'moonlight.exe', 'todesk.exe', 'sunloginclient.exe', 'anydesk.exe'],
     theme: 'light',
     hibernate_delay_secs: 15,
     auto_preview: true,
@@ -131,10 +133,11 @@ export function hydrateSettingsInit(): SettingsInitPayload {
   const def = makeDefaultConfig();
   const rc = (raw.config ?? {}) as Partial<TomoyoConfig>;
   return {
-    version: raw.version || '1.9.0',
+    version: raw.version || '1.9.1',
     autostart: !!raw.autostart,
     plugins: Array.isArray(raw.plugins) ? raw.plugins : [],
     config_path: raw.config_path || '',
+    sync_dir: raw.sync_dir || '',
     plugins_dir: raw.plugins_dir || '',
     logs_dir: raw.logs_dir || '',
     running_apps: Array.isArray(raw.running_apps) ? raw.running_apps : [],
@@ -161,6 +164,8 @@ export function hydrateSettingsInit(): SettingsInitPayload {
       hidden_builtin_filters: Array.isArray(rc.hidden_builtin_filters) ? rc.hidden_builtin_filters : [],
       custom_filters: Array.isArray(rc.custom_filters) ? rc.custom_filters : [],
       disabled_plugins: Array.isArray(rc.disabled_plugins) ? rc.disabled_plugins : [],
+      suspend_hotkeys_in_fullscreen: rc.suspend_hotkeys_in_fullscreen ?? true,
+      hotkey_excluded_apps: Array.isArray(rc.hotkey_excluded_apps) ? rc.hotkey_excluded_apps : def.hotkey_excluded_apps,
       web_searches: Array.isArray(rc.web_searches) ? rc.web_searches : def.web_searches,
     },
   };

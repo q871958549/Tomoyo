@@ -85,6 +85,28 @@ pub fn import_desensitized_backup_json(raw: &str) -> (String, bool) {
     )
 }
 
+pub fn clear_sync_dir_reply() -> (String, bool) {
+    match tomoyo_core::set_sync_dir(None) {
+        Ok((_, msg)) => (
+            serde_json::json!({
+                "event": "sync_dir_updated",
+                "ok": true,
+                "cancelled": false,
+                "sync_dir": "",
+                "config_path": tomoyo_core::TomoyoConfig::config_path().to_string_lossy(),
+                "config": tomoyo_core::TomoyoConfig::load_or_create(),
+                "message": msg
+            })
+            .to_string(),
+            true,
+        ),
+        Err(e) => (
+            serde_json::json!({ "event": "sync_dir_updated", "ok": false, "message": e }).to_string(),
+            false,
+        ),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -10,12 +10,14 @@
     TomoyoConfig,
   } from '../../lib/types';
   import Button from '../../lib/ui/Button.svelte';
+  import Combobox from '../../lib/ui/Combobox.svelte';
   import Segmented from '../../lib/ui/Segmented.svelte';
   import Switch from '../../lib/ui/Switch.svelte';
 
   interface Props {
     cfg: TomoyoConfig;
     lang: Lang;
+    runningApps: string[];
     health: HotkeyHealthReport;
     audit: HotkeyAuditReport | null;
     auditing: boolean;
@@ -25,12 +27,21 @@
     onProbe: (spec: string) => void;
     onApplyFreeKey: (slot: 'main' | 'clipboard' | 'translate' | 'capture', key: string) => void;
     onToggleOverride: (v: boolean) => void;
+    onUpdateAvoidance: (fullscreen: boolean, excluded: string[]) => void;
   }
 
   let {
-    cfg, lang, health, audit, auditing, probingSpec, probeResult,
-    onRunAudit, onProbe, onApplyFreeKey, onToggleOverride,
+    cfg, lang, runningApps, health, audit, auditing, probingSpec, probeResult,
+    onRunAudit, onProbe, onApplyFreeKey, onToggleOverride, onUpdateAvoidance,
   }: Props = $props();
+
+  function normalizeExe(raw: string): string | null {
+    let s = raw.trim().toLowerCase();
+    if (!s || /[\\/]|\.\./.test(s) || s.length > 64) return null;
+    if (!s.endsWith('.exe')) s += '.exe';
+    const stem = s.slice(0, -4);
+    return stem && /^[a-z0-9._ -]+$/.test(stem) ? s : null;
+  }
 
   let filter = $state('all');
   let customSpec = $state('');
@@ -160,6 +171,43 @@
       </div>
     </div>
     <Switch checked={!!cfg.override_conflict_hotkeys} onchange={onToggleOverride} />
+  </div>
+</div>
+
+<!-- Fullscreen & Remote-Desktop Zero-Polling Hotkey Avoidance -->
+<div class="t-card sec-card" style="margin-top:14px">
+  <div class="avoid-row">
+    <div>
+      <div class="t-label">{isEn ? 'Auto-Yield Hotkeys in Fullscreen Games / Videos' : '全屏游戏与全屏视频时自动避让热键'}</div>
+      <div class="t-desc">
+        {isEn
+          ? 'Zero-polling check only on keypress; passes keys straight through during D3D or borderless fullscreen.'
+          : '零后台轮询，仅在按键瞬间放行全屏游戏/播放器，杜绝误呼出打断。'}
+      </div>
+    </div>
+    <Switch
+      checked={cfg.suspend_hotkeys_in_fullscreen !== false}
+      onchange={(v) => onUpdateAvoidance(v, cfg.hotkey_excluded_apps || [])}
+    />
+  </div>
+  <div class="avoid-col">
+    <div>
+      <div class="t-label">{isEn ? 'Remote Desktop & App Hotkey Yield List' : '远程桌面与指定前台应用避让名单'}</div>
+      <div class="t-desc">
+        {isEn
+          ? 'When any process below is active, Tomoyo yields all shortcuts & override hooks directly to it.'
+          : '当前台窗口命中以下进程（如 RayLink / 远程桌面）时，热键与接管钩子全部直接透传给对方。'}
+      </div>
+    </div>
+    <Combobox
+      selected={cfg.hotkey_excluded_apps || []}
+      suggestions={runningApps}
+      placeholder={isEn ? 'Search running apps or type .exe (e.g. raylink.exe)…' : '搜索运行中程序或输入进程名（如 raylink.exe）…'}
+      emptyText={isEn ? 'No apps excluded' : '尚未配置热键避让应用'}
+      normalize={normalizeExe}
+      invalidMessage={isEn ? 'Enter a valid .exe filename' : '请输入合法的 .exe 进程名'}
+      onchange={(next) => onUpdateAvoidance(cfg.suspend_hotkeys_in_fullscreen !== false, next)}
+    />
   </div>
 </div>
 
@@ -327,5 +375,7 @@
   .pill.is-occupied_external { background: var(--warn-soft); color: var(--warn); }
   .pill.is-tomoyo { background: var(--accent-soft); color: var(--accent); }
   .override-row { background: var(--canvas); margin: 6px -16px -14px; padding: 12px 16px; border-radius: 0 0 10px 10px; }
+  .avoid-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 10px; }
+  .avoid-col { display: flex; flex-direction: column; gap: 8px; padding-top: 10px; border-top: 1px solid var(--border); }
   :global(.ov-ico) { color: #7c3aed; flex-shrink: 0; }
 </style>

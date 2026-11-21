@@ -2,9 +2,10 @@
 
 use super::{AppShell, EDIT_CTRL_ID};
 use crate::actions::{
-    copy_image_as_base64_uri, execute_action, kill_process_by_pid,
+    compute_file_sha256_bounded, copy_file_contents_bounded, copy_image_as_base64_uri,
+    execute_action, extract_zip_into_sibling_dir, kill_process_by_pid,
     paste_into_previous_window_async, read_clipboard_files, read_clipboard_image_png,
-    spawn_capture_tool,
+    spawn_capture_tool, spawn_pin_image_file,
 };
 use crate::tray::{
     MENU_ID_CAPTURE, MENU_ID_CLIPBOARD, MENU_ID_CONFIG, MENU_ID_GC, MENU_ID_QUIT, MENU_ID_RELOAD,
@@ -290,6 +291,31 @@ impl AppShell {
                 self.resize_to_fit_results();
                 self.invalidate();
             }
+            InternalCommandKind::PinImageFile { path } => match spawn_pin_image_file(&path) {
+                Ok(()) => self.hide_launcher(),
+                Err(e) => self.show_toast(&e),
+            },
+            InternalCommandKind::ExtractZipHere { path } => match extract_zip_into_sibling_dir(&path) {
+                Ok(dest) => {
+                    self.show_toast(&format!("已安全解压到 {dest}"));
+                    self.hide_launcher();
+                }
+                Err(e) => self.show_toast(&e),
+            },
+            InternalCommandKind::CopyFileContents { path } => match copy_file_contents_bounded(&path) {
+                Ok(chars) => {
+                    self.show_toast(&format!("已复制文件内容（{chars} 字符）"));
+                    self.hide_launcher();
+                }
+                Err(e) => self.show_toast(&e),
+            },
+            InternalCommandKind::ComputeFileSha256 { path } => match compute_file_sha256_bounded(&path) {
+                Ok(hex) => {
+                    self.show_toast(&format!("SHA-256 已复制：{}…", &hex[..16]));
+                    self.hide_launcher();
+                }
+                Err(e) => self.show_toast(&e),
+            },
         }
     }
 

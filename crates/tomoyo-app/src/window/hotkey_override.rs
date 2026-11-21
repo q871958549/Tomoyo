@@ -226,6 +226,11 @@ unsafe extern "system" fn override_ll_proc(code: i32, wparam: WPARAM, lparam: LP
             let cur_mods = *mod_mask.get_or_insert_with(|| current_mod_mask(kb.flags));
             let slot_mods = ((packed >> 16) & 0x000F) as u32;
             if cur_mods == slot_mods {
+                let raw_hwnd = TARGET_HWND.load(Ordering::Relaxed);
+                let self_hwnd = HWND(raw_hwnd as *mut c_void);
+                if super::hotkey_avoid::should_avoid_hotkey(self_hwnd) {
+                    return unsafe { CallNextHookEx(Some(HHOOK::default()), code, wparam, lparam) };
+                }
                 let hotkey_id = ((packed >> 32) & 0xFFFF) as usize;
                 let now_ms = kb.time;
                 let prev_vk = SWALLOW_UP_VK.load(Ordering::Relaxed);
@@ -237,11 +242,10 @@ unsafe extern "system" fn override_ll_proc(code: i32, wparam: WPARAM, lparam: LP
                     if (slot_mods & (0x0001 | 0x0008)) != 0 {
                         inject_menu_mask_key();
                     }
-                    let raw_hwnd = TARGET_HWND.load(Ordering::Relaxed);
                     if raw_hwnd != 0 {
                         unsafe {
                             let _ = PostMessageW(
-                                Some(HWND(raw_hwnd as *mut c_void)),
+                                Some(self_hwnd),
                                 WM_HOTKEY,
                                 WPARAM(hotkey_id),
                                 LPARAM(1),

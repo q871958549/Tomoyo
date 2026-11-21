@@ -94,7 +94,8 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
     flushSync();
     expect(document.querySelector('button[data-tab="hotkeys"]')?.classList.contains('is-active')).toBe(true);
     expect(document.body.textContent).toContain('高优先级强行接管冲突热键');
-    // Direct 1-click rescue button must appear directly on conflicted clipboard slot!
+    // Direct 1-click rescue button + fullscreen avoidance card must render on Hotkeys tab!
+    expect(document.body.textContent).toContain('全屏游戏与全屏视频时自动避让热键');
     const rescueClip = document.querySelector<HTMLButtonElement>('button.btn-rescue-clipboard');
     expect(rescueClip).not.toBeNull();
     rescueClip?.click();

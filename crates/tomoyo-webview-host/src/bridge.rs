@@ -18,6 +18,8 @@ pub enum HostMessage {
     SaveSettings { config: tomoyo_core::TomoyoConfig, autostart: bool },
     PickFolder,
     PickCaptureDir,
+    PickSyncDir,
+    ClearSyncDir,
     StartCapture { #[serde(default)] mode: String },
     SyncTheme { theme: String },
     TogglePinTopmost,
@@ -134,6 +136,12 @@ pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isi
         }
         HostMessage::PickFolder => HostAction { pick_folder_mode: 1, ..Default::default() },
         HostMessage::PickCaptureDir => HostAction { pick_folder_mode: 2, ..Default::default() },
+        HostMessage::PickSyncDir => HostAction { pick_folder_mode: 3, ..Default::default() },
+        HostMessage::ClearSyncDir => {
+            let (reply, ok) = crate::backup::clear_sync_dir_reply();
+            if ok { if let Some(t) = notify_hwnd { notify_parent_reload(t, true); } }
+            HostAction { reply_json: Some(reply), ..Default::default() }
+        }
         HostMessage::StartCapture { mode } => {
             crate::bridge_os::spawn_capture_tool(&mode);
             HostAction::default()

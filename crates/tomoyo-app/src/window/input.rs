@@ -249,6 +249,10 @@ pub(super) fn unregister_all_hotkeys(hwnd: HWND) {
 }
 
 pub(super) fn register_all_hotkeys(hwnd: HWND, cfg: &TomoyoConfig) -> (String, Option<String>) {
+    super::hotkey_avoid::sync_hotkey_avoidance(
+        cfg.suspend_hotkeys_in_fullscreen,
+        &cfg.hotkey_excluded_apps,
+    );
     let lang = cfg.lang();
     let allow_override = cfg.override_conflict_hotkeys;
     let mut override_entries: Vec<(i32, u32, u32)> = Vec::new();

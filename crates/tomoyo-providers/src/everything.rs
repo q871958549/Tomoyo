@@ -257,23 +257,7 @@ fn build_entry_item(
         },
     ];
     if !entry.is_folder {
-        let ext = Path::new(&entry.full_path)
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("")
-            .to_ascii_lowercase();
-        if matches!(ext.as_str(), "exe" | "lnk" | "bat" | "cmd" | "msi" | "msc" | "ps1") {
-            actions.push(ActionSpec {
-                id: "run_admin".into(),
-                label: lang.pick("以管理员身份运行", "Run as Administrator").into(),
-                shortcut: Some("Ctrl+Shift+Enter".into()),
-                kind: ActionKind::LaunchAsAdmin {
-                    path: entry.full_path.clone(),
-                    args: None,
-                    working_dir: Some(parent_dir),
-                },
-            });
-        }
+        crate::file_actions::append_contextual_file_actions(&mut actions, &entry.full_path, &parent_dir, lang);
     }
     ResultItem {
         id: format!("ev:{}", entry.full_path),

@@ -38,7 +38,17 @@ fn notes_dir() -> PathBuf {
         .or_else(|_| std::env::var("HOME"))
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from("."));
-    base.join("Tomoyo").join("notes")
+    let local_root = base.join("Tomoyo");
+    if let Ok(sync_raw) = fs::read_to_string(local_root.join("sync_dir.txt")) {
+        let sync_t = sync_raw.trim();
+        if !sync_t.is_empty() {
+            let sp = PathBuf::from(sync_t);
+            if sp.is_dir() {
+                return sp.join("notes");
+            }
+        }
+    }
+    local_root.join("notes")
 }
 
 fn load_notes_from(dir: &Path) -> Vec<NoteDoc> {

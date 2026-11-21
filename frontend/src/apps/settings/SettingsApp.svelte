@@ -30,6 +30,8 @@
 
   let cfg = $state<TomoyoConfig>(init.config);
   let autostart = $state(init.autostart);
+  let syncDir = $state(init.sync_dir || '');
+  let configPath = $state(init.config_path || '');
   let plugins = $state(init.plugins);
   let secretsStatus = $state(init.secrets_status);
   let hotkeyHealth = $state<HotkeyHealthReport>(init.hotkey_health || {});
@@ -76,6 +78,11 @@
   function onUpdateFilters(hidden: string[], custom: CustomFilterTab[]) {
     cfg.hidden_builtin_filters = hidden;
     cfg.custom_filters = custom;
+    scheduleSave(0);
+  }
+  function onUpdateAvoidance(fullscreen: boolean, excluded: string[]) {
+    cfg.suspend_hotkeys_in_fullscreen = fullscreen;
+    cfg.hotkey_excluded_apps = excluded;
     scheduleSave(0);
   }
   function onTogglePlugin(id: string, enabled: boolean) {
@@ -272,6 +279,18 @@
           document.documentElement.lang = cfg.language === 'en' ? 'en' : 'zh-CN';
         }
         setToast(`${data.ok ? '✓ ' : '✗ '}${data.message || ''}`, !data.ok);
+      } else if (ev === 'sync_dir_updated') {
+        if (data.cancelled) return;
+        if (data.ok) {
+          syncDir = String(data.sync_dir || '');
+          if (typeof data.config_path === 'string') configPath = data.config_path;
+          if (data.config) {
+            cfg = data.config as TomoyoConfig;
+            applyThemeClass(cfg.theme);
+            document.documentElement.lang = cfg.language === 'en' ? 'en' : 'zh-CN';
+          }
+        }
+        setToast(`${data.ok ? '✓ ' : '✗ '}${data.message || ''}`, !data.ok);
       } else if (ev === 'update_status') {
         checkingUpdates = false;
         updateStatus = (data.status as UpdateStatus) || null;
@@ -337,16 +356,16 @@
       <div class="container">
         {#if activeTab === 'general'}
           <GeneralTab
-            {cfg} {lang} {autostart} hotkeyStatus={hotkeyHealth.main}
+            {cfg} {lang} {autostart} {syncDir} hotkeyStatus={hotkeyHealth.main}
             {onLanguageChange} {onAutostartChange}
             onJumpDoctor={() => switchTab('hotkeys')} onSave={scheduleSave}
           />
         {:else if activeTab === 'hotkeys'}
           <HotkeysTab
-            {cfg} {lang} health={hotkeyHealth} audit={hotkeyAudit} auditing={auditingHotkeys}
+            {cfg} {lang} runningApps={init.running_apps} health={hotkeyHealth} audit={hotkeyAudit} auditing={auditingHotkeys}
             {probingSpec} {probeResult}
             onRunAudit={runHotkeyAudit} onProbe={probeHotkeyOwner} onApplyFreeKey={applyFreeKey}
-            {onToggleOverride}
+            {onToggleOverride} {onUpdateAvoidance}
           />
         {:else if activeTab === 'appearance'}
           <AppearanceTab {cfg} {lang} {onThemePick} onSave={scheduleSave} />
@@ -371,7 +390,7 @@
         {:else if activeTab === 'store'}
           <StoreTab {lang} items={storeItems} statusText={storeStatus} loading={storeLoading} onRefresh={fetchStore} />
         {:else if activeTab === 'plugins'}
-          <PluginsTab {cfg} {lang} {plugins} configPath={init.config_path} pluginsDir={init.plugins_dir} {onTogglePlugin} />
+          <PluginsTab {cfg} {lang} {plugins} {configPath} pluginsDir={init.plugins_dir} {onTogglePlugin} />
         {:else if activeTab === 'logs'}
           <LogsTab
             {lang} source={logSource} errorsOnly={logErrorsOnly} content={logContent} metaLine={logMeta}

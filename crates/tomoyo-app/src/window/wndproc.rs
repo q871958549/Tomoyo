@@ -143,6 +143,9 @@ pub(super) unsafe extern "system" fn main_wndproc(
             LRESULT(0)
         }
         WM_HOTKEY => {
+            if super::hotkey_avoid::should_avoid_hotkey(hwnd) {
+                return LRESULT(0);
+            }
             match wparam.0 as i32 {
                 HOTKEY_ID => app.toggle_launcher(),
                 HOTKEY_CLIPBOARD_ID => app.toggle_clipboard_launcher(),

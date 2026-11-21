@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Download, Upload } from '@lucide/svelte';
+  import { Download, FolderSync, RotateCcw, Upload } from '@lucide/svelte';
   import { postHost } from '../../lib/ipc';
   import type { HotkeySlotStatus, TomoyoConfig } from '../../lib/types';
   import { tr, type Lang } from '../../lib/i18n';
@@ -13,6 +13,7 @@
     cfg: TomoyoConfig;
     lang: Lang;
     autostart: boolean;
+    syncDir: string;
     hotkeyStatus?: HotkeySlotStatus;
     onLanguageChange: (code: Lang) => void;
     onAutostartChange: (checked: boolean) => void;
@@ -20,7 +21,7 @@
     onSave: (delayMs?: number) => void;
   }
 
-  let { cfg, lang, autostart, hotkeyStatus, onLanguageChange, onAutostartChange, onJumpDoctor, onSave }: Props = $props();
+  let { cfg, lang, autostart, syncDir, hotkeyStatus, onLanguageChange, onAutostartChange, onJumpDoctor, onSave }: Props = $props();
   let fileInput: HTMLInputElement | undefined = $state();
   let isEn = $derived(lang === 'en');
 
@@ -122,6 +123,28 @@
 </div>
 
 <div class="t-card" style="margin-top:14px">
+  <div class="t-row">
+    <div style="min-width:0">
+      <div class="t-label">{isEn ? 'Zero-Account Local Sync Folder (OneDrive / Nutstore / Git)' : '免账号本地同步目录（OneDrive / 坚果云 / Git）'}</div>
+      <div class="t-desc">
+        {syncDir
+          ? (isEn ? `Active sync root: ${syncDir} (DPAPI keys & clipboard DB stay local)` : `当前同步目录：${syncDir}（API 密钥与剪贴板库严格留在本机）`)
+          : (isEn ? 'Store config.toml, snippets.toml & notes/ in any local sync folder for instant multi-PC sync.' : '将 config.toml、snippets.toml 与备忘录目录托管至本地网盘/Git 文件夹，无账号跨机同步。')}
+      </div>
+    </div>
+    <div class="bak-acts">
+      <Button variant="secondary" size="sm" class="btn-pick-sync" onclick={() => postHost({ cmd: 'pick_sync_dir' })}>
+        <FolderSync size={13} />
+        {isEn ? 'Choose Folder…' : '选择目录…'}
+      </Button>
+      {#if syncDir}
+        <Button variant="ghost" size="sm" onclick={() => postHost({ cmd: 'clear_sync_dir' })}>
+          <RotateCcw size={13} />
+          {isEn ? 'Local Default' : '恢复默认'}
+        </Button>
+      {/if}
+    </div>
+  </div>
   <div class="t-row">
     <div>
       <div class="t-label">{isEn ? 'Desensitized Config Backup & Migration' : '脱敏配置备份与一键换机迁移'}</div>

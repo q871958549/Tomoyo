@@ -33,6 +33,18 @@ pub fn sanitize_filters_and_plugins(cfg: &mut TomoyoConfig) {
     }
     cfg.disabled_plugins = clean_dis;
 
+    // 1b. Hotkey avoidance process list (deduped normalized `.exe` names)
+    let mut seen_hk_ex = HashSet::new();
+    let mut clean_hk_ex = Vec::new();
+    for raw in std::mem::take(&mut cfg.hotkey_excluded_apps) {
+        if let Some(exe) = super::normalize_exe_name(&raw) {
+            if seen_hk_ex.insert(exe.clone()) && clean_hk_ex.len() < 64 {
+                clean_hk_ex.push(exe);
+            }
+        }
+    }
+    cfg.hotkey_excluded_apps = clean_hk_ex;
+
     // 2. Hidden built-in filter tabs (never allow hiding `all`)
     let mut seen_hid = HashSet::new();
     cfg.hidden_builtin_filters = std::mem::take(&mut cfg.hidden_builtin_filters)

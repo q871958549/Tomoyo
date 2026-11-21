@@ -13,7 +13,7 @@
       "runtime_kind": "stdio_jsonrpc",
       "keywords": ["note", "memo", "bw"],
       "source": "plugins/official-notes",
-      "sha256": "2bc9d70eb04bb29e25ab51672daa089f1deba1fc5e49db269b12773454ed8945"
+      "sha256": "63976c2136f1a2d6e1c18ffd7caf475b1e8f746e3390c91f6d6333a9e6995333"
     },
     {
       "id": "dev.tomoyo.example-hello",

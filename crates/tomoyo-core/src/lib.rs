@@ -17,6 +17,7 @@ pub mod permissions;
 pub mod pkg_zip;
 pub mod preview;
 mod preview_docs;
+pub mod sync;
 pub mod telemetry;
 pub mod translate;
 pub mod updater;
@@ -35,6 +36,7 @@ pub use matcher_highlight::*;
 pub use permissions::*;
 pub use pkg_zip::*;
 pub use preview::*;
+pub use sync::*;
 pub use telemetry::*;
 pub use updater::*;
 

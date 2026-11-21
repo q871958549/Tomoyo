@@ -36,6 +36,12 @@ pub struct TomoyoConfig {
     /// Win32 `RegisterHotKey` fails (zero hooks mounted when no shortcut conflicts exist).
     #[serde(default = "default_true")]
     pub override_conflict_hotkeys: bool,
+    /// Automatically suspend Tomoyo hotkeys when a fullscreen game/video is active.
+    #[serde(default = "default_true")]
+    pub suspend_hotkeys_in_fullscreen: bool,
+    /// Foreground process executables (e.g. `raylink.exe`, `mstsc.exe`) where Tomoyo yields hotkeys.
+    #[serde(default = "default_hotkey_excluded_apps")]
+    pub hotkey_excluded_apps: Vec<String>,
     /// UI theme preset: `"dark"`, `"light"`, or `"midnight"`.
     #[serde(default = "default_theme")]
     pub theme: String,
@@ -269,6 +275,18 @@ fn default_clip_hotkey() -> String {
     "Alt+V".into()
 }
 
+pub fn default_hotkey_excluded_apps() -> Vec<String> {
+    vec![
+        "raylink.exe".into(),
+        "mstsc.exe".into(),
+        "parsec.exe".into(),
+        "moonlight.exe".into(),
+        "todesk.exe".into(),
+        "sunloginclient.exe".into(),
+        "anydesk.exe".into(),
+    ]
+}
+
 pub fn default_excluded_apps() -> Vec<String> {
     vec![
         "keepass.exe".into(),
@@ -344,6 +362,8 @@ impl Default for TomoyoConfig {
             language: default_language(),
             hotkey: default_hotkey(),
             override_conflict_hotkeys: true,
+            suspend_hotkeys_in_fullscreen: true,
+            hotkey_excluded_apps: default_hotkey_excluded_apps(),
             theme: default_theme(),
             hibernate_delay_secs: default_hibernate_secs(),
             auto_preview: true,
@@ -371,7 +391,7 @@ impl TomoyoConfig {
 
     pub fn sanitize(&mut self) -> Vec<String> { sanitize_config(self) }
     pub fn lang(&self) -> crate::Lang { crate::Lang::from_code(&self.language) }
-    pub fn config_path() -> PathBuf { crate::data_dir().join("config.toml") }
+    pub fn config_path() -> PathBuf { crate::sync_root_dir().join("config.toml") }
     pub fn load_or_create() -> Self { Self::load_from_path(&Self::config_path()) }
 
     pub fn load_from_path(path: &Path) -> Self {

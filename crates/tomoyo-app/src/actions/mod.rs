@@ -1,12 +1,17 @@
 //! Unified native Windows action router.
 
 mod clipboard_win;
+mod file_ops;
 mod shell_win;
 
 pub use clipboard_win::{
     clipboard_has_rich_attachment, clipboard_source_app_name, copy_image_as_base64_uri,
     is_clipboard_confidential, read_clipboard_files, read_clipboard_image_png,
     read_clipboard_text, set_clipboard_image_from_png, set_clipboard_text,
+};
+pub use file_ops::{
+    compute_file_sha256_bounded, copy_file_contents_bounded, extract_zip_into_sibling_dir,
+    spawn_pin_image_file,
 };
 pub use shell_win::{
     kill_process_by_pid, paste_into_previous_window_async, shell_open, shell_open_as_admin,

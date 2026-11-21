@@ -85,6 +85,8 @@ export interface TomoyoConfig {
   language: string;
   hotkey: string;
   override_conflict_hotkeys?: boolean;
+  suspend_hotkeys_in_fullscreen?: boolean;
+  hotkey_excluded_apps?: string[];
   theme: string;
   hibernate_delay_secs: number;
   auto_preview: boolean;
@@ -181,6 +183,7 @@ export interface SettingsInitPayload {
   autostart: boolean;
   plugins: PluginEntry[];
   config_path: string;
+  sync_dir?: string;
   plugins_dir: string;
   logs_dir: string;
   running_apps: string[];

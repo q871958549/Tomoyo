@@ -186,6 +186,7 @@ pub fn build_settings_init_script() -> String {
         "autostart": autostart,
         "plugins": plugins,
         "config_path": TomoyoConfig::config_path().to_string_lossy(),
+        "sync_dir": tomoyo_core::configured_sync_dir().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default(),
         "plugins_dir": plugins_dir.to_string_lossy(),
         "logs_dir": logs_dir().to_string_lossy(),
         "log_issues": { "warnings": log_warns, "errors": log_errs, "has_crash_report": log_crash },

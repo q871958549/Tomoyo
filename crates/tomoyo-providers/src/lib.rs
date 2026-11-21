@@ -7,6 +7,7 @@ pub mod clipboard;
 pub mod everything;
 pub mod everything_history;
 mod everything_rank;
+mod file_actions;
 pub mod processes;
 pub mod snippets;
 pub mod system;

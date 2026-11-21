@@ -297,6 +297,10 @@ pub enum InternalCommandKind {
     KillProcess { pid: u32, name: String },
     ToggleAutostart,
     TogglePreviewPane,
+    PinImageFile { path: String },
+    ExtractZipHere { path: String },
+    CopyFileContents { path: String },
+    ComputeFileSha256 { path: String },
 }
 
 /// Declarative Server-Driven UI (SDUI) preview card rendered natively without WebView.

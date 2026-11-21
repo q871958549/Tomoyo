@@ -41,7 +41,7 @@ pub struct SnippetsProvider {
 
 impl SnippetsProvider {
     pub fn new(config: Arc<RwLock<TomoyoConfig>>) -> Self {
-        let path = tomoyo_core::data_dir().join("snippets.toml");
+        let path = tomoyo_core::sync_root_dir().join("snippets.toml");
         let entries = load_or_init_snippets(&path);
         Self {
             config,
@@ -151,7 +151,8 @@ impl Provider for SnippetsProvider {
     }
 
     fn reload(&self) {
-        let fresh = load_or_init_snippets(&self.path);
+        let active_path = tomoyo_core::sync_root_dir().join("snippets.toml");
+        let fresh = load_or_init_snippets(&active_path);
         if let Ok(mut guard) = self.entries.write() {
             *guard = fresh;
         }

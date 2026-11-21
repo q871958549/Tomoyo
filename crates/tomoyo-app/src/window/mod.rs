@@ -3,6 +3,7 @@
 mod bootstrap;
 mod clipboard_ctrl;
 mod commands;
+mod hotkey_avoid;
 mod hotkey_override;
 mod input;
 mod layout;

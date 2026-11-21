@@ -11,7 +11,7 @@
   <a href="https://github.com/q871958549/Tomoyo/actions/workflows/ci.yml"><img src="https://github.com/q871958549/Tomoyo/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="LICENSE-MIT"><img src="https://img.shields.io/badge/license-MIT%20%2F%20Apache--2.0-blue.svg" alt="License" /></a>
   <img src="https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-0078D6.svg" alt="Windows" />
-  <img src="https://img.shields.io/badge/version-v1.9.0-7c6af7.svg" alt="Version" />
+  <img src="https://img.shields.io/badge/version-v1.9.1-7c6af7.svg" alt="Version" />
 </p>
 
 ---
@@ -39,18 +39,18 @@
 
 ---
 
-## 实测数据与自检阈值 (`v1.9.0` Release)
+## 实测数据与自检阈值 (`v1.9.1` Release)
 
 | 指标 | 实测记录 | 自检阈值 (`--strict-budget`) |
 |---|---|---|
-| `tomoyo.exe` 微内核主程序体积 | **5.57 MB** (`5,701.5 KB`) | — |
-| `tomoyo-webview-host.exe` Svelte 5 设置中心（含官方插件启停、基线差分热键治理与脱敏配置备份）、剪贴板、翻译、OCR 与插件宿主 | **4.54 MB**（关闭即退出） | 0 MB 常驻 |
-| `tomoyo-capture.exe` 极简矢量标注（8 手柄拖放 / 解析三次方程零折角平滑弯折箭头）+ 白底高适应长截图实时预览条 + 双击关闭贴图 | **1.05 MB**（关闭即退出） | 0 MB 常驻 |
+| `tomoyo.exe` 微内核主程序体积 | **5.59 MB** (`5,728.5 KB`) | — |
+| `tomoyo-webview-host.exe` Svelte 5 设置中心（含全屏热键避让、本地同步目录、插件启停与差分热键治理）、剪贴板、翻译、OCR 与插件宿主 | **4.55 MB**（关闭即退出） | 0 MB 常驻 |
+| `tomoyo-capture.exe` 极简矢量标注 + 白底长截图实时预览 + 全格式 WIC 贴图 | **1.06 MB**（关闭即退出） | 0 MB 常驻 |
 | `tomoyo-plugin-ocr.exe` / `tomoyo-plugin-notes.exe` 官方独立按需 STDIO 插件（离线 OCR / 本地 Markdown 备忘录） | **0.36 MB** / **0.32 MB**（空闲自动回收） | 0 MB 常驻 |
-| 休眠态 Working Set 内存占用 (`--self-test`) | **1.55–1.57 MB** | ≤ 2.0 MB |
-| 休眠态 Private Commit（含 343 应用/桌面条目索引、SQLite 与字体） | **22.65 MB** | ≤ 28.0 MB |
+| 休眠态 Working Set 内存占用 (`--self-test`) | **1.52–1.54 MB** | ≤ 2.0 MB |
+| 休眠态 Private Commit（含 344 应用/桌面条目索引、SQLite 与字体） | **21.21 MB** | ≤ 28.0 MB |
 | 100 轮查询 / 绘制 / 预览 / 休眠压测 Delta | **GDI `+0` · USER `+0` · Handles `+0` · Private `+0.08 MB`** | 句柄 0 增长 / 内存 ≤ +0.50 MB |
-| 源码规范与前端编译产物门禁（[编码规范](docs/CODING_STANDARDS.md) / [UI 规范](docs/UI_DESIGN_STANDARDS.md)） | **全仓 197 个源码文件均 ≤ 450 行 · `svelte-check`/`Vitest`/4 份 Svelte 5 单文件产物 `happy-dom` 门禁全绿** | ≤ 450 行/文件 · 0 JS 异常 |
+| 源码规范与前端编译产物门禁（[编码规范](docs/CODING_STANDARDS.md) / [UI 规范](docs/UI_DESIGN_STANDARDS.md)） | **全仓 201 个源码文件均 ≤ 450 行 · `svelte-check`/`Vitest`/4 份 Svelte 5 单文件产物 `happy-dom` 门禁全绿** | ≤ 450 行/文件 · 0 JS 异常 |
 
 ---
 

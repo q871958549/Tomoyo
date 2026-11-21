@@ -67,6 +67,49 @@ pub fn pick_capture_save_folder(owner: HWND) -> String {
     }
 }
 
+pub fn pick_sync_folder(owner: HWND) -> (String, bool) {
+    match show_folder_dialog(owner, w!("选择本地同步目录（OneDrive / 坚果云 / Git 等）")) {
+        Some(raw_path) => match tomoyo_core::set_sync_dir(Some(&raw_path)) {
+            Ok((dir, message)) => {
+                let cfg = tomoyo_core::TomoyoConfig::load_or_create();
+                let sync_str = dir.map(|p| p.to_string_lossy().into_owned()).unwrap_or_default();
+                (
+                    serde_json::json!({
+                        "event": "sync_dir_updated",
+                        "ok": true,
+                        "cancelled": false,
+                        "sync_dir": sync_str,
+                        "config_path": tomoyo_core::TomoyoConfig::config_path().to_string_lossy(),
+                        "config": cfg,
+                        "message": message
+                    })
+                    .to_string(),
+                    true,
+                )
+            }
+            Err(err) => (
+                serde_json::json!({
+                    "event": "sync_dir_updated",
+                    "ok": false,
+                    "cancelled": false,
+                    "message": err
+                })
+                .to_string(),
+                false,
+            ),
+        },
+        None => (
+            serde_json::json!({
+                "event": "sync_dir_updated",
+                "ok": false,
+                "cancelled": true
+            })
+            .to_string(),
+            false,
+        ),
+    }
+}
+
 fn show_folder_dialog(owner: HWND, title: windows::core::PCWSTR) -> Option<String> {
     unsafe {
         let dialog: IFileOpenDialog =

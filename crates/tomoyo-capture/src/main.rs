@@ -112,7 +112,16 @@ fn run_windows_main() {
 
     if let Some(pos) = args.iter().position(|a| a == "--pin") {
         if let Some(p) = args.get(pos + 1) {
-            if let Ok((w, h, bgra)) = load_png_as_bgra(Path::new(p)) {
+            let img_path = Path::new(p);
+            let loaded = load_png_as_bgra(img_path).ok().or_else(|| {
+                let (_, _, w, h, mut rgba) =
+                    tomoyo_core::wic_thumb::decode_image_thumbnail_wic(img_path, 3840, 2160)?;
+                for px in rgba.chunks_exact_mut(4) {
+                    px.swap(0, 2); // RGBA -> BGRA
+                }
+                Some((w, h, rgba))
+            });
+            if let Some((w, h, bgra)) = loaded {
                 let _ = run_pin_window(w, h, bgra, 120, 120);
             }
         }
