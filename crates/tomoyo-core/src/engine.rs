@@ -210,7 +210,13 @@ impl QueryRouter {
         let has_space_after = trimmed.len() > first_token.len();
 
         if filter == SearchFilter::All {
-            if let Some(inline_filter) = SearchFilter::parse_inline_tag(&first_lower) {
+            let inline_filter = self
+                .config
+                .as_ref()
+                .and_then(|c| c.read().ok())
+                .and_then(|c| SearchFilter::parse_inline_tag_with_custom(&first_lower, &c.custom_filters))
+                .or_else(|| SearchFilter::parse_inline_tag(&first_lower));
+            if let Some(inline_filter) = inline_filter {
                 let mut f_ctx = QueryContext::new(rest, generation, limit).with_filter(inline_filter);
                 f_ctx.clipboard = ctx.clipboard.clone();
                 return self.run_filtered_fast(f_ctx, generation, limit);

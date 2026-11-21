@@ -34,13 +34,11 @@ pub(super) fn dispatch_menu_id(hwnd: HWND, app: &mut AppShell, id: u32) {
         MENU_ID_TRANSLATE => app.open_translator_window("", None),
         MENU_ID_CAPTURE => app.trigger_capture("region"),
         MENU_ID_UPDATE => {
-            app.inter.suppress_next_deactivate = true;
             app.show_launcher();
             app.set_query_text(":update");
             app.trigger_update_check_async();
         }
         MENU_ID_STATS => {
-            app.inter.suppress_next_deactivate = true;
             app.show_launcher();
             app.set_query_text(":stats");
         }

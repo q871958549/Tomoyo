@@ -105,7 +105,7 @@ impl AppShell {
             PopupEntry::danger_item(CMD_QUIT, l.pick("退出 Tomoyo", "Exit Tomoyo"), None),
         ];
 
-        self.inter.suppress_next_deactivate = true;
+        self.inter.in_modal_overlay = true;
         let chosen = show_themed_popup_menu(
             self.theme,
             self.dpi_scale,
@@ -114,7 +114,7 @@ impl AppShell {
             &entries,
             false,
         );
-        self.inter.suppress_next_deactivate = false;
+        self.inter.in_modal_overlay = false;
 
         let Some(cmd) = chosen else {
             return;
@@ -197,7 +197,7 @@ impl AppShell {
             self.preview_enabled,
         ));
 
-        self.inter.suppress_next_deactivate = true;
+        self.inter.in_modal_overlay = true;
         let chosen = show_themed_popup_menu(
             self.theme,
             self.dpi_scale,
@@ -206,7 +206,7 @@ impl AppShell {
             &entries,
             false,
         );
-        self.inter.suppress_next_deactivate = false;
+        self.inter.in_modal_overlay = false;
 
         let Some(cmd) = chosen else {
             return;

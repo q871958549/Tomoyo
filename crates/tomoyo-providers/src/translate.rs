@@ -3,7 +3,7 @@
 
 use std::sync::{Arc, RwLock};
 use tomoyo_core::translate::{resolve_target_lang, TranslateStore};
-use tomoyo_core::{Lang, Provider, TomoyoConfig};
+use tomoyo_core::{Lang, Provider, TomoyoConfig, PLUGIN_TRANSLATE};
 use tomoyo_protocol::{
     ActionKind, ActionSpec, IconSpec, InternalCommandKind, PreviewSpec, QueryContext,
     ResultCategory, ResultItem,
@@ -43,11 +43,19 @@ impl Provider for TranslateProvider {
         &["tr", "fy"]
     }
 
+    fn matches_prefix(&self, token_lower: &str) -> bool {
+        self.config.read().map(|c| c.is_plugin_enabled(PLUGIN_TRANSLATE)).unwrap_or(true)
+            && self.prefixes().contains(&token_lower)
+    }
+
     fn supports_global(&self) -> bool {
         false
     }
 
     fn query(&self, ctx: &QueryContext) -> Vec<ResultItem> {
+        if !self.config.read().map(|c| c.is_plugin_enabled(PLUGIN_TRANSLATE)).unwrap_or(true) {
+            return Vec::new();
+        }
         let lang = self.lang();
         let (target_override, text) = parse_translate_args(&ctx.args);
         let default_tgt = self.default_target();

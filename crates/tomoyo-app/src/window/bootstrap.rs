@@ -143,8 +143,8 @@ impl AppShell {
         let mut hotkey_label = cfg_snap.hotkey.clone();
         let mut hotkey_conflict = None;
         let tray = if install_tray_and_hotkey {
-            unsafe {
-                let _ = AddClipboardFormatListener(hwnd);
+            if cfg_snap.is_plugin_enabled(tomoyo_core::PLUGIN_CLIPBOARD) {
+                unsafe { let _ = AddClipboardFormatListener(hwnd); }
             }
             let (active, conflict) = register_all_hotkeys(hwnd, &cfg_snap);
             hotkey_label = active;
@@ -207,8 +207,10 @@ impl AppShell {
         unsafe {
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, &mut *app as *mut AppShell as isize);
         }
-        if let Some(txt) = read_clipboard_text() {
-            app.clipboard.push_text(txt);
+        if app.config.read().map(|c| c.is_plugin_enabled(tomoyo_core::PLUGIN_CLIPBOARD)).unwrap_or(true) {
+            if let Some(txt) = read_clipboard_text() {
+                app.clipboard.push_text(txt);
+            }
         }
         Ok(app)
     }

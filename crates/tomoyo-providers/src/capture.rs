@@ -3,7 +3,7 @@
 //! Spawns the ephemeral `tomoyo-capture.exe` helper strictly on demand (0 idle RAM).
 
 use std::sync::{Arc, RwLock};
-use tomoyo_core::{score_match, IndexedText, Lang, Provider, TomoyoConfig};
+use tomoyo_core::{score_match, IndexedText, Lang, Provider, TomoyoConfig, PLUGIN_CAPTURE};
 use tomoyo_protocol::{
     ActionKind, ActionSpec, IconSpec, InternalCommandKind, PreviewSpec, QueryContext,
     ResultCategory, ResultItem, SearchFilter,
@@ -118,11 +118,19 @@ impl Provider for CaptureProvider {
         &["cap", "shot", "jt", "pin", "jtocr", "jtfy"]
     }
 
+    fn matches_prefix(&self, token_lower: &str) -> bool {
+        self.config.read().map(|c| c.is_plugin_enabled(PLUGIN_CAPTURE)).unwrap_or(true)
+            && self.prefixes().contains(&token_lower)
+    }
+
     fn supports_global(&self) -> bool {
         true
     }
 
     fn query(&self, ctx: &QueryContext) -> Vec<ResultItem> {
+        if !self.config.read().map(|c| c.is_plugin_enabled(PLUGIN_CAPTURE)).unwrap_or(true) {
+            return Vec::new();
+        }
         if !matches!(ctx.filter, SearchFilter::All | SearchFilter::App) {
             return Vec::new();
         }

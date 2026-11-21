@@ -10,6 +10,7 @@ use crate::annotate::AnnotColor;
 use crate::export::{copy_bgra_to_clipboard, default_save_path, save_bgra_as_png};
 use crate::overlay_icons::{draw_capsule, fill_rounded_rect_aa, stroke_rounded_rect_aa};
 use crate::screen::ScreenRect;
+use crate::scroll_preview::LivePreviewStrip;
 use crate::stitch::{frame_mean_diff, ScrollAxis, StitchCanvas, StitchOutcome};
 use std::ffi::c_void;
 use windows::core::{w, PCWSTR};
@@ -31,11 +32,11 @@ use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetClientRect, GetMessageW,
     GetSystemMetrics, GetWindowLongPtrW, KillTimer, LoadCursorW, PostQuitMessage, RegisterClassW,
     SetCursorPos, SetLayeredWindowAttributes, SetTimer, SetWindowDisplayAffinity,
-    SetWindowLongPtrW, ShowWindow, TranslateMessage, GWLP_USERDATA, IDC_ARROW, LWA_COLORKEY, MSG,
-    SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SW_SHOW,
-    SW_SHOWNOACTIVATE, WDA_EXCLUDEFROMCAPTURE, WM_DESTROY, WM_ERASEBKGND, WM_KEYDOWN,
-    WM_LBUTTONDOWN, WM_MOUSEMOVE, WM_PAINT, WM_TIMER, WNDCLASSW, WS_EX_LAYERED, WS_EX_NOACTIVATE,
-    WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
+    SetWindowLongPtrW, ShowWindow, TranslateMessage, GWLP_USERDATA, IDC_ARROW, LWA_COLORKEY,
+    MA_NOACTIVATE, MSG, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN,
+    SM_YVIRTUALSCREEN, SW_SHOWNOACTIVATE, WDA_EXCLUDEFROMCAPTURE, WM_DESTROY, WM_ERASEBKGND,
+    WM_KEYDOWN, WM_LBUTTONDOWN, WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_PAINT, WM_TIMER, WNDCLASSW,
+    WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
 };
 
 const TIMER_CAPTURE: usize = 701;
@@ -68,6 +69,7 @@ struct ScrollState {
     hovered: Option<HudCmd>,
     btns: Vec<HudBtn>,
     frame_hwnd: HWND,
+    preview: Option<LivePreviewStrip>,
     mem_dc: HDC,
     dib_bmp: HBITMAP,
     dib_bits: *mut u8,
@@ -149,21 +151,26 @@ pub fn run_scroll_capture(
             PCWSTR(face.as_ptr()),
         );
 
+        let mut preview = LivePreviewStrip::create(hinst.into(), screen_x, screen_y, w, h, vx, vy, vw, vh);
+        if let Some(p) = preview.as_mut() {
+            p.redraw(&canvas, font);
+        }
+
         let mut st = Box::new(ScrollState {
             region_x: screen_x, region_y: screen_y, region_w: w, region_h: h, save_dir,
             canvas, last_raw, auto_scroll: false, awaiting_settle: false, settle_ticks: 0,
-            idle_ticks: 0, hovered: None, btns: Vec::new(), frame_hwnd, mem_dc, dib_bmp,
+            idle_ticks: 0, hovered: None, btns: Vec::new(), frame_hwnd, preview, mem_dc, dib_bmp,
             dib_bits: bits as *mut u8, font, outcome: None,
         });
         st.rebuild_btns();
 
         let hud_hwnd = CreateWindowExW(
-            WS_EX_TOPMOST | WS_EX_TOOLWINDOW, hud_cls, w!("Tomoyo Long Capture"), WS_POPUP,
+            WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, hud_cls, w!("Tomoyo Long Capture"), WS_POPUP,
             hud_x, hud_y, HUD_W, HUD_H, None, None, Some(hinst.into()), None,
         ).map_err(|e| format!("HUD window create failed: {e}"))?;
         let _ = SetWindowDisplayAffinity(hud_hwnd, WDA_EXCLUDEFROMCAPTURE);
         SetWindowLongPtrW(hud_hwnd, GWLP_USERDATA, &mut *st as *mut ScrollState as isize);
-        let _ = ShowWindow(hud_hwnd, SW_SHOW);
+        let _ = ShowWindow(hud_hwnd, SW_SHOWNOACTIVATE);
         let _ = SetTimer(Some(hud_hwnd), TIMER_CAPTURE, 150, None);
 
         let mut msg = MSG::default();
@@ -195,6 +202,9 @@ impl ScrollState {
         match self.canvas.push_frame(frame, self.region_w as u32, self.region_h as u32) {
             StitchOutcome::Appended { .. } => {
                 self.idle_ticks = 0;
+                if let Some(p) = self.preview.as_mut() {
+                    p.redraw(&self.canvas, self.font);
+                }
                 unsafe { let _ = InvalidateRect(Some(hwnd), None, false); }
             }
             StitchOutcome::LimitReached => {
@@ -231,6 +241,7 @@ impl ScrollState {
                 if let Some(first) = capture_region_bgra(self.region_x, self.region_y, self.region_w, self.region_h) {
                     self.last_raw = first.clone();
                     self.canvas = StitchCanvas::new(next_axis, self.region_w as u32, self.region_h as u32, first);
+                    if let Some(p) = self.preview.as_mut() { p.redraw(&self.canvas, self.font); }
                 }
                 self.rebuild_btns();
             }
@@ -304,6 +315,7 @@ unsafe extern "system" fn hud_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lpar
     let st = unsafe { &mut *ptr };
     match msg {
         WM_ERASEBKGND => LRESULT(1),
+        WM_MOUSEACTIVATE => LRESULT(MA_NOACTIVATE as isize),
         WM_TIMER if wparam.0 == TIMER_CAPTURE => {
             if let Some(frame) = capture_region_bgra(st.region_x, st.region_y, st.region_w, st.region_h) {
                 let diff = frame_mean_diff(&st.last_raw, &frame, st.region_w as u32, st.region_h as u32);
@@ -371,6 +383,7 @@ unsafe extern "system" fn hud_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lpar
             LRESULT(0)
         }
         WM_DESTROY => {
+            st.preview = None;
             unsafe { let _ = DestroyWindow(st.frame_hwnd); PostQuitMessage(0); }
             LRESULT(0)
         }

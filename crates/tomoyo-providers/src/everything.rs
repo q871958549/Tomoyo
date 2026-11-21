@@ -70,28 +70,23 @@ impl Provider for EverythingProvider {
             return Vec::new();
         }
 
-        let (cfg_global, cfg_ded, extra_filter) = self
+        let (cfg_global, cfg_ded, extra_filter, custom_expr) = self
             .config
             .read()
             .map(|c| {
-                (
-                    c.everything.max_global_results,
-                    c.everything.max_dedicated_results,
-                    c.everything.extra_filter.clone(),
-                )
+                let ce = match ctx.filter {
+                    SearchFilter::Custom(i) => c.custom_filters.get(i as usize).and_then(|t| t.effective_everything_expr()),
+                    _ => None,
+                };
+                (c.everything.max_global_results, c.everything.max_dedicated_results, c.everything.extra_filter.clone(), ce)
             })
-            .unwrap_or((6, 30, String::new()));
+            .unwrap_or((6, 30, String::new(), None));
 
         let mut parts: Vec<String> = Vec::with_capacity(3);
-        if !search_text.is_empty() {
-            parts.push(search_text.to_string());
-        }
-        if let Some(filter_expr) = ctx.filter.everything_expr() {
-            parts.push(filter_expr.to_string());
-        }
-        if (dedicated || filtered_file_mode) && !extra_filter.trim().is_empty() {
-            parts.push(extra_filter.trim().to_string());
-        }
+        if !search_text.is_empty() { parts.push(search_text.to_string()); }
+        if let Some(expr) = ctx.filter.everything_expr() { parts.push(expr.to_string()); }
+        else if let Some(expr) = custom_expr { parts.push(expr); }
+        if (dedicated || filtered_file_mode) && !extra_filter.trim().is_empty() { parts.push(extra_filter.trim().to_string()); }
         let effective_query = parts.join(" ");
 
         let expanded = dedicated || filtered_file_mode;

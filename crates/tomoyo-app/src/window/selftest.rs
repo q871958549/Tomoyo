@@ -29,8 +29,9 @@ impl AppShell {
             self.active_filter,
         );
         self.selected = 0;
+        let tabs = self.visible_filter_tabs();
         self.inter.filter_counts = (self.active_filter == SearchFilter::All)
-            .then(|| compute_filter_counts(&self.results));
+            .then(|| compute_filter_counts(&self.results, &tabs));
         self.inter.hovered = if self.results.len() > 1 { Some(1) } else { None };
         self.scroll_offset = 0;
         self.cached_preview_id = None;
@@ -72,25 +73,37 @@ impl AppShell {
         self.geom.max_visible_rows = fresh.window.max_visible_rows.clamp(4, 18);
         self.geom.preview_width_dip = fresh.window.preview_width_dip.clamp(220, 620);
         self.geom.custom_pos = fresh.window.custom_x.zip(fresh.window.custom_y);
-        let apps_changed = self
+        let (apps_changed, plugins_changed, clip_was_on) = self
             .config
             .read()
             .map(|old| {
-                old.apps.extra_dirs != fresh.apps.extra_dirs
-                    || old.apps.auto_detect_desktop_organizers != fresh.apps.auto_detect_desktop_organizers
-                    || old.apps.extra_scan_depth != fresh.apps.extra_scan_depth
+                (
+                    old.apps.extra_dirs != fresh.apps.extra_dirs
+                        || old.apps.auto_detect_desktop_organizers != fresh.apps.auto_detect_desktop_organizers
+                        || old.apps.extra_scan_depth != fresh.apps.extra_scan_depth,
+                    old.disabled_plugins != fresh.disabled_plugins,
+                    old.is_plugin_enabled(tomoyo_core::PLUGIN_CLIPBOARD),
+                )
             })
-            .unwrap_or(true);
+            .unwrap_or((true, true, true));
+        let clip_now_on = fresh.is_plugin_enabled(tomoyo_core::PLUGIN_CLIPBOARD);
         let cfg_for_hk = fresh.clone();
         if let Ok(mut cfg) = self.config.write() {
             *cfg = fresh;
         }
         self.lang = new_lang;
-        unsafe {
-            apply_cue_banner(self.edit_hwnd, new_lang);
-        }
+        unsafe { apply_cue_banner(self.edit_hwnd, new_lang); }
         self.apply_theme(&new_theme, false);
         if self.tray.is_some() {
+            if clip_was_on != clip_now_on {
+                unsafe {
+                    if clip_now_on {
+                        let _ = windows::Win32::System::DataExchange::AddClipboardFormatListener(self.hwnd);
+                    } else {
+                        let _ = windows::Win32::System::DataExchange::RemoveClipboardFormatListener(self.hwnd);
+                    }
+                }
+            }
             unregister_all_hotkeys(self.hwnd);
             let (active, conflict) = register_all_hotkeys(self.hwnd, &cfg_for_hk);
             self.hotkey_label = active;
@@ -99,7 +112,7 @@ impl AppShell {
                 tray.update_tooltip(&self.hotkey_label);
             }
         }
-        if force_provider_reload || apps_changed {
+        if force_provider_reload || apps_changed || plugins_changed {
             self.router.reload_all();
         }
         if unsafe { IsWindowVisible(self.hwnd).as_bool() } {

@@ -54,6 +54,15 @@ export interface WebSearchEngine {
   url: string;
 }
 
+export interface CustomFilterTab {
+  id: string;
+  label: string;
+  tag: string;
+  extensions: string[];
+  everything_expr: string;
+  enabled: boolean;
+}
+
 export interface CaptureToolHotkeys {
   rect: string;
   ellipse: string;
@@ -77,6 +86,9 @@ export interface TomoyoConfig {
   hibernate_delay_secs: number;
   auto_preview: boolean;
   show_filter_bar: boolean;
+  hidden_builtin_filters?: string[];
+  custom_filters?: CustomFilterTab[];
+  disabled_plugins?: string[];
   window: {
     width_dip: number;
     max_visible_rows: number;

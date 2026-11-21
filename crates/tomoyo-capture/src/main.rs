@@ -25,6 +25,8 @@ mod pin_window;
 mod screen;
 #[cfg(windows)]
 mod scroll_capture;
+#[cfg(windows)]
+mod scroll_preview;
 mod stitch;
 
 #[cfg(windows)]

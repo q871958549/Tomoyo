@@ -12,7 +12,7 @@ pub use store::{ClipboardEntry, ClipboardPayload, ClipboardStore};
 use items::{build_clipboard_item, build_filter_hints};
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
-use tomoyo_core::{Lang, Provider, TomoyoConfig};
+use tomoyo_core::{Lang, Provider, TomoyoConfig, PLUGIN_CLIPBOARD};
 use tomoyo_protocol::{
     ActionKind, ActionSpec, ClipboardSnapshot, IconSpec, InternalCommandKind, QueryContext,
     ResultCategory, ResultItem,
@@ -121,11 +121,19 @@ impl Provider for ClipboardProvider {
         &["cb"]
     }
 
+    fn matches_prefix(&self, token_lower: &str) -> bool {
+        self.config.read().map(|c| c.is_plugin_enabled(PLUGIN_CLIPBOARD)).unwrap_or(true)
+            && self.prefixes().contains(&token_lower)
+    }
+
     fn supports_global(&self) -> bool {
         false
     }
 
     fn query(&self, ctx: &QueryContext) -> Vec<ResultItem> {
+        if !self.config.read().map(|c| c.is_plugin_enabled(PLUGIN_CLIPBOARD)).unwrap_or(true) {
+            return Vec::new();
+        }
         let lang = self.lang();
         let trimmed = ctx.args.trim();
 

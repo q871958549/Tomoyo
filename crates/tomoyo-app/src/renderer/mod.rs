@@ -18,7 +18,7 @@ use crate::icons::IconCache;
 use gdi_pass::paint_gdi_pass;
 use sdf_pass::paint_sdf_pass;
 use tomoyo_core::{Lang, ResolvedPreview};
-use tomoyo_protocol::{ResultItem, SearchFilter};
+use tomoyo_protocol::{ResultItem, SearchFilter, VisibleFilterTab};
 use windows::Win32::Graphics::Gdi::HDC;
 
 pub const DEFAULT_WINDOW_WIDTH_DIP: i32 = 720;
@@ -37,6 +37,7 @@ pub struct RenderState<'a> {
     pub attached_capsule: Option<&'a str>,
     pub update_badge: Option<&'a str>,
     pub filter_bar_visible: bool,
+    pub filter_tabs: &'a [VisibleFilterTab],
     pub active_filter: SearchFilter,
     pub hovered_filter: Option<SearchFilter>,
     pub filter_counts: Option<&'a FilterCounts>,

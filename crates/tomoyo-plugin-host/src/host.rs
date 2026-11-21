@@ -4,7 +4,7 @@ use crate::discovery::{build_webview_trigger_item, scan_plugin_dirs};
 use crate::permissions::is_bundled_plugin_dir;
 use crate::process::ProcessError;
 use crate::runtime::{ensure_live, plugin_error_result_item, LiveRuntime, RegisteredPlugin};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
@@ -39,6 +39,7 @@ struct HostState {
     search_dirs: Vec<PathBuf>,
     plugins: HashMap<String, RegisteredPlugin>,
     keyword_index: HashMap<String, Vec<String>>,
+    disabled_ids: HashSet<String>,
     perms: PermissionStore,
     shutting_down: bool,
 }
@@ -56,15 +57,13 @@ impl PluginHost {
                 search_dirs,
                 plugins: HashMap::new(),
                 keyword_index: HashMap::new(),
+                disabled_ids: HashSet::new(),
                 perms: PermissionStore::load_default(),
                 shutting_down: false,
             }),
             Condvar::new(),
         ));
-        let host = Arc::new(Self {
-            state: Arc::clone(&state),
-            interactive_prompts: AtomicBool::new(true),
-        });
+        let host = Arc::new(Self { state: Arc::clone(&state), interactive_prompts: AtomicBool::new(true) });
         host.discover_plugins();
         host.spawn_idle_reaper();
         host
@@ -79,30 +78,22 @@ impl PluginHost {
         let mut st = lock.lock().unwrap();
         st.perms = PermissionStore::load_default();
         for plug in st.plugins.values_mut() {
-            if let Some(mut live) = plug.live.take() {
-                live.shutdown();
-            }
+            if let Some(mut live) = plug.live.take() { live.shutdown(); }
         }
         st.plugins.clear();
         st.keyword_index.clear();
 
-        let discovered = scan_plugin_dirs(&st.search_dirs);
-        for item in discovered {
+        let cfg = tomoyo_core::TomoyoConfig::load_or_create();
+        st.disabled_ids = cfg.disabled_plugins.iter().map(|s| s.to_ascii_lowercase()).collect();
+        for item in scan_plugin_dirs(&st.search_dirs) {
             let id = item.manifest.id.clone();
-            for kw in &item.manifest.triggers.keywords {
-                let kw_lower = kw.trim().to_lowercase();
-                if !kw_lower.is_empty() {
-                    st.keyword_index.entry(kw_lower).or_default().push(id.clone());
+            if !st.disabled_ids.contains(&id.to_ascii_lowercase()) {
+                for kw in &item.manifest.triggers.keywords {
+                    let kw_lower = kw.trim().to_lowercase();
+                    if !kw_lower.is_empty() { st.keyword_index.entry(kw_lower).or_default().push(id.clone()); }
                 }
             }
-            st.plugins.insert(
-                id,
-                RegisteredPlugin {
-                    manifest: item.manifest,
-                    dir: item.dir,
-                    live: None,
-                },
-            );
+            st.plugins.insert(id, RegisteredPlugin { manifest: item.manifest, dir: item.dir, live: None });
         }
     }
 
@@ -405,11 +396,13 @@ impl ExternalPluginBridge for PluginHost {
     fn query_global(&self, ctx: &QueryContext) -> Vec<ResultItem> {
         let ids: Vec<String> = {
             let (lock, _) = &*self.state;
-            lock.lock()
-                .unwrap()
-                .plugins
+            let st = lock.lock().unwrap();
+            st.plugins
                 .values()
-                .filter(|p| p.manifest.triggers.match_all)
+                .filter(|p| {
+                    p.manifest.triggers.match_all
+                        && !st.disabled_ids.contains(&p.manifest.id.to_ascii_lowercase())
+                })
                 .map(|p| p.manifest.id.clone())
                 .collect()
         };

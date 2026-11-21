@@ -4,11 +4,13 @@
     Camera, FileText, Globe, Keyboard, Languages, Package,
     Palette, RefreshCw, Search, SlidersHorizontal, Store,
   } from '@lucide/svelte';
-  import { hydrateSettingsInit } from '../../lib/defaults';
+  import {
+    hydrateSettingsInit, isPluginEnabled, PLUGIN_CAPTURE, PLUGIN_CLIPBOARD, PLUGIN_TRANSLATE,
+  } from '../../lib/defaults';
   import { applyThemeClass, installErrorTelemetry, postHost, subscribeHost } from '../../lib/ipc';
   import { OFFICIAL_REPO, tr, type Lang } from '../../lib/i18n';
   import type {
-    HotkeyAuditReport, HotkeyHealthReport, LiveProbeResult,
+    CustomFilterTab, HotkeyAuditReport, HotkeyHealthReport, LiveProbeResult,
     ReleaseInfo, TomoyoConfig, UpdateStatus,
   } from '../../lib/types';
   import Button from '../../lib/ui/Button.svelte';
@@ -61,38 +63,45 @@
 
   let conflictSlots = $derived.by(() => {
     const entries = [
-      { label: lang === 'en' ? 'Launcher' : '主启动器', st: hotkeyHealth.main },
-      { label: lang === 'en' ? 'Clipboard' : '剪贴板', st: hotkeyHealth.clipboard },
-      { label: lang === 'en' ? 'Translate' : '划词翻译', st: hotkeyHealth.translate },
-      { label: lang === 'en' ? 'Capture' : '截图', st: hotkeyHealth.capture },
+      { label: lang === 'en' ? 'Launcher' : '主启动器', st: hotkeyHealth.main, on: true },
+      { label: lang === 'en' ? 'Clipboard' : '剪贴板', st: hotkeyHealth.clipboard, on: isPluginEnabled(cfg, PLUGIN_CLIPBOARD) },
+      { label: lang === 'en' ? 'Translate' : '划词翻译', st: hotkeyHealth.translate, on: isPluginEnabled(cfg, PLUGIN_TRANSLATE) },
+      { label: lang === 'en' ? 'Capture' : '截图', st: hotkeyHealth.capture, on: isPluginEnabled(cfg, PLUGIN_CAPTURE) },
     ];
-    return entries.filter((e) => e.st && !e.st.disabled && !e.st.ok && e.st.spec);
+    return entries.filter((e) => e.on && e.st && !e.st.disabled && !e.st.ok && e.st.spec);
   });
 
-  function jumpToHotkeyConflict() {
-    activeTab = 'hotkeys';
-    runHotkeyAudit();
-  }
-
-  function onToggleOverride(v: boolean) {
-    cfg.override_conflict_hotkeys = v;
+  function jumpToHotkeyConflict() { activeTab = 'hotkeys'; runHotkeyAudit(); }
+  function onToggleOverride(v: boolean) { cfg.override_conflict_hotkeys = v; scheduleSave(0); setTimeout(runHotkeyAudit, 260); }
+  function onUpdateFilters(hidden: string[], custom: CustomFilterTab[]) {
+    cfg.hidden_builtin_filters = hidden;
+    cfg.custom_filters = custom;
     scheduleSave(0);
-    setTimeout(runHotkeyAudit, 260);
+  }
+  function onTogglePlugin(id: string, enabled: boolean) {
+    const low = id.toLowerCase();
+    const next = (cfg.disabled_plugins || []).filter((x) => x.toLowerCase() !== low);
+    cfg.disabled_plugins = enabled ? next : [...next, low];
+    if (!enabled && ((low === PLUGIN_TRANSLATE && activeTab === 'translate') || (low === PLUGIN_CAPTURE && activeTab === 'capture'))) {
+      activeTab = 'plugins';
+    }
+    scheduleSave(0);
+    setTimeout(() => postHost({ cmd: 'check_hotkey_health' }), 260);
   }
 
-  const navItems = [
-    { id: 'general', key: 'nav_general', icon: SlidersHorizontal },
-    { id: 'hotkeys', key: 'nav_hotkeys', icon: Keyboard },
-    { id: 'appearance', key: 'nav_appearance', icon: Palette },
-    { id: 'search', key: 'nav_search', icon: Search },
-    { id: 'translate', key: 'nav_translate', icon: Languages },
-    { id: 'capture', key: 'nav_capture', icon: Camera },
-    { id: 'web', key: 'nav_web', icon: Globe },
-    { id: 'store', key: 'nav_store', icon: Store },
-    { id: 'plugins', key: 'nav_plugins', icon: Package },
-    { id: 'logs', key: 'nav_logs', icon: FileText },
-    { id: 'updates', key: 'nav_updates', icon: RefreshCw },
-  ];
+  let navItems = $derived([
+    { id: 'general', key: 'nav_general', icon: SlidersHorizontal, on: true },
+    { id: 'hotkeys', key: 'nav_hotkeys', icon: Keyboard, on: true },
+    { id: 'appearance', key: 'nav_appearance', icon: Palette, on: true },
+    { id: 'search', key: 'nav_search', icon: Search, on: true },
+    { id: 'translate', key: 'nav_translate', icon: Languages, on: isPluginEnabled(cfg, PLUGIN_TRANSLATE) },
+    { id: 'capture', key: 'nav_capture', icon: Camera, on: isPluginEnabled(cfg, PLUGIN_CAPTURE) },
+    { id: 'web', key: 'nav_web', icon: Globe, on: true },
+    { id: 'store', key: 'nav_store', icon: Store, on: true },
+    { id: 'plugins', key: 'nav_plugins', icon: Package, on: true },
+    { id: 'logs', key: 'nav_logs', icon: FileText, on: true },
+    { id: 'updates', key: 'nav_updates', icon: RefreshCw, on: true },
+  ].filter((n) => n.on));
 
   function setToast(msg: string, warn = false) {
     toastMsg = msg;
@@ -329,7 +338,7 @@
           <SearchClipTab
             {cfg} {lang} runningApps={init.running_apps} {folderErr}
             clipHotkeyStatus={hotkeyHealth.clipboard}
-            onJumpDoctor={() => switchTab('hotkeys')} onSave={scheduleSave}
+            onJumpDoctor={() => switchTab('hotkeys')} onOpenPlugins={() => switchTab('plugins')} {onUpdateFilters} onSave={scheduleSave}
           />
         {:else if activeTab === 'translate'}
           <TranslateTab
@@ -346,7 +355,7 @@
         {:else if activeTab === 'store'}
           <StoreTab {lang} items={storeItems} statusText={storeStatus} loading={storeLoading} onRefresh={fetchStore} />
         {:else if activeTab === 'plugins'}
-          <PluginsTab {lang} {plugins} configPath={init.config_path} pluginsDir={init.plugins_dir} />
+          <PluginsTab {cfg} {lang} {plugins} configPath={init.config_path} pluginsDir={init.plugins_dir} {onTogglePlugin} />
         {:else if activeTab === 'logs'}
           <LogsTab
             {lang} source={logSource} errorsOnly={logErrorsOnly} content={logContent} metaLine={logMeta}
@@ -387,63 +396,25 @@
 
 <style>
   .shell { display: flex; height: 100%; width: 100%; overflow: hidden; }
-  .sidebar {
-    width: 216px; flex-shrink: 0; background: var(--sidebar);
-    border-right: 1px solid var(--border); display: flex; flex-direction: column;
-    padding: 16px 10px 14px;
-  }
-  .brand {
-    display: flex; align-items: center; gap: 10px; padding: 2px 8px 14px;
-    border-bottom: 1px solid var(--border); margin-bottom: 10px;
-  }
-  .brand-tile {
-    width: 30px; height: 30px; border-radius: 8px;
-    background: linear-gradient(155deg, #ffffff 0%, #eaeef6 100%);
-    border: 1px solid #d5dce9; color: #111827; font-family: Georgia, serif;
-    font-weight: 700; font-size: 17px; display: grid; place-items: center;
-    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.1);
-  }
+  .sidebar { width: 216px; flex-shrink: 0; background: var(--sidebar); border-right: 1px solid var(--border); display: flex; flex-direction: column; padding: 16px 10px 14px; }
+  .brand { display: flex; align-items: center; gap: 10px; padding: 2px 8px 14px; border-bottom: 1px solid var(--border); margin-bottom: 10px; }
+  .brand-tile { width: 30px; height: 30px; border-radius: 8px; background: linear-gradient(155deg, #ffffff 0%, #eaeef6 100%); border: 1px solid #d5dce9; color: #111827; font-family: Georgia, serif; font-weight: 700; font-size: 17px; display: grid; place-items: center; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.1); }
   .brand-name { font-size: 14.5px; font-weight: 600; letter-spacing: 0.2px; }
   .brand-sub { font-size: 11px; color: var(--muted); }
   .nav { display: flex; flex-direction: column; gap: 2px; overflow-y: auto; }
-  .nav-item {
-    position: relative; display: flex; align-items: center; gap: 9px; width: 100%;
-    height: 34px; padding: 0 10px; border: 0; border-radius: 7px;
-    background: transparent; color: var(--text-secondary); font-family: inherit;
-    font-size: 13px; font-weight: 500; text-align: left; white-space: nowrap;
-    cursor: pointer; transition: background-color 0.12s ease, color 0.12s ease;
-  }
+  .nav-item { position: relative; display: flex; align-items: center; gap: 9px; width: 100%; height: 34px; padding: 0 10px; border: 0; border-radius: 7px; background: transparent; color: var(--text-secondary); font-family: inherit; font-size: 13px; font-weight: 500; text-align: left; white-space: nowrap; cursor: pointer; transition: background-color 0.12s ease, color 0.12s ease; }
   .nav-item:hover:not(.is-active) { background: var(--hover); color: var(--text); }
   .nav-item.is-active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
-  .nav-item.is-active::before {
-    content: ""; position: absolute; left: 0; top: 7px; bottom: 7px; width: 3px;
-    border-radius: 999px; background: var(--accent);
-  }
+  .nav-item.is-active::before { content: ""; position: absolute; left: 0; top: 7px; bottom: 7px; width: 3px; border-radius: 999px; background: var(--accent); }
   .nav-ico { display: inline-flex; opacity: 0.85; flex-shrink: 0; }
-  .nav-badge {
-    margin-left: auto; min-width: 17px; height: 17px; padding: 0 5px; border-radius: 999px;
-    background: var(--danger); color: #fff; font-size: 10.5px; font-weight: 600;
-    display: inline-flex; align-items: center; justify-content: center;
-  }
-  .side-foot {
-    margin-top: auto; padding: 10px 8px 0; border-top: 1px solid var(--border);
-    font-size: 11px; color: var(--muted); line-height: 1.55;
-  }
+  .nav-badge { margin-left: auto; min-width: 17px; height: 17px; padding: 0 5px; border-radius: 999px; background: var(--danger); color: #fff; font-size: 10.5px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; }
+  .side-foot { margin-top: auto; padding: 10px 8px 0; border-top: 1px solid var(--border); font-size: 11px; color: var(--muted); line-height: 1.55; }
   .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
   .scroll { flex: 1; overflow-y: auto; padding: 24px 28px; }
   .container { max-width: 740px; }
-  .bottom-bar {
-    height: 46px; padding: 0 24px; border-top: 1px solid var(--border);
-    background: var(--sidebar); display: flex; align-items: center; justify-content: space-between;
-    gap: 12px; flex-shrink: 0;
-  }
+  .bottom-bar { height: 46px; padding: 0 24px; border-top: 1px solid var(--border); background: var(--sidebar); display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-shrink: 0; }
   .toast { font-size: 12.5px; color: var(--ok); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .toast.is-warn { color: var(--warn); }
-  .conflict-bar-btn {
-    border: 1px solid rgba(220, 38, 38, 0.28); background: var(--danger-soft); color: var(--danger);
-    border-radius: 999px; padding: 4px 12px; font-family: inherit; font-size: 12px; font-weight: 500;
-    cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    transition: background-color 0.12s ease, border-color 0.12s ease;
-  }
+  .conflict-bar-btn { border: 1px solid rgba(220, 38, 38, 0.28); background: var(--danger-soft); color: var(--danger); border-radius: 999px; padding: 4px 12px; font-family: inherit; font-size: 12px; font-weight: 500; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: background-color 0.12s ease, border-color 0.12s ease; }
   .conflict-bar-btn:hover { border-color: var(--danger); }
 </style>

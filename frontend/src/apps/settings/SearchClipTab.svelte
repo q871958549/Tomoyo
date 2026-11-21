@@ -1,8 +1,9 @@
 <script lang="ts">
-  import { ClipboardList, FolderOpen, FolderPlus, Trash2 } from '@lucide/svelte';
+  import { ClipboardList, FolderOpen, FolderPlus, Package, Trash2 } from '@lucide/svelte';
+  import { isPluginEnabled, PLUGIN_CLIPBOARD } from '../../lib/defaults';
   import { postHost } from '../../lib/ipc';
   import { tr, type Lang } from '../../lib/i18n';
-  import type { HotkeySlotStatus, TomoyoConfig } from '../../lib/types';
+  import type { CustomFilterTab, HotkeySlotStatus, TomoyoConfig } from '../../lib/types';
   import Button from '../../lib/ui/Button.svelte';
   import Combobox from '../../lib/ui/Combobox.svelte';
   import HotkeyRecorder from '../../lib/ui/HotkeyRecorder.svelte';
@@ -10,6 +11,7 @@
   import Select from '../../lib/ui/Select.svelte';
   import Slider from '../../lib/ui/Slider.svelte';
   import Switch from '../../lib/ui/Switch.svelte';
+  import FilterTabsCard from './FilterTabsCard.svelte';
 
   interface Props {
     cfg: TomoyoConfig;
@@ -18,10 +20,13 @@
     folderErr: string;
     clipHotkeyStatus?: HotkeySlotStatus;
     onJumpDoctor?: () => void;
+    onOpenPlugins?: () => void;
+    onUpdateFilters: (hidden: string[], custom: CustomFilterTab[]) => void;
     onSave: (delayMs?: number) => void;
   }
 
-  let { cfg, lang, runningApps, folderErr, clipHotkeyStatus, onJumpDoctor, onSave }: Props = $props();
+  let { cfg, lang, runningApps, folderErr, clipHotkeyStatus, onJumpDoctor, onOpenPlugins, onUpdateFilters, onSave }: Props = $props();
+  let clipEnabled = $derived(isPluginEnabled(cfg, PLUGIN_CLIPBOARD));
 
   const evPresets = [
     { tok: '!*.tmp', zh: '临时文件 (.tmp)', en: 'Temp (.tmp)' },
@@ -194,7 +199,11 @@
   </div>
 </div>
 
-<!-- Clipboard -->
+<!-- User-Extensible Search Filter Tabs -->
+<FilterTabsCard {cfg} {lang} {onUpdateFilters} />
+
+<!-- Clipboard (Official Optional Plugin) -->
+{#if clipEnabled}
 <div class="t-card" style="margin-top:14px">
   <div class="t-row">
     <div>
@@ -277,6 +286,26 @@
     />
   </div>
 </div>
+{:else}
+<div class="t-card" style="margin-top:14px">
+  <div class="t-row">
+    <div>
+      <div class="t-label">{lang === 'en' ? 'Clipboard Center Plugin Disabled' : '剪贴板管理插件已停用'}</div>
+      <div class="t-desc">
+        {lang === 'en'
+          ? 'OS clipboard listener, hotkeys & history capture are fully unloaded.'
+          : '已彻底释放系统剪贴板监听、全局热键与历史采集，保持极简零占用。'}
+      </div>
+    </div>
+    {#if onOpenPlugins}
+      <Button variant="secondary" size="sm" onclick={onOpenPlugins}>
+        <Package size={13} />
+        {lang === 'en' ? 'Manage Plugins' : '前往插件管理启用'}
+      </Button>
+    {/if}
+  </div>
+</div>
+{/if}
 
 <style>
   .tab-head { margin-bottom: 18px; }

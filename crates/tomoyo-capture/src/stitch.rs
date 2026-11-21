@@ -1,8 +1,8 @@
 //! Pure-Rust vertical & horizontal scrolling long-screenshot stitching engine.
 //!
-//! Automatic static-chrome detection (fixed sidebars, titlebars, footers, scrollbars),
-//! texture-aware bottom-anchored template selection, full-overlap pixel verification
-//! (zero false repeats), clean sidebar background extension, and bounded memory.
+//! Scale-invariant relative-SAD matching calibrated for BOTH dense media AND sparse light/dark
+//! desktop UIs (Settings, Web, Docs, Chat), with automatic fixed-sidebar/header/footer masking,
+//! full-overlap pixel verification, and clean sidebar background extension.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScrollAxis { Vertical, Horizontal }
@@ -68,39 +68,41 @@ impl StitchCanvas {
 
         let (ax0, ax1, ay0, ay1) = (self.act_x0, self.act_x1, self.act_y0, self.act_y1);
         let (act_w, act_h) = (ax1.saturating_sub(ax0), ay1.saturating_sub(ay0));
-        if act_w < 24 || act_h < 64 { return StitchOutcome::Unchanged; }
+        if act_w < 24 || act_h < 48 { return StitchOutcome::Unchanged; }
 
-        let strip_h = (act_h / 3).clamp(28, 88).min(act_h / 2);
+        let strip_h = (act_h / 3).clamp(24, 96).min(act_h / 2);
         let tpl_y = pick_v_template(&self.prev_frame, fw, ax0, ax1, ay0, ay1, strip_h);
-        if v_strip_energy(&self.prev_frame, fw, tpl_y, strip_h, ax0, ax1) < 2.2
-            || sad_v(&self.prev_frame, fw, tpl_y, frame, fw, tpl_y, strip_h, ax0, ax1, 2) < 2.2
-        {
+        if v_strip_energy(&self.prev_frame, fw, tpl_y, strip_h, ax0, ax1) < 0.12 {
             return StitchOutcome::Unchanged;
         }
-        let max_cy = tpl_y.saturating_sub(8);
+        let zero_sad = sad_v(&self.prev_frame, fw, tpl_y, frame, fw, tpl_y, strip_h, ax0, ax1, 2);
+        if zero_sad < 0.28 { return StitchOutcome::Unchanged; }
+
+        let max_cy = tpl_y.saturating_sub(4);
         if max_cy <= ay0 { return StitchOutcome::Unchanged; }
 
         let (best_y, best_sad, second_best) = search_best_1d(ay0, max_cy, |y, step| {
             sad_v(&self.prev_frame, fw, tpl_y, frame, fw, y, strip_h, ax0, ax1, step)
         });
         let delta = tpl_y.saturating_sub(best_y);
-        if delta < 8 || delta + 28 > act_h || best_sad > 11.0 {
+        if delta < 4 || delta + 24 > act_h || best_sad > 10.5 || best_sad >= zero_sad * 0.50 {
             return StitchOutcome::Unchanged;
         }
 
-        let trim = 6u32.min((act_h - delta) / 6);
+        // Scale-invariant full-overlap verification across the ENTIRE scrolling active region
+        let trim = 4u32.min((act_h - delta) / 8);
         let ov_h = (act_h - delta).saturating_sub(trim * 2).max(12);
         let full_sad = sad_v(&self.prev_frame, fw, ay0 + delta + trim, frame, fw, ay0 + trim, ov_h, ax0, ax1, 2);
-        if !(full_sad < 2.6 || (full_sad < 7.5 && second_best > best_sad * 1.32 + 2.2)) {
-            return StitchOutcome::Unchanged;
-        }
+        let full_zero = sad_v(&self.prev_frame, fw, ay0 + trim, frame, fw, ay0 + trim, ov_h, ax0, ax1, 2);
+        let much_better = full_sad < full_zero * 0.45;
+        let confident = much_better && (full_sad < 2.8 || (full_sad < 8.5 && second_best > best_sad * 1.35 + 0.40));
+        if !confident { return StitchOutcome::Unchanged; }
         if self.height + delta > MAX_STITCH_EXTENT { return StitchOutcome::LimitReached; }
 
         self.chrome_locked = true;
         let bot_static = fh.saturating_sub(ay1) as usize;
         let stride = (fw as usize) * 4;
-        let old_h = self.height as usize;
-        let new_h = old_h + delta as usize;
+        let (old_h, new_h) = (self.height as usize, self.height as usize + delta as usize);
         self.bgra.resize(new_h * stride, 255);
 
         let cx0 = if ax0 >= 44 { ax0 as usize } else { 0 };
@@ -140,25 +142,27 @@ impl StitchCanvas {
         }
         let (ax0, ax1, ay0, ay1) = (self.act_x0, self.act_x1, self.act_y0, self.act_y1);
         let (act_w, act_h) = (ax1.saturating_sub(ax0), ay1.saturating_sub(ay0));
-        if act_w < 64 || act_h < 24 { return StitchOutcome::Unchanged; }
+        if act_w < 48 || act_h < 24 { return StitchOutcome::Unchanged; }
 
-        let strip_w = (act_w / 3).clamp(28, 88).min(act_w / 2);
-        let tpl_x = ax1.saturating_sub(strip_w + 4).max(ax0 + 8);
-        let max_cx = tpl_x.saturating_sub(8);
-        if max_cx <= ax0 || sad_h(&self.prev_frame, fw, tpl_x, frame, fw, tpl_x, strip_w, ay0, ay1, 2) < 2.2 {
-            return StitchOutcome::Unchanged;
-        }
+        let strip_w = (act_w / 3).clamp(24, 96).min(act_w / 2);
+        let tpl_x = ax1.saturating_sub(strip_w + 4).max(ax0 + 4);
+        let zero_sad = sad_h(&self.prev_frame, fw, tpl_x, frame, fw, tpl_x, strip_w, ay0, ay1, 2);
+        let max_cx = tpl_x.saturating_sub(4);
+        if max_cx <= ax0 || zero_sad < 0.28 { return StitchOutcome::Unchanged; }
 
         let (best_x, best_sad, second_best) = search_best_1d(ax0, max_cx, |x, step| {
             sad_h(&self.prev_frame, fw, tpl_x, frame, fw, x, strip_w, ay0, ay1, step)
         });
         let delta = tpl_x.saturating_sub(best_x);
-        if delta < 8 || delta + 28 > act_w || best_sad > 11.0 { return StitchOutcome::Unchanged; }
+        if delta < 4 || delta + 24 > act_w || best_sad > 10.5 || best_sad >= zero_sad * 0.50 {
+            return StitchOutcome::Unchanged;
+        }
 
-        let trim = 6u32.min((act_w - delta) / 6);
+        let trim = 4u32.min((act_w - delta) / 8);
         let ov_w = (act_w - delta).saturating_sub(trim * 2).max(12);
         let full_sad = sad_h(&self.prev_frame, fw, ax0 + delta + trim, frame, fw, ax0 + trim, ov_w, ay0, ay1, 2);
-        if !(full_sad < 2.6 || (full_sad < 7.5 && second_best > best_sad * 1.32 + 2.2)) {
+        let full_zero = sad_h(&self.prev_frame, fw, ax0 + trim, frame, fw, ax0 + trim, ov_w, ay0, ay1, 2);
+        if !(full_sad < full_zero * 0.45 && (full_sad < 2.8 || (full_sad < 8.5 && second_best > best_sad * 1.35 + 0.40))) {
             return StitchOutcome::Unchanged;
         }
         if self.width + delta > MAX_STITCH_EXTENT { return StitchOutcome::LimitReached; }
@@ -225,31 +229,35 @@ fn detect_active_rect(a: &[u8], b: &[u8], w: u32, h: u32, vertical: bool) -> Opt
     let mut row_ch = vec![false; h as usize];
     for y in 0..sb_b {
         let row = (y as usize) * (w as usize) * 4;
-        let (mut diff, mut cnt, mut x) = (0u64, 0u64, 2u32);
+        let (mut diff, mut x) = (0u32, 2u32);
         while x < sb_r {
             let o = row + (x as usize) * 4;
-            if (a[o] as i32 - b[o] as i32).unsigned_abs() + (a[o + 1] as i32 - b[o + 1] as i32).unsigned_abs() + (a[o + 2] as i32 - b[o + 2] as i32).unsigned_abs() > 18 { diff += 1; }
-            cnt += 1; x += 2;
+            if (a[o] as i32 - b[o] as i32).unsigned_abs() + (a[o + 1] as i32 - b[o + 1] as i32).unsigned_abs() + (a[o + 2] as i32 - b[o + 2] as i32).unsigned_abs() > 14 {
+                diff += 1;
+                if diff >= 3 { row_ch[y as usize] = true; break; }
+            }
+            x += 2;
         }
-        if cnt > 0 && diff * 100 >= cnt * 3 { row_ch[y as usize] = true; }
     }
     let y0 = row_ch.iter().position(|&v| v)? as u32;
     let y1 = (row_ch.iter().rposition(|&v| v)? as u32) + 1;
-    if y1.saturating_sub(y0) < 24 { return None; }
+    if y1.saturating_sub(y0) < 20 { return None; }
 
     let mut col_ch = vec![false; sb_r as usize];
     for x in 0..sb_r {
-        let (mut diff, mut cnt, mut y) = (0u64, 0u64, y0);
+        let (mut diff, mut y) = (0u32, y0);
         while y < y1 {
             let o = ((y as usize) * (w as usize) + (x as usize)) * 4;
-            if (a[o] as i32 - b[o] as i32).unsigned_abs() + (a[o + 1] as i32 - b[o + 1] as i32).unsigned_abs() + (a[o + 2] as i32 - b[o + 2] as i32).unsigned_abs() > 18 { diff += 1; }
-            cnt += 1; y += 2;
+            if (a[o] as i32 - b[o] as i32).unsigned_abs() + (a[o + 1] as i32 - b[o + 1] as i32).unsigned_abs() + (a[o + 2] as i32 - b[o + 2] as i32).unsigned_abs() > 14 {
+                diff += 1;
+                if diff >= 3 { col_ch[x as usize] = true; break; }
+            }
+            y += 2;
         }
-        if cnt > 0 && diff * 100 >= cnt * 3 { col_ch[x as usize] = true; }
     }
     let x0 = col_ch.iter().position(|&v| v)? as u32;
     let x1 = (col_ch.iter().rposition(|&v| v)? as u32) + 1;
-    if x1.saturating_sub(x0) < 24 { return None; }
+    if x1.saturating_sub(x0) < 20 { return None; }
     Some((x0, x1, y0, y1))
 }
 
@@ -288,16 +296,14 @@ fn v_strip_energy(buf: &[u8], w: u32, y0: u32, sh: u32, x0: u32, x1: u32) -> f32
     if cnt == 0 { 0.0 } else { sum as f32 / cnt as f32 }
 }
 
-/// Anchors the template as close to the bottom of the active scroll region as possible (maximizing
-/// trackable scroll step size), only walking upward if the bottom strip is flat whitespace.
 fn pick_v_template(buf: &[u8], w: u32, x0: u32, x1: u32, ay0: u32, ay1: u32, sh: u32) -> u32 {
     let bot = ay1.saturating_sub(sh + 4);
-    let min_y = bot.saturating_sub(((ay1 - ay0) / 4).min(48)).max(ay0 + 16);
+    let min_y = bot.saturating_sub(((ay1 - ay0) / 4).min(48)).max(ay0 + 12);
     let (mut best_y, mut best_e) = (bot, -1.0f32);
     let mut y = bot;
     while y >= min_y {
         let e = v_strip_energy(buf, w, y, sh, x0, x1);
-        if e >= 4.0 { return y; }
+        if e >= 0.8 { return y; }
         if e > best_e { best_e = e; best_y = y; }
         if y < min_y + 8 { break; }
         y -= 8;
@@ -345,29 +351,35 @@ fn sad_h(a: &[u8], aw: u32, ax: u32, b: &[u8], bw: u32, bx: u32, sw: u32, y0: u3
 mod tests {
     use super::*;
 
-    fn synthetic_page(w: u32, h: u32) -> Vec<u8> {
-        let mut buf = vec![255u8; (w * h * 4) as usize];
-        for y in 0..h {
-            for x in 0..w {
-                let o = ((y * w + x) * 4) as usize;
-                let v = ((y / 9).wrapping_mul(67) ^ (x / 11).wrapping_mul(41)) as u8;
-                buf[o] = v.wrapping_add((y.wrapping_mul(3) & 0xFF) as u8);
-                buf[o + 1] = v.wrapping_mul(5).wrapping_add((x & 0x7F) as u8);
-                buf[o + 2] = ((y * 11 + x * 7) & 0xFF) as u8;
+    fn sparse_white_settings_doc(w: u32, h: u32) -> Vec<u8> {
+        let mut buf = vec![252u8; (w * h * 4) as usize];
+        // Draw sparse realistic thin gray text lines on pure white cards (95% white!)
+        for row_idx in 0..(h / 26) {
+            let y = row_idx * 26 + 8;
+            let bar_w = 40 + ((row_idx * 37) % (w - 80).max(20));
+            let x_start = 16 + ((row_idx * 13) % 24);
+            for dy in 0..3 {
+                for x in x_start..(x_start + bar_w).min(w - 12) {
+                    if (x + row_idx * 7) % 5 != 0 {
+                        let o = (((y + dy) * w + x) * 4) as usize;
+                        buf[o] = 95; buf[o + 1] = 100; buf[o + 2] = 112;
+                    }
+                }
             }
         }
         buf
     }
 
-    fn compose_app_window(doc: &[u8], dw: u32, scroll_y: u32, vw: u32, vh: u32) -> Vec<u8> {
-        let mut out = vec![248u8; (vw * vh * 4) as usize];
+    fn compose_white_app(doc: &[u8], dw: u32, scroll_y: u32, vw: u32, vh: u32) -> Vec<u8> {
+        let mut out = vec![255u8; (vw * vh * 4) as usize];
         let (hdr, ftr, side) = (24u32, 24u32, 64u32);
-        for y in 0..hdr { for x in 0..vw { let o = ((y * vw + x) * 4) as usize; out[o] = 230; out[o + 1] = 232; out[o + 2] = 238; } }
-        for y in (vh - ftr)..vh { for x in 0..vw { let o = ((y * vw + x) * 4) as usize; out[o] = 224; out[o + 1] = 228; out[o + 2] = 234; } }
+        for y in 0..hdr { for x in 0..vw { let o = ((y * vw + x) * 4) as usize; out[o] = 240; out[o + 1] = 242; out[o + 2] = 246; } }
+        for y in (vh - ftr)..vh { for x in 0..vw { let o = ((y * vw + x) * 4) as usize; out[o] = 240; out[o + 1] = 242; out[o + 2] = 246; } }
         for y in hdr..(vh - ftr) {
             for x in 0..side {
                 let o = ((y * vw + x) * 4) as usize;
-                let c = if y < hdr + 60 && (y % 14 < 5) && x > 8 && x < side - 10 { 40 } else { 255 };
+                let nav = y < hdr + 60 && (y % 14 < 4) && x > 10 && x < side - 12;
+                let c = if nav { 70 } else { 255 };
                 out[o] = c; out[o + 1] = c; out[o + 2] = c;
             }
             let dy = scroll_y + (y - hdr);
@@ -380,33 +392,33 @@ mod tests {
     }
 
     #[test]
-    fn stitches_app_window_with_fixed_sidebar_header_footer_without_duplication() {
-        let doc = synthetic_page(200, 500);
-        let f0 = compose_app_window(&doc, 200, 0, 264, 200);
-        let f1 = compose_app_window(&doc, 200, 64, 264, 200);
-        let f2 = compose_app_window(&doc, 200, 128, 264, 200);
-        let mut cv = StitchCanvas::new(ScrollAxis::Vertical, 264, 200, f0);
-        assert_eq!(cv.push_frame(&f1, 264, 200), StitchOutcome::Appended { delta_px: 64 });
-        assert_eq!(cv.push_frame(&f2, 264, 200), StitchOutcome::Appended { delta_px: 64 });
-        assert_eq!(cv.push_frame(&f2, 264, 200), StitchOutcome::Unchanged);
-        assert_eq!(cv.height, 328);
-        assert_eq!(cv.bgra[((210 * 264 + 20) * 4) as usize], 255);
+    fn stitches_sparse_white_settings_window_with_fixed_sidebar_without_duplication() {
+        let doc = sparse_white_settings_doc(240, 600);
+        let f0 = compose_white_app(&doc, 240, 0, 304, 220);
+        let f1 = compose_white_app(&doc, 240, 72, 304, 220);
+        let f2 = compose_white_app(&doc, 240, 144, 304, 220);
+        let mut cv = StitchCanvas::new(ScrollAxis::Vertical, 304, 220, f0);
+        assert_eq!(cv.push_frame(&f1, 304, 220), StitchOutcome::Appended { delta_px: 72 });
+        assert_eq!(cv.push_frame(&f2, 304, 220), StitchOutcome::Appended { delta_px: 72 });
+        assert_eq!(cv.push_frame(&f2, 304, 220), StitchOutcome::Unchanged);
+        assert_eq!(cv.height, 364);
+        assert_eq!(cv.bgra[((230 * 304 + 20) * 4) as usize], 255);
     }
 
     #[test]
     fn stitches_horizontal_scroll_accurately() {
-        let doc = synthetic_page(420, 180);
+        let doc = sparse_white_settings_doc(480, 180);
         let crop = |x0: u32| -> Vec<u8> {
             let mut out = vec![255u8; 200 * 180 * 4];
             for r in 0..180u32 {
-                let (so, doff) = (((r * 420 + x0) * 4) as usize, (r * 200 * 4) as usize);
+                let (so, doff) = (((r * 480 + x0) * 4) as usize, (r * 200 * 4) as usize);
                 out[doff..doff + 200 * 4].copy_from_slice(&doc[so..so + 200 * 4]);
             }
             out
         };
         let mut ch = StitchCanvas::new(ScrollAxis::Horizontal, 200, 180, crop(0));
-        assert_eq!(ch.push_frame(&crop(72), 200, 180), StitchOutcome::Appended { delta_px: 72 });
-        assert_eq!(ch.push_frame(&crop(144), 200, 180), StitchOutcome::Appended { delta_px: 72 });
-        assert_eq!(ch.width, 344);
+        assert_eq!(ch.push_frame(&crop(64), 200, 180), StitchOutcome::Appended { delta_px: 64 });
+        assert_eq!(ch.push_frame(&crop(128), 200, 180), StitchOutcome::Appended { delta_px: 64 });
+        assert_eq!(ch.width, 328);
     }
 }

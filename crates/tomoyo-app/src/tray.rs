@@ -93,6 +93,7 @@ impl TrayIcon {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn show_context_menu(
         &self,
         lang: Lang,
@@ -100,8 +101,11 @@ impl TrayIcon {
         dpi_scale: f32,
         font_regular: &str,
         font_medium: &str,
+        clip_on: bool,
+        tr_on: bool,
+        cap_on: bool,
     ) -> Option<u32> {
-        let entries = vec![
+        let mut entries = vec![
             PopupEntry::item(MENU_ID_SHOW, lang.pick("显示 Tomoyo", "Show Tomoyo"), None, false),
             PopupEntry::item(
                 MENU_ID_SETTINGS,
@@ -109,24 +113,32 @@ impl TrayIcon {
                 Some("Ctrl+,"),
                 false,
             ),
-            PopupEntry::item(
+        ];
+        if clip_on {
+            entries.push(PopupEntry::item(
                 MENU_ID_CLIPBOARD,
                 lang.pick("剪贴板工作台...", "Clipboard Workbench..."),
                 Some("Ctrl+E"),
                 false,
-            ),
-            PopupEntry::item(
+            ));
+        }
+        if tr_on {
+            entries.push(PopupEntry::item(
                 MENU_ID_TRANSLATE,
                 lang.pick("多源翻译窗...", "Translator..."),
                 Some("Alt+T"),
                 false,
-            ),
-            PopupEntry::item(
+            ));
+        }
+        if cap_on {
+            entries.push(PopupEntry::item(
                 MENU_ID_CAPTURE,
                 lang.pick("截图与贴图...", "Screenshot & Pin..."),
                 Some("Alt+S"),
                 false,
-            ),
+            ));
+        }
+        entries.extend([
             PopupEntry::Separator,
             PopupEntry::item(
                 MENU_ID_UPDATE,
@@ -160,7 +172,7 @@ impl TrayIcon {
             ),
             PopupEntry::Separator,
             PopupEntry::danger_item(MENU_ID_QUIT, lang.pick("退出 Tomoyo", "Exit Tomoyo"), None),
-        ];
+        ]);
         show_themed_popup_menu(pal, dpi_scale, font_regular, font_medium, &entries, true)
     }
 }

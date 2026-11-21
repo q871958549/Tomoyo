@@ -5,8 +5,9 @@ use super::input::{register_all_hotkeys, unregister_all_hotkeys, HOTKEY_CAPTURE_
 use super::updater_ctrl::WM_APP_UPDATE_PROGRESS;
 use super::{
     AppShell, HOTKEY_CLIPBOARD_ID, HOTKEY_ID, HOTKEY_TRANSLATE_ID, TIMER_CLEAR_TOAST,
-    TIMER_HIBERNATE, WM_APP_CONFIG_SAVED, WM_APP_EDIT_KEY, WM_APP_PASTE_INTERCEPT,
-    WM_APP_RESULTS_READY, WM_APP_UPDATE_INSTALLED, WM_APP_UPDATE_READY, WM_APP_WAKE_EXISTING,
+    TIMER_FOCUS_GUARD, TIMER_HIBERNATE, WM_APP_CONFIG_SAVED, WM_APP_EDIT_KEY,
+    WM_APP_PASTE_INTERCEPT, WM_APP_RESULTS_READY, WM_APP_UPDATE_INSTALLED, WM_APP_UPDATE_READY,
+    WM_APP_WAKE_EXISTING,
 };
 use crate::drag::start_file_drag;
 use crate::icons::WM_APP_ICON_READY;
@@ -27,14 +28,14 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     ReleaseCapture, SetCapture, SetFocus, TrackMouseEvent, TME_LEAVE, TRACKMOUSEEVENT,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    DefWindowProcW, GetClientRect, GetCursorPos, GetWindowLongPtrW, IsWindowVisible, KillTimer,
-    LoadCursorW, PostQuitMessage, SetCursor, GWLP_USERDATA, HTBOTTOM, HTBOTTOMLEFT,
-    HTBOTTOMRIGHT, HTCAPTION, HTCLIENT, HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT, IDC_HAND,
-    IDC_SIZEWE, MINMAXINFO, WM_ACTIVATE, WM_CLIPBOARDUPDATE, WM_COMMAND, WM_CTLCOLOREDIT,
-    WM_DESTROY, WM_DPICHANGED, WM_ENDSESSION, WM_ENTERSIZEMOVE, WM_ERASEBKGND, WM_EXITSIZEMOVE,
-    WM_GETMINMAXINFO, WM_HOTKEY, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE,
-    WM_MOUSEWHEEL, WM_NCHITTEST, WM_NCRBUTTONUP, WM_PAINT, WM_RBUTTONUP, WM_SETCURSOR, WM_SIZE,
-    WM_TIMER,
+    DefWindowProcW, GetClientRect, GetCursorPos, GetForegroundWindow, GetWindowLongPtrW,
+    GetWindowThreadProcessId, IsWindowVisible, KillTimer, LoadCursorW, PostQuitMessage, SetCursor,
+    GWLP_USERDATA, HTBOTTOM, HTBOTTOMLEFT, HTBOTTOMRIGHT, HTCAPTION, HTCLIENT, HTLEFT, HTRIGHT,
+    HTTOP, HTTOPLEFT, HTTOPRIGHT, IDC_HAND, IDC_SIZEWE, MINMAXINFO, WM_ACTIVATE, WM_ACTIVATEAPP,
+    WM_CLIPBOARDUPDATE, WM_COMMAND, WM_CTLCOLOREDIT, WM_DESTROY, WM_DPICHANGED, WM_ENDSESSION,
+    WM_ENTERSIZEMOVE, WM_ERASEBKGND, WM_EXITSIZEMOVE, WM_GETMINMAXINFO, WM_HOTKEY,
+    WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCHITTEST,
+    WM_NCRBUTTONUP, WM_PAINT, WM_RBUTTONUP, WM_SETCURSOR, WM_SIZE, WM_TIMER,
 };
 
 pub(super) unsafe extern "system" fn main_wndproc(
@@ -153,17 +154,33 @@ pub(super) unsafe extern "system" fn main_wndproc(
         }
         WM_CLIPBOARDUPDATE => { app.on_clipboard_update(); LRESULT(0) }
         WM_ACTIVATE => {
-            if (wparam.0 & 0xFFFF) == 0 {
-                if app.inter.suppress_next_deactivate {
-                    app.inter.suppress_next_deactivate = false;
-                } else if unsafe { IsWindowVisible(hwnd).as_bool() } {
-                    app.hide_launcher();
-                }
+            if (wparam.0 & 0xFFFF) == 0 && !app.inter.in_modal_overlay && unsafe { IsWindowVisible(hwnd).as_bool() } {
+                app.hide_launcher();
+            }
+            LRESULT(0)
+        }
+        WM_ACTIVATEAPP => {
+            if wparam.0 == 0 && !app.inter.in_modal_overlay && unsafe { IsWindowVisible(hwnd).as_bool() } {
+                app.hide_launcher();
             }
             LRESULT(0)
         }
         WM_TIMER => {
             match wparam.0 {
+                TIMER_FOCUS_GUARD => {
+                    if !unsafe { IsWindowVisible(hwnd).as_bool() } {
+                        unsafe { let _ = KillTimer(Some(hwnd), TIMER_FOCUS_GUARD); }
+                    } else if !app.inter.in_modal_overlay && !app.inter.in_size_move {
+                        let fg = unsafe { GetForegroundWindow() };
+                        let mut fg_pid = 0u32;
+                        if !fg.is_invalid() {
+                            unsafe { GetWindowThreadProcessId(fg, Some(&mut fg_pid)); }
+                        }
+                        if fg != hwnd && fg_pid != std::process::id() {
+                            app.hide_launcher();
+                        }
+                    }
+                }
                 TIMER_HIBERNATE => {
                     if !unsafe { IsWindowVisible(hwnd).as_bool() } {
                         let cycles = app.run_hibernate();
@@ -271,13 +288,19 @@ pub(super) unsafe extern "system" fn main_wndproc(
             if ev == WM_LBUTTONUP || ev == WM_LBUTTONDBLCLK {
                 app.toggle_launcher();
             } else if ev == WM_RBUTTONUP {
+                let (clip_on, tr_on, cap_on) = app
+                    .config
+                    .read()
+                    .map(|c| (
+                        c.is_plugin_enabled(tomoyo_core::PLUGIN_CLIPBOARD),
+                        c.is_plugin_enabled(tomoyo_core::PLUGIN_TRANSLATE),
+                        c.is_plugin_enabled(tomoyo_core::PLUGIN_CAPTURE),
+                    ))
+                    .unwrap_or((true, true, true));
                 let chosen = app.tray.as_ref().and_then(|tray| {
                     tray.show_context_menu(
-                        app.lang,
-                        app.theme,
-                        app.dpi_scale,
-                        app.font_regular,
-                        app.font_medium,
+                        app.lang, app.theme, app.dpi_scale, app.font_regular, app.font_medium,
+                        clip_on, tr_on, cap_on,
                     )
                 });
                 if let Some(id) = chosen {
@@ -410,8 +433,9 @@ fn handle_mouse_move(hwnd: HWND, app: &mut AppShell, lparam: LPARAM) -> LRESULT 
     if let Some((ox, oy, path)) = app.inter.drag_origin.clone() {
         if (x - ox).abs() > 6 || (y - oy).abs() > 6 {
             app.inter.drag_origin = None;
-            app.inter.suppress_next_deactivate = true;
+            app.inter.in_modal_overlay = true;
             let _ = start_file_drag(&path);
+            app.inter.in_modal_overlay = false;
             return LRESULT(0);
         }
     }

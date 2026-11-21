@@ -2,6 +2,7 @@
 
 mod capture;
 mod hotkey;
+mod modules;
 mod sanitize;
 
 pub use capture::{sanitize_capture_config, CaptureConfig, CaptureToolHotkeys};
@@ -11,10 +12,14 @@ pub use hotkey::{
     save_hotkey_health, set_autostart_enabled, vk_to_key_name, HotkeyHealthReport, HotkeySlotStatus,
     ParsedHotkey,
 };
+pub use modules::{
+    sanitize_filters_and_plugins, PLUGIN_CAPTURE, PLUGIN_CLIPBOARD, PLUGIN_OCR, PLUGIN_TRANSLATE,
+};
 pub use sanitize::{
     is_safe_http_url, is_valid_github_repo, normalize_exe_name, sanitize_config, validate_scan_dir,
     validate_web_search, MAX_EXTRA_DIRS, MAX_SCAN_DEPTH,
 };
+pub use tomoyo_protocol::CustomFilterTab;
 
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -43,6 +48,15 @@ pub struct TomoyoConfig {
     /// Show quick category/file-type filter bar below the search input.
     #[serde(default = "default_true")]
     pub show_filter_bar: bool,
+    /// Built-in filter tab IDs hidden by user (e.g. `["ppt", "word"]`).
+    #[serde(default)]
+    pub hidden_builtin_filters: Vec<String>,
+    /// User-extensible custom filter tabs shown in the search filter bar.
+    #[serde(default)]
+    pub custom_filters: Vec<CustomFilterTab>,
+    /// Disabled official or community plugin IDs (e.g. `["dev.tomoyo.translate"]`).
+    #[serde(default)]
+    pub disabled_plugins: Vec<String>,
     /// Persistent window dimensions and optional user-dragged position.
     #[serde(default)]
     pub window: WindowConfig,
@@ -312,42 +326,15 @@ fn default_clip_max() -> usize {
 }
 
 pub fn default_web_searches() -> Vec<WebSearchEngine> {
+    let mk = |k: &str, n: &str, u: &str| WebSearchEngine { keyword: k.into(), name: n.into(), url: u.into() };
     vec![
-        WebSearchEngine {
-            keyword: "g".into(),
-            name: "Google Search".into(),
-            url: "https://www.google.com/search?q={q}".into(),
-        },
-        WebSearchEngine {
-            keyword: "gh".into(),
-            name: "GitHub Search".into(),
-            url: "https://github.com/search?q={q}".into(),
-        },
-        WebSearchEngine {
-            keyword: "crates".into(),
-            name: "crates.io (Rust)".into(),
-            url: "https://crates.io/search?q={q}".into(),
-        },
-        WebSearchEngine {
-            keyword: "docs".into(),
-            name: "docs.rs (Rust Docs)".into(),
-            url: "https://docs.rs/releases/search?query={q}".into(),
-        },
-        WebSearchEngine {
-            keyword: "bd".into(),
-            name: "Baidu 百度搜索".into(),
-            url: "https://www.baidu.com/s?wd={q}".into(),
-        },
-        WebSearchEngine {
-            keyword: "zh".into(),
-            name: "Zhihu 知乎搜索".into(),
-            url: "https://www.zhihu.com/search?type=content&q={q}".into(),
-        },
-        WebSearchEngine {
-            keyword: "mdn".into(),
-            name: "MDN Web Docs".into(),
-            url: "https://developer.mozilla.org/en-US/search?q={q}".into(),
-        },
+        mk("g", "Google Search", "https://www.google.com/search?q={q}"),
+        mk("gh", "GitHub Search", "https://github.com/search?q={q}"),
+        mk("crates", "crates.io (Rust)", "https://crates.io/search?q={q}"),
+        mk("docs", "docs.rs (Rust Docs)", "https://docs.rs/releases/search?query={q}"),
+        mk("bd", "Baidu 百度搜索", "https://www.baidu.com/s?wd={q}"),
+        mk("zh", "Zhihu 知乎搜索", "https://www.zhihu.com/search?type=content&q={q}"),
+        mk("mdn", "MDN Web Docs", "https://developer.mozilla.org/en-US/search?q={q}"),
     ]
 }
 
@@ -361,6 +348,9 @@ impl Default for TomoyoConfig {
             hibernate_delay_secs: default_hibernate_secs(),
             auto_preview: true,
             show_filter_bar: true,
+            hidden_builtin_filters: Vec::new(),
+            custom_filters: Vec::new(),
+            disabled_plugins: Vec::new(),
             window: WindowConfig::default(),
             apps: AppsConfig::default(),
             everything: EverythingConfig::default(),
@@ -375,22 +365,14 @@ impl Default for TomoyoConfig {
 }
 
 impl TomoyoConfig {
-    pub fn sanitize(&mut self) -> Vec<String> {
-        sanitize_config(self)
+    pub fn is_plugin_enabled(&self, plugin_id: &str) -> bool {
+        !self.disabled_plugins.iter().any(|id| id.eq_ignore_ascii_case(plugin_id))
     }
 
-    pub fn lang(&self) -> crate::Lang {
-        crate::Lang::from_code(&self.language)
-    }
-
-    pub fn config_path() -> PathBuf {
-        crate::data_dir().join("config.toml")
-    }
-
-    pub fn load_or_create() -> Self {
-        let path = Self::config_path();
-        Self::load_from_path(&path)
-    }
+    pub fn sanitize(&mut self) -> Vec<String> { sanitize_config(self) }
+    pub fn lang(&self) -> crate::Lang { crate::Lang::from_code(&self.language) }
+    pub fn config_path() -> PathBuf { crate::data_dir().join("config.toml") }
+    pub fn load_or_create() -> Self { Self::load_from_path(&Self::config_path()) }
 
     pub fn load_from_path(path: &Path) -> Self {
         if let Ok(raw) = std::fs::read_to_string(path) {

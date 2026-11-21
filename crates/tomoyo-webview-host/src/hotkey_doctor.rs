@@ -13,7 +13,7 @@ use crate::bridge_os::notify_parent_mode;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::ffi::c_void;
-use tomoyo_core::{parse_hotkey, TomoyoConfig};
+use tomoyo_core::{parse_hotkey, TomoyoConfig, PLUGIN_CAPTURE, PLUGIN_CLIPBOARD, PLUGIN_TRANSLATE};
 use windows::core::PWSTR;
 use windows::Win32::Foundation::{CloseHandle, FILETIME, HWND, LPARAM};
 use windows::Win32::System::Diagnostics::ToolHelp::{
@@ -122,9 +122,9 @@ pub fn audit_system_hotkeys(parent_hwnd: Option<isize>) -> HotkeyAuditReport {
 
     let tomoyo_slots: Vec<(&str, String)> = vec![
         ("main", cfg.hotkey.trim().to_string()),
-        ("clipboard", cfg.clipboard.hotkey.trim().to_string()),
-        ("translate", cfg.translate.hotkey.trim().to_string()),
-        ("capture", cfg.capture.hotkey.trim().to_string()),
+        ("clipboard", if cfg.is_plugin_enabled(PLUGIN_CLIPBOARD) { cfg.clipboard.hotkey.trim().to_string() } else { String::new() }),
+        ("translate", if cfg.is_plugin_enabled(PLUGIN_TRANSLATE) { cfg.translate.hotkey.trim().to_string() } else { String::new() }),
+        ("capture", if cfg.is_plugin_enabled(PLUGIN_CAPTURE) { cfg.capture.hotkey.trim().to_string() } else { String::new() }),
     ];
 
     if let Some(p) = parent_hwnd {
@@ -381,10 +381,19 @@ pub fn probe_hotkey_owner_live(spec: &str, host_hwnd: usize, parent_hwnd: Option
         };
     }
 
-    // Fallback: detect silent background process CPU wakeup during the 495ms probe window
+    // Fallback: detect silent non-OS background process CPU wakeup during the 495ms probe window
     let mut cpu_spikes: Vec<(&ProcInfo, u64)> = procs_before
         .iter()
-        .filter(|p| !p.name_lower.contains("msedgewebview2") && !p.name_lower.contains("dwm.exe") && !p.name_lower.contains("explorer.exe"))
+        .filter(|p| {
+            p.pid > 4
+                && !matches!(
+                    p.name_lower.as_str(),
+                    "system" | "registry" | "idle" | "system idle process" | "svchost.exe"
+                        | "csrss.exe" | "smss.exe" | "dwm.exe" | "explorer.exe" | "audiodg.exe"
+                        | "antimalware service executable" | "msmpeng.exe"
+                )
+                && !p.name_lower.contains("msedgewebview2")
+        })
         .filter_map(|p| {
             let prev = *cpu_before.get(&p.pid)?;
             let now = query_proc_cpu_100ns(p.pid)?;

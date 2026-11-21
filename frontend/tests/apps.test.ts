@@ -39,8 +39,14 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
 
   it('boots SettingsApp, renders hotkey conflict badge, and switches all 10 tabs', () => {
     const wv = setupMockWebView();
+    const origHealth = {
+      main: { spec: 'Alt+Space', active: 'Alt+Space', ok: true, disabled: false, reason: '' },
+      clipboard: { spec: 'Alt+C', active: '', ok: false, disabled: false, reason: '已被系统或其他软件占用（Alt+C）' },
+      translate: { spec: 'Alt+T', active: '', ok: false, disabled: false, reason: '已被系统或其他软件占用（Alt+T）' },
+      capture: { spec: 'Alt+1', active: 'Alt+1', ok: true, disabled: false, reason: '' },
+    };
     window.__TOMOYO_SETTINGS_INIT__ = {
-      version: '1.6.0',
+      version: '1.8.0',
       autostart: true,
       config: {
         language: 'zh',
@@ -67,12 +73,7 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
       plugins: [{ id: 'dev.tomoyo.ocr', name: 'OCR', runtime: 'STDIO', keywords: ['ocr'], max_memory_mb: 128, declared_permissions: [], granted_permissions: [] }],
       running_apps: ['code.exe', 'notepad.exe'],
       secrets_status: { deepl: false, openai: true },
-      hotkey_health: {
-        main: { spec: 'Alt+Space', active: 'Alt+Space', ok: true, disabled: false, reason: '' },
-        clipboard: { spec: 'Alt+C', active: '', ok: false, disabled: false, reason: '已被系统或其他软件占用（Alt+C）' },
-        translate: { spec: 'Alt+T', active: '', ok: false, disabled: false, reason: '已被系统或其他软件占用（Alt+T）' },
-        capture: { spec: 'Alt+1', active: 'Alt+1', ok: true, disabled: false, reason: '' },
-      },
+      hotkey_health: origHealth,
       config_path: 'C:\\Tomoyo\\config.toml',
       plugins_dir: 'C:\\Tomoyo\\plugins',
       logs_dir: 'C:\\Tomoyo\\logs',
@@ -109,7 +110,7 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
     expect(document.body.textContent).toContain('已高优先级接管');
 
     // Restore original conflict health before iterating all tabs
-    wv.emit({ event: 'hotkey_health', health: window.__TOMOYO_SETTINGS_INIT__!.hotkey_health });
+    wv.emit({ event: 'hotkey_health', health: origHealth });
     flushSync();
 
     // Click every tab and assert zero errors + tab activates
@@ -134,6 +135,31 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
     expect(buildComboFromEvent(new KeyboardEvent('keydown', { code: 'F1' })).combo).toBe('F1');
     expect(buildComboFromEvent(new KeyboardEvent('keydown', { code: 'PrintScreen' })).combo).toBe('PrintScreen');
     expect(buildComboFromEvent(new KeyboardEvent('keydown', { code: 'KeyA' })).needMod).toBe(true);
+
+    // Modular plugin switches: disabling Translate hides its sidebar tab & drops its conflict badge
+    document.querySelector<HTMLButtonElement>('button[data-tab="plugins"]')?.click();
+    flushSync();
+    expect(document.body.textContent).toContain('官方功能插件');
+    const trSwitch = document.querySelector<HTMLButtonElement>('button[role="switch"][aria-label="多源划词翻译"]');
+    expect(trSwitch).not.toBeNull();
+    trSwitch?.click();
+    flushSync();
+    expect(document.querySelector('button[data-tab="translate"]')).toBeNull();
+    expect(document.querySelector('button[data-tab="hotkeys"] .nav-badge')?.textContent).toBe('1');
+
+    // User-extensible search filter tabs: one-click preset adds a custom filter tab and saves config
+    document.querySelector<HTMLButtonElement>('button[data-tab="search"]')?.click();
+    flushSync();
+    const codePreset = document.querySelector<HTMLButtonElement>('button[data-preset-tab="code"]');
+    expect(codePreset).not.toBeNull();
+    codePreset?.click();
+    flushSync();
+    expect(document.body.textContent).toContain('@code');
+    const lastSave = [...wv.posted].reverse().find((m) => m.cmd === 'save_settings');
+    const savedCfg = (lastSave?.config ?? {}) as { custom_filters?: Array<{ id: string }>; disabled_plugins?: string[] };
+    expect(savedCfg.custom_filters?.some((t) => t.id === 'code')).toBe(true);
+    expect(savedCfg.disabled_plugins).toContain('dev.tomoyo.translate');
+
     unmount(app);
   });
 

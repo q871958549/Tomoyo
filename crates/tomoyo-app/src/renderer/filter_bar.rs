@@ -1,18 +1,16 @@
-//! SDF + ClearType GDI Filter Chips Bar with optional live category counts
-//! (`全部 · 应用 · 文件夹 · PDF · Excel · Word · PPT · 图片 · 压缩`).
+//! SDF + ClearType GDI User-Extensible Filter Chips Bar with live category/extension counts.
 
 use super::canvas::Canvas;
 use super::gdi::{dip_rect, draw_text_gdi, FontPack};
 use super::theme::ThemePalette;
 use std::path::Path;
-use tomoyo_core::Lang;
-use tomoyo_protocol::{ActionKind, ResultCategory, ResultItem, SearchFilter};
+use tomoyo_protocol::{ActionKind, ResultCategory, ResultItem, SearchFilter, VisibleFilterTab};
 use windows::Win32::Graphics::Gdi::{GdiFlush, HDC, DT_CENTER};
 
 pub const FILTER_BAR_HEIGHT_DIP: i32 = 38;
 
-/// Live hit counts corresponding positionally to `SearchFilter::ALL` (9 chips).
-pub type FilterCounts = [u16; 9];
+/// Live hit counts matching positionally with the active `VisibleFilterTab` slice.
+pub type FilterCounts = Vec<u16>;
 
 #[derive(Debug, Clone)]
 pub struct FilterChipHitbox {
@@ -24,34 +22,30 @@ pub struct FilterChipHitbox {
     pub y1: f32,
 }
 
-/// Computes category/file-type counts across a result list (ignoring zero-result fallback cards).
-pub fn compute_filter_counts(items: &[ResultItem]) -> FilterCounts {
-    let mut counts = [0u16; 9];
+/// Computes category/file-type counts across a result list for all visible built-in & custom tabs.
+pub fn compute_filter_counts(items: &[ResultItem], tabs: &[VisibleFilterTab]) -> FilterCounts {
+    let mut counts = vec![0u16; tabs.len()];
     for item in items {
         if item.provider_id == "builtin.fallback" {
             continue;
         }
-        counts[0] = counts[0].saturating_add(1);
-        match item.category {
-            ResultCategory::App => counts[1] = counts[1].saturating_add(1),
-            ResultCategory::Folder => counts[2] = counts[2].saturating_add(1),
-            ResultCategory::File => {
-                if let Some(ext) = item_extension(item) {
-                    let slot = match ext.as_str() {
-                        "pdf" => Some(3),
-                        "xls" | "xlsx" | "xlsm" | "csv" => Some(4),
-                        "doc" | "docx" | "rtf" => Some(5),
-                        "ppt" | "pptx" => Some(6),
-                        "png" | "jpg" | "jpeg" | "webp" | "bmp" | "gif" | "svg" | "ico" => Some(7),
-                        "zip" | "7z" | "rar" | "tar" | "gz" | "xz" => Some(8),
-                        _ => None,
-                    };
-                    if let Some(i) = slot {
-                        counts[i] = counts[i].saturating_add(1);
-                    }
-                }
+        let ext = if item.category == ResultCategory::File {
+            item_extension(item)
+        } else {
+            None
+        };
+        for (idx, tab) in tabs.iter().enumerate() {
+            let matched = match tab.filter {
+                SearchFilter::All => true,
+                SearchFilter::App => item.category == ResultCategory::App,
+                SearchFilter::Folder => item.category == ResultCategory::Folder,
+                _ => ext
+                    .as_deref()
+                    .is_some_and(|e| tab.extensions.iter().any(|te| te.eq_ignore_ascii_case(e))),
+            };
+            if matched {
+                counts[idx] = counts[idx].saturating_add(1);
             }
-            _ => {}
         }
     }
     counts
@@ -69,12 +63,11 @@ fn item_extension(item: &ResultItem) -> Option<String> {
         .map(|e| e.to_ascii_lowercase())
 }
 
-fn chip_display_label(filter: SearchFilter, idx: usize, zh: bool, counts: Option<&FilterCounts>) -> String {
-    let base = filter.label(zh);
-    match counts.map(|c| c[idx]).filter(|&n| n > 0) {
-        Some(n) if n >= 100 => format!("{base} 99+"),
-        Some(n) => format!("{base} {n}"),
-        None => base.to_string(),
+fn chip_display_label(tab: &VisibleFilterTab, idx: usize, counts: Option<&FilterCounts>) -> String {
+    match counts.and_then(|c| c.get(idx).copied()).filter(|&n| n > 0) {
+        Some(n) if n >= 100 => format!("{} 99+", tab.label),
+        Some(n) => format!("{} {n}", tab.label),
+        None => tab.label.clone(),
     }
 }
 
@@ -82,28 +75,27 @@ fn chip_display_label(filter: SearchFilter, idx: usize, zh: bool, counts: Option
 pub fn compute_filter_hitboxes(
     list_w_dip: f32,
     header_h: f32,
-    lang: Lang,
+    tabs: &[VisibleFilterTab],
     counts: Option<&FilterCounts>,
 ) -> Vec<FilterChipHitbox> {
-    let zh = lang == Lang::Zh;
     let max_x = list_w_dip - 12.0;
     let y0 = header_h + 7.0;
     let y1 = header_h + FILTER_BAR_HEIGHT_DIP as f32 - 7.0;
     let mut x = 14.0f32;
-    let mut out = Vec::with_capacity(SearchFilter::ALL.len());
+    let mut out = Vec::with_capacity(tabs.len());
 
-    for (idx, &filter) in SearchFilter::ALL.iter().enumerate() {
-        let label = chip_display_label(filter, idx, zh, counts);
+    for (idx, tab) in tabs.iter().enumerate() {
+        let label = chip_display_label(tab, idx, counts);
         let text_w: f32 = label
             .chars()
             .map(|c| if c.is_ascii() { 7.2 } else { 12.8 })
             .sum();
-        let pill_w = (text_w + 20.0).clamp(44.0, 96.0);
+        let pill_w = (text_w + 20.0).clamp(44.0, 108.0);
         if x + pill_w > max_x {
             break;
         }
         out.push(FilterChipHitbox {
-            filter,
+            filter: tab.filter,
             label,
             x0: x,
             y0,
@@ -121,14 +113,13 @@ pub fn paint_filter_bar_sdf(
     pal: ThemePalette,
     list_w_dip: f32,
     header_h: f32,
-    lang: Lang,
+    tabs: &[VisibleFilterTab],
     active: SearchFilter,
     hovered: Option<SearchFilter>,
     counts: Option<&FilterCounts>,
 ) {
     canvas.fill_rect_dip(12.0, header_h, list_w_dip - 12.0, header_h + 1.0, pal.divider);
-    let boxes = compute_filter_hitboxes(list_w_dip, header_h, lang, counts);
-    for hb in boxes {
+    for hb in compute_filter_hitboxes(list_w_dip, header_h, tabs, counts) {
         let is_active = hb.filter == active;
         let is_hover = hovered == Some(hb.filter);
         let (bg, border) = if is_active {
@@ -151,12 +142,12 @@ pub unsafe fn paint_filter_bar_gdi(
     list_w_dip: f32,
     header_h: f32,
     scale: f32,
-    lang: Lang,
+    tabs: &[VisibleFilterTab],
     active: SearchFilter,
     hovered: Option<SearchFilter>,
     counts: Option<&FilterCounts>,
 ) {
-    let boxes = compute_filter_hitboxes(list_w_dip, header_h, lang, counts);
+    let boxes = compute_filter_hitboxes(list_w_dip, header_h, tabs, counts);
     unsafe {
         let _ = GdiFlush();
         for hb in boxes {

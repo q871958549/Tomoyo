@@ -314,10 +314,11 @@ impl AppShell {
         let x_dip = x_px as f32 / scale;
         let y_dip = y_px as f32 / scale;
         let list_w_dip = self.current_list_width_dip();
+        let tabs = self.visible_filter_tabs();
         for hb in compute_filter_hitboxes(
             list_w_dip,
             HEADER_HEIGHT_DIP as f32,
-            self.lang,
+            &tabs,
             self.inter.filter_counts.as_ref(),
         ) {
             if x_dip >= hb.x0 && x_dip <= hb.x1 && y_dip >= hb.y0 && y_dip <= hb.y1 {
@@ -351,47 +352,34 @@ impl AppShell {
         (idx < self.results.len()).then_some(idx)
     }
 
-    pub(super) fn active_mode_badge(&self) -> Option<&'static str> {
+    pub(super) fn active_mode_badge(&self) -> Option<String> {
         let t = self.current_query.trim();
         let l = self.lang;
-        if t.starts_with(':') {
-            return Some(l.pick("命令", "COMMAND"));
-        }
+        if t.starts_with(':') { return Some(l.pick("命令", "COMMAND").into()); }
         let low = t.to_lowercase();
-        if low.starts_with("f ") || low.starts_with("ev ") {
-            return Some(l.pick("文件搜索", "EVERYTHING"));
-        }
-        if low == "cb" || low.starts_with("cb ") {
-            return Some(l.pick("剪贴板", "CLIPBOARD"));
-        }
-        if low == "w" || low.starts_with("w ") {
-            return Some(l.pick("窗口切换", "WINDOWS"));
-        }
+        if low.starts_with("f ") || low.starts_with("ev ") { return Some(l.pick("文件搜索", "EVERYTHING").into()); }
+        if low == "cb" || low.starts_with("cb ") { return Some(l.pick("剪贴板", "CLIPBOARD").into()); }
+        if low == "w" || low.starts_with("w ") { return Some(l.pick("窗口切换", "WINDOWS").into()); }
         if low == "kill" || low.starts_with("kill ") || low == "ps" || low.starts_with("ps ") {
-            return Some(l.pick("进程管理", "PROCESS"));
+            return Some(l.pick("进程管理", "PROCESS").into());
         }
         if low.starts_with("= ") || low.starts_with("b64 ") || low.starts_with("b64d ") {
-            return Some(l.pick("计算", "CALC"));
+            return Some(l.pick("计算", "CALC").into());
         }
-        if low == "snip" || low.starts_with("snip ") {
-            return Some(l.pick("片段", "SNIPPET"));
-        }
+        if low == "snip" || low.starts_with("snip ") { return Some(l.pick("片段", "SNIPPET").into()); }
         if let Some(first) = low.split_whitespace().next() {
-            if self.plugin_host.matches_keyword(first) {
-                return Some(l.pick("插件", "PLUGIN"));
-            }
-            if self
-                .config
-                .read()
-                .map(|c| c.web_searches.iter().any(|w| w.keyword.eq_ignore_ascii_case(first)))
-                .unwrap_or(false)
-                && low.contains(' ')
-            {
-                return Some(l.pick("网页搜索", "WEB"));
+            if self.plugin_host.matches_keyword(first) { return Some(l.pick("插件", "PLUGIN").into()); }
+            if self.config.read().map(|c| c.web_searches.iter().any(|w| w.keyword.eq_ignore_ascii_case(first))).unwrap_or(false) && low.contains(' ') {
+                return Some(l.pick("网页搜索", "WEB").into());
             }
         }
         if self.active_filter != SearchFilter::All {
-            return Some(self.active_filter.label(l == Lang::Zh));
+            if let SearchFilter::Custom(idx) = self.active_filter {
+                if let Some(lbl) = self.config.read().ok().and_then(|c| c.custom_filters.get(idx as usize).map(|t| t.label.clone())) {
+                    return Some(lbl);
+                }
+            }
+            return Some(self.active_filter.label(l == Lang::Zh).into());
         }
         None
     }

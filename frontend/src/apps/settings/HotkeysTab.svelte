@@ -1,5 +1,6 @@
 <script lang="ts">
   import { AlertTriangle, CheckCircle2, Crosshair, FolderOpen, RefreshCw, ShieldAlert, Zap } from '@lucide/svelte';
+  import { isPluginEnabled, PLUGIN_CAPTURE, PLUGIN_CLIPBOARD, PLUGIN_TRANSLATE } from '../../lib/defaults';
   import { postHost } from '../../lib/ipc';
   import { tr, type Lang } from '../../lib/i18n';
   import type {
@@ -44,11 +45,11 @@
   let isEn = $derived(lang === 'en');
 
   let slots = $derived([
-    { id: 'main' as const, label: isEn ? 'Main Launcher' : '主启动器唤起', spec: cfg.hotkey, st: health.main },
-    { id: 'clipboard' as const, label: isEn ? 'Clipboard Center' : '剪贴板管理中心', spec: cfg.clipboard.hotkey, st: health.clipboard },
-    { id: 'translate' as const, label: isEn ? 'Selection Translate' : '全局划词翻译', spec: cfg.translate.hotkey, st: health.translate },
-    { id: 'capture' as const, label: isEn ? 'Screenshot & Pin' : '截图与桌面贴图', spec: cfg.capture.hotkey, st: health.capture },
-  ]);
+    { id: 'main' as const, label: isEn ? 'Main Launcher' : '主启动器唤起', spec: cfg.hotkey, st: health.main, on: true },
+    { id: 'clipboard' as const, label: isEn ? 'Clipboard Center' : '剪贴板管理中心', spec: cfg.clipboard.hotkey, st: health.clipboard, on: isPluginEnabled(cfg, PLUGIN_CLIPBOARD) },
+    { id: 'translate' as const, label: isEn ? 'Selection Translate' : '全局划词翻译', spec: cfg.translate.hotkey, st: health.translate, on: isPluginEnabled(cfg, PLUGIN_TRANSLATE) },
+    { id: 'capture' as const, label: isEn ? 'Screenshot & Pin' : '截图与桌面贴图', spec: cfg.capture.hotkey, st: health.capture, on: isPluginEnabled(cfg, PLUGIN_CAPTURE) },
+  ].filter((s) => s.on));
 
   let filteredMatrix = $derived.by(() => {
     const list = audit?.items || [];

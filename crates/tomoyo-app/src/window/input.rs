@@ -9,6 +9,7 @@ use crate::actions::{clipboard_has_rich_attachment, set_clipboard_text};
 use std::ffi::c_void;
 use tomoyo_core::{
     parse_hotkey, save_hotkey_health, HotkeyHealthReport, HotkeySlotStatus, Lang, TomoyoConfig,
+    PLUGIN_CAPTURE, PLUGIN_CLIPBOARD, PLUGIN_TRANSLATE,
 };
 use tomoyo_protocol::SearchFilter;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
@@ -43,14 +44,16 @@ impl AppShell {
 
         if ctrl_down && (b'1' as u16..=b'9' as u16).contains(&vk) {
             let idx = (vk - b'1' as u16) as usize;
-            if let Some(f) = SearchFilter::from_index(idx) {
-                self.set_active_filter(f);
+            let tabs = self.visible_filter_tabs();
+            if let Some(t) = tabs.get(idx) {
+                self.set_active_filter(t.filter);
             }
             return;
         }
 
         if ctrl_down && vk == VK_TAB.0 {
-            let next = self.active_filter.cycle(!shift_down);
+            let tabs = self.visible_filter_tabs();
+            let next = self.active_filter.cycle_visible(&tabs, !shift_down);
             self.set_active_filter(next);
             return;
         }
@@ -310,9 +313,12 @@ pub(super) fn register_all_hotkeys(hwnd: HWND, cfg: &TomoyoConfig) -> (String, O
         HotkeySlotStatus { spec: trimmed.to_string(), active: String::new(), ok: false, disabled: false, overridden: false, reason }
     };
 
-    let mut clip_status = reg_opt(HOTKEY_CLIPBOARD_ID, &cfg.clipboard.hotkey, lang.pick("剪贴板", "Clipboard"));
-    let mut tr_status = reg_opt(HOTKEY_TRANSLATE_ID, &cfg.translate.hotkey, lang.pick("划词翻译", "Translate"));
-    let mut cap_status = reg_opt(HOTKEY_CAPTURE_ID, &cfg.capture.hotkey, lang.pick("截图", "Capture"));
+    let clip_spec = if cfg.is_plugin_enabled(PLUGIN_CLIPBOARD) { cfg.clipboard.hotkey.as_str() } else { "" };
+    let tr_spec = if cfg.is_plugin_enabled(PLUGIN_TRANSLATE) { cfg.translate.hotkey.as_str() } else { "" };
+    let cap_spec = if cfg.is_plugin_enabled(PLUGIN_CAPTURE) { cfg.capture.hotkey.as_str() } else { "" };
+    let mut clip_status = reg_opt(HOTKEY_CLIPBOARD_ID, clip_spec, lang.pick("剪贴板", "Clipboard"));
+    let mut tr_status = reg_opt(HOTKEY_TRANSLATE_ID, tr_spec, lang.pick("划词翻译", "Translate"));
+    let mut cap_status = reg_opt(HOTKEY_CAPTURE_ID, cap_spec, lang.pick("截图", "Capture"));
 
     if !sync_conflict_override_hook(hwnd, &override_entries) {
         for slot in [&mut main_status, &mut clip_status, &mut tr_status, &mut cap_status] {

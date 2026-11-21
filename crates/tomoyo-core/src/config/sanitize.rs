@@ -359,6 +359,7 @@ pub fn sanitize_config(cfg: &mut TomoyoConfig) -> Vec<String> {
         clean_web = default_web_searches();
     }
     cfg.web_searches = clean_web;
+    super::sanitize_filters_and_plugins(cfg);
 
     notes
 }

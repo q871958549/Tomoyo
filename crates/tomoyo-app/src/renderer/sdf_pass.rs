@@ -62,7 +62,7 @@ pub(super) fn paint_sdf_pass(
             pal,
             lay.list_w_dip,
             lay.header_h,
-            state.lang,
+            state.filter_tabs,
             state.active_filter,
             state.hovered_filter,
             state.filter_counts,

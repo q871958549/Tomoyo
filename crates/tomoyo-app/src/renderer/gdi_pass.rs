@@ -52,7 +52,7 @@ pub(super) fn paint_gdi_pass(
                 lay.list_w_dip,
                 lay.header_h,
                 scale,
-                state.lang,
+                state.filter_tabs,
                 state.active_filter,
                 state.hovered_filter,
                 state.filter_counts,
