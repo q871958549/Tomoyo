@@ -37,8 +37,9 @@ unsafe extern "C" {
         width: c_int,
         height: c_int,
         mode: c_int,
-        icon_png: *const u8,
-        icon_len: usize,
+        icon_rgba: *const u8,
+        icon_w: c_int,
+        icon_h: c_int,
         extra_init_js: *const c_char,
         on_msg: WvMsgCb,
         on_key: WvKeyCb,
@@ -312,10 +313,15 @@ pub fn run_linux_host(opts: LaunchArgs) {
     let c_init = CString::new(init_script).unwrap_or_default();
     let mode = theme_mode(&opts.theme);
 
+    let icon_decoded = tomoyo_core::wic_thumb::decode_png_rgba_bytes(EMBEDDED_ICON_PNG);
+    let (icon_ptr, icon_w, icon_h) = match &icon_decoded {
+        Some((w, h, rgba)) => (rgba.as_ptr(), *w as c_int, *h as c_int),
+        None => (std::ptr::null(), 0, 0),
+    };
     let wv = unsafe {
         tomoyo_wv_create(
             c_title.as_ptr(), opts.width, opts.height, mode,
-            EMBEDDED_ICON_PNG.as_ptr(), EMBEDDED_ICON_PNG.len(),
+            icon_ptr, icon_w, icon_h,
             c_init.as_ptr(), on_msg_cb, on_key_cb, on_uri_cb, on_focus_in_cb, on_close_cb,
             ctx_ptr as *mut c_void,
         )

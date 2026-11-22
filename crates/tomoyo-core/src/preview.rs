@@ -36,59 +36,8 @@ pub fn read_image_thumbnail(path_str: &str, max_w: u32, max_h: u32) -> ResolvedP
         .filter(|e| !e.is_empty())
         .unwrap_or_else(|| "IMG".into());
 
-    let decoded = crate::wic_thumb::decode_image_thumbnail_wic(path, max_w, max_h).or_else(|| {
-        let file = File::open(path).ok()?;
-        let mut decoder = png::Decoder::new(std::io::BufReader::new(file));
-        decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
-        let mut reader = decoder.read_info().ok()?;
-        let info = reader.info();
-        let src_w = info.width;
-        let src_h = info.height;
-        if src_w == 0 || src_h == 0 || src_w > 8192 || src_h > 8192 {
-            return None;
-        }
-        let mut buf = vec![0u8; reader.output_buffer_size()?];
-        let frame = reader.next_frame(&mut buf).ok()?;
-        let raw = &buf[..frame.buffer_size()];
-        let color = frame.color_type;
-
-        let scale = ((max_w as f32 / src_w as f32).min(max_h as f32 / src_h as f32)).min(1.0);
-        let dst_w = ((src_w as f32 * scale).round() as u32).max(1);
-        let dst_h = ((src_h as f32 * scale).round() as u32).max(1);
-
-        let mut rgba = vec![0u8; (dst_w * dst_h * 4) as usize];
-        for y in 0..dst_h {
-            let sy = ((y as u64 * src_h as u64) / dst_h as u64) as usize;
-            for x in 0..dst_w {
-                let sx = ((x as u64 * src_w as u64) / dst_w as u64) as usize;
-                let (r, g, b, a) = match color {
-                    png::ColorType::Rgba => {
-                        let i = (sy * src_w as usize + sx) * 4;
-                        (raw[i], raw[i + 1], raw[i + 2], raw[i + 3])
-                    }
-                    png::ColorType::Rgb => {
-                        let i = (sy * src_w as usize + sx) * 3;
-                        (raw[i], raw[i + 1], raw[i + 2], 255)
-                    }
-                    png::ColorType::GrayscaleAlpha => {
-                        let i = (sy * src_w as usize + sx) * 2;
-                        (raw[i], raw[i], raw[i], raw[i + 1])
-                    }
-                    png::ColorType::Grayscale => {
-                        let v = raw[sy * src_w as usize + sx];
-                        (v, v, v, 255)
-                    }
-                    _ => (40, 40, 50, 255),
-                };
-                let di = ((y * dst_w + x) * 4) as usize;
-                rgba[di] = r;
-                rgba[di + 1] = g;
-                rgba[di + 2] = b;
-                rgba[di + 3] = a;
-            }
-        }
-        Some((src_w, src_h, dst_w, dst_h, rgba))
-    });
+    let decoded = crate::wic_thumb::decode_image_thumbnail_wic(path, max_w, max_h)
+        .or_else(|| crate::wic_thumb::decode_png_thumbnail(path, max_w, max_h));
 
     match decoded {
         Some((sw, sh, dw, dh, rgba)) => ResolvedPreview {

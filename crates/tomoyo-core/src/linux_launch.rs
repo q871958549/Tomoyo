@@ -133,7 +133,13 @@ fn spawn_via_systemd_run(
         return false;
     };
     let unit = systemd_app_unit_name(Some(label_hint));
-    let clean_label: String = label_hint
+    let display_hint = Path::new(label_hint)
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("desktop"))
+        .then(|| Path::new(label_hint).file_stem().and_then(|s| s.to_str()))
+        .flatten()
+        .unwrap_or(label_hint);
+    let clean_label: String = display_hint
         .chars()
         .map(|c| if c.is_control() { ' ' } else { c })
         .take(64)
@@ -147,7 +153,7 @@ fn spawn_via_systemd_run(
         "--service-type=exec",
         "--property=ExitType=cgroup",
         &format!("--unit={unit}"),
-        &format!("--description=Tomoyo: {clean_label}"),
+        &format!("--description={clean_label}"),
     ]);
     if let Some(d) = workdir.filter(|d| Path::new(d).is_dir()) {
         cmd.arg(format!("--working-directory={d}"));

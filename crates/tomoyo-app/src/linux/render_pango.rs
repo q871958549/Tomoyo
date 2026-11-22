@@ -7,7 +7,7 @@ use crate::renderer::{
 use lru::LruCache;
 use std::ffi::{c_char, c_int, c_void, CString};
 use std::num::NonZeroUsize;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tomoyo_core::{current_process_stats, highlight_title_ranges, Lang};
 use tomoyo_protocol::{extension_short_tag, IconSpec, ResultCategory, ResultItem};
 
@@ -39,6 +39,12 @@ unsafe extern "C" {
         hl_count: usize,
         hl_rgb: u32,
     );
+    fn tomoyo_linux_resolve_icon_path(
+        icon_name: *const c_char,
+        sz: c_int,
+        out: *mut c_char,
+        out_len: usize,
+    ) -> c_int;
     fn tomoyo_linux_load_icon_bgra(
         icon_name_or_path: *const c_char,
         sz: c_int,
@@ -163,11 +169,32 @@ impl LinuxRenderer {
     fn load_cached_icon(&mut self, hint: &str, sz: i32) -> Option<&[u8]> {
         let key = format!("{sz}:{hint}");
         if !self.icon_cache.contains(&key) {
-            let mut buf = vec![0u8; (sz * sz * 4) as usize];
-            let ok = CString::new(hint)
-                .ok()
-                .is_some_and(|cs| unsafe { tomoyo_linux_load_icon_bgra(cs.as_ptr(), sz, buf.as_mut_ptr(), buf.len()) != 0 });
-            self.icon_cache.put(key.clone(), ok.then_some(buf));
+            let mut resolved = hint.starts_with('/').then(|| PathBuf::from(hint));
+            if resolved.is_none()
+                && let Ok(cs) = CString::new(hint)
+            {
+                let mut pbuf = [0u8; 512];
+                let ok = unsafe {
+                    tomoyo_linux_resolve_icon_path(cs.as_ptr(), sz, pbuf.as_mut_ptr().cast(), pbuf.len()) != 0
+                };
+                if ok {
+                    let end = pbuf.iter().position(|&b| b == 0).unwrap_or(pbuf.len());
+                    resolved = Some(PathBuf::from(String::from_utf8_lossy(&pbuf[..end]).into_owned()));
+                }
+            }
+            let bgra = resolved
+                .as_deref()
+                .and_then(|p| tomoyo_core::wic_thumb::decode_png_file_bgra_square(p, sz as u32))
+                .or_else(|| {
+                    let mut buf = vec![0u8; (sz * sz * 4) as usize];
+                    let ok = CString::new(hint)
+                        .ok()
+                        .is_some_and(|cs| unsafe {
+                            tomoyo_linux_load_icon_bgra(cs.as_ptr(), sz, buf.as_mut_ptr(), buf.len()) != 0
+                        });
+                    ok.then_some(buf)
+                });
+            self.icon_cache.put(key.clone(), bgra);
         }
         self.icon_cache.get(&key).and_then(|v| v.as_deref())
     }

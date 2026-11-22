@@ -112,6 +112,24 @@ void tomoyo_pango_draw_text(
     g_object_unref(ly);
 }
 
+int tomoyo_linux_resolve_icon_path(const char *icon_name, int sz, char *out, size_t out_len) {
+    if (!icon_name || !icon_name[0] || !out || out_len < 2 || gdk_screen_get_default() == NULL) return 0;
+    out[0] = '\0';
+    GtkIconTheme *th = gtk_icon_theme_get_default();
+    if (!th) return 0;
+    GtkIconInfo *info = gtk_icon_theme_lookup_icon(th, icon_name, sz, GTK_ICON_LOOKUP_NO_SVG);
+    if (!info) info = gtk_icon_theme_lookup_icon(th, icon_name, sz, 0);
+    if (!info) return 0;
+    const gchar *fn = gtk_icon_info_get_filename(info);
+    int ok = 0;
+    if (fn && fn[0] && strlen(fn) < out_len) {
+        snprintf(out, out_len, "%s", fn);
+        ok = 1;
+    }
+    g_object_unref(info);
+    return ok;
+}
+
 int tomoyo_linux_load_icon_bgra(const char *icon_name_or_path, int sz, uint8_t *out, size_t out_len) {
     if (!icon_name_or_path || !icon_name_or_path[0] || !out || out_len < (size_t)(sz * sz * 4)) return 0;
     GdkPixbuf *pb = NULL;

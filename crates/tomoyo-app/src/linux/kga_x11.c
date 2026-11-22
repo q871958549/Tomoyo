@@ -119,6 +119,11 @@ char *tomoyo_linux_clipboard_get_uris(void) {
     return out;
 }
 
+uint8_t *tomoyo_linux_clipboard_get_wl_png(size_t *olen) {
+    if (!tomoyo_wl_clip_active() || !tomoyo_wl_clip_has_mime("image/png")) return NULL;
+    return tomoyo_wl_clip_read("image/png", olen);
+}
+
 uint8_t *tomoyo_linux_clipboard_get_image_rgba(uint32_t *ow, uint32_t *oh, size_t *olen) {
     GdkPixbuf *pb = NULL;
     if (tomoyo_wl_clip_active()) {

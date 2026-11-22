@@ -10,6 +10,7 @@ unsafe extern "C" {
     fn tomoyo_linux_clipboard_has_rich() -> c_int;
     fn tomoyo_linux_clipboard_is_confidential() -> c_int;
     fn tomoyo_linux_clipboard_get_uris() -> *mut c_char;
+    fn tomoyo_linux_clipboard_get_wl_png(out_len: *mut usize) -> *mut u8;
     fn tomoyo_linux_clipboard_get_image_rgba(
         out_w: *mut u32,
         out_h: *mut u32,
@@ -65,13 +66,29 @@ pub fn read_clipboard_files() -> Option<Vec<String>> {
 }
 
 pub fn read_clipboard_image_png() -> Option<(String, u32, u32, String)> {
-    let (mut w, mut h, mut len) = (0u32, 0u32, 0usize);
-    let ptr = unsafe { tomoyo_linux_clipboard_get_image_rgba(&mut w, &mut h, &mut len) };
-    if ptr.is_null() || w == 0 || h == 0 || len == 0 {
-        return None;
-    }
-    let rgba = unsafe { std::slice::from_raw_parts(ptr, len) }.to_vec();
-    unsafe { tomoyo_linux_free_ptr(ptr.cast()); }
+    let (w, h, rgba, raw_png) = if unsafe { tomoyo_wl_clip_active() != 0 } {
+        let mut plen = 0usize;
+        let ptr = unsafe { tomoyo_linux_clipboard_get_wl_png(&mut plen) };
+        if ptr.is_null() || plen == 0 {
+            return None;
+        }
+        let png_bytes = unsafe { std::slice::from_raw_parts(ptr, plen) }.to_vec();
+        unsafe { tomoyo_linux_free_ptr(ptr.cast()); }
+        let (w, h, rgba) = tomoyo_core::wic_thumb::decode_png_rgba_bytes(&png_bytes)?;
+        if w == 0 || h == 0 || w > 4096 || h > 4096 {
+            return None;
+        }
+        (w, h, rgba, Some(png_bytes))
+    } else {
+        let (mut w, mut h, mut len) = (0u32, 0u32, 0usize);
+        let ptr = unsafe { tomoyo_linux_clipboard_get_image_rgba(&mut w, &mut h, &mut len) };
+        if ptr.is_null() || w == 0 || h == 0 || len == 0 {
+            return None;
+        }
+        let rgba = unsafe { std::slice::from_raw_parts(ptr, len) }.to_vec();
+        unsafe { tomoyo_linux_free_ptr(ptr.cast()); }
+        (w, h, rgba, None)
+    };
 
     let mut hasher = Sha256::new();
     hasher.update(w.to_le_bytes());
@@ -84,12 +101,16 @@ pub fn read_clipboard_image_png() -> Option<(String, u32, u32, String)> {
     let _ = std::fs::create_dir_all(&dir);
     let path = dir.join(format!("img_{digest16}.png"));
     if !path.is_file() {
-        let file = std::fs::File::create(&path).ok()?;
-        let mut enc = png::Encoder::new(std::io::BufWriter::new(file), w, h);
-        enc.set_color(png::ColorType::Rgba);
-        enc.set_depth(png::BitDepth::Eight);
-        enc.set_compression(png::Compression::Fast);
-        enc.write_header().ok()?.write_image_data(&rgba).ok()?;
+        if let Some(png_bytes) = raw_png {
+            std::fs::write(&path, &png_bytes).ok()?;
+        } else {
+            let file = std::fs::File::create(&path).ok()?;
+            let mut enc = png::Encoder::new(std::io::BufWriter::new(file), w, h);
+            enc.set_color(png::ColorType::Rgba);
+            enc.set_depth(png::BitDepth::Eight);
+            enc.set_compression(png::Compression::Fast);
+            enc.write_header().ok()?.write_image_data(&rgba).ok()?;
+        }
     }
     Some((path.to_string_lossy().into_owned(), w, h, digest16))
 }

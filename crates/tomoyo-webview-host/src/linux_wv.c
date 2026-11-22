@@ -139,13 +139,19 @@ void tomoyo_wv_apply_theme(tomoyo_wv_t *h, int mode) {
     if (h->webview) webkit_web_view_set_background_color(h->webview, &wvbg);
 }
 
+static void free_icon_rgba(guchar *pixels, gpointer ud) {
+    (void)ud;
+    free(pixels);
+}
+
 tomoyo_wv_t *tomoyo_wv_create(
     const char *title,
     int width,
     int height,
     int mode,
-    const uint8_t *icon_png,
-    size_t icon_len,
+    const uint8_t *icon_rgba,
+    int icon_w,
+    int icon_h,
     const char *extra_init_js,
     wv_msg_cb on_msg,
     wv_key_cb on_key,
@@ -182,14 +188,19 @@ tomoyo_wv_t *tomoyo_wv_create(
     h->css = gtk_css_provider_new();
     gtk_style_context_add_provider(gtk_widget_get_style_context(h->header), GTK_STYLE_PROVIDER(h->css), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
 
-    if (icon_png && icon_len > 0) {
-        GInputStream *is = g_memory_input_stream_new_from_data(icon_png, (gssize)icon_len, NULL);
-        GdkPixbuf *pb = gdk_pixbuf_new_from_stream(is, NULL, NULL);
-        if (pb) {
-            gtk_window_set_icon(GTK_WINDOW(h->window), pb);
-            g_object_unref(pb);
+    if (icon_rgba && icon_w > 0 && icon_h > 0) {
+        size_t sz = (size_t)icon_w * (size_t)icon_h * 4;
+        uint8_t *copy = (uint8_t *)malloc(sz);
+        if (copy) {
+            memcpy(copy, icon_rgba, sz);
+            GdkPixbuf *pb = gdk_pixbuf_new_from_data(copy, GDK_COLORSPACE_RGB, TRUE, 8, icon_w, icon_h, icon_w * 4, free_icon_rgba, NULL);
+            if (pb) {
+                gtk_window_set_icon(GTK_WINDOW(h->window), pb);
+                g_object_unref(pb);
+            } else {
+                free(copy);
+            }
         }
-        g_object_unref(is);
     }
 
     WebKitWebContext *wctx = webkit_web_context_get_default();
