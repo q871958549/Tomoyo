@@ -68,6 +68,23 @@ impl LivePluginProcess {
             const CREATE_NO_WINDOW: u32 = 0x0800_0000;
             cmd.creation_flags(CREATE_NO_WINDOW);
         }
+        #[cfg(target_os = "linux")]
+        {
+            use std::os::unix::process::CommandExt;
+            unsafe {
+                cmd.pre_exec(|| {
+                    unsafe extern "C" {
+                        fn setpgid(pid: i32, pgid: i32) -> i32;
+                        fn prctl(option: i32, arg2: usize, arg3: usize, arg4: usize, arg5: usize) -> i32;
+                    }
+                    const PR_SET_PDEATHSIG: i32 = 1;
+                    const SIGKILL: usize = 9;
+                    let _ = setpgid(0, 0);
+                    let _ = prctl(PR_SET_PDEATHSIG, SIGKILL, 0, 0, 0);
+                    Ok(())
+                });
+            }
+        }
 
         let mut child = cmd
             .spawn()

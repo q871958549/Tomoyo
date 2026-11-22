@@ -78,4 +78,11 @@ pub fn show_fatal_error_dialog(message: &str) {
 #[cfg(not(windows))]
 pub fn show_fatal_error_dialog(message: &str) {
     append_crash_record(&format!("FATAL STARTUP ERROR: {message}"));
+    let log_dir = logs_dir();
+    let full = format!(
+        "Tomoyo 启动失败或遇到致命错误：\n\n{message}\n\n诊断日志已保存到：\n{}",
+        log_dir.display()
+    );
+    eprintln!("{full}");
+    let _ = std::process::Command::new("kdialog").args(["--error", &full]).spawn();
 }

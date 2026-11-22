@@ -1,11 +1,13 @@
 //! Multi-theme color palettes (`light`, `dark`, `midnight`) & category accents.
 
 use tomoyo_protocol::ResultCategory;
+#[cfg(windows)]
 use windows::Win32::Foundation::COLORREF;
 
 #[derive(Clone, Copy)]
 pub struct Rgb(pub u8, pub u8, pub u8);
 
+#[cfg(windows)]
 impl Rgb {
     pub fn to_colorref(self) -> COLORREF {
         COLORREF((self.0 as u32) | ((self.1 as u32) << 8) | ((self.2 as u32) << 16))

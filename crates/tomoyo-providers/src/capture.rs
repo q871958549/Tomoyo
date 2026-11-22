@@ -73,6 +73,17 @@ impl CaptureProvider {
                 "截图翻译 截屏翻译 屏幕翻译 jtfy capture translate",
                 9_700,
             ),
+            (
+                "capture:record",
+                "record",
+                "屏幕录制 MP4 / GIF (Record Screen)",
+                "Record Region (MP4 / GIF)",
+                "智能预选窗口/区域 → 实时暂停继续 · 支持系统音/麦克风与高清调色板 GIF",
+                "Smart window/panel pre-select → Live pause/resume · MP4 & crisp GIF recording",
+                "REC",
+                "录屏 屏幕录制 区域录屏 录制视频 动图 gif mp4 video record rec luping lp",
+                9_740,
+            ),
         ];
 
         let commands = specs
@@ -245,7 +256,7 @@ mod tests {
         let mut ctx_cap = QueryContext::new("cap", 1, 10);
         ctx_cap.keyword = Some("cap".into());
         ctx_cap.args.clear();
-        assert_eq!(prov.query(&ctx_cap).len(), 4);
+        assert_eq!(prov.query(&ctx_cap).len(), 5);
 
         let mut ctx_zh = QueryContext::new("截图翻译", 2, 10);
         ctx_zh.args.clear();

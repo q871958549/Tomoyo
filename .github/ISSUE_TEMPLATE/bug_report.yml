@@ -1,0 +1,35 @@
+name: Bug Report
+description: Report a crash, hotkey issue, UI glitch, or unexpected behavior in Tomoyo Launcher
+labels: ["bug"]
+body:
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Operating System & Display Server
+      options:
+        - Linux (Arch / CachyOS · KDE Plasma Wayland)
+        - Linux (X11 / Other Desktop)
+        - Windows 11 (x64)
+        - Windows 11 (ARM64)
+        - Windows 10 (x64)
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Tomoyo Launcher Version
+      placeholder: e.g. v2.3.0 or commit hash
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Clear steps to reproduce and expected behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Redacted Diagnostics (`:logs` / `:stats`)
+      description: Paste relevant lines from Settings Center -> Diagnostics (remember to keep secrets redacted).

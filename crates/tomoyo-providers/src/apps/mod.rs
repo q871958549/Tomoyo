@@ -1,9 +1,15 @@
+#[cfg(target_os = "linux")]
+mod linux;
+#[cfg(not(target_os = "linux"))]
 mod organizers;
 mod scanner;
+#[cfg(not(target_os = "linux"))]
 mod uwp_reg;
 mod watcher;
 
-use scanner::{app_watch_paths, scan_dir_roots, ScannedApp};
+#[cfg(not(target_os = "linux"))]
+use scanner::scan_dir_roots;
+use scanner::{app_watch_paths, ScannedApp};
 use std::collections::HashSet;
 use std::path::Path;
 use std::sync::{Arc, RwLock};
@@ -14,7 +20,8 @@ use tomoyo_protocol::{
     ActionKind, ActionSpec, IconSpec, PreviewSpec, QueryContext, ResultCategory, ResultItem,
     SearchFilter,
 };
-use uwp_reg::{scan_apps_folder, scan_registry_app_paths, scan_registry_uninstall};
+#[cfg(not(target_os = "linux"))]
+use uwp_reg::{push_windows_builtin_apps, scan_apps_folder, scan_registry_app_paths, scan_registry_uninstall};
 use watcher::AppDirWatcher;
 
 #[derive(Debug, Clone)]
@@ -195,34 +202,17 @@ fn scan_all_apps(apps_cfg: &AppsConfig) -> Vec<AppEntry> {
     let mut seen_names: HashSet<String> = HashSet::with_capacity(480);
     let mut seen_targets: HashSet<String> = HashSet::with_capacity(480);
 
-    scan_dir_roots(apps_cfg, &mut seen_names, &mut seen_targets, &mut raw_entries);
-    scan_registry_app_paths(&mut seen_names, &mut seen_targets, &mut raw_entries);
-    scan_apps_folder(&mut seen_names, &mut seen_targets, &mut raw_entries);
-    scan_registry_uninstall(&mut seen_names, &mut seen_targets, &mut raw_entries);
-
-    for (name, exe, desc) in [
-        ("记事本 Notepad", "notepad.exe", "Windows 记事本"),
-        ("计算器 Calculator", "calc.exe", "Windows 计算器"),
-        ("命令提示符 CMD", "cmd.exe", "Windows 命令提示符"),
-        ("PowerShell 终端", "powershell.exe", "Windows PowerShell"),
-        ("画图 Paint", "mspaint.exe", "Windows 画图"),
-        ("控制面板 Control Panel", "control.exe", "Windows 控制面板"),
-        ("资源管理器 Explorer", "explorer.exe", "Windows 文件资源管理器"),
-        ("注册表编辑器 Regedit", "regedit.exe", "Windows 注册表编辑器"),
-    ] {
-        let key = name.to_lowercase();
-        if seen_names.insert(key) {
-            raw_entries.push(ScannedApp {
-                id: format!("app:sys:{exe}"),
-                name: name.to_string(),
-                path: exe.to_string(),
-                launch_args: None,
-                subtitle: desc.to_string(),
-                is_uwp: false,
-                is_folder: false,
-                alias_text: None,
-            });
-        }
+    #[cfg(target_os = "linux")]
+    {
+        linux::scan_linux_apps(apps_cfg, &mut seen_names, &mut seen_targets, &mut raw_entries);
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        scan_dir_roots(apps_cfg, &mut seen_names, &mut seen_targets, &mut raw_entries);
+        scan_registry_app_paths(&mut seen_names, &mut seen_targets, &mut raw_entries);
+        scan_apps_folder(&mut seen_names, &mut seen_targets, &mut raw_entries);
+        scan_registry_uninstall(&mut seen_names, &mut seen_targets, &mut raw_entries);
+        push_windows_builtin_apps(&mut seen_names, &mut raw_entries);
     }
 
     let mut entries: Vec<AppEntry> = raw_entries

@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://aka.ms/winget-manifest.locale.1.6.0.schema.json
 PackageIdentifier: TomoyoContributors.Tomoyo
-PackageVersion: 2.2.6
+PackageVersion: 2.3.0
 PackageLocale: en-US
 Publisher: Tomoyo Open Source Contributors
 PublisherUrl: https://github.com/q871958549/Tomoyo
@@ -9,13 +9,15 @@ PackageName: Tomoyo
 PackageUrl: https://github.com/q871958549/Tomoyo
 License: MIT OR Apache-2.0
 LicenseUrl: https://github.com/q871958549/Tomoyo/blob/main/LICENSE-MIT
-ShortDescription: Open-source, ultra-low-memory Rust command launcher for Windows with native Everything IPC and multi-runtime plugins.
+ShortDescription: Tomoyo Launcher — Open-source, ultra-low-memory Rust desktop launcher for Windows with native Everything IPC and multi-runtime plugins.
 Tags:
   - launcher
   - productivity
   - rust
   - everything
   - open-source
-ReleaseNotesUrl: https://github.com/q871958549/Tomoyo/releases/tag/v2.2.6
+  - clipboard-manager
+  - ocr
+ReleaseNotesUrl: https://github.com/q871958549/Tomoyo/releases/tag/v2.3.0
 ManifestType: locale
 ManifestVersion: 1.6.0

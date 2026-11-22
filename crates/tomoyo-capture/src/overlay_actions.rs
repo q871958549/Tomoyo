@@ -111,6 +111,14 @@ impl OverlayState {
             ToolbarCmd::Undo => {
                 self.stack.undo();
             }
+            ToolbarCmd::Record
+            | ToolbarCmd::RecFormat(_)
+            | ToolbarCmd::RecFps(_)
+            | ToolbarCmd::RecAudio(_)
+            | ToolbarCmd::RecCursor
+            | ToolbarCmd::RecStart => {
+                self.show_wheel_hud(hwnd, "录屏请在 Linux Wayland 端或设置中心触发".into());
+            }
             ToolbarCmd::ScrollLong => {
                 if let Some(s) = self.sel.filter(|r| r.is_valid()) {
                     let r = s.clamp_to(self.snap.width, self.snap.height);

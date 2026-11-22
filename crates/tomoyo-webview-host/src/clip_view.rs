@@ -134,7 +134,13 @@ fn entry_to_json(e: ClipboardEntry) -> serde_json::Value {
             let url = Path::new(&path)
                 .file_name()
                 .and_then(|n| n.to_str())
-                .map(|f| format!("https://tomoyo-clip-img.local/{f}"));
+                .map(|f| {
+                    if cfg!(target_os = "linux") {
+                        format!("tomoyo-clip-img://local/{f}")
+                    } else {
+                        format!("https://tomoyo-clip-img.local/{f}")
+                    }
+                });
             ("image", String::new(), url, Some(path), width, height, Vec::new())
         }
         ClipboardPayload::Files { paths } => ("files", paths.join("\n"), None, None, 0, 0, paths),
@@ -209,6 +215,29 @@ pub fn enumerate_running_app_exes() -> Vec<String> {
                     }
                 }
                 let _ = CloseHandle(snap);
+            }
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        for preset in [
+            "keepassxc", "bitwarden", "1password", "enpass", "rustdesk", "remmina",
+            "firefox", "chromium", "google-chrome", "code", "wechat", "qq",
+        ] {
+            set.insert(preset.to_string());
+        }
+        if let Ok(rd) = std::fs::read_dir("/proc") {
+            for ent in rd.flatten() {
+                let name = ent.file_name();
+                if !name.to_string_lossy().bytes().all(|b| b.is_ascii_digit()) {
+                    continue;
+                }
+                if let Ok(comm) = std::fs::read_to_string(ent.path().join("comm")) {
+                    let c = comm.trim().to_ascii_lowercase();
+                    if !c.is_empty() && !matches!(c.as_str(), "tomoyo" | "tomoyo-webview-host" | "systemd" | "kworker" | "dbus-daemon") {
+                        set.insert(c);
+                    }
+                }
             }
         }
     }

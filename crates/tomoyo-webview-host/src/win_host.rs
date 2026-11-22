@@ -180,20 +180,14 @@ pub fn run_windows_host(opts: LaunchArgs) {
     let clip_mode = is_clip_manager_entry(&opts.entry);
     let tr_mode = is_translator_entry(&opts.entry);
     let _singleton_guard = if opts.settings_mode {
-        match acquire_or_activate_settings() {
-            Some(guard) => Some(guard),
-            None => return,
-        }
+        let Some(g) = acquire_or_activate_settings() else { return };
+        Some(g)
     } else if clip_mode {
-        match acquire_or_activate_clipboard() {
-            Some(guard) => Some(guard),
-            None => return,
-        }
+        let Some(g) = acquire_or_activate_clipboard() else { return };
+        Some(g)
     } else if tr_mode {
-        match acquire_or_activate_translator() {
-            Some(guard) => Some(guard),
-            None => return,
-        }
+        let Some(g) = acquire_or_activate_translator() else { return };
+        Some(g)
     } else {
         None
     };
@@ -205,14 +199,11 @@ pub fn run_windows_host(opts: LaunchArgs) {
 
     let hinst = unsafe { GetModuleHandleW(None).unwrap() };
     let (big_icon, small_icon) = load_embedded_window_icons(hinst);
-    let cls = if opts.settings_mode {
-        SETTINGS_WINDOW_CLASS
-    } else if clip_mode {
-        CLIPBOARD_WINDOW_CLASS
-    } else if tr_mode {
-        TRANSLATOR_WINDOW_CLASS
-    } else {
-        EPHEMERAL_WINDOW_CLASS
+    let cls = match (opts.settings_mode, clip_mode, tr_mode) {
+        (true, _, _) => SETTINGS_WINDOW_CLASS,
+        (_, true, _) => CLIPBOARD_WINDOW_CLASS,
+        (_, _, true) => TRANSLATOR_WINDOW_CLASS,
+        _ => EPHEMERAL_WINDOW_CLASS,
     };
     unsafe {
         let wc = WNDCLASSEXW {
@@ -389,18 +380,20 @@ pub fn run_windows_host(opts: LaunchArgs) {
                             ));
                             let _ = webview.add_WebMessageReceived(&msg_handler, &mut token);
 
-                            if settings_mode {
-                                let html = HSTRING::from(assemble_settings_html());
-                                let _ = webview.NavigateToString(PCWSTR(html.as_ptr()));
+                            let html = if settings_mode {
+                                Some(assemble_settings_html())
                             } else if ocr_mode {
-                                let html = HSTRING::from(assemble_ocr_viewer_html());
-                                let _ = webview.NavigateToString(PCWSTR(html.as_ptr()));
+                                Some(assemble_ocr_viewer_html())
                             } else if clip_mode {
-                                let html = HSTRING::from(assemble_clip_manager_html());
-                                let _ = webview.NavigateToString(PCWSTR(html.as_ptr()));
+                                Some(assemble_clip_manager_html())
                             } else if tr_mode {
-                                let html = HSTRING::from(assemble_translator_html());
-                                let _ = webview.NavigateToString(PCWSTR(html.as_ptr()));
+                                Some(assemble_translator_html())
+                            } else {
+                                None
+                            };
+                            if let Some(html) = html {
+                                let hw = HSTRING::from(html);
+                                let _ = webview.NavigateToString(PCWSTR(hw.as_ptr()));
                             } else {
                                 let url_w = HSTRING::from(&entry_url_inner);
                                 let _ = webview.Navigate(PCWSTR(url_w.as_ptr()));

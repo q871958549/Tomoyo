@@ -80,6 +80,7 @@ export function defaultCaptureToolHotkeys(): CaptureToolHotkeys {
     ocr: 'O',
     ocr_copy: 'Shift+C',
     translate: 'T',
+    record: 'V',
   };
 }
 
@@ -124,6 +125,10 @@ export function makeDefaultConfig(): TomoyoConfig {
       save_dir: '',
       pin_opacity: 100,
       copy_hex_lowercase: false,
+      record_format: 'mp4',
+      record_fps: 30,
+      record_audio: 'none',
+      record_cursor: true,
       tool_hotkeys: defaultCaptureToolHotkeys(),
     },
     update: { auto_check: true, check_interval_hours: 24, repo: OFFICIAL_REPO, last_checked_unix: 0 },
@@ -138,7 +143,8 @@ export function hydrateSettingsInit(): SettingsInitPayload {
   const def = makeDefaultConfig();
   const rc = (raw.config ?? {}) as Partial<TomoyoConfig>;
   return {
-    version: raw.version || '2.2.6',
+    version: raw.version || '2.3.0',
+    platform: raw.platform || 'linux',
     autostart: !!raw.autostart,
     plugins: Array.isArray(raw.plugins) ? raw.plugins : [],
     flows: Array.isArray(raw.flows) ? raw.flows : [],

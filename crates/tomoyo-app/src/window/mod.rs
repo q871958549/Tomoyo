@@ -399,6 +399,7 @@ impl AppShell {
             update_badge: update_label.as_deref(), filter_bar_visible: filter_vis,
             filter_tabs: &filter_tabs, active_filter: self.active_filter,
             hovered_filter: self.inter.hovered_filter, filter_counts: self.inter.filter_counts.as_ref(),
+            filter_pill_override: None,
             items: &self.results, selected: self.selected, hovered: self.inter.hovered,
             launching_row,
             scroll_offset: self.scroll_offset, max_visible_rows: self.geom.max_visible_rows,

@@ -11,16 +11,17 @@ use std::process::Command;
 const MAX_COPY_TEXT_FILE_BYTES: u64 = 128 * 1024;
 const MAX_HASH_FILE_BYTES: u64 = 64 * 1024 * 1024;
 
-/// Launches `tomoyo-capture.exe --pin <image_path>` to pin any image file onto the desktop.
+/// Launches `tomoyo-capture --pin <image_path>` to pin any image file onto the desktop.
 pub fn spawn_pin_image_file(path: &str) -> Result<(), String> {
     if !Path::new(path).is_file() {
         return Err("图片文件不存在".into());
     }
+    let bin_name = if cfg!(windows) { "tomoyo-capture.exe" } else { "tomoyo-capture" };
     let exe = std::env::current_exe()
         .ok()
-        .and_then(|p| p.parent().map(|d| d.join("tomoyo-capture.exe")))
+        .and_then(|p| p.parent().map(|d| d.join(bin_name)))
         .filter(|p| p.exists())
-        .ok_or_else(|| "未找到 tomoyo-capture.exe".to_string())?;
+        .ok_or_else(|| format!("未找到 {bin_name}"))?;
     Command::new(exe)
         .args(["--pin", path])
         .spawn()

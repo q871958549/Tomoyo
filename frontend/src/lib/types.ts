@@ -84,6 +84,7 @@ export interface CaptureToolHotkeys {
   ocr: string;
   ocr_copy: string;
   translate: string;
+  record: string;
 }
 
 export interface TomoyoConfig {
@@ -141,6 +142,10 @@ export interface TomoyoConfig {
     save_dir: string;
     pin_opacity: number;
     copy_hex_lowercase: boolean;
+    record_format?: string;
+    record_fps?: number;
+    record_audio?: string;
+    record_cursor?: boolean;
     tool_hotkeys: CaptureToolHotkeys;
   };
   update: {
@@ -231,6 +236,7 @@ export interface WorkflowDef {
 
 export interface SettingsInitPayload {
   version: string;
+  platform?: string;
   config: TomoyoConfig;
   autostart: boolean;
   plugins: PluginEntry[];

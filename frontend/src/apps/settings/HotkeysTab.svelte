@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { AlertTriangle, CheckCircle2, Crosshair, FolderOpen, RefreshCw, ShieldAlert, Zap } from '@lucide/svelte';
+  import { Crosshair, FolderOpen, RefreshCw } from '@lucide/svelte';
   import { isPluginEnabled, PLUGIN_CAPTURE, PLUGIN_CLIPBOARD, PLUGIN_TRANSLATE } from '../../lib/defaults';
   import { postHost } from '../../lib/ipc';
   import { tr, type Lang } from '../../lib/i18n';
@@ -14,6 +14,7 @@
   import Combobox from '../../lib/ui/Combobox.svelte';
   import Segmented from '../../lib/ui/Segmented.svelte';
   import Switch from '../../lib/ui/Switch.svelte';
+  import HotkeySlotsCard from './HotkeySlotsCard.svelte';
   import SuspectDetailCard from './SuspectDetailCard.svelte';
 
   interface Props {
@@ -50,19 +51,23 @@
   let selectedSuspect = $state<{ spec: string; suspect: SuspectProcess } | null>(null);
   let isEn = $derived(lang === 'en');
 
-  let slots = $derived([
-    { id: 'main' as const, label: isEn ? 'Main Launcher' : '主启动器唤起', spec: cfg.hotkey, st: health.main, on: true },
-    { id: 'clipboard' as const, label: isEn ? 'Clipboard Center' : '剪贴板管理中心', spec: cfg.clipboard.hotkey, st: health.clipboard, on: isPluginEnabled(cfg, PLUGIN_CLIPBOARD) },
-    { id: 'translate' as const, label: isEn ? 'Selection Translate' : '全局划词翻译', spec: cfg.translate.hotkey, st: health.translate, on: isPluginEnabled(cfg, PLUGIN_TRANSLATE) },
-    { id: 'capture' as const, label: isEn ? 'Region Screenshot' : '全局区域截图', spec: cfg.capture.hotkey, st: health.capture, on: isPluginEnabled(cfg, PLUGIN_CAPTURE) },
-    { id: 'pin' as const, label: isEn ? 'Pin Latest Clipboard' : '全局一键贴图', spec: cfg.capture.pin_hotkey, st: health.pin, on: isPluginEnabled(cfg, PLUGIN_CAPTURE) },
-    { id: 'ocr' as const, label: isEn ? 'Screenshot OCR' : '全局截图识字', spec: cfg.capture.ocr_hotkey, st: health.ocr, on: isPluginEnabled(cfg, PLUGIN_CAPTURE) },
-  ].filter((s) => s.on));
+  const slotPresets = {
+    main: [{ value: 'Alt+Space', label: 'Alt+Space' }, { value: 'Ctrl+Space', label: 'Ctrl+Space' }, { value: 'Ctrl+Shift+Space', label: 'Ctrl+Shift+Space' }, { value: 'Alt+Q', label: 'Alt+Q' }],
+    clipboard: [{ value: 'Alt+V', label: 'Alt+V' }, { value: 'Ctrl+Shift+V', label: 'Ctrl+Shift+V' }, { value: 'Alt+`', label: 'Alt+`' }, { value: 'Ctrl+Alt+V', label: 'Ctrl+Alt+V' }],
+    translate: [{ value: 'Alt+T', label: 'Alt+T' }, { value: 'Ctrl+Shift+T', label: 'Ctrl+Shift+T' }, { value: 'Alt+Q', label: 'Alt+Q' }, { value: 'F4', label: 'F4' }],
+    capture: [{ value: 'F1', label: 'F1' }, { value: 'Alt+S', label: 'Alt+S' }, { value: 'Alt+A', label: 'Alt+A' }, { value: 'Ctrl+Shift+A', label: 'Ctrl+Shift+A' }, { value: 'PrintScreen', label: 'PrintScreen' }],
+    pin: [{ value: 'F3', label: 'F3' }, { value: 'Alt+3', label: 'Alt+3' }, { value: 'Alt+P', label: 'Alt+P' }, { value: 'Ctrl+Shift+P', label: 'Ctrl+Shift+P' }],
+    ocr: [{ value: 'Alt+Shift+C', label: 'Alt+Shift+C' }, { value: 'Ctrl+Shift+O', label: 'Ctrl+Shift+O' }, { value: 'F4', label: 'F4' }, { value: 'Alt+O', label: 'Alt+O' }],
+  };
 
-  function suspectsForSpec(spec: string): SuspectProcess[] {
-    if (!spec || !audit) return [];
-    return audit.items.find((it) => it.spec.toLowerCase() === spec.toLowerCase())?.suspects || [];
-  }
+  let slots = $derived([
+    { id: 'main' as const, label: isEn ? 'Main Launcher' : '主启动器唤起', spec: cfg.hotkey, st: health.main, on: true, presets: slotPresets.main },
+    { id: 'clipboard' as const, label: isEn ? 'Clipboard Center' : '剪贴板管理中心', spec: cfg.clipboard.hotkey, st: health.clipboard, on: isPluginEnabled(cfg, PLUGIN_CLIPBOARD), presets: slotPresets.clipboard },
+    { id: 'translate' as const, label: isEn ? 'Selection Translate' : '全局划词翻译', spec: cfg.translate.hotkey, st: health.translate, on: isPluginEnabled(cfg, PLUGIN_TRANSLATE), presets: slotPresets.translate },
+    { id: 'capture' as const, label: isEn ? 'Region Screenshot' : '全局区域截图', spec: cfg.capture.hotkey, st: health.capture, on: isPluginEnabled(cfg, PLUGIN_CAPTURE), presets: slotPresets.capture },
+    { id: 'pin' as const, label: isEn ? 'Pin Latest Clipboard' : '全局一键贴图', spec: cfg.capture.pin_hotkey, st: health.pin, on: isPluginEnabled(cfg, PLUGIN_CAPTURE), presets: slotPresets.pin },
+    { id: 'ocr' as const, label: isEn ? 'Screenshot OCR' : '全局截图识字', spec: cfg.capture.ocr_hotkey, st: health.ocr, on: isPluginEnabled(cfg, PLUGIN_CAPTURE), presets: slotPresets.ocr },
+  ].filter((s) => s.on));
 
   let filteredMatrix = $derived.by(() => {
     const list = audit?.items || [];
@@ -115,84 +120,17 @@
   </div>
 {/if}
 
-<div class="t-card sec-card">
-  <div class="sec-title">
-    <ShieldAlert size={14} />
-    <span>{isEn ? 'Tomoyo Core Hotkeys · Auto-Rescue & Free Replacements' : 'Tomoyo 核心热键状态 · 自动接管与一键换空闲键'}</span>
-  </div>
-
-  {#each slots as s}
-    {@const isBad = !!s.spec && !!s.st && !s.st.disabled && !s.st.ok}
-    {@const isOv = !!s.spec && !!s.st?.ok && !!s.st?.overridden}
-    {@const freeList = audit?.recommended_free?.[s.id] || []}
-    <div class="slot-row">
-      <div class="slot-main">
-        <div class="slot-top">
-          <span class="t-label">{s.label}</span>
-          {#if s.spec}
-            <kbd class="t-kbd">{s.spec}</kbd>
-          {:else}
-            <span class="t-desc">{tr(lang, 'hk_off')}</span>
-          {/if}
-          {#if isBad}
-            <span class="pill is-bad"><AlertTriangle size={11} /> {s.st?.reason || tr(lang, 'hk_conflict')}</span>
-          {:else if isOv}
-            <span class="pill is-override"><Zap size={11} /> {isEn ? 'Auto-Rescued (Working)' : '已高优先级接管生效'}</span>
-          {:else if s.spec && s.st?.ok}
-            <span class="pill is-ok"><CheckCircle2 size={11} /> {tr(lang, 'hk_ok')}</span>
-          {/if}
-        </div>
-        {#if (isBad || isOv) && suspectsForSpec(s.spec).length > 0}
-          <div class="rec-line">
-            <span class="rec-hint">{isEn ? 'Suspected holder:' : '疑似外部占用：'}</span>
-            {#each suspectsForSpec(s.spec) as sus}
-              <button type="button" class="sus-tag" onclick={() => (selectedSuspect = { spec: s.spec, suspect: sus })}>
-                {sus.process_name} · {isEn ? 'How to fix' : '查看解除方案'}
-              </button>
-            {/each}
-          </div>
-        {/if}
-        {#if (isBad || isOv) && freeList.length > 0}
-          <div class="rec-line">
-            <span class="rec-hint">{isEn ? 'Zero-conflict free keys:' : '实测空闲可一键换无冲突键：'}</span>
-            {#each freeList as fk}
-              <button type="button" class="free-chip" onclick={() => onApplyFreeKey(s.id, fk)}>{fk}</button>
-            {/each}
-          </div>
-        {/if}
-      </div>
-      {#if (isBad || isOv) && s.spec}
-        <div class="slot-acts">
-          {#if isBad}
-            <Button variant="primary" size="sm" class="btn-rescue-{s.id}" onclick={() => onToggleOverride(true)}>
-              <Zap size={12} />
-              {isEn ? 'Rescue Now' : '一键接管'}
-            </Button>
-          {/if}
-          <Button variant="secondary" size="sm" disabled={!!probingSpec} onclick={() => onProbe(s.spec)}>
-            <Crosshair size={13} />
-            {probingSpec === s.spec ? (isEn ? 'Probing…' : '基线探测中…') : (isEn ? 'Catch Owner' : '抓现行')}
-          </Button>
-        </div>
-      {/if}
-    </div>
-  {/each}
-
-  <div class="slot-row override-row">
-    <div class="slot-main">
-      <div class="slot-top">
-        <Zap size={14} class="ov-ico" />
-        <span class="t-label">{isEn ? 'Auto High-Priority Conflict Rescue' : '高优先级强行接管冲突热键'}</span>
-      </div>
-      <div class="t-desc">
-        {isEn
-          ? 'Mounts a zero-thread hook with MenuMaskKey ONLY for conflicted keys when RegisterHotKey fails; zero hook when conflict-free.'
-          : '仅对被外部静默占用的冲突热键挂载零线程底层钩子（含防 Alt 菜单抢焦点与前台锁突破），无冲突时零挂载。'}
-      </div>
-    </div>
-    <Switch checked={!!cfg.override_conflict_hotkeys} onchange={onToggleOverride} />
-  </div>
-</div>
+<HotkeySlotsCard
+  {cfg}
+  {lang}
+  {slots}
+  {audit}
+  {probingSpec}
+  {onApplyFreeKey}
+  {onProbe}
+  {onToggleOverride}
+  onSelectSuspect={(spec, suspect) => (selectedSuspect = { spec, suspect })}
+/>
 
 <!-- Fullscreen & Remote-Desktop Zero-Polling Hotkey Avoidance -->
 <div class="t-card sec-card" style="margin-top:14px">
@@ -367,19 +305,6 @@
   .kpi-pill.is-bad strong { color: var(--danger); }
   .kpi-pill.is-ok strong { color: var(--ok); }
   .sec-card { padding: 14px 16px; }
-  .sec-title { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 600; margin-bottom: 10px; }
-  .slot-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-top: 1px solid var(--border); }
-  .slot-main { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-  .slot-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .slot-acts { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
-  .rec-line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-  .rec-hint { font-size: 11.5px; color: var(--muted); }
-  .free-chip {
-    padding: 2px 8px; border-radius: 6px; border: 1px solid var(--border);
-    background: var(--canvas); color: var(--accent); font-family: "Cascadia Mono", Consolas, monospace;
-    font-size: 11.5px; font-weight: 500; cursor: pointer;
-  }
-  .free-chip:hover { border-color: var(--accent); background: var(--accent-soft); }
   .probe-card { margin-top: 14px; padding: 14px 16px; border-color: var(--border-strong); }
   .probe-card.is-hit { border-color: var(--accent); background: var(--accent-soft); }
   .probe-card.is-free-hit { border-color: var(--ok); background: var(--ok-soft); }
@@ -403,8 +328,6 @@
   .pill.is-bad, .pill.is-conflict { background: var(--danger-soft); color: var(--danger); }
   .pill.is-occupied_external { background: var(--warn-soft); color: var(--warn); }
   .pill.is-tomoyo { background: var(--accent-soft); color: var(--accent); }
-  .override-row { background: var(--canvas); margin: 6px -16px -14px; padding: 12px 16px; border-radius: 0 0 10px 10px; }
   .avoid-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 10px; }
   .avoid-col { display: flex; flex-direction: column; gap: 8px; padding-top: 10px; border-top: 1px solid var(--border); }
-  :global(.ov-ico) { color: #7c3aed; flex-shrink: 0; }
 </style>

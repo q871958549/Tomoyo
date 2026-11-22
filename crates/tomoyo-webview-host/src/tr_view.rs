@@ -52,7 +52,7 @@ pub fn load_translator_bootstrap(theme: &str) -> String {
     )
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 pub fn read_latest_translate_req_event() -> String {
     let (text, target_lang) = read_last_translate_req();
     json!({
@@ -170,7 +170,11 @@ pub fn handle_set_secret(key: &str, value: &str) -> String {
         Ok(()) => json!({
             "event": "secrets_status",
             "ok": true,
-            "message": "API 密钥已通过 Windows DPAPI 加密保存（不写入明文配置）",
+            "message": if cfg!(windows) {
+                "API 密钥已通过 Windows DPAPI 加密保存（不写入明文配置）"
+            } else {
+                "API 密钥已通过系统密钥环 / 本地加密保存（不写入明文配置）"
+            },
             "status": secrets_status_json(),
         })
         .to_string(),

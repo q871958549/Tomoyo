@@ -397,3 +397,30 @@ unsafe fn reg_read_dword(hkey: windows::Win32::System::Registry::HKEY, name: &st
     }
     (kind == REG_DWORD).then_some(val)
 }
+
+#[cfg(not(target_os = "linux"))]
+pub(super) fn push_windows_builtin_apps(seen_names: &mut HashSet<String>, raw_entries: &mut Vec<ScannedApp>) {
+    for (name, exe, desc) in [
+        ("记事本 Notepad", "notepad.exe", "Windows 记事本"),
+        ("计算器 Calculator", "calc.exe", "Windows 计算器"),
+        ("命令提示符 CMD", "cmd.exe", "Windows 命令提示符"),
+        ("PowerShell 终端", "powershell.exe", "Windows PowerShell"),
+        ("画图 Paint", "mspaint.exe", "Windows 画图"),
+        ("控制面板 Control Panel", "control.exe", "Windows 控制面板"),
+        ("资源管理器 Explorer", "explorer.exe", "Windows 文件资源管理器"),
+        ("注册表编辑器 Regedit", "regedit.exe", "Windows 注册表编辑器"),
+    ] {
+        if seen_names.insert(name.to_lowercase()) {
+            raw_entries.push(ScannedApp {
+                id: format!("app:sys:{exe}"),
+                name: name.to_string(),
+                path: exe.to_string(),
+                launch_args: None,
+                subtitle: desc.to_string(),
+                is_uwp: false,
+                is_folder: false,
+                alias_text: None,
+            });
+        }
+    }
+}

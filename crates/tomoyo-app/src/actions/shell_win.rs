@@ -249,6 +249,7 @@ pub fn spawn_capture_tool(mode: &str) -> Result<(), String> {
     let flag = match mode {
         "ocr" => "--ocr",
         "translate" => "--translate",
+        "record" => "--record",
         "pin_clipboard" | "pin" => "--pin-clipboard",
         _ => "--capture",
     };
@@ -363,6 +364,18 @@ pub fn focus_window(raw_hwnd: isize) {
         }
         let _ = SetForegroundWindow(hwnd);
     }
+}
+
+pub fn reveal_in_file_manager(path: &str) -> bool {
+    let arg = format!("/select,\"{path}\"");
+    shell_open("explorer.exe", Some(&arg), None)
+}
+
+pub fn open_terminal_at(dir: &str) -> bool {
+    let target_dir = if std::path::Path::new(dir).is_dir() { dir } else { "." };
+    let wt_arg = format!("-d \"{target_dir}\"");
+    shell_open("wt.exe", Some(&wt_arg), Some(target_dir))
+        || shell_open("powershell.exe", None, Some(target_dir))
 }
 
 #[cfg(windows)]

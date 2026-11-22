@@ -1,5 +1,6 @@
 //! Native Win32 bridge helpers (parent reload notification, ShellExecuteW, Unicode clipboard write).
 
+#[cfg(windows)]
 pub const WM_APP_CONFIG_SAVED: u32 = 0x8000 + 20;
 
 #[cfg(windows)]
@@ -20,7 +21,30 @@ pub fn notify_parent_mode(raw_hwnd: isize, mode: usize) {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
+pub fn notify_parent_mode(raw_hwnd: isize, mode: usize) {
+    use std::io::Write;
+    use std::os::unix::net::UnixStream;
+    let sock = std::env::var_os("XDG_RUNTIME_DIR")
+        .map(std::path::PathBuf::from)
+        .filter(|p| p.is_dir())
+        .unwrap_or_else(std::env::temp_dir)
+        .join("tomoyo-ipc.sock");
+    if let Ok(mut s) = UnixStream::connect(&sock)
+        && s.write_all(format!("reload:{mode}\n").as_bytes()).is_ok()
+    {
+        return;
+    }
+    if raw_hwnd > 0 && matches!(mode, 0 | 1) {
+        unsafe extern "C" {
+            fn kill(pid: i32, sig: i32) -> i32;
+        }
+        const SIGUSR1: i32 = 10;
+        unsafe { let _ = kill(raw_hwnd as i32, SIGUSR1); }
+    }
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
 pub fn notify_parent_mode(_raw_hwnd: isize, _mode: usize) {}
 
 #[cfg(windows)]
@@ -42,7 +66,12 @@ pub fn shell_open(target: &str) {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
+pub fn shell_open(target: &str) {
+    let _ = std::process::Command::new("xdg-open").arg(target).spawn();
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
 pub fn shell_open(_target: &str) {}
 
 #[cfg(windows)]
@@ -73,15 +102,26 @@ pub fn set_clipboard_text(text: &str) {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
+pub fn set_clipboard_text(text: &str) {
+    unsafe extern "C" {
+        fn tomoyo_wv_set_clipboard(text: *const std::ffi::c_char);
+    }
+    if let Ok(cs) = std::ffi::CString::new(text) {
+        unsafe { tomoyo_wv_set_clipboard(cs.as_ptr()); }
+    }
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
 pub fn set_clipboard_text(_text: &str) {}
 
 pub fn spawn_capture_tool(mode: &str) {
     let Ok(exe) = std::env::current_exe() else { return };
     let Some(dir) = exe.parent() else { return };
-    let cap_exe = dir.join("tomoyo-capture.exe");
+    let bin_name = if cfg!(windows) { "tomoyo-capture.exe" } else { "tomoyo-capture" };
+    let cap_exe = dir.join(bin_name);
     if !cap_exe.is_file() {
-        tracing::warn!("tomoyo-capture.exe not found at {}", cap_exe.display());
+        tracing::warn!("{bin_name} not found at {}", cap_exe.display());
         return;
     }
     let flag = match mode {

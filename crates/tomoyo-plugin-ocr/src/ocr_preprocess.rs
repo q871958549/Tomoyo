@@ -1,3 +1,5 @@
+#![cfg_attr(not(windows), allow(dead_code))]
+
 //! Pure-Rust adaptive upscaling, quiet-zone padding, background-distance high-contrast
 //! normalization, thin UI border suppression, and multi-pass scoring for offline WinRT OCR.
 

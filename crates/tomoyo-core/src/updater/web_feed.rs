@@ -311,12 +311,17 @@ mod tests {
           <a href="/q871958549/Tomoyo/releases/download/v1.4.0/SHA256SUMS.txt">SHA256SUMS.txt</a>
           <a href="/q871958549/Tomoyo/releases/download/v1.4.0/Tomoyo-v1.4.0-windows-x64-setup.exe">setup</a>
           <a href="/q871958549/Tomoyo/releases/download/v1.4.0/Tomoyo-v1.4.0-windows-x64-portable.zip">zip</a>
+          <a href="/q871958549/Tomoyo/releases/download/v1.4.0/Tomoyo-v1.4.0-linux-x86_64.tar.gz">tgz</a>
         "#;
         let assets = parse_expanded_assets(html, "q871958549/Tomoyo", "v1.4.0");
-        assert_eq!(assets.len(), 3);
+        assert_eq!(assets.len(), 4);
         let picked = pick_release_assets(&assets);
         assert!(picked.sha256_url.as_deref().unwrap().ends_with("SHA256SUMS.txt"));
         assert!(picked.download_url.is_some());
-        assert!(picked.portable_url.as_deref().unwrap().ends_with("-portable.zip"));
+        if cfg!(target_os = "linux") {
+            assert!(picked.portable_url.as_deref().unwrap().ends_with("-linux-x86_64.tar.gz"));
+        } else {
+            assert!(picked.portable_url.as_deref().unwrap().ends_with("-portable.zip"));
+        }
     }
 }

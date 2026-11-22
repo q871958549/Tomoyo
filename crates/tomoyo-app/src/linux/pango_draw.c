@@ -1,0 +1,157 @@
+#include <gtk/gtk.h>
+#include <cairo.h>
+#include <pango/pangocairo.h>
+#include <stdint.h>
+#include <stdlib.h>
+
+static void rounded_rect_path(cairo_t *cr, double x, double y, double w, double h, double r) {
+    if (r > w * 0.5) r = w * 0.5;
+    if (r > h * 0.5) r = h * 0.5;
+    cairo_new_sub_path(cr);
+    cairo_arc(cr, x + w - r, y + r, r, -1.5707963268, 0.0);
+    cairo_arc(cr, x + w - r, y + h - r, r, 0.0, 1.5707963268);
+    cairo_arc(cr, x + r, y + h - r, r, 1.5707963268, 3.1415926536);
+    cairo_arc(cr, x + r, y + r, r, 3.1415926536, 4.7123889804);
+    cairo_close_path(cr);
+}
+
+void tomoyo_cairo_begin_rounded(void *cr_v, double w, double h, double r) {
+    cairo_t *cr = (cairo_t *)cr_v;
+    if (!cr || w <= 0 || h <= 0) return;
+    cairo_save(cr);
+    cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
+    cairo_set_source_rgba(cr, 0.0, 0.0, 0.0, 0.0);
+    cairo_paint(cr);
+    cairo_restore(cr);
+    cairo_save(cr);
+    rounded_rect_path(cr, 0.0, 0.0, w, h, r);
+    cairo_clip(cr);
+}
+
+void tomoyo_cairo_end_rounded(void *cr_v, double w, double h, double r, uint32_t border_rgb) {
+    cairo_t *cr = (cairo_t *)cr_v;
+    if (!cr || w <= 0 || h <= 0) return;
+    cairo_restore(cr);
+    cairo_save(cr);
+    rounded_rect_path(cr, 0.5, 0.5, w - 1.0, h - 1.0, r);
+    cairo_set_source_rgba(
+        cr,
+        ((border_rgb >> 16) & 0xff) / 255.0,
+        ((border_rgb >> 8) & 0xff) / 255.0,
+        (border_rgb & 0xff) / 255.0,
+        0.85
+    );
+    cairo_set_line_width(cr, 1.0);
+    cairo_stroke(cr);
+    cairo_restore(cr);
+}
+
+void tomoyo_cairo_blit_bgra(void *cr_v, const uint8_t *bgra, int w, int h, double x, double y, double dw, double dh) {
+    cairo_t *cr = (cairo_t *)cr_v;
+    if (!cr || !bgra || w <= 0 || h <= 0 || dw <= 0 || dh <= 0) return;
+    cairo_surface_t *s = cairo_image_surface_create_for_data((unsigned char *)bgra, CAIRO_FORMAT_ARGB32, w, h, w * 4);
+    cairo_save(cr);
+    cairo_translate(cr, x, y);
+    cairo_scale(cr, dw / (double)w, dh / (double)h);
+    cairo_set_source_surface(cr, s, 0, 0);
+    cairo_paint(cr);
+    cairo_restore(cr);
+    cairo_surface_destroy(s);
+}
+
+void tomoyo_pango_draw_text(
+    void *cr_v, const char *font_desc, uint32_t rgb, int align, int single_line,
+    const char *text, double x, double y, double w, double h,
+    const uint32_t *hl_pairs, size_t hl_count, uint32_t hl_rgb
+) {
+    cairo_t *cr = (cairo_t *)cr_v;
+    if (!cr || !text || !text[0] || w <= 2.0 || h <= 2.0) return;
+    PangoLayout *ly = pango_cairo_create_layout(cr);
+    PangoFontDescription *desc = pango_font_description_from_string(font_desc);
+    pango_layout_set_font_description(ly, desc);
+    pango_layout_set_text(ly, text, -1);
+    pango_layout_set_width(ly, (int)(w * PANGO_SCALE));
+    pango_layout_set_alignment(
+        ly,
+        align == 1 ? PANGO_ALIGN_CENTER : (align == 2 ? PANGO_ALIGN_RIGHT : PANGO_ALIGN_LEFT)
+    );
+    if (single_line) {
+        pango_layout_set_ellipsize(ly, PANGO_ELLIPSIZE_END);
+    } else {
+        pango_layout_set_wrap(ly, PANGO_WRAP_WORD_CHAR);
+        pango_layout_set_height(ly, (int)(h * PANGO_SCALE));
+    }
+
+    if (hl_pairs && hl_count > 0) {
+        PangoAttrList *al = pango_attr_list_new();
+        for (size_t i = 0; i < hl_count; i++) {
+            PangoAttribute *at = pango_attr_foreground_new(
+                ((hl_rgb >> 16) & 0xff) * 257,
+                ((hl_rgb >> 8) & 0xff) * 257,
+                (hl_rgb & 0xff) * 257
+            );
+            at->start_index = hl_pairs[i * 2];
+            at->end_index = hl_pairs[i * 2 + 1];
+            pango_attr_list_insert(al, at);
+        }
+        pango_layout_set_attributes(ly, al);
+        pango_attr_list_unref(al);
+    }
+
+    int pw = 0, ph = 0;
+    pango_layout_get_pixel_size(ly, &pw, &ph);
+    double dy = single_line ? (y + (h - (double)ph) * 0.5) : y;
+    cairo_save(cr);
+    cairo_rectangle(cr, x, y, w, h);
+    cairo_clip(cr);
+    cairo_set_source_rgb(cr, ((rgb >> 16) & 0xff) / 255.0, ((rgb >> 8) & 0xff) / 255.0, (rgb & 0xff) / 255.0);
+    cairo_move_to(cr, x, dy);
+    pango_cairo_show_layout(cr, ly);
+    cairo_restore(cr);
+    pango_font_description_free(desc);
+    g_object_unref(ly);
+}
+
+int tomoyo_linux_load_icon_bgra(const char *icon_name_or_path, int sz, uint8_t *out, size_t out_len) {
+    if (!icon_name_or_path || !icon_name_or_path[0] || !out || out_len < (size_t)(sz * sz * 4)) return 0;
+    GdkPixbuf *pb = NULL;
+    if (icon_name_or_path[0] == '/') {
+        pb = gdk_pixbuf_new_from_file_at_scale(icon_name_or_path, sz, sz, TRUE, NULL);
+    } else if (gdk_screen_get_default() != NULL) {
+        GtkIconTheme *th = gtk_icon_theme_get_default();
+        if (th) pb = gtk_icon_theme_load_icon(th, icon_name_or_path, sz, GTK_ICON_LOOKUP_FORCE_SIZE, NULL);
+    }
+    if (!pb) return 0;
+    if (gdk_pixbuf_get_width(pb) != sz || gdk_pixbuf_get_height(pb) != sz) {
+        GdkPixbuf *sc = gdk_pixbuf_scale_simple(pb, sz, sz, GDK_INTERP_BILINEAR);
+        g_object_unref(pb);
+        pb = sc;
+        if (!pb) return 0;
+    }
+    int nc = gdk_pixbuf_get_n_channels(pb), rs = gdk_pixbuf_get_rowstride(pb);
+    const guchar *px = gdk_pixbuf_get_pixels(pb);
+    for (int y = 0; y < sz; y++) {
+        for (int x = 0; x < sz; x++) {
+            const guchar *s = px + y * rs + x * nc;
+            uint8_t r = s[0], g = s[1], b = s[2], al = nc >= 4 ? s[3] : 255;
+            size_t di = ((size_t)y * sz + x) * 4;
+            out[di] = (uint8_t)((b * al + 127) / 255);
+            out[di + 1] = (uint8_t)((g * al + 127) / 255);
+            out[di + 2] = (uint8_t)((r * al + 127) / 255);
+            out[di + 3] = al;
+        }
+    }
+    g_object_unref(pb);
+    return 1;
+}
+
+void *tomoyo_offscreen_cairo_create(int w, int h, uint8_t *bgra) {
+    cairo_surface_t *s = cairo_image_surface_create_for_data(bgra, CAIRO_FORMAT_ARGB32, w, h, w * 4);
+    cairo_t *cr = cairo_create(s);
+    cairo_surface_destroy(s);
+    return cr;
+}
+
+void tomoyo_offscreen_cairo_destroy(void *cr) {
+    if (cr) cairo_destroy((cairo_t *)cr);
+}

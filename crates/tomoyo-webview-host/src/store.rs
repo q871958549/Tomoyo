@@ -134,7 +134,12 @@ fn load_registry_source(source: &str) -> Result<(PluginRegistryIndex, String), S
 }
 
 fn candidate_local_paths(rel: &str) -> Vec<PathBuf> {
-    let mut out = vec![PathBuf::from(rel)];
+    let mut out = vec![PathBuf::from(rel), tomoyo_core::data_dir().join(rel)];
+    #[cfg(target_os = "linux")]
+    {
+        out.push(PathBuf::from("/usr/share/tomoyo").join(rel));
+        out.push(PathBuf::from("/usr/local/share/tomoyo").join(rel));
+    }
     if let Ok(exe) = std::env::current_exe() {
         let mut cur = exe.parent();
         for _ in 0..4 {

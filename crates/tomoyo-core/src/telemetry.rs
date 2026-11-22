@@ -81,7 +81,48 @@ pub fn current_process_stats() -> ProcessMemoryStats {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
+pub fn current_process_stats() -> ProcessMemoryStats {
+    let uptime_secs = START_TIME.get_or_init(Instant::now).elapsed().as_secs();
+    let status = std::fs::read_to_string("/proc/self/status").unwrap_or_default();
+    let ws = parse_proc_kb(&status, "VmRSS:").unwrap_or(0);
+    let priv_kb = std::fs::read_to_string("/proc/self/smaps_rollup")
+        .ok()
+        .map(|s| {
+            parse_proc_kb(&s, "Private_Dirty:").unwrap_or(0)
+                + parse_proc_kb(&s, "Private_Clean:").unwrap_or(0)
+        })
+        .filter(|&v| v > 0)
+        .or_else(|| parse_proc_kb(&status, "RssAnon:"))
+        .unwrap_or(ws);
+    let vm_size = parse_proc_kb(&status, "VmSize:").unwrap_or(0);
+    let fd_count = std::fs::read_dir("/proc/self/fd")
+        .map(|rd| rd.count() as u32)
+        .unwrap_or(0);
+    ProcessMemoryStats {
+        working_set_bytes: ws,
+        private_bytes: priv_kb,
+        pagefile_bytes: vm_size,
+        gdi_objects: 0,
+        user_objects: 0,
+        handle_count: fd_count,
+        uptime_secs,
+        hibernation_cycles: HIBERNATION_CYCLES.load(Ordering::Relaxed),
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn parse_proc_kb(content: &str, key: &str) -> Option<u64> {
+    for line in content.lines() {
+        if let Some(rest) = line.strip_prefix(key) {
+            let num = rest.split_whitespace().next()?.parse::<u64>().ok()?;
+            return Some(num * 1024);
+        }
+    }
+    None
+}
+
+#[cfg(all(not(windows), not(target_os = "linux")))]
 pub fn current_process_stats() -> ProcessMemoryStats {
     ProcessMemoryStats {
         uptime_secs: START_TIME.get_or_init(Instant::now).elapsed().as_secs(),
@@ -120,7 +161,13 @@ pub fn inspect_pid_working_set(pid: u32) -> Option<u64> {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
+pub fn inspect_pid_working_set(pid: u32) -> Option<u64> {
+    let status = std::fs::read_to_string(format!("/proc/{pid}/status")).ok()?;
+    parse_proc_kb(&status, "VmRSS:")
+}
+
+#[cfg(all(not(windows), not(target_os = "linux")))]
 pub fn inspect_pid_working_set(_pid: u32) -> Option<u64> {
     None
 }
@@ -136,5 +183,15 @@ pub fn trim_working_set() {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
+pub fn trim_working_set() {
+    unsafe extern "C" {
+        fn malloc_trim(pad: usize) -> std::ffi::c_int;
+    }
+    unsafe {
+        let _ = malloc_trim(0);
+    }
+}
+
+#[cfg(all(not(windows), not(target_os = "linux")))]
 pub fn trim_working_set() {}

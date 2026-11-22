@@ -1,0 +1,35 @@
+name: Submit Community Plugin
+description: Register an open-source STDIO, WASM, or WebView plugin in the decentralized Tomoyo plugin index
+labels: ["plugin"]
+body:
+  - type: input
+    id: plugin_id
+    attributes:
+      label: Plugin ID
+      placeholder: dev.yourname.plugin-name
+    validations:
+      required: true
+  - type: input
+    id: repo_url
+    attributes:
+      label: Source Repository & Release URL
+      placeholder: https://github.com/user/repo
+    validations:
+      required: true
+  - type: dropdown
+    id: runtime
+    attributes:
+      label: Plugin Runtime
+      options:
+        - stdio_jsonrpc (Rust / Python / Go / Node.js)
+        - wasm (wasmi capability sandbox)
+        - webview (on-demand WebKitGTK / WebView2)
+    validations:
+      required: true
+  - type: textarea
+    id: manifest
+    attributes:
+      label: Verified `tomoyo-cli verify` Output & SHA-256
+      description: Run `tomoyo-cli verify <plugin-dir>` and `tomoyo-cli hash <plugin-dir>` and paste the output here.
+    validations:
+      required: true

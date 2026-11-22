@@ -16,7 +16,18 @@ pub fn build_init_script(
     let utools_js = if utools_compat { "true" } else { "false" };
     let ver_js = serde_json::to_string(tomoyo_core::CURRENT_VERSION).unwrap_or_else(|_| "\"0.5.0\"".into());
 
-    format!(
+    let platform_js = if cfg!(target_os = "linux") {
+    "'linux'"
+  } else if cfg!(target_os = "macos") {
+    "'darwin'"
+  } else {
+    "'win32'"
+  };
+  let is_win = cfg!(windows);
+  let is_mac = cfg!(target_os = "macos");
+  let is_lin = cfg!(target_os = "linux");
+
+  format!(
         r#"(function() {{
   if (window.__TOMOYO_BOOTSTRAPPED__) return;
   window.__TOMOYO_BOOTSTRAPPED__ = true;
@@ -120,7 +131,7 @@ pub fn build_init_script(
 
   window.tomoyo = {{
     version: {ver_js},
-    platform: 'win32',
+    platform: {platform_js},
     pluginId: PLUGIN_ID,
     initialQuery: INITIAL_QUERY,
     isDarkColors: () => IS_DARK,
@@ -154,9 +165,9 @@ pub fn build_init_script(
       shellOpenPath: (path) => window.tomoyo.openPath(path),
       showNotification: (body) => console.info('[tomoyo notification]', body),
       isDarkColors: () => IS_DARK,
-      isWindows: () => true,
-      isMacOs: () => false,
-      isLinux: () => false,
+      isWindows: () => {is_win},
+      isMacOs: () => {is_mac},
+      isLinux: () => {is_lin},
       db,
       dbStorage
     }};

@@ -65,31 +65,50 @@ pub fn pick_release_assets(assets: &[CandidateAsset]) -> PickedAssets {
             out.sha256_url = Some(a.url.clone());
         }
     }
-    for suffix in ["-portable.zip", ".zip"] {
-        if let Some(hit) = assets
-            .iter()
-            .find(|a| a.name.to_ascii_lowercase().ends_with(suffix))
-        {
-            out.portable_url = Some(hit.url.clone());
-            out.portable_name = Some(hit.name.clone());
-            break;
+    #[cfg(target_os = "linux")]
+    {
+        for suffix in ["-linux-x86_64.tar.gz", "-linux-x64.tar.gz", ".tar.gz", ".appimage"] {
+            if let Some(hit) = assets
+                .iter()
+                .find(|a| a.name.to_ascii_lowercase().ends_with(suffix))
+            {
+                out.portable_url = Some(hit.url.clone());
+                out.portable_name = Some(hit.name.clone());
+                out.download_url = Some(hit.url.clone());
+                out.asset_name = Some(hit.name.clone());
+                break;
+            }
         }
+        out
     }
-    for suffix in ["-setup.exe", ".exe", ".msi", ".zip"] {
-        if let Some(hit) = assets
-            .iter()
-            .find(|a| a.name.to_ascii_lowercase().ends_with(suffix))
-        {
-            out.download_url = Some(hit.url.clone());
-            out.asset_name = Some(hit.name.clone());
-            break;
+    #[cfg(not(target_os = "linux"))]
+    {
+        for suffix in ["-portable.zip", ".zip"] {
+            if let Some(hit) = assets
+                .iter()
+                .find(|a| a.name.to_ascii_lowercase().ends_with(suffix))
+            {
+                out.portable_url = Some(hit.url.clone());
+                out.portable_name = Some(hit.name.clone());
+                break;
+            }
         }
+        for suffix in ["-setup.exe", ".exe", ".msi", ".zip"] {
+            if let Some(hit) = assets
+                .iter()
+                .find(|a| a.name.to_ascii_lowercase().ends_with(suffix))
+            {
+                out.download_url = Some(hit.url.clone());
+                out.asset_name = Some(hit.name.clone());
+                break;
+            }
+        }
+        if detect_install_kind() == InstallKind::Portable && out.portable_url.is_some() {
+            out.download_url = out.portable_url.clone();
+            out.asset_name = out.portable_name.clone();
+        }
+        out
     }
-    if detect_install_kind() == InstallKind::Portable && out.portable_url.is_some() {
-        out.download_url = out.portable_url.clone();
-        out.asset_name = out.portable_name.clone();
-    }
-    out
 }
 
 pub fn parse_sha256_for_asset(sums_txt: &str, asset_name: &str) -> Option<String> {
@@ -407,7 +426,12 @@ pub fn launch_verified_update_installer(installer_path: &Path) -> Result<bool, S
     Ok(false)
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
+pub fn launch_verified_update_installer(installer_path: &Path) -> Result<bool, String> {
+    super::installer_linux::launch_linux_update(installer_path)
+}
+
+#[cfg(all(not(windows), not(target_os = "linux")))]
 pub fn launch_verified_update_installer(_installer_path: &Path) -> Result<bool, String> {
-    Err("Self-update installer is only supported on Windows".into())
+    Err("Self-update installer is only supported on Windows and Linux".into())
 }

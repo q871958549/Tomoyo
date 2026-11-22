@@ -13,10 +13,11 @@ use crate::overlay_input::{
 };
 use crate::overlay_text::{paint_overlay_gdi_labels, InlineTextEditor};
 use crate::screen::{capture_virtual_desktop, enumerate_snap_windows, DesktopSnapshot, ScreenRect};
+use crate::snap_detect::{SnapCandidate, SnapContext};
 use std::ffi::c_void;
 use tomoyo_core::{CaptureToolHotkeys, TomoyoConfig};
 use windows::core::{w, PCWSTR};
-use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
+use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
     BeginPaint, BitBlt, CreateCompatibleDC, CreateDIBSection, CreateFontW, DeleteDC, DeleteObject,
     EndPaint, InvalidateRect, SelectObject, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, CLEARTYPE_QUALITY,
@@ -26,9 +27,9 @@ use windows::Win32::Graphics::Gdi::{
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Input::KeyboardAndMouse::{ReleaseCapture, SetFocus, VK_ESCAPE, VK_RETURN};
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW, GetWindowLongPtrW, KillTimer,
-    LoadCursorW, PostQuitMessage, RegisterClassW, SetCursor, SetWindowLongPtrW, ShowWindow,
-    TranslateMessage, CS_DBLCLKS, GWLP_USERDATA, IDC_CROSS, MSG, SW_SHOW, WM_DESTROY,
+    CreateWindowExW, DefWindowProcW, DispatchMessageW, GetCursorPos, GetMessageW, GetWindowLongPtrW,
+    KillTimer, LoadCursorW, PostQuitMessage, RegisterClassW, SetCursor, SetWindowLongPtrW,
+    ShowWindow, TranslateMessage, CS_DBLCLKS, GWLP_USERDATA, IDC_CROSS, MSG, SW_SHOW, WM_DESTROY,
     WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE,
     WM_MOUSEWHEEL, WM_PAINT, WM_RBUTTONUP, WM_SETCURSOR, WM_TIMER, WNDCLASSW, WS_EX_TOOLWINDOW,
     WS_EX_TOPMOST, WS_POPUP,
@@ -63,14 +64,14 @@ pub(crate) enum DragMode {
 pub(crate) struct OverlayState {
     pub snap: DesktopSnapshot,
     pub dimmed: Vec<u8>,
-    pub snap_windows: Vec<ScreenRect>,
+    pub snap_ctx: SnapContext,
     pub mode: CaptureMode,
     pub save_dir: String,
     pub hex_lower: bool,
     pub rgb_mode: bool,
     pub tool_hotkeys: CaptureToolHotkeys,
     pub sel: Option<ScreenRect>,
-    pub hover_snap: Option<ScreenRect>,
+    pub hover_snap: Option<SnapCandidate>,
     pub tool: ToolKind,
     pub color_idx: usize,
     pub thickness: i32,
@@ -112,7 +113,15 @@ impl Drop for OverlayState {
 pub fn run_capture_overlay(mode: CaptureMode) -> Result<CaptureOutcome, String> {
     let cfg = TomoyoConfig::load_or_create();
     let snap = capture_virtual_desktop()?;
-    let snap_windows = enumerate_snap_windows(snap.origin_x, snap.origin_y, snap.width, snap.height);
+    let sw = enumerate_snap_windows(snap.origin_x, snap.origin_y, snap.width, snap.height);
+    let mut pt = POINT::default();
+    unsafe { let _ = GetCursorPos(&mut pt); }
+    let init_cursor = (
+        (pt.x - snap.origin_x).clamp(0, (snap.width - 1).max(0)),
+        (pt.y - snap.origin_y).clamp(0, (snap.height - 1).max(0)),
+    );
+    let mut snap_ctx = SnapContext::with_fullscreen(sw.windows, sw.fullscreen, sw.monitors, snap.width, snap.height);
+    let hover_snap = snap_ctx.hover_at(&snap, init_cursor.0, init_cursor.1);
     let dimmed = precompute_dimmed(&snap.bgra);
 
     unsafe {
@@ -144,13 +153,13 @@ pub fn run_capture_overlay(mode: CaptureMode) -> Result<CaptureOutcome, String> 
         });
         let (ox, oy, w, h) = (snap.origin_x, snap.origin_y, snap.width, snap.height);
         let mut st = Box::new(OverlayState {
-            snap, dimmed, snap_windows, mode, save_dir: cfg.capture.save_dir,
+            snap, dimmed, snap_ctx, mode, save_dir: cfg.capture.save_dir,
             hex_lower: cfg.capture.copy_hex_lowercase, rgb_mode: false,
-            tool_hotkeys: cfg.capture.tool_hotkeys, sel: None, hover_snap: None,
+            tool_hotkeys: cfg.capture.tool_hotkeys, sel: None, hover_snap,
             tool: ToolKind::Select, color_idx: 0, thickness: 4, step_radius: 13, text_size: 20,
             shape_filled: false, mosaic_blur: false,
             stack: AnnotationStack::default(), live_ann: None, pen_pts: Vec::new(),
-            drag: DragMode::None, cursor: (w / 2, h / 2), hovered_cmd: None, hovered_annot: None,
+            drag: DragMode::None, cursor: init_cursor, hovered_cmd: None, hovered_annot: None,
             hovered_ctrl: None, wheel_hud: None,
             text_editor: None, layout: ToolbarLayout::default(), mem_dc, dib_bmp,
             dib_bits: bits as *mut u8, font, outcome: None,
@@ -209,7 +218,7 @@ unsafe extern "system" fn overlay_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, 
             let hdc = unsafe { BeginPaint(hwnd, &mut ps) };
             let style = ToolbarStyleState {
                 active_tool: st.tool, active_color: st.color_idx, active_thickness: st.thickness,
-                shape_filled: st.shape_filled, mosaic_blur: st.mosaic_blur,
+                shape_filled: st.shape_filled, mosaic_blur: st.mosaic_blur, allow_record: false, ..Default::default()
             };
             st.layout = st.sel.filter(|r| r.is_valid()).map_or_else(ToolbarLayout::default, |s| {
                 build_toolbar_layout(s, st.snap.width, st.snap.height, &style, &st.tool_hotkeys)
@@ -218,13 +227,13 @@ unsafe extern "system" fn overlay_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, 
             let byte_len = (st.snap.width as usize) * (st.snap.height as usize) * 4;
             let dst = unsafe { std::slice::from_raw_parts_mut(st.dib_bits, byte_len) };
             compose_overlay_pixels(
-                dst, &st.snap, &st.dimmed, st.sel, st.hover_snap, st.stack.items(),
+                dst, &st.snap, &st.dimmed, st.sel, st.hover_snap.map(|c| c.rect), st.stack.items(),
                 st.stack.selected, st.hovered_annot, st.live_ann.as_ref(), st.cursor, show_loupe,
                 &st.layout, st.hovered_cmd, st.wheel_hud.as_deref(),
             );
             paint_overlay_gdi_labels(
-                st.mem_dc, st.font, &st.snap, st.sel, st.stack.items(), st.cursor, show_loupe,
-                &st.layout, st.hovered_cmd, st.hex_lower, st.rgb_mode, st.wheel_hud.as_deref(),
+                st.mem_dc, st.font, &st.snap, st.sel, st.hover_snap, st.snap_ctx.cycle_count, st.stack.items(),
+                st.cursor, show_loupe, &st.layout, st.hovered_cmd, st.hex_lower, st.rgb_mode, st.wheel_hud.as_deref(),
             );
             unsafe {
                 let _ = BitBlt(hdc, 0, 0, st.snap.width, st.snap.height, Some(st.mem_dc), 0, 0, SRCCOPY);
@@ -241,7 +250,7 @@ unsafe extern "system" fn overlay_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, 
             unsafe { let _ = ReleaseCapture(); }
             match prev {
                 DragMode::Creating(_, _) => {
-                    if !st.sel.is_some_and(ScreenRect::is_valid) { st.sel = st.hover_snap; }
+                    if !st.sel.is_some_and(ScreenRect::is_valid) { st.sel = st.hover_snap.map(|c| c.rect); }
                     if st.sel.is_some_and(ScreenRect::is_valid) {
                         match st.mode {
                             CaptureMode::QuickOcr => { st.execute_action(hwnd, ToolbarCmd::Ocr); return LRESULT(0); }
@@ -277,6 +286,7 @@ unsafe extern "system" fn overlay_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, 
             } else if st.sel.is_some() {
                 st.sel = None;
                 st.tool = ToolKind::Select;
+                st.hover_snap = st.snap_ctx.hover_at(&st.snap, st.cursor.0, st.cursor.1);
                 unsafe { let _ = InvalidateRect(Some(hwnd), None, false); }
             } else {
                 st.execute_action(hwnd, ToolbarCmd::Cancel);

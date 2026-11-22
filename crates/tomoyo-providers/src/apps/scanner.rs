@@ -1,7 +1,12 @@
+#[cfg(not(target_os = "linux"))]
 use super::is_noisy_shortcut;
+#[cfg(not(target_os = "linux"))]
 use super::organizers::detect_desktop_organizer_dirs;
+#[cfg(not(target_os = "linux"))]
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+#[cfg(not(target_os = "linux"))]
+use std::path::Path;
 use tomoyo_core::AppsConfig;
 
 #[derive(Debug, Clone)]
@@ -16,6 +21,7 @@ pub(super) struct ScannedApp {
     pub alias_text: Option<String>,
 }
 
+#[cfg(not(target_os = "linux"))]
 struct ScanRoot {
     path: PathBuf,
     max_depth: usize,
@@ -26,6 +32,7 @@ struct ScanRoot {
     label_prefix: &'static str,
 }
 
+#[cfg(not(target_os = "linux"))]
 fn collect_dir_roots(apps_cfg: &AppsConfig) -> Vec<ScanRoot> {
     let mut roots: Vec<ScanRoot> = Vec::new();
 
@@ -132,13 +139,21 @@ fn collect_dir_roots(apps_cfg: &AppsConfig) -> Vec<ScanRoot> {
 }
 
 pub(super) fn app_watch_paths(apps_cfg: &AppsConfig) -> Vec<PathBuf> {
-    collect_dir_roots(apps_cfg)
-        .into_iter()
-        .map(|r| r.path)
-        .filter(|p| p.is_dir())
-        .collect()
+    #[cfg(target_os = "linux")]
+    {
+        super::linux::linux_app_watch_paths(apps_cfg)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        collect_dir_roots(apps_cfg)
+            .into_iter()
+            .map(|r| r.path)
+            .filter(|p| p.is_dir())
+            .collect()
+    }
 }
 
+#[cfg(not(target_os = "linux"))]
 pub(super) fn scan_dir_roots(
     apps_cfg: &AppsConfig,
     seen: &mut HashSet<String>,
@@ -153,6 +168,7 @@ pub(super) fn scan_dir_roots(
     }
 }
 
+#[cfg(not(target_os = "linux"))]
 fn scan_dir_recursive(
     cfg: &ScanRoot,
     dir: &Path,
@@ -260,6 +276,7 @@ fn scan_dir_recursive(
     }
 }
 
+#[cfg(not(target_os = "linux"))]
 fn is_skipped_subdir(lower_name: &str) -> bool {
     matches!(
         lower_name,
@@ -280,6 +297,7 @@ fn is_skipped_subdir(lower_name: &str) -> bool {
     )
 }
 
+#[cfg(not(target_os = "linux"))]
 fn is_noisy_portable_exe(lower: &str) -> bool {
     const PREFIXES: [&str; 10] = [
         "unins",
@@ -352,7 +370,7 @@ fn resolve_lnk_target_info(lnk_path: &Path, shortcut_lower: &str) -> (Option<Str
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(all(not(windows), not(target_os = "linux")))]
 fn resolve_lnk_target_info(_lnk_path: &Path, _shortcut_lower: &str) -> (Option<String>, Option<String>) {
     (None, None)
 }
@@ -370,7 +388,7 @@ fn known_desktop_dir() -> Option<PathBuf> {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(all(not(windows), not(target_os = "linux")))]
 fn known_desktop_dir() -> Option<PathBuf> {
     None
 }
@@ -398,9 +416,9 @@ impl Drop for ComApartmentGuard {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(all(not(windows), not(target_os = "linux")))]
 struct ComApartmentGuard;
-#[cfg(not(windows))]
+#[cfg(all(not(windows), not(target_os = "linux")))]
 impl ComApartmentGuard {
     fn init() -> Self {
         Self

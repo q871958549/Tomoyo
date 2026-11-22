@@ -1,4 +1,9 @@
-//! Ergonomic Rust SDK for building Tomoyo out-of-process plugins.
+//! Ergonomic Rust SDK for authoring out-of-process STDIO JSON-RPC 2.0 plugins for
+//! **Tomoyo Launcher** (`github.com/q871958549/Tomoyo`).
+//!
+//! Plugins run on demand, stay isolated (Linux process groups + `PR_SET_PDEATHSIG` /
+//! Windows Job Objects), and exit after idle timeout for 0 MB idle memory overhead.
+//! Supports Protocol v2 declarative hotkeys, events (`TomoyoPlugin::on_event`), and typed settings.
 //!
 //! Example:
 //! ```no_run

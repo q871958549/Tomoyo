@@ -282,6 +282,11 @@ pub fn draw_toolbar_icon(
             ln(dst, -2.2, 1.2, 0.0, 3.5, 1.4);
             ln(dst, 2.2, 1.2, 0.0, 3.5, 1.4);
         }
+        ToolbarCmd::Record => {
+            let r = ScreenRect { x: (cx - 6.0).round() as i32, y: (cy - 4.5).round() as i32, w: 12, h: 9 };
+            stroke_rounded_rect_aa(dst, w, h, r, 2.5, 1.4, fg, 0.96);
+            fill_circle_aa(dst, w, h, cx, cy, 2.6, AnnotColor(0xEF, 0x44, 0x44), 1.0);
+        }
         ToolbarCmd::Tool(ToolKind::Mosaic) => {
             for row in 0..3 {
                 for col in 0..3 {
@@ -363,7 +368,12 @@ pub fn draw_toolbar_icon(
         | ToolbarCmd::Color(_)
         | ToolbarCmd::Thickness(_)
         | ToolbarCmd::ShapeFilled(_)
-        | ToolbarCmd::MosaicBlur(_) => {}
+        | ToolbarCmd::MosaicBlur(_)
+        | ToolbarCmd::RecFormat(_)
+        | ToolbarCmd::RecFps(_)
+        | ToolbarCmd::RecAudio(_)
+        | ToolbarCmd::RecCursor
+        | ToolbarCmd::RecStart => {}
     }
 }
 

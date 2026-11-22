@@ -3,7 +3,12 @@ name = "tomoyo-protocol"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Open protocol, manifest schema, JSON-RPC 2.0 wire types, and declarative UI primitives for Tomoyo plugins"
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+description = "Open plugin protocol, manifest schema, JSON-RPC 2.0 wire types, and declarative UI primitives for Tomoyo Launcher"
+keywords = ["launcher", "plugin", "json-rpc", "protocol", "tomoyo"]
+categories = ["development-tools", "api-bindings", "encoding"]
 
 [dependencies]
 serde = { workspace = true }

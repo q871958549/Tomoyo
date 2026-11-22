@@ -1,0 +1,21 @@
+name: Feature / Platform Request
+description: Propose a built-in provider, desktop integration, or workflow improvement for Tomoyo Launcher
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Problem & Proposed Solution
+      description: Describe the workflow you want to speed up and why it fits Tomoyo's low-memory microkernel model.
+    validations:
+      required: true
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Target Scope
+      options:
+        - Core Launcher / Search
+        - Linux (Wayland / X11 / DE Integration)
+        - Windows (Win32 / Everything / UWP)
+        - Plugin SDK / Protocol v2
+        - Ephemeral Tools (Capture / OCR / Translate / Clipboard)

@@ -2,26 +2,35 @@
 
 mod canvas;
 pub(crate) mod filter_bar;
+#[cfg(windows)]
 mod gdi;
+#[cfg(windows)]
 mod gdi_pass;
 mod sdf_pass;
 mod theme;
 
 pub use canvas::Canvas;
 pub use filter_bar::{
-    compute_filter_counts, compute_filter_hitboxes, FilterCounts, FILTER_BAR_HEIGHT_DIP,
+    compute_filter_counts, compute_filter_hitboxes, item_matches_filter, FilterCounts,
+    FilterPillAnim, FILTER_BAR_HEIGHT_DIP,
 };
+#[cfg(windows)]
 pub use gdi::{dip_rect, draw_text_gdi, DibSurface, FontPack};
-pub use theme::{Rgb, ThemePalette};
+pub(crate) use sdf_pass::paint_sdf_pass;
+pub use theme::{category_rgb, Rgb, ThemePalette};
 
+#[cfg(windows)]
 use crate::icons::IconCache;
+#[cfg(windows)]
 use gdi_pass::paint_gdi_pass;
-use sdf_pass::paint_sdf_pass;
 use tomoyo_core::{Lang, ResolvedPreview};
 use tomoyo_protocol::{ResultItem, SearchFilter, VisibleFilterTab};
+#[cfg(windows)]
 use windows::Win32::Graphics::Gdi::HDC;
 
+#[cfg_attr(not(windows), allow(dead_code))]
 pub const DEFAULT_WINDOW_WIDTH_DIP: i32 = 720;
+#[cfg_attr(not(windows), allow(dead_code))]
 pub const DEFAULT_PREVIEW_WIDTH_DIP: i32 = 310;
 pub const HEADER_HEIGHT_DIP: i32 = 62;
 pub const ROW_HEIGHT_DIP: i32 = 54;
@@ -41,6 +50,7 @@ pub struct RenderState<'a> {
     pub active_filter: SearchFilter,
     pub hovered_filter: Option<SearchFilter>,
     pub filter_counts: Option<&'a FilterCounts>,
+    pub filter_pill_override: Option<(f32, f32)>,
     pub items: &'a [ResultItem],
     pub selected: usize,
     pub hovered: Option<usize>,
@@ -56,7 +66,7 @@ pub struct RenderState<'a> {
     pub dpi_scale: f32,
 }
 
-pub(super) struct FrameLayout {
+pub(crate) struct FrameLayout {
     pub w_dip: f32,
     pub h_dip: f32,
     pub header_h: f32,
@@ -69,6 +79,7 @@ pub(super) struct FrameLayout {
     pub list_w_dip: f32,
 }
 
+#[cfg(windows)]
 pub struct FluentRenderer {
     surface: Option<DibSurface>,
     fonts: Option<FontPack>,
@@ -77,6 +88,7 @@ pub struct FluentRenderer {
     font_medium: &'static str,
 }
 
+#[cfg(windows)]
 impl FluentRenderer {
     pub fn new(font_regular: &'static str, font_medium: &'static str) -> windows::core::Result<Self> {
         Ok(Self {
@@ -127,13 +139,13 @@ impl FluentRenderer {
         let Some(surface) = self.surface.as_mut() else { return };
         let Some(fonts) = self.fonts.as_ref() else { return };
 
-        let lay = compute_layout(width, height, scale, state);
-        paint_sdf_pass(surface, width, height, scale, &lay, state);
+        let lay = compute_frame_layout(width, height, scale, state);
+        paint_sdf_pass(surface.pixels_mut(), width, height, scale, &lay, state);
         paint_gdi_pass(surface, fonts, &mut self.icons, width, height, scale, &lay, state, screen_hdc);
     }
 }
 
-fn compute_layout(width: i32, height: i32, scale: f32, state: &RenderState<'_>) -> FrameLayout {
+pub(crate) fn compute_frame_layout(width: i32, height: i32, scale: f32, state: &RenderState<'_>) -> FrameLayout {
     let w_dip = width as f32 / scale;
     let h_dip = height as f32 / scale;
     let header_h = HEADER_HEIGHT_DIP as f32;

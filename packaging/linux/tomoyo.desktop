@@ -1,0 +1,26 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Tomoyo
+GenericName=Command Launcher
+GenericName[zh_CN]=桌面启动器
+Comment=Ultra-low-memory native Rust command launcher, clipboard manager, screenshot & translator
+Comment[zh_CN]=极简低占用开源 Rust 桌面启动器（应用检索、剪贴板、截图标注、离线 OCR 与划词翻译）
+Exec=tomoyo
+Icon=tomoyo
+Terminal=false
+StartupNotify=false
+StartupWMClass=tomoyo
+Categories=Utility;
+Keywords=launcher;search;clipboard;screenshot;ocr;translate;
+Actions=Settings;Silent;
+
+[Desktop Action Settings]
+Name=Open Settings
+Name[zh_CN]=打开设置中心
+Exec=tomoyo-webview-host --settings
+
+[Desktop Action Silent]
+Name=Start in Tray
+Name[zh_CN]=静默托盘启动
+Exec=tomoyo --silent

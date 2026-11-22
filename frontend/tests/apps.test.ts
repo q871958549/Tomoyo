@@ -4,7 +4,7 @@ import SettingsApp from '../src/apps/settings/SettingsApp.svelte';
 import TranslatorApp from '../src/apps/translator/TranslatorApp.svelte';
 import ClipboardApp from '../src/apps/clipboard/ClipboardApp.svelte';
 import OcrApp from '../src/apps/ocr/OcrApp.svelte';
-import { buildComboFromEvent } from '../src/lib/hotkeys';
+import { assignCoreHotkeyWithSwap, buildComboFromEvent } from '../src/lib/hotkeys';
 
 function setupMockWebView() {
   const posted: Array<Record<string, unknown>> = [];
@@ -193,11 +193,17 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
     // User-extensible search filter tabs: one-click preset adds a custom filter tab and saves config
     document.querySelector<HTMLButtonElement>('button[data-tab="search"]')?.click();
     flushSync();
+    expect(document.querySelector('[aria-label="filter-bar-preview"]')).not.toBeNull();
     const codePreset = document.querySelector<HTMLButtonElement>('button[data-preset-tab="code"]');
     expect(codePreset).not.toBeNull();
     codePreset?.click();
     flushSync();
     expect(document.body.textContent).toContain('@code');
+    const editCustom = document.querySelector<HTMLButtonElement>('.custom-item button[title="编辑规则"]');
+    expect(editCustom).not.toBeNull();
+    editCustom?.click();
+    flushSync();
+    expect(document.body.textContent).toContain('保存修改');
     const lastSave = [...wv.posted].reverse().find((m) => m.cmd === 'save_settings');
     const savedCfg = (lastSave?.config ?? {}) as {
       custom_filters?: Array<{ id: string }>;
@@ -251,5 +257,19 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
     flushSync();
     expect(document.body.textContent).toContain('OCR 审校与编辑');
     unmount(ocr);
+
+    // Core hotkey convenience helper auto-swaps conflicting enabled Tomoyo slots cleanly
+    const mockCfg = {
+      hotkey: 'Alt+Space',
+      clipboard: { hotkey: 'Alt+V' },
+      translate: { hotkey: 'Alt+T' },
+      capture: { hotkey: 'Alt+S', pin_hotkey: 'F3', ocr_hotkey: 'F4' },
+    };
+    const swapped = assignCoreHotkeyWithSwap(mockCfg, 'capture', 'F4', {
+      main: true, clipboard: true, translate: true, capture: true, pin: true, ocr: true,
+    });
+    expect(swapped).toBe('ocr');
+    expect(mockCfg.capture.hotkey).toBe('F4');
+    expect(mockCfg.capture.ocr_hotkey).toBe('Alt+S');
   });
 });

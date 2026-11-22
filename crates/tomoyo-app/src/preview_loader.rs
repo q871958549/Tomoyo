@@ -1,14 +1,18 @@
 //! Non-blocking background preview loader for bounded disk reads & PNG thumbnails.
 
+#[cfg(windows)]
 use std::ffi::c_void;
 use std::sync::atomic::{AtomicIsize, AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tomoyo_core::{read_file_preview, read_image_thumbnail, Lang, ResolvedPreview};
 use tomoyo_protocol::PreviewSpec;
+#[cfg(windows)]
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
+#[cfg(windows)]
 use windows::Win32::UI::WindowsAndMessaging::{PostMessageW, WM_APP};
 
+#[cfg(windows)]
 pub const WM_APP_PREVIEW_READY: u32 = WM_APP + 6;
 
 unsafe extern "C" {
@@ -26,10 +30,15 @@ enum PreviewJob {
     Purge,
 }
 
+type PreviewNotifyCb = Arc<Mutex<Option<Box<dyn Fn() + Send + Sync>>>>;
+
 pub struct AsyncPreviewLoader {
     seq: Arc<AtomicU64>,
     in_flight: Arc<AtomicUsize>,
+    #[allow(dead_code)]
     notify_hwnd: Arc<AtomicIsize>,
+    #[allow(dead_code)]
+    notify_cb: PreviewNotifyCb,
     req_tx: Sender<PreviewJob>,
     res_rx: Receiver<PreviewOutcome>,
 }
@@ -41,10 +50,12 @@ impl AsyncPreviewLoader {
         let seq = Arc::new(AtomicU64::new(1));
         let in_flight = Arc::new(AtomicUsize::new(0));
         let notify_hwnd = Arc::new(AtomicIsize::new(0));
+        let notify_cb: PreviewNotifyCb = Arc::new(Mutex::new(None));
 
         let w_seq = Arc::clone(&seq);
         let w_flight = Arc::clone(&in_flight);
         let w_hwnd = Arc::clone(&notify_hwnd);
+        let w_cb = Arc::clone(&notify_cb);
 
         let _ = std::thread::Builder::new()
             .name("tomoyo-preview-loader".into())
@@ -83,15 +94,27 @@ impl AsyncPreviewLoader {
                                             item_id,
                                             preview,
                                         });
-                                        let h = w_hwnd.load(Ordering::Acquire);
-                                        if h != 0 {
-                                            unsafe {
-                                                let _ = PostMessageW(
-                                                    Some(HWND(h as *mut c_void)),
-                                                    WM_APP_PREVIEW_READY,
-                                                    WPARAM(0),
-                                                    LPARAM(0),
-                                                );
+                                        #[cfg(windows)]
+                                        {
+                                            let h = w_hwnd.load(Ordering::Acquire);
+                                            if h != 0 {
+                                                unsafe {
+                                                    let _ = PostMessageW(
+                                                        Some(HWND(h as *mut c_void)),
+                                                        WM_APP_PREVIEW_READY,
+                                                        WPARAM(0),
+                                                        LPARAM(0),
+                                                    );
+                                                }
+                                            }
+                                        }
+                                        #[cfg(not(windows))]
+                                        {
+                                            let _ = &w_hwnd;
+                                            if let Ok(g) = w_cb.lock()
+                                                && let Some(cb) = g.as_ref()
+                                            {
+                                                cb();
                                             }
                                         }
                                     }
@@ -112,13 +135,22 @@ impl AsyncPreviewLoader {
             seq,
             in_flight,
             notify_hwnd,
+            notify_cb,
             req_tx,
             res_rx,
         }
     }
 
+    #[allow(dead_code)]
     pub fn set_notify_hwnd(&self, hwnd: isize) {
         self.notify_hwnd.store(hwnd, Ordering::Release);
+    }
+
+    #[cfg(not(windows))]
+    pub fn set_notify_callback(&self, cb: impl Fn() + Send + Sync + 'static) {
+        if let Ok(mut g) = self.notify_cb.lock() {
+            *g = Some(Box::new(cb));
+        }
     }
 
     pub fn cancel_all(&self) {

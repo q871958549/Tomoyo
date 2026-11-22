@@ -196,6 +196,7 @@
       } else if (ev === 'translate_reload_req') {
         if (typeof msg.target_lang === 'string' && msg.target_lang) tgtLang = msg.target_lang;
         if (typeof msg.text === 'string' && msg.text.trim()) loadEntry(msg.text, tgtLang);
+        else srcEl?.focus();
       } else if (ev === 'tr_store_updated') {
         if (Array.isArray(msg.history)) history = msg.history as HistItem[];
         if (Array.isArray(msg.wordbook)) wordbook = msg.wordbook as WordItem[];

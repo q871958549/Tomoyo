@@ -8,14 +8,23 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 mod actions;
 mod brand;
 mod crash_guard;
+#[cfg(windows)]
 mod drag;
+#[cfg(windows)]
 mod icons;
+#[cfg(target_os = "linux")]
+mod linux;
+#[cfg(windows)]
 mod popup_menu;
 mod preview_loader;
 mod renderer;
+#[cfg(windows)]
 mod tray;
+#[cfg(windows)]
 mod window;
 
+#[cfg(target_os = "linux")]
+use linux::{wake_existing_instance, AppShell, SingletonGuard as SingletonMutex};
 use std::sync::{Arc, RwLock};
 use tomoyo_core::{
     current_process_stats, data_dir, init_uptime_clock, ExternalPluginBridge, FrecencyStore,
@@ -28,21 +37,30 @@ use tomoyo_providers::{
     ProcessProvider, SnippetsProvider, SystemProvider, TranslateProvider, WebSearchProvider,
     WindowsSwitcherProvider,
 };
+#[cfg(windows)]
 use window::{AppShell, WM_APP_UPDATE_READY, WM_APP_WAKE_EXISTING};
+#[cfg(windows)]
 use windows::core::{w, PCWSTR};
+#[cfg(windows)]
 use windows::Win32::Foundation::{
     CloseHandle, GetLastError, ERROR_ALREADY_EXISTS, HANDLE, HWND, LPARAM, WPARAM,
 };
+#[cfg(windows)]
 use windows::Win32::System::Ole::{OleInitialize, OleUninitialize};
+#[cfg(windows)]
 use windows::Win32::System::Threading::CreateMutexW;
+#[cfg(windows)]
 use windows::Win32::UI::HiDpi::{
     SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
 };
+#[cfg(windows)]
 use windows::Win32::UI::WindowsAndMessaging::{
     AllowSetForegroundWindow, FindWindowW, GetWindowThreadProcessId, PostMessageW,
 };
 
+#[cfg(windows)]
 struct OleGuard;
+#[cfg(windows)]
 impl OleGuard {
     fn init() -> Self {
         unsafe {
@@ -51,6 +69,7 @@ impl OleGuard {
         Self
     }
 }
+#[cfg(windows)]
 impl Drop for OleGuard {
     fn drop(&mut self) {
         unsafe {
@@ -59,7 +78,9 @@ impl Drop for OleGuard {
     }
 }
 
+#[cfg(windows)]
 struct SingletonMutex(HANDLE);
+#[cfg(windows)]
 impl SingletonMutex {
     fn acquire() -> Option<Self> {
         unsafe {
@@ -72,6 +93,7 @@ impl SingletonMutex {
         }
     }
 }
+#[cfg(windows)]
 impl Drop for SingletonMutex {
     fn drop(&mut self) {
         unsafe {
@@ -282,16 +304,21 @@ fn run_self_test(fonts: &PrivateFonts, strict_budget: bool) {
     );
 
     if strict_budget {
+        #[cfg(windows)]
         assert!(after.working_set_mb() <= 2.0, "Hibernated WS exceeded 2.0 MB budget: {:.2} MB", after.working_set_mb());
+        #[cfg(windows)]
         assert!(after.private_mb() <= 28.0, "Hibernated Private Commit exceeded 28.0 MB budget: {:.2} MB", after.private_mb());
+        #[cfg(not(windows))]
+        assert!(after.private_mb() <= 45.0, "Hibernated Private RSS exceeded 45.0 MB budget: {:.2} MB", after.private_mb());
         assert_eq!(d_gdi, 0, "GDI handle leak detected across 100 soak cycles: {d_gdi:+}");
         assert_eq!(d_user, 0, "USER handle leak detected across 100 soak cycles: {d_user:+}");
-        assert!(d_handles <= 2, "Kernel handle drift exceeded +2 across 100 soak cycles: {d_handles:+}");
+        assert!(d_handles <= 2, "Kernel/FD handle drift exceeded +2 across 100 soak cycles: {d_handles:+}");
         assert!(d_priv <= 0.5, "Private Commit grew > 0.50 MB across 100 soak cycles: {d_priv:+.2} MB");
         println!("[PASS] Strict Resource Budget Gate PASSED (WS={:.2} MB, Private={:.2} MB, Zero Leaks)!", after.working_set_mb(), after.private_mb());
     }
 }
 
+#[cfg(windows)]
 fn wake_existing_instance(silent: bool) {
     if silent {
         return;
@@ -311,6 +338,19 @@ fn wake_existing_instance(silent: bool) {
 }
 
 fn main() {
+    const MI_OPTION_PURGE_DELAY: std::ffi::c_int = 15;
+    const MI_OPTION_ALLOW_THP: std::ffi::c_int = 43;
+    unsafe extern "C" {
+        fn mi_option_set(option: std::ffi::c_int, value: std::ffi::c_long);
+    }
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("MIMALLOC_ALLOW_THP").is_none() {
+        linux::disable_transparent_hugepages();
+        unsafe { mi_option_set(MI_OPTION_ALLOW_THP, 0); }
+    }
+    if std::env::var_os("MIMALLOC_PURGE_DELAY").is_none() {
+        unsafe { mi_option_set(MI_OPTION_PURGE_DELAY, 0); }
+    }
     init_uptime_clock();
     let args: Vec<String> = std::env::args().collect();
     let is_self_test = args.iter().any(|a| a == "--self-test");
@@ -329,14 +369,17 @@ fn main() {
         )
         .try_init();
 
+    #[cfg(windows)]
     unsafe {
         let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     }
+    #[cfg(windows)]
     let _ole = OleGuard::init();
     let fonts = PrivateFonts::load_default();
 
     if is_self_test {
         let strict = args.iter().any(|a| a == "--strict-budget");
+        #[cfg(windows)]
         unsafe {
             let _ = windows::Win32::System::Console::AttachConsole(
                 windows::Win32::System::Console::ATTACH_PARENT_PROCESS,
@@ -367,20 +410,25 @@ fn main() {
     ) {
         Ok(s) => s,
         Err(e) => {
-            crash_guard::show_fatal_error_dialog(&format!("Failed to initialize Win32 window: {e}"));
+            crash_guard::show_fatal_error_dialog(&format!("Failed to initialize launcher window: {e}"));
             return;
         }
     };
 
-    let hwnd_raw = shell.hwnd_raw();
-    updater.check_async_if_due_with_notify(&config, move || unsafe {
-        let _ = PostMessageW(
-            Some(HWND(hwnd_raw as *mut std::ffi::c_void)),
-            WM_APP_UPDATE_READY,
-            WPARAM(0),
-            LPARAM(0),
-        );
-    });
+    #[cfg(windows)]
+    {
+        let hwnd_raw = shell.hwnd_raw();
+        updater.check_async_if_due_with_notify(&config, move || unsafe {
+            let _ = PostMessageW(
+                Some(HWND(hwnd_raw as *mut std::ffi::c_void)),
+                WM_APP_UPDATE_READY,
+                WPARAM(0),
+                LPARAM(0),
+            );
+        });
+    }
+    #[cfg(target_os = "linux")]
+    shell.schedule_startup_update_check();
 
     tracing::info!("Tomoyo ready! Press {} to summon.", shell.hotkey_label());
 

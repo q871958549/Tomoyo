@@ -3,7 +3,12 @@ name = "tomoyo-cli"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Developer & decentralized plugin registry CLI for Tomoyo (scaffold, SHA-256 verify, install)"
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+description = "Developer & decentralized plugin registry CLI for Tomoyo Launcher (scaffold, verify, SHA-256, uTools importer)"
+keywords = ["launcher", "cli", "plugin", "utools", "tomoyo"]
+categories = ["command-line-utilities", "development-tools"]
 
 [[bin]]
 name = "tomoyo-cli"

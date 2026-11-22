@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Benchmarks &amp; 7-Gate Hygiene — Tomoyo Launcher</title>
+  <meta name="description" content="Reproducible memory, binary size, and 100-cycle handle leak benchmarks for Tomoyo Launcher on Linux and Windows." />
+  <link rel="canonical" href="https://q871958549.github.io/Tomoyo/docs/benchmarks.html" />
+  <link rel="describedby" href="../llms.txt" />
+  <link rel="alternate" type="text/markdown" href="benchmarks.md" title="Benchmarks (Markdown)" />
+  <style>
+    :root { --bg:#0f121b; --surface:#171b28; --surface-2:#1e2436; --border:#2b334b; --text:#e7ecf7; --muted:#9aa6c4; --accent:#38bdf8; --ok:#34d399; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: system-ui,-apple-system,sans-serif; background:var(--bg); color:var(--text); line-height:1.65; }
+    a { color:var(--accent); text-decoration:none; } a:hover { text-decoration:underline; }
+    code, pre { font-family: ui-monospace,Menlo,Consolas,monospace; background:#0b0e15; border:1px solid var(--border); border-radius:6px; }
+    code { padding:0.1rem 0.35rem; font-size:0.9em; } pre { padding:0.9rem 1rem; overflow-x:auto; font-size:0.88rem; }
+    .wrap { max-width:1040px; margin:0 auto; padding:2rem 1.25rem 4rem; }
+    nav { display:flex; flex-wrap:wrap; gap:1rem; padding-bottom:1rem; border-bottom:1px solid var(--border); margin-bottom:2rem; font-size:0.95rem; }
+    table { width:100%; border-collapse:collapse; background:var(--surface); font-size:0.92rem; margin:1.25rem 0; }
+    th, td { padding:0.65rem 0.75rem; border:1px solid var(--border); text-align:left; vertical-align:top; }
+    th { background:var(--surface-2); color:#fff; }
+    .ok { color:var(--ok); font-weight:600; }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <nav>
+      <a href="../index.html">Home</a>
+      <a href="comparison.html">Comparison</a>
+      <a href="plugins.html">Plugin SDKs &amp; Protocol v2</a>
+      <strong>Benchmarks &amp; Hygiene</strong>
+      <a href="benchmarks.md">Markdown View</a>
+    </nav>
+    <h1>Verified Benchmarks &amp; 7-Gate Anti-Bloat Contract</h1>
+    <pre><code>node scripts/check_hygiene.mjs --check-binaries
+./target/release/tomoyo --self-test --strict-budget
+./target/release/tomoyo-webview-host --self-test
+./target/release/tomoyo-capture --self-test
+./target/release/tomoyo-plugin-ocr --self-test</code></pre>
+    <table>
+      <thead><tr><th>Metric</th><th>Linux Release (<code>--self-test</code>)</th><th>Windows Release (<code>v2.2.6</code>)</th><th>Hard Ceiling</th></tr></thead>
+      <tbody>
+        <tr><td><code>tomoyo</code> microkernel binary</td><td class="ok">6.85 MB</td><td class="ok">5.80 MB</td><td>&le; 7.50 MB (Linux) / &le; 6.50 MB (Win)</td></tr>
+        <tr><td><code>tomoyo-webview-host</code></td><td class="ok">4.96 MB (0 MB idle)</td><td class="ok">4.41 MB (0 MB idle)</td><td>&le; 5.50 MB / 0 MB idle</td></tr>
+        <tr><td><code>tomoyo-capture</code></td><td class="ok">1.46 MB (0 MB idle)</td><td class="ok">1.15 MB (0 MB idle)</td><td>&le; 1.50 MB / 0 MB idle</td></tr>
+        <tr><td><code>tomoyo-plugin-ocr</code> / <code>tomoyo-plugin-notes</code></td><td class="ok">0.57 MB / 0.51 MB</td><td class="ok">0.38 MB / 0.33 MB</td><td>&le; 0.80 MB / 0 MB idle</td></tr>
+        <tr><td>Hibernated Private Commit</td><td class="ok">22.35 MB (70 apps)</td><td class="ok">22.03 MB (343 entries; 1.50–1.52 MB WS)</td><td>&le; 45.0 MB (Linux) / &le; 28.0 MB (Win)</td></tr>
+        <tr><td>100-cycle soak test delta</td><td class="ok">Handles +0 &middot; Private +0.09 MB</td><td class="ok">GDI +0 &middot; USER +0 &middot; Handles +0 &middot; Private +0.08 MB</td><td>Handles &le; +2 / Private &le; +0.50 MB</td></tr>
+      </tbody>
+    </table>
+  </main>
+</body>
+</html>

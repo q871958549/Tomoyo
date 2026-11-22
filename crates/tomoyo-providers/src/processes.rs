@@ -152,7 +152,39 @@ fn list_running_processes() -> Vec<(u32, String, u64)> {
     out
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
+fn list_running_processes() -> Vec<(u32, String, u64)> {
+    let mut out = Vec::with_capacity(128);
+    let Ok(rd) = std::fs::read_dir("/proc") else {
+        return out;
+    };
+    for ent in rd.flatten() {
+        let fname = ent.file_name();
+        let Ok(pid) = fname.to_string_lossy().parse::<u32>() else {
+            continue;
+        };
+        let p = ent.path();
+        let Ok(status) = std::fs::read_to_string(p.join("status")) else {
+            continue;
+        };
+        let rss_kb = status
+            .lines()
+            .find_map(|l| l.strip_prefix("VmRSS:"))
+            .and_then(|r| r.split_whitespace().next())
+            .and_then(|n| n.parse::<u64>().ok())
+            .unwrap_or(0);
+        if rss_kb == 0 {
+            continue;
+        }
+        let comm = std::fs::read_to_string(p.join("comm"))
+            .map(|s| s.trim().to_string())
+            .unwrap_or_else(|_| format!("pid-{pid}"));
+        out.push((pid, comm, rss_kb * 1024));
+    }
+    out
+}
+
+#[cfg(all(not(windows), not(target_os = "linux")))]
 fn list_running_processes() -> Vec<(u32, String, u64)> {
     Vec::new()
 }

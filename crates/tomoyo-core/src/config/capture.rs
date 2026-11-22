@@ -32,6 +32,8 @@ pub struct CaptureToolHotkeys {
     pub ocr_copy: String,
     #[serde(default = "hk_translate")]
     pub translate: String,
+    #[serde(default = "hk_record")]
+    pub record: String,
 }
 
 fn hk_rect() -> String { "R".into() }
@@ -47,6 +49,7 @@ fn hk_pin() -> String { "P".into() }
 fn hk_ocr() -> String { "O".into() }
 fn hk_ocr_copy() -> String { "Shift+C".into() }
 fn hk_translate() -> String { "T".into() }
+fn hk_record() -> String { "V".into() }
 
 impl Default for CaptureToolHotkeys {
     fn default() -> Self {
@@ -64,6 +67,7 @@ impl Default for CaptureToolHotkeys {
             ocr: hk_ocr(),
             ocr_copy: hk_ocr_copy(),
             translate: hk_translate(),
+            record: hk_record(),
         }
     }
 }
@@ -115,7 +119,7 @@ impl CaptureToolHotkeys {
     pub fn sanitize(&mut self, notes: &mut Vec<String>) {
         let defaults = Self::default();
         let mut used: HashSet<String> = HashSet::new();
-        let fields: [(&mut String, &str, &str); 13] = [
+        let fields: [(&mut String, &str, &str); 14] = [
             (&mut self.rect, &defaults.rect, "矩形"),
             (&mut self.ellipse, &defaults.ellipse, "椭圆"),
             (&mut self.arrow, &defaults.arrow, "箭头"),
@@ -129,6 +133,7 @@ impl CaptureToolHotkeys {
             (&mut self.ocr, &defaults.ocr, "识字 OCR"),
             (&mut self.ocr_copy, &defaults.ocr_copy, "直接提取文字"),
             (&mut self.translate, &defaults.translate, "翻译"),
+            (&mut self.record, &defaults.record, "录屏"),
         ];
         for (slot, def, label) in fields {
             if let Some(norm) = Self::normalize_key(slot)
@@ -167,6 +172,18 @@ pub struct CaptureConfig {
     /// Copy picked color hex in lowercase (`#ff6b6b` vs `#FF6B6B`).
     #[serde(default)]
     pub copy_hex_lowercase: bool,
+    /// Preferred recording output format (`"mp4"` or `"gif"`).
+    #[serde(default = "default_record_format")]
+    pub record_format: String,
+    /// Preferred recording frame rate (`15`, `30`, or `60`).
+    #[serde(default = "default_record_fps")]
+    pub record_fps: u8,
+    /// Preferred recording audio source (`"none"`, `"system"`, or `"mic"`).
+    #[serde(default = "default_record_audio")]
+    pub record_audio: String,
+    /// Include mouse cursor in screen recordings (default `true`).
+    #[serde(default = "default_record_cursor")]
+    pub record_cursor: bool,
     /// Customizable single-key shortcuts for in-capture annotation & action tools.
     #[serde(default)]
     pub tool_hotkeys: CaptureToolHotkeys,
@@ -184,6 +201,22 @@ fn default_pin_opacity() -> u8 {
     100
 }
 
+fn default_record_format() -> String {
+    "mp4".into()
+}
+
+fn default_record_fps() -> u8 {
+    30
+}
+
+fn default_record_audio() -> String {
+    "none".into()
+}
+
+fn default_record_cursor() -> bool {
+    true
+}
+
 impl Default for CaptureConfig {
     fn default() -> Self {
         Self {
@@ -193,6 +226,10 @@ impl Default for CaptureConfig {
             save_dir: String::new(),
             pin_opacity: default_pin_opacity(),
             copy_hex_lowercase: false,
+            record_format: default_record_format(),
+            record_fps: default_record_fps(),
+            record_audio: default_record_audio(),
+            record_cursor: default_record_cursor(),
             tool_hotkeys: CaptureToolHotkeys::default(),
         }
     }
@@ -277,6 +314,15 @@ pub fn sanitize_capture_config(
         }
     }
 
+    if !matches!(cap.record_format.as_str(), "mp4" | "gif") {
+        cap.record_format = default_record_format();
+    }
+    if !matches!(cap.record_fps, 15 | 30 | 60) {
+        cap.record_fps = default_record_fps();
+    }
+    if !matches!(cap.record_audio.as_str(), "none" | "system" | "mic") {
+        cap.record_audio = default_record_audio();
+    }
     cap.tool_hotkeys.sanitize(notes);
 }
 

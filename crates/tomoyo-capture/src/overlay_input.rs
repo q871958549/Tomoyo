@@ -16,7 +16,7 @@ use windows::Win32::Foundation::HWND;
 use windows::Win32::Graphics::Gdi::InvalidateRect;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetKeyState, SetCapture, VK_BACK, VK_CONTROL, VK_DELETE, VK_ESCAPE, VK_MENU, VK_RETURN,
-    VK_SHIFT,
+    VK_SHIFT, VK_TAB,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     IDC_CROSS, IDC_HAND, IDC_SIZEALL, IDC_SIZENESW, IDC_SIZENS, IDC_SIZENWSE, IDC_SIZEWE,
@@ -170,7 +170,7 @@ pub fn handle_lbutton_down(st: &mut OverlayState, hwnd: HWND, x: i32, y: i32) {
         return;
     }
     st.drag = DragMode::Creating(x, y);
-    st.sel = Some(ScreenRect { x, y, w: 0, h: 0 });
+    st.sel = None;
     unsafe { SetCapture(hwnd); }
 }
 
@@ -211,7 +211,7 @@ pub fn handle_mouse_move(st: &mut OverlayState, hwnd: HWND, x: i32, y: i32) {
     match st.drag {
         DragMode::None => {
             if st.sel.is_none() {
-                st.hover_snap = st.snap_windows.iter().copied().find(|r| r.contains(x, y));
+                st.hover_snap = st.snap_ctx.hover_at(&st.snap, x, y);
             }
         }
         DragMode::Creating(sx, sy) => st.sel = Some(ScreenRect::from_points(sx, sy, x, y)),
@@ -275,6 +275,9 @@ pub fn handle_key_down(st: &mut OverlayState, hwnd: HWND, vk: u16) {
     let shift = unsafe { (GetKeyState(VK_SHIFT.0 as i32) as u16 & 0x8000) != 0 };
     if vk == VK_ESCAPE.0 {
         st.execute_action(hwnd, ToolbarCmd::Cancel);
+    } else if vk == VK_TAB.0 && st.sel.is_none() {
+        st.hover_snap = st.snap_ctx.cycle_next(&st.snap, st.cursor.0, st.cursor.1);
+        unsafe { let _ = InvalidateRect(Some(hwnd), None, false); }
     } else if (vk == VK_DELETE.0 || vk == VK_BACK.0) && st.stack.selected.is_some() {
         st.stack.delete_selected();
         unsafe { let _ = InvalidateRect(Some(hwnd), None, false); }

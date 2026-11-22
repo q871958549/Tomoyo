@@ -12,12 +12,8 @@ path = "src/main.rs"
 [dependencies]
 tomoyo-core = { workspace = true }
 png = { workspace = true }
-serde = { workspace = true }
 serde_json = { workspace = true }
 chrono = { workspace = true }
-tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
-mimalloc = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 windows = { workspace = true, features = [

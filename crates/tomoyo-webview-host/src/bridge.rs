@@ -113,18 +113,24 @@ pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isi
             let theme = config.theme.clone();
             let _ = config.save();
             let _ = tomoyo_core::set_autostart_enabled(autostart);
-            if let Some(target) = notify_hwnd { notify_parent_reload(target, false); }
+            if let Some(target) = notify_hwnd {
+                notify_parent_reload(target, false);
+            } else if cfg!(target_os = "linux") {
+                notify_parent_reload(0, false);
+            }
             let evt = serde_json::json!({ "event": "settings_saved", "config": config, "notes": notes }).to_string();
             HostAction {
                 apply_theme: Some(theme),
                 reply_json: Some(evt),
-                async_refresh_hotkey_health: notify_hwnd.is_some(),
+                async_refresh_hotkey_health: notify_hwnd.is_some() || cfg!(target_os = "linux"),
                 ..Default::default()
             }
         }
         HostMessage::SaveFlows { flows } => {
             let (reply, ok) = crate::backup::save_flows_reply(&flows);
-            if ok && let Some(t) = notify_hwnd { notify_parent_reload(t, true); }
+            if ok && (notify_hwnd.is_some() || cfg!(target_os = "linux")) {
+                notify_parent_reload(notify_hwnd.unwrap_or(0), true);
+            }
             HostAction { reply_json: Some(reply), ..Default::default() }
         }
         HostMessage::PickFolder => HostAction { pick_folder_mode: 1, ..Default::default() },
@@ -132,7 +138,9 @@ pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isi
         HostMessage::PickSyncDir => HostAction { pick_folder_mode: 3, ..Default::default() },
         HostMessage::ClearSyncDir => {
             let (reply, ok) = crate::backup::clear_sync_dir_reply();
-            if ok && let Some(t) = notify_hwnd { notify_parent_reload(t, true); }
+            if ok && (notify_hwnd.is_some() || cfg!(target_os = "linux")) {
+                notify_parent_reload(notify_hwnd.unwrap_or(0), true);
+            }
             HostAction { reply_json: Some(reply), ..Default::default() }
         }
         HostMessage::StartCapture { mode } => {
@@ -224,7 +232,9 @@ pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isi
         HostMessage::TerminateConflictProcess { pid, process_name } => {
             #[cfg(windows)]
             let res = crate::hotkey_doctor::terminate_conflict_process(pid, &process_name);
-            #[cfg(not(windows))]
+            #[cfg(target_os = "linux")]
+            let res = crate::linux_hotkeys::terminate_conflict_process(pid, &process_name);
+            #[cfg(not(any(windows, target_os = "linux")))]
             let res: Result<String, String> = Err(format!("Unsupported platform ({pid} {process_name})"));
             let (ok, msg) = match res { Ok(m) => (true, m), Err(e) => (false, e) };
             let reply = serde_json::json!({
@@ -236,6 +246,14 @@ pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isi
         HostMessage::RevealPath { path } => {
             #[cfg(windows)]
             crate::hotkey_doctor::reveal_file_in_explorer(&path);
+            #[cfg(target_os = "linux")]
+            if !tomoyo_core::linux_sys::dbus_reveal_file(&path) {
+                let fallback = std::path::Path::new(&path)
+                    .parent()
+                    .and_then(|p| p.to_str())
+                    .unwrap_or(&path);
+                shell_open(fallback);
+            }
             let _ = path;
             HostAction::default()
         }

@@ -8,5 +8,4 @@ description = "Linux Wayland/X11, XDG .desktop entry & fd/locate backend adapter
 [dependencies]
 tomoyo-protocol = { workspace = true }
 tomoyo-core = { workspace = true }
-tomoyo-providers = { workspace = true }
 tomoyo-ui-shared = { path = "../tomoyo-ui-shared" }

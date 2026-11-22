@@ -3,7 +3,12 @@ name = "tomoyo-sdk"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Ergonomic Rust SDK for authoring ultra-fast Tomoyo plugins in under 30 lines"
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+description = "Ergonomic Rust SDK for authoring ultra-fast Tomoyo Launcher STDIO JSON-RPC 2.0 plugins"
+keywords = ["launcher", "plugin", "sdk", "json-rpc", "tomoyo"]
+categories = ["development-tools", "api-bindings", "command-line-utilities"]
 
 [dependencies]
 tomoyo-protocol = { workspace = true }

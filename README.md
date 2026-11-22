@@ -1,135 +1,205 @@
 <p align="center">
-  <img src="assets/tomoyo-wordmark.png" alt="Tomoyo — Open Rust Launcher" width="720" />
+  <img src="assets/tomoyo-wordmark.png" alt="Tomoyo Launcher — Open-Source Rust Desktop Launcher" width="720" />
 </p>
 
 <p align="center">
-  <strong>开源、低内存占用的 Windows Rust 桌面启动器</strong><br/>
-  <em>Open-Source, Low-Memory Rust Command Launcher for Windows</em>
+  <strong>Tomoyo Launcher — Open-Source, Ultra-Low-Memory Native Rust Desktop Launcher for Linux &amp; Windows</strong><br/>
+  <em>Pure-Rust SDF rendering, KDE Wayland/X11 &amp; Win32 native integration, Everything / fd+plocate file search, ephemeral clipboard/OCR/screenshot utilities, and sandboxed WASM/STDIO/WebView plugins.</em>
+</p>
+
+<p align="center">
+  <strong>English</strong> · <a href="README_ZH.md">简体中文</a> · <a href="llms.txt">llms.txt</a>
 </p>
 
 <p align="center">
   <a href="https://github.com/q871958549/Tomoyo/actions/workflows/ci.yml"><img src="https://github.com/q871958549/Tomoyo/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="LICENSE-MIT"><img src="https://img.shields.io/badge/license-MIT%20%2F%20Apache--2.0-blue.svg" alt="License" /></a>
-  <img src="https://img.shields.io/badge/platform-Windows%2010%2F11%20x64%20%2F%20ARM64-0078D6.svg" alt="Windows" />
-  <img src="https://img.shields.io/badge/version-v2.2.6-7c6af7.svg" alt="Version" />
+  <img src="https://img.shields.io/badge/platform-Linux%20(KDE%20Wayland%2FX11)%20%7C%20Windows%2010%2F11%20(x64%2FARM64)-1793D1.svg" alt="Linux & Windows" />
+  <img src="https://img.shields.io/badge/version-v2.3.0-7c6af7.svg" alt="Version" />
 </p>
 
 ---
 
-## 项目简介 (Overview)
+## Overview
 
-**Tomoyo** 使用 Rust 与原生 Win32 API 编写，侧重简洁实用的桌面检索体验与可控的资源占用：
+**Tomoyo Launcher** (`github.com/q871958549/Tomoyo`) is an open-source, account-free desktop application launcher and productivity microkernel written in **Rust**. It runs natively on **Linux** (primary target: Arch Linux / CachyOS with KDE Plasma 6 Wayland & X11 via GTK3, Cairo/PangoCairo, `kglobalaccel`, and WebKitGTK 4.1) and **Windows 10/11** (x64 & ARM64 via Win32 ClearType GDI, Everything IPC, and WebView2).
 
-1. **开源与独立运行（MIT / Apache-2.0 双协议）**：无需账号登录，不依赖商业后台服务，支持本地与自定义 JSON 插件清单。
-2. **资源控制与休眠回收**：
-   - 使用 Rust 2×2 超采样 SDF 抗锯齿 32-bit DIB 配合 ClearType GDI 进行界面绘制，不依赖 Electron、常驻 WebView2 或 `d3d10warp.dll`。
-   - **自动休眠清理**：窗口隐藏超时后释放离屏 DIB、字体、Shell `HICON` 缓存与图片缩略图，收缩 SQLite 页缓存（`PRAGMA shrink_memory`），回收空闲插件，并调用 `mimalloc` (`mi_collect`) 与 `SetProcessWorkingSetSizeEx` 整理工作集。
-   - **插件隔离**：STDIO 插件绑定 Windows Job Object（限制内存并随主进程退出清理）；WASM 插件运行于 `wasmi` 燃料计量沙箱；WebView 设置中心与插件运行在独立短生命周期进程 `tomoyo-webview-host.exe`，关闭窗口即退出释放内存。
-3. **Everything 文件检索集成**：
-   - 内置纯 Rust 实现的 **Everything 1.4 / 1.5a** `WM_COPYDATA` IPC 客户端，无需额外 DLL。
-   - 支持异步有界右侧预览（文本 8 KB 截断、目录列表与 Win32 WIC 全格式图片缩略图）及原生 Windows OLE 文件拖拽。
-4. **界面交互与多语言支持**：
-   - 内置阿里巴巴普惠体 3.0 字体，支持简体中文与英文切换，提供浅色（Light）、深色（Dark）、午夜（Midnight）三种配色方案，并同步 DWM 标题栏样式与自定义弹出菜单。
-   - 支持拖拽窗口位置、八向边缘缩放与预览分割线调整，配置自动保存并支持热重载。
-5. **多运行时扩展与 uTools 导入支持**：
-   - **内置 Provider**：本地应用（含 UWP/MSIX、DeskBox 等桌面整理目录、自定义便携目录、拼音与首字母匹配）、Everything、剪贴板历史（文本 + 图片）、粘贴胶囊上下文动作、计算与格式转换、进程管理、网页搜索、窗口切换及 GitHub Releases 检查更新。
-   - **STDIO 插件 (`stdio_jsonrpc`)**：通过标准输入输出 JSON-RPC 2.0 通信，支持 Rust (`tomoyo-sdk`)、Python、Go、Node.js 等语言编写。
-   - **WASM 插件 (`wasm`)**：通过 `tomoyo-wasm-sdk` 编译，由 `wasmi` 提供燃料计数与细粒度能力限制。
-   - **WebView 插件 (`webview`)**：由按需拉起的 `tomoyo-webview-host.exe` 承载，提供 `window.tomoyo` 与基础 `window.utools` API 兼容层（含 `setSubInput`、`db`/`dbStorage`、`hideMainWindowPasteText`、`Ctrl+Shift+T` 置顶等）以及 `tomoyo-cli import-utools` 导入工具。
+> **Disambiguation:** *Tomoyo Launcher* is a cross-platform desktop application launcher and plugin host. It is **not** related to the *TOMOYO Linux* kernel Mandatory Access Control (LSM) security module (`tomoyo-tools`), the `siglus_rs` visual novel engine, or the `AsterCass/Tomoyo` Kotlin Multiplatform sample app.
 
----
+### Core Architectural Principles
 
-## 实测数据与自检阈值 (`v2.2.6` Release)
-
-| 指标 | 实测记录 | 自检阈值 (`--strict-budget` / `-CheckBinaries`) |
-|---|---|---|
-| `tomoyo.exe` 微内核主程序体积（含 6 槽位全局热键含截图识字、静默两段式 `Esc`、全局 `F3` 贴图、脏位差量重载、应用 Logo 图标与 0ms 非阻塞双击反馈） | **5.80 MB** | ≤ 6.50 MB |
-| `tomoyo-webview-host.exe` Svelte 5 设置中心（12 页签 + 热键治理 v2 原生 `SHOpenFolderAndSelectItems` 精准定位与二次确认进程治理）与 3 大工作台（Gzip 压缩嵌入） | **4.41 MB**（关闭即退出） | ≤ 5.50 MB / 0 MB 常驻 |
-| `tomoyo-capture.exe` 极简矢量标注 + 白底长截图 + 全格式贴图 + 画布内 `Shift+C`（可自定义）一键提取文字到剪贴板 + 结构化 JSON OCR 交接 | **1.15 MB**（关闭即退出） | ≤ 1.50 MB / 0 MB 常驻 |
-| `tomoyo-plugin-ocr.exe` / `tomoyo-plugin-notes.exe` 官方 Protocol v2 独立按需 STDIO 插件（自适应 4× 放大 + 边框抑制双路高精度离线 OCR / Markdown 备忘录） | **0.38 MB** / **0.33 MB**（空闲自动回收） | ≤ 0.80 MB / 0 MB 常驻 |
-| 休眠态 Working Set 内存占用 (`--self-test`) | **1.50–1.52 MB** | ≤ 2.0 MB |
-| 休眠态 Private Commit（含 343 应用/桌面条目索引、SQLite、工作流与字体） | **22.03 MB** | ≤ 28.0 MB |
-| 100 轮查询 / 绘制 / 预览 / 休眠压测 Delta | **GDI `+0` · USER `+0` · Handles `+0` · Private `+0.08 MB`** | 句柄 0 增长 / 内存 ≤ +0.50 MB |
-| 7 道防膨胀卫生门禁与静态质量（[编码规范](docs/CODING_STANDARDS.md) / [分发与信任指南](docs/DISTRIBUTION.md)） | **全仓 226 源码文件 100% ≤ 450 行（双水位 380/450）· 前后端双向 IPC 1:1 契约对齐（47 指令 + 27 事件）· `cargo clippy --workspace --all-targets -- -D warnings` 0 警告 · Rust 全仓单测 + 前端 10 用例 + `happy-dom` 4 产物全绿 · SLSA Provenance + ARM64 构建** | ≤ 450 行/文件 · 0 警告 · 0 JS 异常 |
+1. **Zero Electron, Zero Heavy Async Runtime, Dual-Licensed Open Source (`MIT OR Apache-2.0`)**:
+   - No `tokio`, `reqwest`, `hyper`, `tauri`, `wry`, `Electron`, or `d3d10warp`. Uses native OS event loops (GLib/GTK on Linux, Win32 `GetMessageW` on Windows), `libcurl`/`WinHTTP`, and `libsecret`/Windows DPAPI for encrypted secrets.
+   - Pure-Rust 2×2 supersampled Signed Distance Field (SDF) UI rendering paired with Cairo/Pango (Linux) or 32-bit DIB ClearType GDI (Windows) and bundled Alibaba PuHuiTi 3.0 fonts.
+2. **Aggressive Idle Hibernation & Process Isolation**:
+   - **Auto-hibernation**: After a hide timeout, the launcher drops off-screen buffers, icon caches, and image thumbnails, shrinks SQLite page cache (`PRAGMA shrink_memory`), reaps idle plugins, and trims heap/working set (`mimalloc::mi_collect` + `malloc_trim(0)` on Linux / `SetProcessWorkingSetSizeEx` on Windows).
+   - **Zero-idle-RAM heavy panels**: Settings Center (12 tabs), Clipboard Workbench, Multi-Engine Translator, and OCR Review run in an ephemeral short-lived `tomoyo-webview-host` process (WebKitGTK 4.1 / WebView2) that exits completely on close.
+   - **Ephemeral satellite tools**: Native screenshot/annotation/pin (`tomoyo-capture`), offline OCR (`tomoyo-plugin-ocr` using Tesseract 5 / Windows WinRT `OcrEngine`), and local Markdown notes (`tomoyo-plugin-notes`) run on demand and reclaim to **0 MB** resident memory when idle.
+3. **Fast Cross-Platform App & Full-Disk Search**:
+   - **Linux**: Incremental `inotify` watching of XDG `.desktop` / Flatpak / Snap entries, KWin `/WindowsRunner` window switching, `fd` + `plocate` file search, and `org.freedesktop.FileManager1` file reveal.
+   - **Windows**: Pure-Rust **Everything 1.4 / 1.5a** `WM_COPYDATA` IPC client (`tomoyo-everything`, zero external DLLs) + Start Menu, DeskBox, portable directory, and UWP/MSIX indexing.
+   - Bounded async right-pane previews (8 KB text slice, directory listings, `gdk-pixbuf` / WIC thumbnails) and native drag-and-drop.
+4. **4-Tier Extensibility + Declarative Pipelines + `utools` Bridge**:
+   - **Built-in Providers**: Apps (with Pinyin/heteronym/multi-word fuzzy matching and query-aware frecency), Everything/`fd`+`plocate`, Clipboard History (SQLite text/image/files), Paste Capsule (`Super Match`), Calculator & Format/Color/Timestamp Inspector, Process Manager, Web Search, Window Switcher, and GitHub Releases updater.
+   - **STDIO JSON-RPC 2.0 (`stdio_jsonrpc`)**: Author plugins in Rust (`tomoyo-sdk`), Python, Go, or Node.js; isolated via Linux process groups (`PR_SET_PDEATHSIG`) or Windows Job Objects.
+   - **WebAssembly Sandbox (`wasm`)**: Capability-gated plugins compiled with `tomoyo-wasm-sdk` and executed in `wasmi` with fuel metering and explicit permission prompts.
+   - **On-Demand WebView (`webview`) & `window.utools` Compatibility**: Includes a `window.tomoyo` + baseline `window.utools` compatibility bridge and `tomoyo-cli import-utools` importer.
+   - **Declarative Pipelines (`flows.toml`)**: Zero-script action chaining (`cleanpaste`, `shottr`, `aisum`) with optional global hotkeys and on-demand local Ollama / OpenAI-compatible `llm_transform`.
 
 ---
 
-## 下载安装与构建 (Install & Build)
+## When to Choose Tomoyo Launcher
 
-- **安装包与便携版**：前往 [GitHub Releases](https://github.com/q871958549/Tomoyo/releases) 下载 `Tomoyo-vX.Y.Z-windows-x64-setup.exe`（默认安装至 `%LOCALAPPDATA%\Programs\Tomoyo`，无需管理员权限）或 `portable.zip`。
-- **从源码构建与验证**：
+- **Cross-OS Linux + Windows consistency**: You split work between Linux (especially KDE Plasma 6 on Wayland or X11) and Windows 10/11 and want one fast Rust launcher instead of maintaining separate toolchains.
+- **Strict memory & handle discipline**: You want Raycast/uTools-grade daily utilities (clipboard history, screenshot annotation/pin, offline OCR, multi-engine translation, snippets, notes) **without** Electron's background memory footprint or closed-source accounts.
+- **Windows + Everything power users**: You rely on Voidtools Everything 1.4/1.5a and want instant native `WM_COPYDATA` IPC search with zero .NET or Node runtime overhead.
+- **Multi-language & migrating plugin authors**: You want to write extensions in Rust, Python, Go, or sandboxed WASM, or import existing HTML/JS `uTools` webview plugins into a local-first open-source host.
 
-```powershell
-# 编译 Svelte 5 极简现代前端（仓库已内置编译产物，仅修改前端源码时需要）
-cd frontend && npm ci && npm run build && cd ..
+---
 
-# 克隆仓库并编译 Release
+## Comparison with Other Desktop Launchers
+
+| Launcher | Core Stack | Supported OS & Display Server | Open Source & License | Memory / Isolation Model | File Search | Plugin Runtimes |
+|---|---|---|---|---|---|---|
+| **Tomoyo Launcher** | **Rust** + Cairo/Pango (Linux) & Win32 SDF/GDI (Win) | **Linux** (Wayland & X11) + **Windows 10/11** (x64 & ARM64) | **Yes** (`MIT OR Apache-2.0`) | ~22 MB private commit (`--self-test`); WebView, OCR, Capture, Notes exit to **0 MB** idle | `fd` + `plocate` (Linux) / native Everything 1.4 & 1.5a IPC (Win) | Built-in Rust, STDIO JSON-RPC (Rust/Py/Go/JS), `wasmi` WASM, on-demand WebView (`utools` compat) |
+| **Vicinae** | C++ / Qt + Node.js workers | Linux (Wayland/X11), macOS, Windows | Yes | Qt GUI + background daemon + Node.js worker runtime | Built-in file search | TypeScript / React (Raycast-compatible) |
+| **Walker** | Rust + GTK4 Layer Shell + Elephant service | Linux (**Wayland-only**) | Yes | GTK4 frontend + Elephant background service | Elephant file provider | Modular Elephant providers |
+| **Anyrun** | Rust + GTK4 Layer Shell | Linux (**Wayland-only**) | Yes | Rust GTK4 native binary | Plugin-based | Compiled Rust shared libraries (`.so`) |
+| **Ulauncher** | Python + GTK+ | Linux (X11 & Wayland) | Yes | Python runtime + GTK process | Extensions | Python API |
+| **Flow Launcher** | C# (.NET) + WPF | Windows | Yes (`MIT`) | .NET WPF process | Everything integration | C#, Python, Node.js, Executables |
+| **PowerToys Run** | C# (.NET) + C++ | Windows | Yes (`MIT`) | .NET / PowerToys host process | Windows Search / Indexer | C# (.NET) DLL plugins |
+| **uTools** | Electron (Chromium + Node.js) | Windows, macOS, Linux | **No** (Proprietary) | Multi-process Chromium / Node.js | Everything / OS search | HTML / JS / Node.js preload |
+| **Raycast** | Swift / Rust / C# / TypeScript | macOS, Windows (Beta) | **No** (Proprietary core) | Native OS shell + Node.js extension host | Spotlight / Native | TypeScript / React |
+
+---
+
+## Verified Benchmarks & Hygiene Gates (`v2.3.0` Linux / `v2.2.6` Windows Baseline)
+
+Every commit and release passes a 7-gate anti-bloat check ([`scripts/check_hygiene.mjs`](scripts/check_hygiene.mjs)) and a 100-cycle leak/handle soak test (`tomoyo --self-test --strict-budget`):
+
+| Metric | Linux Release (`--self-test`) | Windows Release (`v2.2.6`) | Enforced Ceiling |
+|---|---|---|---|
+| `tomoyo` microkernel binary | **6.85 MB** | **5.80 MB** | ≤ 7.50 MB (Linux) / ≤ 6.50 MB (Win) |
+| `tomoyo-webview-host` (Svelte 5 Settings + Workbenches, gzipped) | **4.96 MB** (0 MB idle) | **4.41 MB** (0 MB idle) | ≤ 5.50 MB / 0 MB idle |
+| `tomoyo-capture` (Screenshot, vector annotation, stitch, pin) | **1.46 MB** (0 MB idle) | **1.15 MB** (0 MB idle) | ≤ 1.50 MB / 0 MB idle |
+| `tomoyo-plugin-ocr` / `tomoyo-plugin-notes` | **0.57 MB** / **0.51 MB** | **0.38 MB** / **0.33 MB** | ≤ 0.80 MB / 0 MB idle |
+| Hibernated Private Commit (`--self-test`) | **22.35 MB** (70 apps, SQLite, fonts) | **22.03 MB** (343 entries; **1.50–1.52 MB** WS) | ≤ 45.0 MB (Linux) / ≤ 28.0 MB (Win) |
+| 100-cycle query/hibernate/reap soak delta | **GDI `+0` · USER `+0` · Handles `+0` · Private `+0.09 MB`** | **GDI `+0` · USER `+0` · Handles `+0` · Private `+0.08 MB`** | Handles ≤ +2 / Private ≤ +0.50 MB |
+| Repository hygiene & static checks ([`docs/CODING_STANDARDS.md`](docs/CODING_STANDARDS.md)) | **272 source files all ≤ 450 lines · 47 IPC cmds + 27 events 1:1 parity · `clippy -D warnings` clean · `happy-dom` 4 bundles clean** | **SLSA Provenance + ARM64 builds** | ≤ 450 lines/file · 0 warnings · 0 JS errors |
+
+---
+
+## Install & Build
+
+### Linux (Arch / CachyOS / KDE Plasma & Generic Linux)
+
+- **Prebuilt Tarball**: Download `Tomoyo-vX.Y.Z-linux-x86_64.tar.gz` from [GitHub Releases](https://github.com/q871958549/Tomoyo/releases) and run `./scripts/install-local.sh`, or build an Arch package with [`packaging/linux/PKGBUILD`](packaging/linux/PKGBUILD).
+- **System Dependencies (Arch / CachyOS)**:
+
+```bash
+sudo pacman -S --needed base-devel pkgconf rustup nodejs npm \
+  gtk3 webkit2gtk-4.1 libayatana-appindicator curl libsecret \
+  xorg-xproto libx11 libxext libxtst dbus pipewire ffmpeg tesseract tesseract-data-eng \
+  fd plocate spectacle kdialog
+```
+
+*(For Debian/Ubuntu `apt-get` packages, see [`.github/workflows/ci.yml`](.github/workflows/ci.yml).)*
+
+- **Build from Source, Install & Verify**:
+
+```bash
 git clone https://github.com/q871958549/Tomoyo.git
 cd Tomoyo
+
+# 1. Build Svelte 5 WebView frontend bundles
+cd frontend && npm ci && npm run check && npm test && npm run build && cd ..
+
+# 2. Build all Rust binaries in release mode
 cargo build --release --workspace
 
-# 安装到本机用户目录
-pwsh -File scripts\install-local.ps1
+# 3. Install to ~/.local/bin and ~/.local/share/tomoyo
+./scripts/install-local.sh
 
-# 运行规范检查与严格内存/句柄预算自检
-pwsh -File scripts\check_hygiene.ps1
+# 4. Run 7-gate hygiene check & strict anti-leak self-tests
+node scripts/check_hygiene.mjs --check-binaries
+./target/release/tomoyo --self-test --strict-budget
+./target/release/tomoyo-webview-host --self-test
+./target/release/tomoyo-capture --self-test
+./target/release/tomoyo-plugin-ocr --self-test
+./target/release/tomoyo-cli registry check --manifest-only
+```
+
+### Windows (10 / 11 x64 & ARM64)
+
+- Download `Tomoyo-vX.Y.Z-windows-x64-setup.exe` (zero-UAC installer), `portable.zip`, or the ARM64 portable archive from [GitHub Releases](https://github.com/q871958549/Tomoyo/releases) (SLSA build provenance verification steps are in [`docs/DISTRIBUTION.md`](docs/DISTRIBUTION.md)).
+- Build & verify from source:
+
+```powershell
+cd frontend && npm ci && npm run build && cd ..
+cargo build --release --workspace
+pwsh -File scripts\install-local.ps1
+pwsh -File scripts\check_hygiene.ps1 -CheckBinaries
 .\target\release\tomoyo.exe --self-test --strict-budget
-.\target\release\tomoyo-webview-host.exe --self-test
-.\target\release\tomoyo-capture.exe --self-test
 ```
 
 ---
 
-## 内置指令与快捷键一览
+## Built-in Commands & Shortcuts
 
-| 前缀 / 快捷键 | 功能说明 |
+| Trigger / Shortcut | Capability |
 |---|---|
-| *(直接输入)* | 混合检索：本地应用、DeskBox 等桌面整理目录、自定义便携目录与 UWP/MSIX（支持拼音/多音字/多词交集/命中高亮与查询词记忆）、计算器、格式识别、窗口列表、Everything 置顶结果与无本地命中时的网页/全盘回退 |
-| `Ctrl+Tab` / `Ctrl+1..9` / `@pdf` / `@code` | 可扩展分组筛选栏（含分类实时计数）：支持隐藏内置标签，并在设置中心按扩展名或 Everything 表达式自由扩展最多 12 个自定义标签 |
-| `Ctrl+V` *(粘贴截图/文件)* | 粘贴上下文识别：对图片提供看图/Base64/定位目录，对文件提供路径复制/SHA-256 校验/打开终端，按 `Backspace` 清除 |
-| `f <词>` / `ev <词>` | Everything 文件搜索（空参数列出收藏筛选器 `@today/@large/@code` 与最近搜索历史）、异步预览及拖拽导出 |
-| `snip <词>` / `:reload` | 代码片段与动态模板扩展（支持 `{{date}}`/`{{datetime}}`/`{{unix}}`/`{{uuid}}`/`{{clipboard}}`） |
-| `flow` / `wf` / `cleanpaste` / `shottr` / `aisum` | 声明式轻量动作管道（零脚本解释器，支持为任意工作流绑定全局热键直达，配置于可同步的 `flows.toml`）：内置 6 条开箱管道（含截图识字翻译、剪贴板去换行直贴、剪贴板转存备忘、网页速查及按需调用本地 Ollama / DPAPI OpenAI 的零常驻 `llm_transform` AI 提炼要点） |
-| `ocr` / `ocr en` / `Ctrl+V` 贴图 | 按需拉起原生 WinRT 离线 OCR（自适应 2× 放大与标点清理、支持免贴图直识最近截图、原图对照审校编辑窗、一键翻译与单行复制，15s 自动释放） |
-| `Alt+T` / `tr <文本>` / `fy <文本>` | 多引擎划词/输入/OCR 联动翻译（原生 WinHTTP 并行查询 Google、MyMemory+有道音标词典、DeepL、OpenAI 兼容接口与本地 Ollama，Windows DPAPI 加密保存 API 密钥，无损恢复剪贴板且不污染历史，内置生词本与历史抽屉） |
-| `F1` / `Alt+S` / `F3` / `cap` / `pin` / `jtocr` / `jtfy` | 原生按需截图与万能贴图插件（可在「插件管理」按需启停）：`Alt+S`/`F1` 8 手柄矢量标注与白底长截图实时预览；**全局 `F3` 一键将最近复制的图片、本地图片文件、路径列表、`#HEX`/`rgb()` 色值卡或文本/代码卡片贴图置顶**（贴图窗内 `Ctrl+C` 复制原文/图片、`L` 直接翻译、滚轮缩放、`Ctrl+滚轮` 调透明度、双击/中键/`Esc` 关闭，0 常驻内存） |
-| `Esc` *(搜索框内)* | 零提示音两段式智能回退：有输入内容时先一键清空搜索词（保留焦点继续检索），搜索框为空时再按一次静默收起窗口；彻底消除单行编辑框系统「叮咚」蜂鸣声 |
-| `Alt+V` / `Alt+C` / `cb` / `clip` | 增强剪贴板管理中心（文本/图片/文件、语义分类、来源应用、`@pin/@img/@link/@file/@code/#标签` 与拼音检索、`Shift+Enter` 单行纯文本贴回或图片一键 OCR、`Ctrl+E` 工作台；遇外部热键冲突自动高优先级无损接管并突破 Windows 前台锁，确保随时秒唤） |
-| `note` / `memo` / `bw` | 纯外部独立官方 Protocol v2 插件 **本地 Markdown 备忘录 (`dev.tomoyo.notes`)**（`0.33 MB`、闲置 30 秒回收 0 MB 常驻）：支持在设置中心声明式配置全局热键与目录/上限/默认标签参数，支持全文/#标签检索、`note + 标题 :: 内容` 一键新建与 `note clip` 剪贴板转存 |
-| `kill <词>` / `ps <词>` | 进程列表查看与终止进程（按内存占用降序排列） |
-| `g` / `gh` / `crates` / `docs` / `bd` / `zh` / `mdn` | 可在设置中心自定义的快捷网页搜索前缀 |
-| `w <词>` | 已打开窗口列表筛选与切换 |
-| `:update` | 检查 GitHub Releases 更新、查看更新说明并跳转下载 |
-| `:settings` / `Ctrl+,` | 打开设置中心（快捷键录入、自定义应用目录、分组栏开关、主题与语言、插件管理、诊断日志、更新检查） |
-| `:logs` / `:stats` / `:plugins` / `:gc` | 查看运行/WebView/崩溃日志与诊断报告、进程内存/句柄/插件状态，或手动执行休眠清理 |
-| `:theme dark\|light\|midnight` / `:lang zh\|en` | 切换配色主题或界面语言 |
-| `hi` / `py` / `wasm` / `jwt` / `unit` / `json` | 内置参考插件示例（Rust STDIO / Python STDIO / WASM / WebView） |
-| `双击左键` / `Ctrl+Enter` / `Shift+Enter` / `Ctrl+Shift+Enter` / `Ctrl+P` / `Tab` / `Alt+1..8` | 双击打开 / 定位目录 / 终端或复制路径 / 以管理员身份运行 / 预览面板 / 动作菜单 / 快捷键直达 |
+| *(Direct typing)* | Hybrid search: native apps, DeskBox/portable folders, UWP/MSIX (Pinyin + heteronyms + multi-word intersection + query-aware frecency), calculator, color/timestamp/JSON inspection, open windows, pinned Everything results, and web fallback |
+| `Ctrl+Tab` / `Ctrl+1..9` / `@pdf` / `@code` | Extensible category filter bar with live item counts (up to 12 custom filters by extension or Everything query) |
+| `Ctrl+V` *(paste screenshot/files)* | Paste context capsule: preview image / Base64 / reveal folder; copy file path / SHA-256 / open terminal; `Backspace` to clear |
+| `f <query>` / `ev <query>` | Full-disk search (`fd`+`plocate` on Linux, Everything IPC on Windows) with `@today/@large/@code` presets, async preview & native drag-out |
+| `snip <name>` / `:reload` | Snippet & dynamic template expansion (`{{date}}`, `{{datetime}}`, `{{unix}}`, `{{uuid}}`, `{{clipboard}}`) |
+| `flow` / `wf` / `cleanpaste` / `shottr` / `aisum` | Declarative `flows.toml` action pipelines with optional global hotkeys and on-demand local Ollama / OpenAI `llm_transform` |
+| `ocr` / `ocr en` / `Ctrl+V` image | Ephemeral offline OCR (Tesseract 5 / WinRT `OcrEngine`) with adaptive upscaling, punctuation cleanup, side-by-side editor, and 15s auto-reap |
+| `Alt+T` / `tr <text>` / `fy <text>` | Multi-engine parallel translator (Google, MyMemory + Youdao phonetic dict, DeepL, OpenAI-compatible, local Ollama) with `libsecret`/DPAPI key encryption and vocabulary book |
+| `F1` / `Alt+S` / `F3` / `cap` / `pin` / `jtocr` | Native screenshot & universal desktop pin (`F3` pins copied images, image files, paths, `#HEX`/`rgb()` color cards, or text/code cards at 0 idle RAM) |
+| `Esc` *(in search box)* | Silent two-stage clear/dismiss: first press clears query while keeping focus, second press hides window with zero system beep |
+| `Alt+V` / `Alt+C` / `cb` / `clip` | SQLite clipboard manager (`@pin/@img/@link/@file/@code/#tag`, source app tracking, privacy blocklist, `Shift+Enter` plain-paste / image OCR, `Ctrl+E` workbench) |
+| `note` / `memo` / `bw` | Official external Protocol v2 STDIO plugin for local Markdown notes (`dev.tomoyo.notes`, reaps after 30s to 0 MB) |
+| `kill <name>` / `ps <name>` | Process list sorted by memory usage with termination support |
+| `g` / `gh` / `crates` / `docs` / `bd` / `zh` / `mdn` | Customizable web search prefixes |
+| `w <title>` | Live open-window switcher |
+| `:settings` (`Ctrl+,`) / `:update` / `:logs` / `:stats` / `:plugins` / `:gc` | Settings Center, GitHub Releases updater, redacted diagnostics, memory/handle telemetry, and manual hibernation trim |
+| `:theme dark\|light\|midnight` / `:lang zh\|en` | Theme & UI language switching |
+| `hi` / `py` / `wasm` / `jwt` / `unit` / `json` | Reference plugin demos (Rust STDIO, Python STDIO, WASM, WebView) |
 
 ---
 
-## 仓库架构 (Workspace Layout)
+## Plugin Authoring & Workspace Layout
 
-- [`crates/tomoyo-protocol`](crates/tomoyo-protocol) — 插件 Manifest、JSON-RPC、筛选枚举、注册表 Schema 与 UI 原语定义（无 OS 依赖）
-- [`crates/tomoyo-everything`](crates/tomoyo-everything) — Everything 1.4 / 1.5a `WM_COPYDATA` IPC 客户端
-- [`crates/tomoyo-core`](crates/tomoyo-core) — 配置读写、QueryRouter、WinHTTP 客户端、更新检查、有界文件/PNG 缩略图预览、拼音/模糊匹配、Frecency、i18n 与内存句柄采样
-- [`crates/tomoyo-providers`](crates/tomoyo-providers) — 内置数据源：Apps（Desktop/DeskBox/StartMenu/UWP/自定义目录）、Everything、Calc、Clipboard、Process、WebSearch、WindowsSwitcher、System/`:update`/`:stats`
-- [`crates/tomoyo-plugin-host`](crates/tomoyo-plugin-host) — STDIO (Job Object) + WASM (`wasmi`) + WebView 插件宿主管理
-- [`crates/tomoyo-sdk`](crates/tomoyo-sdk) & [`crates/tomoyo-wasm-sdk`](crates/tomoyo-wasm-sdk) — Rust 原生与 WebAssembly 插件开发 SDK
-- [`crates/tomoyo-webview-host`](crates/tomoyo-webview-host) & [`frontend/`](frontend) — 按需短生命周期 WebView2 宿主与 Svelte 5 + Tailwind CSS v4 + TypeScript 极简现代前端（单文件 IIFE 编译嵌入，承载设置中心、剪贴板工作台、多源翻译、OCR 审校与 `window.utools` 兼容层）
-- [`crates/tomoyo-cli`](crates/tomoyo-cli) — 插件脚手架、验证工具、SHA-256 校验、uTools 导入与插件安装 CLI
-- [`crates/tomoyo-app`](crates/tomoyo-app) — Windows 桌面启动器主程序（SDF + GDI 渲染、异步图标/预览加载、自定义弹出菜单、DPI 重缩放、`TaskbarCreated` 托盘自愈与崩溃滚动日志守护）
-- [`crates/tomoyo-capture`](crates/tomoyo-capture) — 按需原生截图、6 种标注、取色放大镜与桌面贴图子进程（`tomoyo-capture.exe`，0 常驻内存）
-- [`crates/tomoyo-plugin-ocr`](crates/tomoyo-plugin-ocr) — 基于 Windows 10/11 原生 WinRT `OcrEngine` 的按需离线 OCR 子进程插件（0 常驻内存）
-- [`crates/tomoyo-ui-shared`](crates/tomoyo-ui-shared)、[`crates/tomoyo-ui-macos`](crates/tomoyo-ui-macos)、[`crates/tomoyo-ui-linux`](crates/tomoyo-ui-linux) — 跨平台 UI 状态模型与 macOS (`.app` / Spotlight) / Linux (XDG `.desktop` / `fd`) 适配底座
-- [`packaging/`](packaging) — Inno Setup 安装包、Winget / Scoop 清单与 MSIX 打包脚本
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)、[`docs/CODING_STANDARDS.md`](docs/CODING_STANDARDS.md)、[`docs/UI_DESIGN_STANDARDS.md`](docs/UI_DESIGN_STANDARDS.md)、[`docs/ROADMAP.md`](docs/ROADMAP.md) & [`docs/PLUGIN_PROTOCOL.md`](docs/PLUGIN_PROTOCOL.md) — 架构、编码与 UI 组件规范、演进蓝图及插件通信协议文档
-- [`plugins/`](plugins) & [`registry/index.json`](registry/index.json) — 5 个多运行时示例与内置 OCR 插件及插件索引清单
-- [`.github/workflows/`](.github/workflows) — Windows 资源预算门禁 + Linux/macOS 跨平台编译 CI 与 Tag 触发发包流水线
+Create, test, validate, or import plugins in seconds with `tomoyo-cli`:
+
+```bash
+tomoyo-cli new my-plugin --lang rust     # or wasm | python | webview
+tomoyo-cli dev ./my-plugin --query "hi" --once
+tomoyo-cli verify ./my-plugin
+tomoyo-cli import-utools ./utools-plugin-dir
+```
+
+### Workspace Crates
+
+- [`crates/tomoyo-protocol`](crates/tomoyo-protocol) — OS-free Plugin Manifest, JSON-RPC v2 wire types, filter enums, registry schema, and UI primitives
+- [`crates/tomoyo-everything`](crates/tomoyo-everything) — Pure-Rust Voidtools Everything 1.4 / 1.5a `WM_COPYDATA` IPC client
+- [`crates/tomoyo-core`](crates/tomoyo-core) — Query router, config engine, HTTP (`libcurl` / `WinHTTP`), updater, bounded previews, Pinyin/fuzzy matcher, frecency, i18n, and telemetry
+- [`crates/tomoyo-providers`](crates/tomoyo-providers) — Built-in providers (Apps, Everything/`fd`, Calc, Clipboard, Process, WebSearch, Window Switcher, System/Update)
+- [`crates/tomoyo-plugin-host`](crates/tomoyo-plugin-host) — Unified STDIO (Process Group / Job Object), `wasmi` WASM sandbox, and WebView plugin host
+- [`crates/tomoyo-sdk`](crates/tomoyo-sdk) & [`crates/tomoyo-wasm-sdk`](crates/tomoyo-wasm-sdk) — Rust native STDIO and `wasm32-unknown-unknown` plugin SDKs
+- [`crates/tomoyo-webview-host`](crates/tomoyo-webview-host) & [`frontend/`](frontend) — Short-lived WebKitGTK 4.1 / WebView2 host and Svelte 5 + Tailwind v4 + TypeScript frontend
+- [`crates/tomoyo-cli`](crates/tomoyo-cli) — Plugin scaffolding, dev runner, SHA-256 verification, uTools importer, and decentralized registry CLI
+- [`crates/tomoyo-app`](crates/tomoyo-app) — Main launcher microkernel (Linux GTK3/Cairo/Pango/KGlobalAccel/AppIndicator & Windows SDF/GDI)
+- [`crates/tomoyo-capture`](crates/tomoyo-capture) — Ephemeral screenshot, vector annotation, stitch, color picker, and pin helper
+- [`crates/tomoyo-plugin-ocr`](crates/tomoyo-plugin-ocr) — Ephemeral offline OCR plugin (Linux Tesseract 5 / Windows WinRT `OcrEngine`)
+- [`crates/tomoyo-ui-shared`](crates/tomoyo-ui-shared), [`crates/tomoyo-ui-linux`](crates/tomoyo-ui-linux), [`crates/tomoyo-ui-macos`](crates/tomoyo-ui-macos) — Cross-platform view models and OS backend adapters
+- [`packaging/`](packaging) — Linux `.desktop` / `PKGBUILD` and Windows Inno Setup / Winget / Scoop / MSIX manifests
+- [`docs/`](docs) — [`ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`PLUGIN_PROTOCOL.md`](docs/PLUGIN_PROTOCOL.md), [`CODING_STANDARDS.md`](docs/CODING_STANDARDS.md), [`UI_DESIGN_STANDARDS.md`](docs/UI_DESIGN_STANDARDS.md), [`DISTRIBUTION.md`](docs/DISTRIBUTION.md), and [`ROADMAP.md`](docs/ROADMAP.md)
 
 ---
 
-## 贡献与开源协议
+## Contributing & License
 
-欢迎通过 Issue 或 PR 参与改进或提交插件。  
-本项目采用 **MIT** 或 **Apache-2.0** 双许可协议（详见 [LICENSE-MIT](LICENSE-MIT) 与 [LICENSE-APACHE](LICENSE-APACHE)）。
+Issues, pull requests, and community plugins are welcome.  
+Dual-licensed under **MIT** or **Apache-2.0** ([LICENSE-MIT](LICENSE-MIT), [LICENSE-APACHE](LICENSE-APACHE)).

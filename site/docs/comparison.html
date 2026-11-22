@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Launcher Comparison — Tomoyo Launcher vs. Vicinae, Walker, Anyrun, Flow Launcher, uTools &amp; Raycast</title>
+  <meta name="description" content="Detailed technical comparison between Tomoyo Launcher and Vicinae, Walker, Anyrun, Ulauncher, Flow Launcher, PowerToys Run, uTools, and Raycast across stack, OS support, idle memory, file search, and plugin runtimes." />
+  <link rel="canonical" href="https://q871958549.github.io/Tomoyo/docs/comparison.html" />
+  <link rel="describedby" href="../llms.txt" />
+  <link rel="alternate" type="text/markdown" href="comparison.md" title="Comparison (Markdown)" />
+  <style>
+    :root { --bg:#0f121b; --surface:#171b28; --surface-2:#1e2436; --border:#2b334b; --text:#e7ecf7; --muted:#9aa6c4; --accent:#38bdf8; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: system-ui,-apple-system,sans-serif; background:var(--bg); color:var(--text); line-height:1.65; }
+    a { color:var(--accent); text-decoration:none; } a:hover { text-decoration:underline; }
+    code { font-family: ui-monospace,Menlo,Consolas,monospace; background:#0b0e15; border:1px solid var(--border); padding:0.1rem 0.35rem; border-radius:5px; font-size:0.9em; }
+    .wrap { max-width:1040px; margin:0 auto; padding:2rem 1.25rem 4rem; }
+    nav { display:flex; flex-wrap:wrap; gap:1rem; padding-bottom:1rem; border-bottom:1px solid var(--border); margin-bottom:2rem; font-size:0.95rem; }
+    .table-wrap { overflow-x:auto; margin:1.25rem 0; }
+    table { width:100%; border-collapse:collapse; background:var(--surface); font-size:0.92rem; }
+    th, td { padding:0.65rem 0.75rem; border:1px solid var(--border); text-align:left; vertical-align:top; }
+    th { background:var(--surface-2); color:#fff; }
+    ul { padding-left:1.25rem; } li { margin-bottom:0.55rem; }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <nav>
+      <a href="../index.html">Home</a>
+      <strong>Comparison</strong>
+      <a href="plugins.html">Plugin SDKs &amp; Protocol v2</a>
+      <a href="benchmarks.html">Benchmarks &amp; Hygiene</a>
+      <a href="comparison.md">Markdown View</a>
+    </nav>
+    <h1>Tomoyo Launcher vs. Other Desktop Launchers</h1>
+    <p>A factual architecture comparison covering runtime stack, OS &amp; display server support, licensing, memory isolation, file indexing, and plugin models.</p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Launcher</th><th>Core Stack</th><th>OS &amp; Display Server</th><th>License</th><th>Memory Isolation</th><th>File Search</th><th>Plugin Runtimes</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><strong>Tomoyo Launcher</strong></td><td>Rust + 2x2 SDF + Cairo/Pango (Linux) / Win32 ClearType GDI</td><td>Linux (Wayland &amp; X11) + Windows 10/11 (x64 &amp; ARM64)</td><td>MIT OR Apache-2.0</td><td>~22 MB private commit; WebView, Capture, OCR &amp; Notes exit to 0 MB idle</td><td><code>fd</code> + <code>plocate</code> / Everything 1.4 &amp; 1.5a IPC</td><td>Builtin Rust, STDIO JSON-RPC 2.0, <code>wasmi</code> WASM, ephemeral WebView (<code>utools</code> compat)</td></tr>
+          <tr><td>Vicinae</td><td>C++ / Qt + Node.js workers</td><td>Linux (Wayland/X11), macOS, Windows</td><td>Open Source</td><td>Qt GUI + background daemon + Node.js workers</td><td>Built-in file search</td><td>TypeScript / React (Raycast-compatible)</td></tr>
+          <tr><td>Walker</td><td>Rust + GTK4 Layer Shell + Elephant</td><td>Linux (Wayland-only)</td><td>Open Source</td><td>GTK4 frontend + Elephant background service</td><td>Elephant provider</td><td>Modular Elephant providers</td></tr>
+          <tr><td>Anyrun</td><td>Rust + GTK4 Layer Shell</td><td>Linux (Wayland-only)</td><td>Open Source</td><td>Single GTK4 native runner</td><td>Plugin-based</td><td>Compiled Rust <code>.so</code> libraries</td></tr>
+          <tr><td>Ulauncher</td><td>Python + GTK+</td><td>Linux (X11 &amp; Wayland)</td><td>Open Source</td><td>Python + GTK process</td><td>Extensions</td><td>Python API</td></tr>
+          <tr><td>Flow Launcher</td><td>C# (.NET) + WPF</td><td>Windows</td><td>MIT</td><td>.NET WPF process</td><td>Everything integration</td><td>C#, Python, Node.js, Executables</td></tr>
+          <tr><td>PowerToys Run</td><td>C# (.NET) + C++</td><td>Windows</td><td>MIT</td><td>.NET / PowerToys host</td><td>Windows Search</td><td>C# (.NET) DLLs</td></tr>
+          <tr><td>uTools</td><td>Electron (Chromium + Node.js)</td><td>Windows, macOS, Linux</td><td>Proprietary</td><td>Multi-process Chromium / Node.js</td><td>Everything / OS search</td><td>HTML / JS / Node.js preload</td></tr>
+          <tr><td>Raycast</td><td>Swift / Rust / C# / TypeScript</td><td>macOS, Windows (Beta)</td><td>Proprietary core</td><td>Native shell + Node.js host</td><td>Spotlight / Native</td><td>TypeScript / React</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <h2>When Each Option Fits Best</h2>
+    <ul>
+      <li><strong>Tomoyo Launcher</strong>: Best when you need one open-source Rust launcher across Linux (KDE Wayland/X11) and Windows 10/11, strict ~22 MB idle memory, Everything IPC / <code>fd</code>+<code>plocate</code>, ephemeral 0-idle-RAM clipboard/screenshot/OCR tools, and STDIO/WASM/uTools-compatible plugins.</li>
+      <li><strong>Vicinae</strong>: Best if Raycast TypeScript/React extension compatibility on Linux is your top priority.</li>
+      <li><strong>Walker / Anyrun</strong>: Best if you run a Wayland-only compositor (e.g., Hyprland) and want GTK4 Layer Shell CSS theming.</li>
+      <li><strong>Flow Launcher / PowerToys Run</strong>: Best if you are Windows-only and already anchored in the .NET ecosystem.</li>
+    </ul>
+  </main>
+</body>
+</html>

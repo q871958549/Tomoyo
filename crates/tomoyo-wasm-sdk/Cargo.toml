@@ -3,7 +3,12 @@ name = "tomoyo-wasm-sdk"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Zero-bloat Rust SDK for authoring capability-sandboxed Tomoyo WebAssembly plugins (wasm32-unknown-unknown)"
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+description = "Zero-bloat Rust SDK for authoring capability-sandboxed Tomoyo Launcher WebAssembly plugins (wasm32-unknown-unknown)"
+keywords = ["launcher", "wasm", "plugin", "sdk", "tomoyo"]
+categories = ["wasm", "development-tools", "api-bindings"]
 
 [dependencies]
 tomoyo-protocol = { workspace = true }

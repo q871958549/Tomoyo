@@ -6,6 +6,9 @@ pub mod capture;
 pub mod clipboard;
 pub mod everything;
 pub mod everything_history;
+mod everything_items;
+#[cfg(target_os = "linux")]
+pub mod everything_linux;
 mod everything_rank;
 mod file_actions;
 pub mod flows;

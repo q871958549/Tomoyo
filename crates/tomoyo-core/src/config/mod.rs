@@ -3,6 +3,7 @@
 mod capture;
 mod hotkey;
 mod modules;
+mod paths;
 mod sanitize;
 
 pub use capture::{sanitize_capture_config, CaptureConfig, CaptureToolHotkeys};
@@ -15,9 +16,13 @@ pub use hotkey::{
 pub use modules::{
     sanitize_filters_and_plugins, PLUGIN_CAPTURE, PLUGIN_CLIPBOARD, PLUGIN_OCR, PLUGIN_TRANSLATE,
 };
+pub use paths::{
+    default_excluded_apps, default_hotkey_excluded_apps, default_web_searches, normalize_exe_name,
+    validate_scan_dir,
+};
 pub use sanitize::{
-    is_safe_http_url, is_valid_github_repo, normalize_exe_name, sanitize_config, validate_scan_dir,
-    validate_web_search, MAX_EXTRA_DIRS, MAX_SCAN_DEPTH,
+    is_safe_http_url, is_valid_github_repo, sanitize_config, validate_web_search, MAX_EXTRA_DIRS,
+    MAX_SCAN_DEPTH,
 };
 pub use tomoyo_protocol::CustomFilterTab;
 
@@ -282,28 +287,6 @@ fn default_clip_hotkey() -> String {
     "Alt+V".into()
 }
 
-pub fn default_hotkey_excluded_apps() -> Vec<String> {
-    vec![
-        "raylink.exe".into(),
-        "mstsc.exe".into(),
-        "parsec.exe".into(),
-        "moonlight.exe".into(),
-        "todesk.exe".into(),
-        "sunloginclient.exe".into(),
-        "anydesk.exe".into(),
-    ]
-}
-
-pub fn default_excluded_apps() -> Vec<String> {
-    vec![
-        "keepass.exe".into(),
-        "keepassxc.exe".into(),
-        "bitwarden.exe".into(),
-        "1password.exe".into(),
-        "enpass.exe".into(),
-    ]
-}
-
 impl Default for ClipboardConfig {
     fn default() -> Self {
         Self {
@@ -348,19 +331,6 @@ fn default_ev_dedicated() -> usize {
 }
 fn default_clip_max() -> usize {
     500
-}
-
-pub fn default_web_searches() -> Vec<WebSearchEngine> {
-    let mk = |k: &str, n: &str, u: &str| WebSearchEngine { keyword: k.into(), name: n.into(), url: u.into() };
-    vec![
-        mk("g", "Google Search", "https://www.google.com/search?q={q}"),
-        mk("gh", "GitHub Search", "https://github.com/search?q={q}"),
-        mk("crates", "crates.io (Rust)", "https://crates.io/search?q={q}"),
-        mk("docs", "docs.rs (Rust Docs)", "https://docs.rs/releases/search?query={q}"),
-        mk("bd", "Baidu 百度搜索", "https://www.baidu.com/s?wd={q}"),
-        mk("zh", "Zhihu 知乎搜索", "https://www.zhihu.com/search?type=content&q={q}"),
-        mk("mdn", "MDN Web Docs", "https://developer.mozilla.org/en-US/search?q={q}"),
-    ]
 }
 
 impl Default for TomoyoConfig {

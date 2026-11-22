@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Camera, Languages, Pin, RotateCcw, ScanText } from '@lucide/svelte';
+  import { Camera, Languages, Pin, RotateCcw, ScanText, Video } from '@lucide/svelte';
   import { defaultCaptureToolHotkeys } from '../../lib/defaults';
   import { postHost } from '../../lib/ipc';
   import { tr, type Lang } from '../../lib/i18n';
@@ -7,6 +7,7 @@
   import Button from '../../lib/ui/Button.svelte';
   import HotkeyRecorder from '../../lib/ui/HotkeyRecorder.svelte';
   import PathPicker from '../../lib/ui/PathPicker.svelte';
+  import Segmented from '../../lib/ui/Segmented.svelte';
   import Slider from '../../lib/ui/Slider.svelte';
   import Switch from '../../lib/ui/Switch.svelte';
 
@@ -16,11 +17,12 @@
     capHotkeyStatus?: HotkeySlotStatus;
     pinHotkeyStatus?: HotkeySlotStatus;
     ocrHotkeyStatus?: HotkeySlotStatus;
+    showRecord?: boolean;
     onJumpDoctor?: () => void;
     onSave: (delayMs?: number) => void;
   }
 
-  let { cfg, lang, capHotkeyStatus, pinHotkeyStatus, ocrHotkeyStatus, onJumpDoctor, onSave }: Props = $props();
+  let { cfg, lang, capHotkeyStatus, pinHotkeyStatus, ocrHotkeyStatus, showRecord = true, onJumpDoctor, onSave }: Props = $props();
   let isEn = $derived(lang === 'en');
   let editingToolKey = $state<keyof CaptureToolHotkeys | null>(null);
   let toolKeyHint = $state('');
@@ -51,7 +53,7 @@
     { value: 'Alt+2', label: 'Alt+2' },
   ];
 
-  const toolKeyItems: Array<{ key: keyof CaptureToolHotkeys; zh: string; en: string }> = [
+  let toolKeyItems = $derived<Array<{ key: keyof CaptureToolHotkeys; zh: string; en: string }>>([
     { key: 'rect', zh: '矩形框', en: 'Rect' },
     { key: 'ellipse', zh: '椭圆圈', en: 'Ellipse' },
     { key: 'arrow', zh: '箭头 / 弯曲箭', en: 'Arrow' },
@@ -65,7 +67,8 @@
     { key: 'ocr', zh: 'OCR 审校窗口', en: 'OCR Inspector' },
     { key: 'ocr_copy', zh: '直接提取文字', en: 'Extract Text' },
     { key: 'translate', zh: '截图翻译', en: 'Translate' },
-  ];
+    ...(showRecord ? [{ key: 'record' as const, zh: '区域录屏', en: 'Record Video/GIF' }] : []),
+  ]);
 
   function launch(mode: string) {
     postHost({ cmd: 'start_capture', mode });
@@ -132,6 +135,12 @@
     <Camera size={14} />
     {tr(lang, 'btn_cap_region')}
   </Button>
+  {#if showRecord}
+    <Button variant="secondary" onclick={() => launch('record')}>
+      <Video size={14} />
+      {isEn ? 'Record Region' : '区域录屏'}
+    </Button>
+  {/if}
   <Button variant="secondary" onclick={() => launch('ocr')}>
     <ScanText size={14} />
     {tr(lang, 'btn_cap_ocr')}
@@ -243,6 +252,46 @@
       onclear={() => { cfg.capture.save_dir = ''; onSave(0); }}
     />
   </div>
+
+  {#if showRecord}
+  <div class="t-row">
+    <div>
+      <div class="t-label">{isEn ? 'Default Recording Format & FPS' : '录屏默认格式与帧率'}</div>
+      <div class="t-desc">{isEn ? 'Can also be switched live inside the capture recording bar' : '选区工具栏内也可按需随时切换，MP4 支持系统声与麦克风，GIF 自动调色盘降噪'}</div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <Segmented
+        value={cfg.capture.record_format || 'mp4'}
+        options={[{ value: 'mp4', label: 'MP4' }, { value: 'gif', label: 'GIF' }]}
+        onchange={(v) => { cfg.capture.record_format = v; onSave(0); }}
+      />
+      <Segmented
+        value={String(cfg.capture.record_fps || 30)}
+        options={[{ value: '15', label: '15 fps' }, { value: '30', label: '30 fps' }, { value: '60', label: '60 fps' }]}
+        onchange={(v) => { cfg.capture.record_fps = Number(v); onSave(0); }}
+      />
+    </div>
+  </div>
+
+  <div class="t-row">
+    <div>
+      <div class="t-label">{isEn ? 'Recording Audio & Cursor' : '录屏音频与鼠标指针'}</div>
+      <div class="t-desc">{isEn ? 'MP4 mode captures system loopback or microphone; GIF is silent' : 'MP4 模式下可选系统声音或麦克风（GIF 仅录画面）'}</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <Segmented
+        value={cfg.capture.record_audio || 'none'}
+        options={[
+          { value: 'none', label: isEn ? 'Muted' : '静音' },
+          { value: 'system', label: isEn ? 'System' : '系统声' },
+          { value: 'mic', label: isEn ? 'Mic' : '麦克风' },
+        ]}
+        onchange={(v) => { cfg.capture.record_audio = v; onSave(0); }}
+      />
+      <Switch checked={cfg.capture.record_cursor !== false} onchange={(v) => { cfg.capture.record_cursor = v; onSave(0); }} />
+    </div>
+  </div>
+  {/if}
 </div>
 
 <div class="t-card hk-card" style="margin-top:14px">

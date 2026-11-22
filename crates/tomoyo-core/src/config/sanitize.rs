@@ -4,6 +4,7 @@
 //! rejects non-HTTP(S) web search templates, and prevents crashes or resource exhaustion
 //! even when `config.toml` or WebView IPC payloads are malformed or adversarial.
 
+use super::paths::{normalize_exe_name, validate_scan_dir};
 use super::{
     default_plugin_registries, default_web_searches, parse_hotkey, TomoyoConfig, WebSearchEngine,
 };
@@ -16,94 +17,10 @@ pub const MAX_EXTRA_FILTER_CHARS: usize = 160;
 pub const MAX_FAVORITES: usize = 12;
 pub const MAX_EXCLUDED_APPS: usize = 32;
 
-/// Normalizes and validates a privacy-excluded Windows process filename (e.g., `keepass` -> `keepass.exe`).
-pub fn normalize_exe_name(raw: &str) -> Option<String> {
-    let trimmed = raw.trim().trim_matches('"').trim();
-    if trimmed.is_empty() || trimmed.len() > 64 {
-        return None;
-    }
-    if trimmed.contains('/') || trimmed.contains('\\') || trimmed.contains("..") {
-        return None;
-    }
-    let mut low = trimmed.to_ascii_lowercase();
-    if !low.ends_with(".exe") {
-        low.push_str(".exe");
-    }
-    let stem = low.strip_suffix(".exe")?;
-    if stem.is_empty()
-        || !stem
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'.' | b' '))
-    {
-        return None;
-    }
-    Some(low)
-}
-
 const RESERVED_KEYWORDS: &[&str] = &[
     "f", "ev", "cb", "tr", "fy", "cap", "shot", "jt", "pin", "jtocr", "jtfy", "w", "kill", "ps",
     "snip", "=", "b64", "b64d",
 ];
-
-/// Validates a candidate custom scan directory path.
-/// Blocks drive roots (`C:\`), UNC shares (`\\host\share`), relative/traversal paths (`..`),
-/// and critical Windows system roots (`C:\Windows`, `ProgramData`, `$Recycle.Bin`).
-pub fn validate_scan_dir(raw: &str) -> Result<String, &'static str> {
-    let trimmed = raw.trim().trim_matches('"').trim();
-    if trimmed.is_empty() {
-        return Err("路径不能为空");
-    }
-    if trimmed.len() > 260 || trimmed.chars().any(|c| c.is_control()) {
-        return Err("路径长度超限或包含非法控制字符");
-    }
-    if trimmed.starts_with(r"\\") || trimmed.starts_with("//") {
-        return Err("不支持网络 UNC 共享路径");
-    }
-    let normalized = trimmed.replace('/', "\\");
-    if normalized.split('\\').any(|seg| seg == "..") {
-        return Err("路径不允许包含上级跳转 (..)");
-    }
-
-    // Must be a Windows absolute drive path (`X:\...`) on Windows or `/` path on Unix.
-    let bytes = normalized.as_bytes();
-    let is_win_abs = bytes.len() >= 3
-        && bytes[0].is_ascii_alphabetic()
-        && bytes[1] == b':'
-        && bytes[2] == b'\\';
-    let is_unix_abs = normalized.starts_with('/');
-    if !is_win_abs && !is_unix_abs {
-        return Err("请通过浏览框选择完整绝对目录路径");
-    }
-
-    let clean = normalized.trim_end_matches('\\').to_string();
-    // Reject bare drive root (`C:`, `D:`) or Unix `/`
-    if clean.len() <= 2 || clean == "/" {
-        return Err("禁止扫描整个磁盘根目录（易引发卡顿与异常句柄占用）");
-    }
-
-    let low = clean.to_ascii_lowercase();
-    let blocked_prefixes = [
-        r"c:\windows",
-        r"c:\$recycle.bin",
-        r"c:\system volume information",
-        r"c:\programdata",
-        r"c:\recovery",
-        r"c:\perflogs",
-    ];
-    if blocked_prefixes
-        .iter()
-        .any(|p| low == *p || low.starts_with(&format!(r"{p}\")))
-    {
-        return Err("禁止将 Windows 系统核心目录加入扫描列表");
-    }
-    if let Ok(sys_root) = std::env::var("SystemRoot") {
-        let sr = sys_root.trim_end_matches('\\').to_ascii_lowercase();
-        if !sr.is_empty() && (low == sr || low.starts_with(&format!(r"{sr}\"))) {
-            return Err("禁止扫描 Windows 系统目录");
-        }
-    }
-    Ok(clean)
-}
 
 /// Validates a GitHub repository slug (`owner/repo`).
 pub fn is_valid_github_repo(repo: &str) -> bool {
@@ -413,7 +330,14 @@ mod tests {
         assert_eq!(cfg.everything.max_dedicated_results, 50);
         assert_eq!(cfg.clipboard.max_persisted_items, 2000);
         assert_eq!(cfg.clipboard.hotkey, "Alt+V");
-        assert_eq!(cfg.clipboard.excluded_apps, vec!["keepass.exe", "bitwarden.exe"]);
+        if cfg!(windows) {
+            assert_eq!(cfg.clipboard.excluded_apps, vec!["keepass.exe", "bitwarden.exe"]);
+        } else {
+            assert_eq!(cfg.clipboard.excluded_apps, vec!["keepass", "keepass.exe", "bitwarden.exe"]);
+        }
+        assert!(validate_scan_dir("/").is_err());
+        assert!(validate_scan_dir("/usr/bin").is_err());
+        assert_eq!(validate_scan_dir("/home/timmy/Tools/").as_deref(), Ok("/home/timmy/Tools"));
         assert_eq!(cfg.window.width_dip, 1280);
         assert_eq!(cfg.capture.hotkey, "Alt+S");
         assert_eq!(cfg.capture.pin_opacity, 30);

@@ -1,7 +1,21 @@
-//! Pure-Rust native IPC client for Voidtools Everything (1.4 & 1.5a).
+//! Pure-Rust native `WM_COPYDATA` IPC client for **Voidtools Everything** (1.4 & 1.5a),
+//! extracted from **Tomoyo Launcher** (`github.com/q871958549/Tomoyo`).
 //!
-//! Speaks the `WM_COPYDATA` `EVERYTHING_IPC_QUERY2W` protocol directly with zero
-//! external DLL dependencies and strict timeouts so the launcher can never hang.
+//! Speaks `EVERYTHING_IPC_QUERY2W` directly with zero external DLL dependencies and
+//! strict query timeouts (`EverythingQueryOptions::timeout_ms`), returning
+//! `EverythingError::UnsupportedPlatform` cleanly on non-Windows targets.
+//!
+//! ```no_run
+//! use tomoyo_everything::{detect_running, query, EverythingQueryOptions};
+//!
+//! if detect_running().is_some() {
+//!     let resp = query("ext:rs Cargo.toml", &EverythingQueryOptions::default())?;
+//!     for entry in resp.entries {
+//!         println!("{} -> {}", entry.name, entry.full_path);
+//!     }
+//! }
+//! # Ok::<(), tomoyo_everything::EverythingError>(())
+//! ```
 
 use chrono::{DateTime, Local, TimeZone, Utc};
 use thiserror::Error;

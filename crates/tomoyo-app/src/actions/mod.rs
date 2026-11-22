@@ -1,9 +1,19 @@
 //! Unified native Windows action router.
 
+#[cfg(windows)]
+mod clipboard_win;
+#[cfg(target_os = "linux")]
+#[path = "clipboard_linux.rs"]
 mod clipboard_win;
 mod file_ops;
+#[cfg(windows)]
+mod shell_win;
+#[cfg(target_os = "linux")]
+#[path = "shell_linux.rs"]
 mod shell_win;
 
+#[cfg(target_os = "linux")]
+pub use clipboard_win::set_clipboard_file_uri;
 pub use clipboard_win::{
     clipboard_has_rich_attachment, clipboard_source_app_name, copy_image_as_base64_uri,
     is_clipboard_confidential, read_clipboard_files, read_clipboard_image_png,
@@ -13,14 +23,18 @@ pub use file_ops::{
     compute_file_sha256_bounded, copy_file_contents_bounded, extract_zip_into_sibling_dir,
     spawn_pin_image_file,
 };
+#[cfg(target_os = "linux")]
+pub use shell_win::send_ctrl_c_cleanly;
 pub use shell_win::{
     kill_process_by_pid, paste_into_previous_window_async, shell_open, shell_open_as_admin,
     spawn_capture_tool, spawn_clipboard_manager_window, spawn_settings_window,
     spawn_translator_window,
 };
 
-use shell_win::{focus_window, run_system_command, spawn_ephemeral_webview};
-use std::path::Path;
+use shell_win::{
+    focus_window, open_terminal_at, reveal_in_file_manager, run_system_command,
+    spawn_ephemeral_webview,
+};
 use std::sync::Arc;
 use tomoyo_plugin_host::PluginHost;
 use tomoyo_protocol::{ActionKind, ExecuteRequest, InternalCommandKind};
@@ -90,8 +104,7 @@ pub fn execute_action(
             }
         }
         ActionKind::RevealInExplorer { path } => {
-            let arg = format!("/select,\"{path}\"");
-            let ok = shell_open("explorer.exe", Some(&arg), None);
+            let ok = reveal_in_file_manager(path);
             ActionOutcome {
                 hide_window: ok,
                 toast: if ok { None } else { Some(format!("Failed to reveal: {path}")) },
@@ -99,10 +112,7 @@ pub fn execute_action(
             }
         }
         ActionKind::OpenTerminalAt { dir } => {
-            let target_dir = if Path::new(dir).is_dir() { dir.as_str() } else { "." };
-            let wt_arg = format!("-d \"{target_dir}\"");
-            let ok = shell_open("wt.exe", Some(&wt_arg), Some(target_dir))
-                || shell_open("powershell.exe", None, Some(target_dir));
+            let ok = open_terminal_at(dir);
             ActionOutcome {
                 hide_window: ok,
                 toast: if ok { None } else { Some("Failed to open terminal".into()) },

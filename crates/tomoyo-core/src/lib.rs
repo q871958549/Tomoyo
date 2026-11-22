@@ -13,6 +13,8 @@ pub mod frecency;
 pub mod http;
 pub mod i18n;
 pub mod intent;
+#[cfg(target_os = "linux")]
+pub mod linux_sys;
 pub mod matcher;
 pub mod matcher_highlight;
 pub mod permissions;
@@ -46,13 +48,24 @@ pub use updater::*;
 
 use std::path::PathBuf;
 
-/// Returns Tomoyo's local data directory (`%LOCALAPPDATA%\Tomoyo` on Windows).
+/// Returns Tomoyo's local data directory (`%LOCALAPPDATA%\Tomoyo` on Windows,
+/// `$XDG_DATA_HOME/tomoyo` or `~/.local/share/tomoyo` on Linux/Unix).
 pub fn data_dir() -> PathBuf {
     if let Ok(local) = std::env::var("LOCALAPPDATA") {
         return PathBuf::from(local).join("Tomoyo");
     }
+    if let Ok(xdg) = std::env::var("XDG_DATA_HOME")
+        && !xdg.trim().is_empty()
+    {
+        return PathBuf::from(xdg.trim()).join("tomoyo");
+    }
     if let Ok(home) = std::env::var("HOME") {
-        return PathBuf::from(home).join(".tomoyo");
+        let legacy = PathBuf::from(&home).join(".tomoyo");
+        let xdg_default = PathBuf::from(&home).join(".local").join("share").join("tomoyo");
+        if legacy.exists() && !xdg_default.exists() {
+            return legacy;
+        }
+        return xdg_default;
     }
     PathBuf::from(".tomoyo")
 }

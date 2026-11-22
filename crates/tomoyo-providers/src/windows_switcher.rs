@@ -126,7 +126,59 @@ fn enumerate_desktop_windows() -> Vec<(isize, String)> {
     list
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
+mod linux_win {
+    use std::collections::HashMap;
+    use std::hash::{Hash, Hasher};
+    use std::sync::{OnceLock, RwLock};
+
+    static WINDOW_IDS: OnceLock<RwLock<HashMap<isize, String>>> = OnceLock::new();
+
+    fn registry() -> &'static RwLock<HashMap<isize, String>> {
+        WINDOW_IDS.get_or_init(|| RwLock::new(HashMap::new()))
+    }
+
+    pub fn enumerate_desktop_windows() -> Vec<(isize, String)> {
+        let Some(rows) = tomoyo_core::linux_sys::dbus_krunner_windows() else {
+            return Vec::new();
+        };
+        let mut out = Vec::with_capacity(rows.len());
+        let mut map = HashMap::with_capacity(rows.len());
+        for (match_id, title, app_id) in rows {
+            if title == "Tomoyo" || title.trim().is_empty() {
+                continue;
+            }
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            match_id.hash(&mut h);
+            let token = (h.finish() as isize).abs().max(1);
+            let display = if app_id.is_empty() || title.to_lowercase().contains(&app_id.to_lowercase()) {
+                title
+            } else {
+                format!("{title} ({app_id})")
+            };
+            map.insert(token, match_id);
+            out.push((token, display));
+        }
+        if let Ok(mut guard) = registry().write() {
+            *guard = map;
+        }
+        out
+    }
+
+    pub fn resolve_linux_window_id(token: isize) -> Option<String> {
+        registry().read().ok()?.get(&token).cloned()
+    }
+}
+
+#[cfg(target_os = "linux")]
+pub use linux_win::resolve_linux_window_id;
+
+#[cfg(target_os = "linux")]
+fn enumerate_desktop_windows() -> Vec<(isize, String)> {
+    linux_win::enumerate_desktop_windows()
+}
+
+#[cfg(all(not(windows), not(target_os = "linux")))]
 fn enumerate_desktop_windows() -> Vec<(isize, String)> {
     Vec::new()
 }

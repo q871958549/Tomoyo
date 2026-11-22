@@ -219,7 +219,26 @@ pub fn is_autostart_enabled() -> bool {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
+fn linux_autostart_file() -> Option<PathBuf> {
+    if let Ok(cfg) = std::env::var("XDG_CONFIG_HOME")
+        && !cfg.trim().is_empty()
+    {
+        return Some(PathBuf::from(cfg.trim()).join("autostart").join("tomoyo.desktop"));
+    }
+    std::env::var("HOME")
+        .ok()
+        .map(|h| PathBuf::from(h).join(".config").join("autostart").join("tomoyo.desktop"))
+}
+
+#[cfg(target_os = "linux")]
+pub fn is_autostart_enabled() -> bool {
+    let Some(path) = linux_autostart_file() else { return false; };
+    let Ok(raw) = std::fs::read_to_string(path) else { return false; };
+    !raw.lines().any(|l| l.trim().eq_ignore_ascii_case("Hidden=true") || l.trim().eq_ignore_ascii_case("X-GNOME-Autostart-enabled=false"))
+}
+
+#[cfg(all(not(windows), not(target_os = "linux")))]
 pub fn is_autostart_enabled() -> bool {
     false
 }
@@ -272,7 +291,41 @@ pub fn set_autostart_enabled(enable: bool) -> Result<(), String> {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
+pub fn set_autostart_enabled(enable: bool) -> Result<(), String> {
+    let Some(path) = linux_autostart_file() else {
+        return Err("HOME 未设置，无法写入自启动项".into());
+    };
+    if !enable {
+        if path.exists() {
+            std::fs::remove_file(&path).map_err(|e| format!("remove autostart: {e}"))?;
+        }
+        return Ok(());
+    }
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("create autostart dir: {e}"))?;
+    }
+    let cur = std::env::current_exe().map_err(|e| e.to_string())?;
+    let sibling = cur.with_file_name("tomoyo");
+    let exe = if sibling.is_file() { sibling } else { cur };
+    let desktop = format!(
+        "[Desktop Entry]\n\
+         Type=Application\n\
+         Version=1.0\n\
+         Name=Tomoyo\n\
+         Comment=Low-memory open desktop launcher\n\
+         Exec=\"{}\" --silent\n\
+         Icon=tomoyo\n\
+         Terminal=false\n\
+         Categories=Utility;\n\
+         X-KDE-autostart-after=panel\n\
+         X-GNOME-Autostart-enabled=true\n",
+        exe.display()
+    );
+    std::fs::write(&path, desktop).map_err(|e| format!("write autostart: {e}"))
+}
+
+#[cfg(all(not(windows), not(target_os = "linux")))]
 pub fn set_autostart_enabled(_enable: bool) -> Result<(), String> {
     Ok(())
 }

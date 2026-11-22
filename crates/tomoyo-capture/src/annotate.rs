@@ -1,3 +1,5 @@
+#![cfg_attr(not(windows), allow(dead_code))]
+
 //! Editable vector annotation data model with 8-handle resize, unified modern tapered free-bend
 //! arrows, hover/click direct manipulation, mouse-wheel sizing, Shift constraints & Undo/Redo.
 

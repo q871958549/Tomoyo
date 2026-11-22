@@ -263,7 +263,29 @@ fn notify_running_tomoyo_reload() -> bool {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
+fn notify_running_tomoyo_reload() -> bool {
+    let pid_path = std::env::var("XDG_RUNTIME_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| std::env::temp_dir())
+        .join("tomoyo.pid");
+    let Ok(raw) = std::fs::read_to_string(&pid_path) else {
+        return false;
+    };
+    let Ok(pid) = raw.trim().parse::<i32>() else {
+        return false;
+    };
+    if pid <= 0 {
+        return false;
+    }
+    unsafe extern "C" {
+        fn kill(pid: i32, sig: i32) -> i32;
+    }
+    const SIGUSR1: i32 = 10;
+    unsafe { kill(pid, SIGUSR1) == 0 }
+}
+
+#[cfg(all(not(windows), not(target_os = "linux")))]
 fn notify_running_tomoyo_reload() -> bool {
     false
 }

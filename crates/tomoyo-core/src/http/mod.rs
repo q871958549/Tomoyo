@@ -5,8 +5,14 @@
 //! and enforces strict timeouts + size caps without pulling reqwest/hyper/tokio.
 
 mod download;
+#[cfg(target_os = "linux")]
+mod linux;
 
 pub use download::{http_download_to_file, http_download_to_file_with_progress};
+#[cfg(target_os = "linux")]
+pub use linux::{
+    http_get, http_get_detailed, http_get_with_headers, http_head_redirect, http_post_bytes,
+};
 
 #[derive(Debug, Clone)]
 pub struct HttpResponse {
@@ -379,37 +385,37 @@ pub fn http_post_bytes(
     Ok(HttpResponse { status_code: stream.status_code, body: out })
 }
 
-#[cfg(not(windows))]
+#[cfg(all(not(windows), not(target_os = "linux")))]
 pub fn http_get(_url: &str, _timeout_ms: u32, _max_bytes: usize) -> Result<HttpResponse, String> {
-    Err("WinHTTP is only available on Windows".into())
+    Err("HTTP client is only implemented for Windows and Linux".into())
 }
 
-#[cfg(not(windows))]
+#[cfg(all(not(windows), not(target_os = "linux")))]
 pub fn http_get_with_headers(
     _url: &str,
     _headers: &[(&str, &str)],
     _timeout_ms: u32,
     _max_bytes: usize,
 ) -> Result<HttpResponse, String> {
-    Err("WinHTTP is only available on Windows".into())
+    Err("HTTP client is only implemented for Windows and Linux".into())
 }
 
-#[cfg(not(windows))]
+#[cfg(all(not(windows), not(target_os = "linux")))]
 pub fn http_get_detailed(
     _url: &str,
     _headers: &[(&str, &str)],
     _timeout_ms: u32,
     _max_bytes: usize,
 ) -> Result<HttpDetailedResponse, String> {
-    Err("WinHTTP is only available on Windows".into())
+    Err("HTTP client is only implemented for Windows and Linux".into())
 }
 
-#[cfg(not(windows))]
+#[cfg(all(not(windows), not(target_os = "linux")))]
 pub fn http_head_redirect(_url: &str, _timeout_ms: u32) -> Result<HttpDetailedResponse, String> {
-    Err("WinHTTP is only available on Windows".into())
+    Err("HTTP client is only implemented for Windows and Linux".into())
 }
 
-#[cfg(not(windows))]
+#[cfg(all(not(windows), not(target_os = "linux")))]
 pub fn http_post_bytes(
     _url: &str,
     _headers: &[(&str, &str)],
@@ -417,5 +423,5 @@ pub fn http_post_bytes(
     _timeout_ms: u32,
     _max_bytes: usize,
 ) -> Result<HttpResponse, String> {
-    Err("WinHTTP is only available on Windows".into())
+    Err("HTTP client is only implemented for Windows and Linux".into())
 }

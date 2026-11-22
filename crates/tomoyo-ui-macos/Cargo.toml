@@ -8,5 +8,4 @@ description = "macOS AppKit / Spotlight / .app bundle backend adapter for Tomoyo
 [dependencies]
 tomoyo-protocol = { workspace = true }
 tomoyo-core = { workspace = true }
-tomoyo-providers = { workspace = true }
 tomoyo-ui-shared = { path = "../tomoyo-ui-shared" }

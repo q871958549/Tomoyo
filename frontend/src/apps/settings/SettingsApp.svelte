@@ -7,6 +7,7 @@
   import {
     hydrateSettingsInit, isPluginEnabled, PLUGIN_CAPTURE, PLUGIN_CLIPBOARD, PLUGIN_TRANSLATE,
   } from '../../lib/defaults';
+  import { assignCoreHotkeyWithSwap, type CoreHotkeySlot } from '../../lib/hotkeys';
   import { applyThemeClass, installErrorTelemetry, postHost, subscribeHost } from '../../lib/ipc';
   import { OFFICIAL_REPO, tr, type Lang } from '../../lib/i18n';
   import type {
@@ -121,12 +122,21 @@
   function scheduleSave(delayMs = 0) { if (saveTimer) clearTimeout(saveTimer); if (delayMs <= 0) saveNow(); else saveTimer = setTimeout(saveNow, delayMs); }
   function runHotkeyAudit() { auditingHotkeys = true; postHost({ cmd: 'audit_hotkeys' }); }
   function probeHotkeyOwner(spec: string) { probingSpec = spec; probeResult = null; postHost({ cmd: 'probe_hotkey_owner', spec }); }
-  function applyFreeKey(slot: 'main' | 'clipboard' | 'translate' | 'capture' | 'pin' | 'ocr', key: string) {
-    if (slot === 'main') cfg.hotkey = key; else if (slot === 'clipboard') cfg.clipboard.hotkey = key;
-    else if (slot === 'translate') cfg.translate.hotkey = key;
-    else if (slot === 'pin') cfg.capture.pin_hotkey = key;
-    else if (slot === 'ocr') cfg.capture.ocr_hotkey = key; else cfg.capture.hotkey = key;
-    scheduleSave(0); setTimeout(runHotkeyAudit, 260);
+  function applyFreeKey(slot: CoreHotkeySlot, key: string) {
+    const capOn = isPluginEnabled(cfg, PLUGIN_CAPTURE);
+    const swapped = assignCoreHotkeyWithSwap(cfg, slot, key, {
+      main: true,
+      clipboard: isPluginEnabled(cfg, PLUGIN_CLIPBOARD),
+      translate: isPluginEnabled(cfg, PLUGIN_TRANSLATE),
+      capture: capOn,
+      pin: capOn,
+      ocr: capOn,
+    });
+    scheduleSave(0);
+    if (swapped) {
+      setToast(lang === 'en' ? `✓ Updated & swapped duplicate key cleanly` : `✓ 已生效（检测到重复绑定，已自动与原槽位互换）`);
+    }
+    setTimeout(runHotkeyAudit, 260);
   }
   function switchTab(id: string) {
     activeTab = id;
@@ -331,6 +341,7 @@
         {:else if activeTab === 'capture'}
           <CaptureTab
             {cfg} {lang} capHotkeyStatus={hotkeyHealth.capture} pinHotkeyStatus={hotkeyHealth.pin} ocrHotkeyStatus={hotkeyHealth.ocr}
+            showRecord={init.platform !== 'windows'}
             onJumpDoctor={() => switchTab('hotkeys')} onSave={scheduleSave}
           />
         {:else if activeTab === 'web'}

@@ -100,17 +100,97 @@ where
     Ok(total)
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
+pub fn http_download_to_file(
+    url: &str,
+    dest: &Path,
+    timeout_ms: u32,
+    max_bytes: u64,
+) -> Result<u64, String> {
+    http_download_to_file_with_progress(url, dest, timeout_ms, max_bytes, |_, _| {})
+}
+
+#[cfg(target_os = "linux")]
+pub fn http_download_to_file_with_progress<F>(
+    url: &str,
+    dest: &Path,
+    timeout_ms: u32,
+    max_bytes: u64,
+    mut on_progress: F,
+) -> Result<u64, String>
+where
+    F: FnMut(u64, Option<u64>),
+{
+    use std::io::{BufWriter, Write};
+
+    if let Some(parent) = dest.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let part_path = dest.with_extension(format!(
+        "{}.part",
+        dest.extension().and_then(|e| e.to_str()).unwrap_or("tmp")
+    ));
+    let _ = std::fs::remove_file(&part_path);
+    let file = std::fs::File::create(&part_path)
+        .map_err(|e| format!("create `{}`: {e}", part_path.display()))?;
+    let mut writer = BufWriter::with_capacity(16 * 1024, file);
+    let mut total: u64 = 0;
+
+    let res = crate::linux_sys::curl_stream_download(
+        url,
+        timeout_ms,
+        &mut |chunk| {
+            let next = total.saturating_add(chunk.len() as u64);
+            if next > max_bytes {
+                return Err(format!("Download exceeded safety ceiling ({max_bytes} bytes)"));
+            }
+            writer
+                .write_all(chunk)
+                .map_err(|e| format!("write error: {e}"))?;
+            total = next;
+            Ok(())
+        },
+        &mut on_progress,
+    );
+
+    match res {
+        Ok((200, expected)) => {
+            if let Err(e) = writer.flush() {
+                drop(writer);
+                let _ = std::fs::remove_file(&part_path);
+                return Err(format!("flush error: {e}"));
+            }
+            drop(writer);
+            on_progress(total, expected.or(Some(total)));
+            let _ = std::fs::remove_file(dest);
+            std::fs::rename(&part_path, dest)
+                .map_err(|e| format!("finalize `{}`: {e}", dest.display()))?;
+            Ok(total)
+        }
+        Ok((status, _)) => {
+            drop(writer);
+            let _ = std::fs::remove_file(&part_path);
+            Err(format!("HTTP download failed: status {status}"))
+        }
+        Err(e) => {
+            drop(writer);
+            let _ = std::fs::remove_file(&part_path);
+            Err(e)
+        }
+    }
+}
+
+#[cfg(all(not(windows), not(target_os = "linux")))]
 pub fn http_download_to_file(
     _url: &str,
     _dest: &Path,
     _timeout_ms: u32,
     _max_bytes: u64,
 ) -> Result<u64, String> {
-    Err("WinHTTP download is only available on Windows".into())
+    Err("HTTP download is only implemented for Windows and Linux".into())
 }
 
-#[cfg(not(windows))]
+#[cfg(all(not(windows), not(target_os = "linux")))]
 pub fn http_download_to_file_with_progress<F>(
     _url: &str,
     _dest: &Path,
@@ -121,5 +201,5 @@ pub fn http_download_to_file_with_progress<F>(
 where
     F: FnMut(u64, Option<u64>),
 {
-    Err("WinHTTP download is only available on Windows".into())
+    Err("HTTP download is only implemented for Windows and Linux".into())
 }

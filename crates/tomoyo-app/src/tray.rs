@@ -102,8 +102,8 @@ impl TrayIcon {
         font_regular: &str,
         font_medium: &str,
         clip_on: bool,
-        tr_on: bool,
-        cap_on: bool,
+        tr_hk: Option<&str>,
+        cap_hk: Option<&str>,
     ) -> Option<u32> {
         let mut entries = vec![
             PopupEntry::item(MENU_ID_SHOW, lang.pick("显示 Tomoyo", "Show Tomoyo"), None, false),
@@ -122,19 +122,19 @@ impl TrayIcon {
                 false,
             ));
         }
-        if tr_on {
+        if let Some(hk) = tr_hk {
             entries.push(PopupEntry::item(
                 MENU_ID_TRANSLATE,
                 lang.pick("多源翻译窗...", "Translator..."),
-                Some("Alt+T"),
+                (!hk.is_empty()).then_some(hk),
                 false,
             ));
         }
-        if cap_on {
+        if let Some(hk) = cap_hk {
             entries.push(PopupEntry::item(
                 MENU_ID_CAPTURE,
                 lang.pick("截图与贴图...", "Screenshot & Pin..."),
-                Some("Alt+S"),
+                (!hk.is_empty()).then_some(hk),
                 false,
             ));
         }

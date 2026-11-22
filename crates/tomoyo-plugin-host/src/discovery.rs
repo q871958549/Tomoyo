@@ -146,10 +146,24 @@ pub fn default_plugin_dirs() -> Vec<PathBuf> {
             if p.is_dir() && !dirs.contains(&p) {
                 dirs.push(p);
             }
+            #[cfg(target_os = "linux")]
+            if let Some(prefix) = dir.parent() {
+                let share_p = prefix.join("share").join("tomoyo").join("plugins");
+                if share_p.is_dir() && !dirs.contains(&share_p) {
+                    dirs.push(share_p);
+                }
+            }
         }
     let user_dir = tomoyo_core::data_dir().join("plugins");
     if !dirs.contains(&user_dir) {
         dirs.push(user_dir);
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let sys_dir = PathBuf::from("/usr/share/tomoyo/plugins");
+        if sys_dir.is_dir() && !dirs.contains(&sys_dir) {
+            dirs.push(sys_dir);
+        }
     }
     dirs
 }

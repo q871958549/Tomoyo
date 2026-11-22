@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://q871958549.github.io/Tomoyo/sitemap.xml

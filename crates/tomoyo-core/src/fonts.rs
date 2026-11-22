@@ -5,10 +5,13 @@
 
 use std::path::PathBuf;
 
-/// Exact Windows TrueType family names verified from Alibaba PuHuiTi 3.0 TTF headers.
+/// Exact TrueType family names verified from Alibaba PuHuiTi 3.0 TTF headers.
 pub const FONT_ALIBABA_REGULAR: &str = "阿里巴巴普惠体 3.0 55 Regular";
 pub const FONT_ALIBABA_MEDIUM: &str = "阿里巴巴普惠体 3.0 65 Medium";
+#[cfg(windows)]
 pub const FONT_FALLBACK_UI: &str = "Microsoft YaHei UI";
+#[cfg(not(windows))]
+pub const FONT_FALLBACK_UI: &str = "Noto Sans CJK SC";
 
 /// RAII guard that registers bundled Alibaba PuHuiTi TTF files privately for the process.
 pub struct PrivateFonts {
@@ -84,12 +87,19 @@ pub fn locate_fonts_dir() -> Option<PathBuf> {
             candidates.push(dir.join("assets").join("fonts"));
             candidates.push(dir.join("fonts"));
             // Cargo workspace `target/release` or `target/debug` -> `../../assets/fonts`
-            if let Some(p1) = dir.parent()
-                && let Some(p2) = p1.parent() {
+            if let Some(p1) = dir.parent() {
+                candidates.push(p1.join("share").join("tomoyo").join("fonts"));
+                if let Some(p2) = p1.parent() {
                     candidates.push(p2.join("assets").join("fonts"));
                 }
+            }
         }
     candidates.push(crate::data_dir().join("fonts"));
+    #[cfg(target_os = "linux")]
+    {
+        candidates.push(PathBuf::from("/usr/share/tomoyo/fonts"));
+        candidates.push(PathBuf::from("/usr/local/share/tomoyo/fonts"));
+    }
 
     candidates
         .into_iter()
@@ -124,9 +134,18 @@ fn unregister_private_font(path: &std::path::Path) {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
+fn register_private_font(path: &std::path::Path) -> bool {
+    crate::linux_sys::fc_add_font(path)
+}
+#[cfg(target_os = "linux")]
+fn unregister_private_font(_path: &std::path::Path) {
+    crate::linux_sys::fc_clear_fonts();
+}
+
+#[cfg(all(not(windows), not(target_os = "linux")))]
 fn register_private_font(_path: &std::path::Path) -> bool {
     false
 }
-#[cfg(not(windows))]
+#[cfg(all(not(windows), not(target_os = "linux")))]
 fn unregister_private_font(_path: &std::path::Path) {}

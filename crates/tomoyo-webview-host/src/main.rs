@@ -22,6 +22,12 @@ mod hotkey_capture;
 mod hotkey_doctor;
 #[cfg(windows)]
 mod hotkey_signatures;
+#[cfg(target_os = "linux")]
+mod linux_host;
+#[cfg(target_os = "linux")]
+mod linux_hotkeys;
+#[cfg(target_os = "linux")]
+mod linux_workers;
 mod ocr_view;
 mod shim_js;
 #[cfg(windows)]
@@ -195,6 +201,7 @@ pub fn build_settings_init_script() -> String {
     let cached_update = tomoyo_core::load_cached_update_status(&cfg.update.repo, CURRENT_VERSION);
     let payload = serde_json::json!({
         "version": CURRENT_VERSION,
+        "platform": std::env::consts::OS,
         "config": cfg,
         "autostart": autostart,
         "plugins": plugins,
@@ -326,4 +333,6 @@ fn main() {
 
     #[cfg(windows)]
     win_host::run_windows_host(opts);
+    #[cfg(target_os = "linux")]
+    linux_host::run_linux_host(opts);
 }

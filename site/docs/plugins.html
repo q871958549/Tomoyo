@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Plugin SDKs &amp; Protocol v2 — Tomoyo Launcher</title>
+  <meta name="description" content="Build zero-idle-RAM plugins for Tomoyo Launcher in Rust (tomoyo-sdk), Python, Go, Node.js (STDIO JSON-RPC 2.0), WebAssembly (tomoyo-wasm-sdk / wasmi), or WebView with uTools compatibility." />
+  <link rel="canonical" href="https://q871958549.github.io/Tomoyo/docs/plugins.html" />
+  <link rel="describedby" href="../llms.txt" />
+  <link rel="alternate" type="text/markdown" href="plugins.md" title="Plugin SDKs (Markdown)" />
+  <style>
+    :root { --bg:#0f121b; --surface:#171b28; --border:#2b334b; --text:#e7ecf7; --muted:#9aa6c4; --accent:#38bdf8; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: system-ui,-apple-system,sans-serif; background:var(--bg); color:var(--text); line-height:1.65; }
+    a { color:var(--accent); text-decoration:none; } a:hover { text-decoration:underline; }
+    code, pre { font-family: ui-monospace,Menlo,Consolas,monospace; background:#0b0e15; border:1px solid var(--border); border-radius:6px; }
+    code { padding:0.1rem 0.35rem; font-size:0.9em; } pre { padding:0.9rem 1rem; overflow-x:auto; font-size:0.88rem; }
+    .wrap { max-width:1040px; margin:0 auto; padding:2rem 1.25rem 4rem; }
+    nav { display:flex; flex-wrap:wrap; gap:1rem; padding-bottom:1rem; border-bottom:1px solid var(--border); margin-bottom:2rem; font-size:0.95rem; }
+    h2 { margin-top:2.25rem; border-bottom:1px solid var(--border); padding-bottom:0.35rem; }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <nav>
+      <a href="../index.html">Home</a>
+      <a href="comparison.html">Comparison</a>
+      <strong>Plugin SDKs &amp; Protocol v2</strong>
+      <a href="benchmarks.html">Benchmarks &amp; Hygiene</a>
+      <a href="plugins.md">Markdown View</a>
+    </nav>
+    <h1>Plugin SDKs &amp; Open Protocol v2</h1>
+    <p>Tomoyo Launcher executes extensions strictly on demand and reaps idle processes so plugins consume <strong>0 MB</strong> resident memory when inactive.</p>
+
+    <h2>1. CLI Workflow (<code>tomoyo-cli</code>)</h2>
+    <pre><code>tomoyo-cli new my-plugin --lang rust     # or wasm | python | webview
+tomoyo-cli dev ./my-plugin --query "hi" --once
+tomoyo-cli verify ./my-plugin
+tomoyo-cli hash ./my-plugin
+tomoyo-cli import-utools ./utools-plugin-dir</code></pre>
+
+    <h2>2. Rust STDIO Plugin (<code>tomoyo-sdk</code>)</h2>
+    <pre><code>use tomoyo_sdk::{PluginMeta, QueryContext, ResultItem, TomoyoPlugin};
+
+struct MyPlugin;
+
+impl TomoyoPlugin for MyPlugin {
+    fn meta(&self) -&gt; PluginMeta { PluginMeta::new("My Plugin", "0.1.0") }
+    fn query(&self, _ctx: &amp;QueryContext) -&gt; Vec&lt;ResultItem&gt; { vec![] }
+}
+
+fn main() { tomoyo_sdk::run(MyPlugin); }</code></pre>
+
+    <h2>3. Sandboxed WASM Plugin (<code>tomoyo-wasm-sdk</code>)</h2>
+    <p>Compiled to <code>wasm32-unknown-unknown</code> and executed in <code>wasmi</code> with fuel caps, bounded linear memory, and zero ambient host access.</p>
+    <pre><code>use tomoyo_wasm_sdk::{export_tomoyo_wasm_plugin, QueryContext, ResultItem, TomoyoWasmPlugin};
+
+struct WasmToolkit;
+impl TomoyoWasmPlugin for WasmToolkit {
+    fn query(_ctx: &amp;QueryContext) -&gt; Vec&lt;ResultItem&gt; { vec![] }
+}
+export_tomoyo_wasm_plugin!(WasmToolkit);</code></pre>
+
+    <h2>4. WebView &amp; uTools Compatibility</h2>
+    <p>WebView plugins run inside short-lived <code>tomoyo-webview-host</code> (WebKitGTK 4.1 on Linux, WebView2 on Windows) with <code>window.tomoyo</code> and a baseline <code>window.utools</code> compatibility bridge. Closing the window terminates the WebView process completely.</p>
+  </main>
+</body>
+</html>

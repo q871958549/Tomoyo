@@ -2,14 +2,13 @@
 
 use super::canvas::Canvas;
 use super::filter_bar::paint_filter_bar_sdf;
-use super::gdi::DibSurface;
 use super::theme::{category_rgb, Rgb};
 use super::{FrameLayout, RenderState};
 use crate::brand::paint_modern_white_emblem;
 use tomoyo_protocol::IconSpec;
 
-pub(super) fn paint_sdf_pass(
-    surface: &mut DibSurface,
+pub(crate) fn paint_sdf_pass(
+    pixels: &mut [u8],
     width: i32,
     height: i32,
     scale: f32,
@@ -18,7 +17,7 @@ pub(super) fn paint_sdf_pass(
 ) {
     let pal = state.theme;
     let mut canvas = Canvas {
-        buf: surface.pixels_mut(),
+        buf: pixels,
         w: width,
         h: height,
         scale,
@@ -66,6 +65,7 @@ pub(super) fn paint_sdf_pass(
             state.active_filter,
             state.hovered_filter,
             state.filter_counts,
+            state.filter_pill_override,
         );
     } else if !state.items.is_empty() {
         canvas.fill_rect_dip(12.0, lay.header_h, lay.w_dip - 12.0, lay.header_h + 1.0, pal.divider);

@@ -1,0 +1,37 @@
+# Tomoyo Launcher
+
+> Tomoyo Launcher (`github.com/q871958549/Tomoyo`) is an open-source, ultra-low-memory native Rust desktop application launcher and plugin microkernel for Linux (Arch/CachyOS KDE Plasma 6 Wayland & X11) and Windows 10/11 (x64 & ARM64).
+
+Tomoyo Launcher is unrelated to the TOMOYO Linux kernel Mandatory Access Control (LSM) security module (`tomoyo-tools`), the `siglus_rs` visual novel engine, or the `AsterCass/Tomoyo` Kotlin Multiplatform project. It avoids Electron, `tokio`, `reqwest`, `tauri`, `wry`, and `d3d10warp`, using pure-Rust 2x2 SDF rendering with Cairo/Pango on Linux and Win32 ClearType GDI on Windows, aggressive idle memory hibernation, and ephemeral child processes (`tomoyo-webview-host`, `tomoyo-capture`, `tomoyo-plugin-ocr`, `tomoyo-plugin-notes`) that exit to 0 MB resident memory when idle.
+
+## Docs
+
+- [README (English)](https://github.com/q871958549/Tomoyo/blob/main/README.md): Overview, competitor comparison matrix, verified memory/size benchmarks, install steps, and built-in commands.
+- [README (Chinese)](https://github.com/q871958549/Tomoyo/blob/main/README_ZH.md): Full Simplified Chinese documentation.
+- [Launcher Comparison (Markdown)](https://q871958549.github.io/Tomoyo/docs/comparison.md): Side-by-side comparison vs. Vicinae, Walker, Anyrun, Ulauncher, Flow Launcher, PowerToys Run, uTools, and Raycast.
+- [Plugin SDKs Guide (Markdown)](https://q871958549.github.io/Tomoyo/docs/plugins.md): STDIO JSON-RPC 2.0 (Rust/Python), WASM (`wasmi`), WebView (`utools` bridge), and CLI commands.
+- [Verified Benchmarks (Markdown)](https://q871958549.github.io/Tomoyo/docs/benchmarks.md): Reproducible `--self-test --strict-budget` memory/handle numbers and 7-gate hygiene rules.
+- [Architecture Overview](https://github.com/q871958549/Tomoyo/blob/main/docs/ARCHITECTURE.md): Microkernel layering, SDF renderer, hibernation schedule, and multi-runtime plugin host.
+- [Open Plugin Protocol v2](https://github.com/q871958549/Tomoyo/blob/main/docs/PLUGIN_PROTOCOL.md): `tomoyo-plugin.toml` manifest schema, declarative hotkeys/settings, and newline-delimited JSON-RPC 2.0 wire spec.
+- [Full LLM Context Pack](https://github.com/q871958549/Tomoyo/blob/main/llms-full.txt): Single-file comprehensive reference including benchmarks, CLI, comparison matrix, and plugin SDK details.
+
+## SDKs & Architecture
+
+- [tomoyo-protocol](https://github.com/q871958549/Tomoyo/tree/main/crates/tomoyo-protocol): OS-free plugin manifest, JSON-RPC 2.0 wire types, filter enums, and registry schema.
+- [tomoyo-sdk](https://github.com/q871958549/Tomoyo/tree/main/crates/tomoyo-sdk): Ergonomic Rust SDK for STDIO JSON-RPC 2.0 plugins.
+- [tomoyo-wasm-sdk](https://github.com/q871958549/Tomoyo/tree/main/crates/tomoyo-wasm-sdk): Rust SDK for capability-sandboxed `wasm32-unknown-unknown` plugins executed in `wasmi`.
+- [tomoyo-everything](https://github.com/q871958549/Tomoyo/tree/main/crates/tomoyo-everything): Pure-Rust Voidtools Everything 1.4 / 1.5a `WM_COPYDATA` IPC client for Windows.
+- [tomoyo-cli](https://github.com/q871958549/Tomoyo/tree/main/crates/tomoyo-cli): Plugin scaffolding (`new`), local dev runner (`dev`), manifest verification (`verify`), `uTools` plugin importer (`import-utools`), and decentralized registry CLI.
+
+## Packaging & Distribution
+
+- [Distribution & Supply-Chain Trust](https://github.com/q871958549/Tomoyo/blob/main/docs/DISTRIBUTION.md): SLSA build provenance (`gh attestation verify`), Winget, Scoop, and code-signing roadmap.
+- [Arch Linux PKGBUILD](https://github.com/q871958549/Tomoyo/blob/main/packaging/linux/PKGBUILD): Arch / CachyOS package definition.
+- [Windows Winget Manifests](https://github.com/q871958549/Tomoyo/tree/main/packaging/winget): `TomoyoContributors.Tomoyo` manifest suite (`ManifestVersion: 1.6.0`).
+- [Windows Scoop Manifest](https://github.com/q871958549/Tomoyo/blob/main/packaging/scoop/tomoyo.json): Portable x64 Scoop package manifest.
+
+## Optional
+
+- [Coding Standards & Anti-Bloat Contract](https://github.com/q871958549/Tomoyo/blob/main/docs/CODING_STANDARDS.md): 7-gate hygiene rules, <= 450 lines/file limit, banned crates/npm packages, and strict resource budgets.
+- [Roadmap](https://github.com/q871958549/Tomoyo/blob/main/docs/ROADMAP.md): Version history and upcoming milestones.
+- [GitHub Releases](https://github.com/q871958549/Tomoyo/releases): Official Linux tarballs, Windows x64 installer/portable, and Windows ARM64 portable archives with SHA256SUMS.

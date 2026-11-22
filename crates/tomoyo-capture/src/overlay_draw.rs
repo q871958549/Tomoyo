@@ -1,219 +1,19 @@
-//! Pure-Rust BGRA compositing + contextual AA SDF capsule chrome + ClearType GDI labels.
+//! Pure-Rust BGRA compositing + contextual AA SDF capsule chrome + magnifier loupe.
 
-use crate::annotate::{AnnotColor, Annotation, ToolKind, COLOR_PRESETS};
+use crate::annotate::{AnnotColor, Annotation};
 use crate::annotate_render::{draw_selection_handles, render_annotations, render_single};
 use crate::overlay_icons::{
     draw_capsule, draw_toolbar_icon, fill_box, fill_box_alpha, fill_circle_aa,
     fill_rounded_rect_aa, stroke_box, stroke_circle_aa, stroke_rounded_rect_aa,
 };
 use crate::screen::{DesktopSnapshot, ScreenRect};
-use tomoyo_core::CaptureToolHotkeys;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ToolbarCmd {
-    Tool(ToolKind),
-    Color(usize),
-    Thickness(i32),
-    ShapeFilled(bool),
-    MosaicBlur(bool),
-    Undo,
-    ScrollLong,
-    Pin,
-    Ocr,
-    OcrCopy,
-    Translate,
-    Save,
-    Copy,
-    Cancel,
-}
+pub use crate::overlay_toolbar::{
+    build_toolbar_layout, dim_badge_rect, rec_hint_rect, snap_badge_rect, tooltip_rect_for,
+    ToolbarCmd, ToolbarLayout, ToolbarStyleState,
+};
 
-#[derive(Debug, Clone)]
-pub struct ToolbarHit {
-    pub cmd: ToolbarCmd,
-    pub rect: ScreenRect,
-    pub tooltip: String,
-    pub pill_text: &'static str,
-    pub active: bool,
-    pub accent: bool,
-    pub danger: bool,
-    pub swatch: Option<AnnotColor>,
-    pub thickness_dot: Option<i32>,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct ToolbarLayout {
-    pub main_bar: Option<ScreenRect>,
-    pub sub_bar: Option<ScreenRect>,
-    pub dividers: Vec<(i32, i32, i32)>,
-    pub hits: Vec<ToolbarHit>,
-}
-
-pub struct ToolbarStyleState {
-    pub active_tool: ToolKind,
-    pub active_color: usize,
-    pub active_thickness: i32,
-    pub shape_filled: bool,
-    pub mosaic_blur: bool,
-}
-
-fn tip_with_key(label: &str, key: &str) -> String {
-    if key.is_empty() { label.to_string() } else { format!("{label} ({key})") }
-}
-
-pub fn build_toolbar_layout(
-    sel: ScreenRect,
-    screen_w: i32,
-    screen_h: i32,
-    st: &ToolbarStyleState,
-    hk: &CaptureToolHotkeys,
-) -> ToolbarLayout {
-    enum Slot {
-        Btn(ToolbarCmd, String, i32, bool, bool, bool),
-        Sep,
-    }
-    let slots = vec![
-        Slot::Btn(ToolbarCmd::Tool(ToolKind::Rect), tip_with_key("矩形", &hk.rect), 30, st.active_tool == ToolKind::Rect, false, false),
-        Slot::Btn(ToolbarCmd::Tool(ToolKind::Ellipse), tip_with_key("椭圆", &hk.ellipse), 30, st.active_tool == ToolKind::Ellipse, false, false),
-        Slot::Btn(ToolbarCmd::Tool(ToolKind::Arrow), tip_with_key("箭头 · 拖中点自由弯折", &hk.arrow), 30, st.active_tool == ToolKind::Arrow, false, false),
-        Slot::Btn(ToolbarCmd::Tool(ToolKind::Pen), tip_with_key("画笔", &hk.pen), 30, st.active_tool == ToolKind::Pen, false, false),
-        Slot::Btn(ToolbarCmd::Tool(ToolKind::Highlighter), tip_with_key("荧光笔", &hk.highlighter), 30, st.active_tool == ToolKind::Highlighter, false, false),
-        Slot::Btn(ToolbarCmd::Tool(ToolKind::Mosaic), tip_with_key("马赛克/模糊", &hk.mosaic), 30, st.active_tool == ToolKind::Mosaic, false, false),
-        Slot::Btn(ToolbarCmd::Tool(ToolKind::StepNumber), tip_with_key("序号", &hk.step), 30, st.active_tool == ToolKind::StepNumber, false, false),
-        Slot::Btn(ToolbarCmd::Tool(ToolKind::Text), tip_with_key("文字", &hk.text), 30, st.active_tool == ToolKind::Text, false, false),
-        Slot::Sep,
-        Slot::Btn(ToolbarCmd::Undo, "撤销 (Ctrl+Z)".into(), 30, false, false, false),
-        Slot::Sep,
-        Slot::Btn(ToolbarCmd::ScrollLong, tip_with_key("长截图 (纵/横)", &hk.scroll), 30, false, false, false),
-        Slot::Btn(ToolbarCmd::Pin, tip_with_key("贴图", &hk.pin), 30, false, false, false),
-        Slot::Btn(
-            ToolbarCmd::Ocr,
-            format!("识字 OCR ({}) · 直接复制 ({})", hk.ocr, hk.ocr_copy),
-            30,
-            false,
-            false,
-            false,
-        ),
-        Slot::Btn(ToolbarCmd::Translate, tip_with_key("截图翻译", &hk.translate), 30, false, false, false),
-        Slot::Btn(ToolbarCmd::Save, "保存 PNG (Ctrl+S)".into(), 30, false, false, false),
-        Slot::Sep,
-        Slot::Btn(ToolbarCmd::Cancel, "取消 (Esc)".into(), 30, false, false, true),
-        Slot::Btn(ToolbarCmd::Copy, "复制完成 (Enter)".into(), 38, false, true, false),
-    ];
-
-    let mut total_w = 12;
-    for s in &slots {
-        total_w += match s { Slot::Btn(_, _, w, _, _, _) => w + 2, Slot::Sep => 9 };
-    }
-    let bar_h = 40;
-    let show_sub = st.active_tool != ToolKind::Select;
-    let sub_h = 34;
-    let stack_h = if show_sub { bar_h + 6 + sub_h } else { bar_h };
-    let bar_x = (sel.right() - total_w).clamp(8, (screen_w - total_w - 8).max(8));
-    let below_fits = sel.bottom() + 8 + stack_h <= screen_h - 6;
-    let above_fits = sel.y - 8 - stack_h >= 6;
-    let (bar_y, sub_above) = if below_fits {
-        (sel.bottom() + 8, false)
-    } else if above_fits {
-        (sel.y - 8 - bar_h, true)
-    } else {
-        ((sel.bottom() - bar_h - 8).max(8), true)
-    };
-
-    let main_bar = ScreenRect { x: bar_x, y: bar_y, w: total_w, h: bar_h };
-    let mut hits = Vec::with_capacity(32);
-    let mut dividers = Vec::with_capacity(6);
-    let mut cx = bar_x + 7;
-    for s in slots {
-        match s {
-            Slot::Btn(cmd, tooltip, w, active, accent, danger) => {
-                hits.push(ToolbarHit {
-                    cmd, rect: ScreenRect { x: cx, y: bar_y + 5, w, h: 30 }, tooltip,
-                    pill_text: "", active, accent, danger, swatch: None, thickness_dot: None,
-                });
-                cx += w + 2;
-            }
-            Slot::Sep => {
-                dividers.push((cx + 3, bar_y + 11, bar_y + bar_h - 11));
-                cx += 9;
-            }
-        }
-    }
-
-    let sub_bar = if show_sub {
-        let style_pills: Vec<(ToolbarCmd, &'static str, bool)> = match st.active_tool {
-            ToolKind::Rect | ToolKind::Ellipse => vec![
-                (ToolbarCmd::ShapeFilled(!st.shape_filled), "填充", st.shape_filled),
-            ],
-            ToolKind::Mosaic => vec![
-                (ToolbarCmd::MosaicBlur(false), "马赛克", !st.mosaic_blur),
-                (ToolbarCmd::MosaicBlur(true), "模糊", st.mosaic_blur),
-            ],
-            _ => Vec::new(),
-        };
-        let style_w: i32 = if style_pills.is_empty() { 0 } else { style_pills.len() as i32 * 44 + 9 };
-        let sub_w = 12 + 3 * 26 + style_w + 9 + COLOR_PRESETS.len() as i32 * 24 + 4;
-        let sub_x = bar_x.clamp(8, (screen_w - sub_w - 8).max(8));
-        let sub_y = if sub_above { (bar_y - 6 - sub_h).max(6) } else { (bar_y + bar_h + 6).min(screen_h - sub_h - 6) };
-        let mut sx = sub_x + 8;
-
-        for (t, tip) in [(2, "细 · 滚轮可无级调节"), (4, "中 · 滚轮可无级调节"), (8, "粗 · 滚轮可无级调节")] {
-            hits.push(ToolbarHit {
-                cmd: ToolbarCmd::Thickness(t),
-                rect: ScreenRect { x: sx, y: sub_y + 4, w: 24, h: 26 },
-                tooltip: tip.into(),
-                pill_text: "",
-                active: (st.active_thickness - t).abs() <= 1,
-                accent: false, danger: false, swatch: None, thickness_dot: Some(t),
-            });
-            sx += 26;
-        }
-        if !style_pills.is_empty() {
-            dividers.push((sx + 3, sub_y + 9, sub_y + sub_h - 9));
-            sx += 9;
-            for (cmd, lbl, act) in style_pills {
-                hits.push(ToolbarHit {
-                    cmd, rect: ScreenRect { x: sx, y: sub_y + 5, w: 42, h: 24 },
-                    tooltip: String::new(), pill_text: lbl, active: act,
-                    accent: false, danger: false, swatch: None, thickness_dot: None,
-                });
-                sx += 44;
-            }
-        }
-        dividers.push((sx + 3, sub_y + 9, sub_y + sub_h - 9));
-        sx += 9;
-        for (i, &col) in COLOR_PRESETS.iter().enumerate() {
-            hits.push(ToolbarHit {
-                cmd: ToolbarCmd::Color(i),
-                rect: ScreenRect { x: sx, y: sub_y + 5, w: 22, h: 24 },
-                tooltip: String::new(), pill_text: "", active: st.active_color == i,
-                accent: false, danger: false, swatch: Some(col), thickness_dot: None,
-            });
-            sx += 24;
-        }
-        Some(ScreenRect { x: sub_x, y: sub_y, w: sub_w, h: sub_h })
-    } else {
-        None
-    };
-
-    ToolbarLayout { main_bar: Some(main_bar), sub_bar, dividers, hits }
-}
-
-pub fn dim_badge_rect(sel: ScreenRect, screen_w: i32) -> ScreenRect {
-    let (w, h) = (96, 24);
-    let x = sel.x.clamp(8, (screen_w - w - 8).max(8));
-    let y = if sel.y >= 32 { sel.y - h - 6 } else { sel.y + 8 };
-    ScreenRect { x, y, w, h }
-}
-
-pub fn tooltip_rect_for(btn: &ToolbarHit, screen_w: i32, screen_h: i32) -> Option<ScreenRect> {
-    if btn.tooltip.is_empty() { return None; }
-    let text_w: i32 = btn.tooltip.chars().map(|c| if c.is_ascii() { 7 } else { 13 }).sum();
-    let (w, h) = ((text_w + 16).clamp(56, 210), 24);
-    let x = (btn.rect.x + btn.rect.w / 2 - w / 2).clamp(8, (screen_w - w - 8).max(8));
-    let y = if btn.rect.y >= 36 { btn.rect.y - h - 7 } else { (btn.rect.bottom() + 7).min(screen_h - h - 6) };
-    Some(ScreenRect { x, y, w, h })
-}
-
+#[cfg_attr(not(windows), allow(dead_code))]
 #[allow(clippy::too_many_arguments)]
 pub fn compose_overlay_pixels(
     dst: &mut [u8],
@@ -230,6 +30,30 @@ pub fn compose_overlay_pixels(
     layout: &ToolbarLayout,
     hovered_cmd: Option<ToolbarCmd>,
     wheel_hud: Option<&str>,
+) {
+    compose_overlay_pixels_ex(
+        dst, snap, dimmed, sel, hover_snap, annotations, selected_ann, hovered_ann,
+        live_ann, cursor, show_loupe, layout, hovered_cmd, wheel_hud, false,
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn compose_overlay_pixels_ex(
+    dst: &mut [u8],
+    snap: &DesktopSnapshot,
+    dimmed: &[u8],
+    sel: Option<ScreenRect>,
+    hover_snap: Option<ScreenRect>,
+    annotations: &[Annotation],
+    selected_ann: Option<usize>,
+    hovered_ann: Option<usize>,
+    live_ann: Option<&Annotation>,
+    cursor: (i32, i32),
+    show_loupe: bool,
+    layout: &ToolbarLayout,
+    hovered_cmd: Option<ToolbarCmd>,
+    wheel_hud: Option<&str>,
+    rec_first_hint: bool,
 ) {
     let (w, h) = (snap.width, snap.height);
     let stride = (w as usize) * 4;
@@ -251,7 +75,14 @@ pub fn compose_overlay_pixels(
                 if let Some(idx) = selected_ann
                     && let Some(a) = annotations.get(idx) { draw_selection_handles(dst, w, h, a, false); }
             }
-            let border_col = if sel.is_some() { AnnotColor(0x3B, 0x82, 0xF6) } else { AnnotColor(0x60, 0xA5, 0xFA) };
+            let border_col = if sel.is_some() { AnnotColor(0x3B, 0x82, 0xF6) } else { AnnotColor(0x38, 0xBD, 0xF8) };
+            let outer = ScreenRect::from_points(
+                (r.x - 1).max(0),
+                (r.y - 1).max(0),
+                (r.right() + 1).min(w),
+                (r.bottom() + 1).min(h),
+            );
+            stroke_box(dst, w, h, outer, 1, AnnotColor(0x0B, 0x0F, 0x19));
             stroke_box(dst, w, h, r, 2, border_col);
             if sel.is_some() {
                 for (hx, hy) in handle_points(r) {
@@ -261,11 +92,16 @@ pub fn compose_overlay_pixels(
                 let badge = dim_badge_rect(r, w);
                 fill_rounded_rect_aa(dst, w, h, badge, 6.0, AnnotColor(0x14, 0x16, 0x1E), 0.90);
                 stroke_rounded_rect_aa(dst, w, h, badge, 6.0, 1.0, AnnotColor(0x38, 0x3D, 0x4F), 0.9);
+            } else {
+                draw_hover_snap_accents(dst, w, h, r);
             }
         }
     }
 
-    if show_loupe { draw_magnifier_pixels(dst, snap, cursor); }
+    if show_loupe {
+        draw_crosshair_guides(dst, w, h, cursor, loupe_rect(cursor, w, h));
+        draw_magnifier_pixels(dst, snap, cursor);
+    }
     if let Some(br) = layout.main_bar { draw_capsule(dst, w, h, br, 10.0); }
     if let Some(sr) = layout.sub_bar { draw_capsule(dst, w, h, sr, 9.0); }
     for &(dx, y0, y1) in &layout.dividers {
@@ -287,7 +123,10 @@ pub fn compose_overlay_pixels(
             let col = if btn.active { AnnotColor(0x60, 0xA5, 0xFA) } else { AnnotColor(0xE2, 0xE8, 0xF0) };
             fill_circle_aa(dst, w, h, cx, cy, rad, col, 1.0);
         } else if !btn.pill_text.is_empty() {
-            if btn.active {
+            if btn.danger {
+                let bg = if is_hov { AnnotColor(0xEF, 0x44, 0x44) } else { AnnotColor(0xDC, 0x26, 0x26) };
+                fill_rounded_rect_aa(dst, w, h, btn.rect, 6.0, bg, 1.0);
+            } else if btn.active {
                 fill_rounded_rect_aa(dst, w, h, btn.rect, 6.0, AnnotColor(0x3B, 0x82, 0xF6), 0.26);
                 stroke_rounded_rect_aa(dst, w, h, btn.rect, 6.0, 1.0, AnnotColor(0x60, 0xA5, 0xFA), 0.55);
             } else if is_hov {
@@ -326,6 +165,51 @@ pub fn compose_overlay_pixels(
         fill_rounded_rect_aa(dst, w, h, r, 6.0, AnnotColor(0x0E, 0x10, 0x16), 0.92);
         stroke_rounded_rect_aa(dst, w, h, r, 6.0, 1.0, AnnotColor(0x3B, 0x82, 0xF6), 0.85);
     }
+    if rec_first_hint && let Some(sr) = layout.sub_bar {
+        let hr = rec_hint_rect(sr, w, h);
+        fill_rounded_rect_aa(dst, w, h, hr, 6.0, AnnotColor(0x14, 0x18, 0x24), 0.93);
+        stroke_rounded_rect_aa(dst, w, h, hr, 6.0, 1.0, AnnotColor(0xF5, 0x9E, 0x0B), 0.85);
+    }
+}
+
+fn draw_hover_snap_accents(dst: &mut [u8], w: i32, h: i32, r: ScreenRect) {
+    let badge = snap_badge_rect(r, w);
+    fill_rounded_rect_aa(dst, w, h, badge, 6.0, AnnotColor(0x10, 0x14, 0x1E), 0.94);
+    stroke_rounded_rect_aa(dst, w, h, badge, 6.0, 1.0, AnnotColor(0x38, 0xBD, 0xF8), 0.9);
+    let arm = (r.w.min(r.h) / 5).clamp(8, 16);
+    let c = AnnotColor(0xF0, 0xF9, 0xFF);
+    fill_box(dst, w, h, ScreenRect { x: r.x, y: r.y, w: arm, h: 3 }, c);
+    fill_box(dst, w, h, ScreenRect { x: r.x, y: r.y, w: 3, h: arm }, c);
+    fill_box(dst, w, h, ScreenRect { x: r.right() - arm, y: r.y, w: arm, h: 3 }, c);
+    fill_box(dst, w, h, ScreenRect { x: r.right() - 3, y: r.y, w: 3, h: arm }, c);
+    fill_box(dst, w, h, ScreenRect { x: r.x, y: r.bottom() - 3, w: arm, h: 3 }, c);
+    fill_box(dst, w, h, ScreenRect { x: r.x, y: r.bottom() - arm, w: 3, h: arm }, c);
+    fill_box(dst, w, h, ScreenRect { x: r.right() - arm, y: r.bottom() - 3, w: arm, h: 3 }, c);
+    fill_box(dst, w, h, ScreenRect { x: r.right() - 3, y: r.bottom() - arm, w: 3, h: arm }, c);
+}
+
+fn draw_crosshair_guides(dst: &mut [u8], w: i32, h: i32, cursor: (i32, i32), avoid: ScreenRect) {
+    let (cx, cy) = (cursor.0.clamp(0, w - 1), cursor.1.clamp(0, h - 1));
+    let stride = (w as usize) * 4;
+    let blend = |px: &mut [u8]| {
+        px[0] = ((px[0] as u16 * 184 + 253 * 72) >> 8) as u8;
+        px[1] = ((px[1] as u16 * 184 + 189 * 72) >> 8) as u8;
+        px[2] = ((px[2] as u16 * 184 + 56 * 72) >> 8) as u8;
+    };
+    let row_off = (cy as usize) * stride;
+    for x in 0..w {
+        if !avoid.contains(x, cy) {
+            let off = row_off + (x as usize) * 4;
+            blend(&mut dst[off..off + 3]);
+        }
+    }
+    let col_off = (cx as usize) * 4;
+    for y in 0..h {
+        if y != cy && !avoid.contains(cx, y) {
+            let off = (y as usize) * stride + col_off;
+            blend(&mut dst[off..off + 3]);
+        }
+    }
 }
 
 pub fn wheel_hud_rect(cursor: (i32, i32), w: i32, h: i32) -> ScreenRect {
@@ -340,9 +224,9 @@ pub fn wheel_hud_rect(cursor: (i32, i32), w: i32, h: i32) -> ScreenRect {
 pub fn precompute_dimmed(bgra: &[u8]) -> Vec<u8> {
     let mut out = bgra.to_vec();
     for px in out.as_chunks_mut::<4>().0 {
-        px[0] = ((px[0] as u16 * 112) >> 8) as u8;
-        px[1] = ((px[1] as u16 * 112) >> 8) as u8;
-        px[2] = ((px[2] as u16 * 112) >> 8) as u8;
+        px[0] = ((px[0] as u16 * 154) >> 8) as u8;
+        px[1] = ((px[1] as u16 * 154) >> 8) as u8;
+        px[2] = ((px[2] as u16 * 154) >> 8) as u8;
         px[3] = 255;
     }
     out
@@ -398,24 +282,4 @@ pub fn resize_rect_by_handle(orig: ScreenRect, idx: usize, x: i32, y: i32) -> Sc
         _ => {}
     }
     ScreenRect::from_points(l, t, r, b)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn toolbar_and_minimalist_subbar_stay_inside_viewport() {
-        let st = ToolbarStyleState {
-            active_tool: ToolKind::Arrow, active_color: 0, active_thickness: 4,
-            shape_filled: false, mosaic_blur: false,
-        };
-        let lay = build_toolbar_layout(ScreenRect { x: 50, y: 1050, w: 200, h: 20 }, 1920, 1080, &st, &CaptureToolHotkeys::default());
-        let bar = lay.main_bar.expect("main bar");
-        assert!(bar.x >= 0 && bar.right() <= 1920 && bar.y >= 0 && bar.bottom() <= 1080);
-        let sub = lay.sub_bar.expect("sub bar");
-        assert!(sub.x >= 0 && sub.right() <= 1920 && sub.y >= 0 && sub.bottom() <= 1080);
-        assert!(lay.hits.iter().any(|h| h.cmd == ToolbarCmd::ScrollLong));
-        // Arrow sub-bar stays ultra-minimalist: only 3 thickness dots + 6 color swatches (zero style-button bloat)
-        assert!(lay.hits.iter().filter(|h| !h.pill_text.is_empty()).count() == 0);
-    }
 }

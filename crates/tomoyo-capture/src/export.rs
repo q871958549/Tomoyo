@@ -3,15 +3,27 @@
 use std::path::{Path, PathBuf};
 use tomoyo_core::{data_dir, logs_dir, TomoyoConfig};
 
-pub fn default_save_path(custom_dir: &str) -> PathBuf {
+pub fn default_save_dir(custom_dir: &str) -> PathBuf {
     let dir = if !custom_dir.trim().is_empty() && Path::new(custom_dir.trim()).is_dir() {
         PathBuf::from(custom_dir.trim())
+    } else if cfg!(target_os = "linux") {
+        std::env::var_os("XDG_PICTURES_DIR")
+            .map(PathBuf::from)
+            .filter(|p| p.is_dir())
+            .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Pictures")))
+            .map(|p| p.join("Tomoyo"))
+            .unwrap_or_else(|| data_dir().join("screenshots"))
     } else if let Ok(profile) = std::env::var("USERPROFILE") {
         PathBuf::from(profile).join("Pictures").join("Tomoyo")
     } else {
         data_dir().join("screenshots")
     };
     let _ = std::fs::create_dir_all(&dir);
+    dir
+}
+
+pub fn default_save_path(custom_dir: &str) -> PathBuf {
+    let dir = default_save_dir(custom_dir);
     let ts = chrono::Local::now().format("%Y%m%d_%H%M%S");
     dir.join(format!("Tomoyo_{ts}.png"))
 }
@@ -243,10 +255,43 @@ fn find_sibling_exe(name: &str) -> Option<PathBuf> {
     None
 }
 
-#[cfg(windows)]
+#[cfg(target_os = "linux")]
+pub use crate::linux_clip::{
+    copy_bgra_to_clipboard, copy_text_to_clipboard, read_clipboard_image_bgra,
+};
+
+#[cfg(any(windows, target_os = "linux"))]
+pub fn handoff_text_to_translator(text: &str) {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return;
+    }
+    let cfg = TomoyoConfig::load_or_create();
+    let req_dir = logs_dir();
+    let _ = std::fs::create_dir_all(&req_dir);
+    let payload = serde_json::json!({
+        "text": trimmed,
+        "target_lang": cfg.translate.target_lang,
+    });
+    let _ = std::fs::write(req_dir.join("last_translate_req.json"), payload.to_string());
+    let host_name = if cfg!(windows) { "tomoyo-webview-host.exe" } else { "tomoyo-webview-host" };
+    if let Some(host_exe) = find_sibling_exe(host_name) {
+        let _ = std::process::Command::new(host_exe)
+            .args([
+                "--entry", "__tomoyo_translator__",
+                "--title", "Tomoyo 多源翻译",
+                "--theme", &cfg.theme,
+                "--width", "860",
+                "--height", "640",
+            ])
+            .spawn();
+    }
+}
+
+#[cfg(any(windows, target_os = "linux"))]
 fn run_offline_ocr_json(width: u32, height: u32, bgra: &[u8]) -> Result<(PathBuf, serde_json::Value), String> {
+    #[cfg(windows)]
     use std::os::windows::process::CommandExt;
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
     let img_dir = data_dir().join("clipboard-images");
     let _ = std::fs::create_dir_all(&img_dir);
@@ -254,13 +299,17 @@ fn run_offline_ocr_json(width: u32, height: u32, bgra: &[u8]) -> Result<(PathBuf
     let img_path = img_dir.join(format!("capture_{ts}.png"));
     save_bgra_as_png(&img_path, width, height, bgra)?;
 
-    let ocr_exe = find_sibling_exe("tomoyo-plugin-ocr.exe")
-        .ok_or_else(|| "未找到 tomoyo-plugin-ocr.exe".to_string())?;
-    let out = std::process::Command::new(&ocr_exe)
-        .args(["--recognize", &img_path.to_string_lossy(), "--json"])
-        .creation_flags(CREATE_NO_WINDOW)
-        .output()
-        .map_err(|e| format!("运行 OCR 失败: {e}"))?;
+    let ocr_name = if cfg!(windows) { "tomoyo-plugin-ocr.exe" } else { "tomoyo-plugin-ocr" };
+    let ocr_exe = find_sibling_exe(ocr_name)
+        .ok_or_else(|| format!("未找到 {ocr_name}"))?;
+    let mut cmd = std::process::Command::new(&ocr_exe);
+    cmd.args(["--recognize", &img_path.to_string_lossy(), "--json"]);
+    #[cfg(windows)]
+    {
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    let out = cmd.output().map_err(|e| format!("运行 OCR 失败: {e}"))?;
     let stdout = String::from_utf8_lossy(&out.stdout);
     let parsed = serde_json::from_str::<serde_json::Value>(stdout.trim()).unwrap_or_else(|_| {
         let fallback = stdout
@@ -284,7 +333,7 @@ fn run_offline_ocr_json(width: u32, height: u32, bgra: &[u8]) -> Result<(PathBuf
 
 /// Runs offline OCR and directly copies clean extracted text to clipboard (for `Shift+C` direct extract).
 /// Falls back to opening OCR Inspector if no readable text was detected.
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 pub fn handoff_ocr_copy_direct(width: u32, height: u32, bgra: &[u8]) -> Result<(), String> {
     let (img_path, parsed) = run_offline_ocr_json(width, height, bgra)?;
     let text = parsed.get("text").and_then(|v| v.as_str()).unwrap_or("").trim();
@@ -293,8 +342,9 @@ pub fn handoff_ocr_copy_direct(width: u32, height: u32, bgra: &[u8]) -> Result<(
         return Ok(());
     }
     let cfg = TomoyoConfig::load_or_create();
-    let host_exe = find_sibling_exe("tomoyo-webview-host.exe")
-        .ok_or_else(|| "未找到 tomoyo-webview-host.exe".to_string())?;
+    let host_name = if cfg!(windows) { "tomoyo-webview-host.exe" } else { "tomoyo-webview-host" };
+    let host_exe = find_sibling_exe(host_name)
+        .ok_or_else(|| format!("未找到 {host_name}"))?;
     std::process::Command::new(host_exe)
         .args([
             "--entry", "__tomoyo_ocr_viewer__",
@@ -311,14 +361,15 @@ pub fn handoff_ocr_copy_direct(width: u32, height: u32, bgra: &[u8]) -> Result<(
 
 /// Saves screenshot PNG, invokes `tomoyo-plugin-ocr.exe --json` offline, and opens either
 /// `__tomoyo_ocr_viewer__` (OCR inspection) or `__tomoyo_translator__` (Screenshot Translate).
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 pub fn handoff_to_ocr_or_translate(width: u32, height: u32, bgra: &[u8], translate: bool) -> Result<(), String> {
     let (img_path, parsed) = run_offline_ocr_json(width, height, bgra)?;
     let recognized = parsed.get("text").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
 
     let cfg = TomoyoConfig::load_or_create();
-    let host_exe = find_sibling_exe("tomoyo-webview-host.exe")
-        .ok_or_else(|| "未找到 tomoyo-webview-host.exe".to_string())?;
+    let host_name = if cfg!(windows) { "tomoyo-webview-host.exe" } else { "tomoyo-webview-host" };
+    let host_exe = find_sibling_exe(host_name)
+        .ok_or_else(|| format!("未找到 {host_name}"))?;
 
     if translate {
         let req_path = logs_dir().join("last_translate_req.json");

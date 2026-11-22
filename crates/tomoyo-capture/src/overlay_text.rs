@@ -4,8 +4,12 @@
 #![cfg(windows)]
 
 use crate::annotate::{AnnotColor, Annotation};
-use crate::overlay_draw::{dim_badge_rect, loupe_rect, tooltip_rect_for, wheel_hud_rect, ToolbarCmd, ToolbarLayout};
+use crate::overlay_draw::{
+    dim_badge_rect, loupe_rect, snap_badge_rect, tooltip_rect_for, wheel_hud_rect, ToolbarCmd,
+    ToolbarLayout,
+};
 use crate::screen::{DesktopSnapshot, ScreenRect};
+use crate::snap_detect::SnapCandidate;
 use std::ffi::c_void;
 use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, RECT, WPARAM};
@@ -174,6 +178,8 @@ pub fn paint_overlay_gdi_labels(
     font: HFONT,
     snap: &DesktopSnapshot,
     sel: Option<ScreenRect>,
+    hover_snap: Option<SnapCandidate>,
+    cycle_count: usize,
     annotations: &[Annotation],
     cursor: (i32, i32),
     show_loupe: bool,
@@ -201,6 +207,17 @@ pub fn paint_overlay_gdi_labels(
             let mut rc = RECT { left: b.x, top: b.y, right: b.right(), bottom: b.bottom() };
             SetTextColor(mem_dc, COLORREF(0x00F8_FAFC));
             let mut w: Vec<u16> = format!("{} × {}", s.w, s.h).encode_utf16().collect();
+            DrawTextW(mem_dc, &mut w, &mut rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        } else if let Some(h) = hover_snap {
+            let b = snap_badge_rect(h.rect, snap.width);
+            let mut rc = RECT { left: b.x, top: b.y, right: b.right(), bottom: b.bottom() };
+            SetTextColor(mem_dc, COLORREF(0x00FE_F2E0));
+            let txt = if cycle_count <= 1 {
+                format!("{} {}×{} · 拖拽框选 / 单击全屏", h.kind.label(), h.rect.w, h.rect.h)
+            } else {
+                format!("{} {}×{} · 单击选中 · Tab切层", h.kind.label(), h.rect.w, h.rect.h)
+            };
+            let mut w: Vec<u16> = txt.encode_utf16().collect();
             DrawTextW(mem_dc, &mut w, &mut rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         }
         if let Some(cmd) = hovered_cmd

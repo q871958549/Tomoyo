@@ -1,0 +1,404 @@
+//! Native Linux desktop shell launching, XDG file reveal, terminal dispatch,
+//! KWin window activation, XTest Ctrl+V autopaste, and systemd/KDE commands.
+
+use std::ffi::{c_char, c_int, CString};
+use std::io::Write;
+use std::os::unix::net::UnixStream;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use tomoyo_protocol::SystemCommandKind;
+
+unsafe extern "C" {
+    fn getuid() -> u32;
+    fn tomoyo_linux_launch_desktop(path: *const c_char) -> c_int;
+    fn tomoyo_linux_send_ctrl_chord(key: c_char);
+    fn kill(pid: i32, sig: i32) -> i32;
+}
+
+pub fn spawn_settings_window(parent_pid: isize, theme_name: &str) -> Result<(), String> {
+    spawn_ephemeral_singleton(
+        "settings",
+        parent_pid,
+        theme_name,
+        &["--settings", "--title", "Tomoyo 设置中心"],
+        960,
+        670,
+    )
+}
+
+pub fn spawn_clipboard_manager_window(
+    parent_pid: isize,
+    theme_name: &str,
+    focus_key: Option<&str>,
+) -> Result<(), String> {
+    let mut args = vec![
+        "--plugin-id",
+        "builtin.clipboard",
+        "--title",
+        "Tomoyo 剪贴板工作台",
+        "--entry",
+        "__tomoyo_clipboard_manager__",
+    ];
+    let fk = focus_key.unwrap_or_default().to_string();
+    if !fk.is_empty() {
+        args.push("--query");
+        args.push(&fk);
+    }
+    spawn_ephemeral_singleton("clipboard", parent_pid, theme_name, &args, 1060, 680)
+}
+
+pub fn spawn_translator_window(
+    parent_pid: isize,
+    theme_name: &str,
+    text: &str,
+    target_lang: Option<&str>,
+) -> Result<(), String> {
+    let req_dir = tomoyo_core::logs_dir();
+    let _ = std::fs::create_dir_all(&req_dir);
+    let payload = serde_json::json!({
+        "text": text,
+        "target_lang": target_lang.unwrap_or(""),
+    });
+    let _ = std::fs::write(req_dir.join("last_translate_req.json"), payload.to_string());
+    spawn_ephemeral_singleton(
+        "translate",
+        parent_pid,
+        theme_name,
+        &[
+            "--plugin-id",
+            "builtin.translate",
+            "--title",
+            "Tomoyo 多源翻译",
+            "--entry",
+            "__tomoyo_translator__",
+        ],
+        780,
+        620,
+    )
+}
+
+fn try_wake_singleton_socket(mode_tag: &str) -> bool {
+    if mode_tag.is_empty() {
+        return false;
+    }
+    let dir = std::env::var_os("XDG_RUNTIME_DIR")
+        .map(PathBuf::from)
+        .filter(|p| p.is_dir())
+        .unwrap_or_else(std::env::temp_dir);
+    let sock = dir.join(format!("tomoyo-wv-{}-{mode_tag}.sock", unsafe { getuid() }));
+    let Ok(mut stream) = UnixStream::connect(&sock) else {
+        return false;
+    };
+    stream.write_all(b"activate\n").is_ok()
+}
+
+fn spawn_ephemeral_singleton(
+    mode_tag: &str,
+    parent_pid: isize,
+    theme_name: &str,
+    extra: &[&str],
+    width: i32,
+    height: i32,
+) -> Result<(), String> {
+    if try_wake_singleton_socket(mode_tag) {
+        return Ok(());
+    }
+    let host_exe = locate_sibling_exe("tomoyo-webview-host")?;
+    let mut cmd = Command::new(&host_exe);
+    cmd.args(extra)
+        .args(["--theme", theme_name, "--width", &width.to_string(), "--height", &height.to_string()]);
+    if theme_name.eq_ignore_ascii_case("light") {
+        cmd.arg("--light");
+    }
+    if parent_pid > 0 {
+        cmd.args(["--notify-hwnd", &parent_pid.to_string()]);
+    }
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("failed to launch {}: {e}", host_exe.display()))?;
+    let _ = std::thread::Builder::new().name("tomoyo-wv-reaper".into()).spawn(move || {
+        let _ = child.wait();
+    });
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn spawn_ephemeral_webview(
+    plugin_id: &str,
+    title: &str,
+    entry_path: &str,
+    utools_compat: bool,
+    initial_query: &str,
+    width: u32,
+    height: u32,
+    _max_memory_mb: u32,
+    is_dark: bool,
+) -> Result<(), String> {
+    let host_exe = locate_sibling_exe("tomoyo-webview-host")?;
+    let mut cmd = Command::new(&host_exe);
+    cmd.args([
+        "--plugin-id",
+        plugin_id,
+        "--title",
+        title,
+        "--entry",
+        entry_path,
+        "--query",
+        initial_query,
+        "--width",
+        &width.to_string(),
+        "--height",
+        &height.to_string(),
+    ]);
+    if utools_compat {
+        cmd.arg("--utools-compat");
+    }
+    if !is_dark {
+        cmd.arg("--light");
+    }
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("failed to launch {}: {e}", host_exe.display()))?;
+    let _ = std::thread::Builder::new().name("tomoyo-wv-reaper".into()).spawn(move || {
+        let _ = child.wait();
+    });
+    Ok(())
+}
+
+fn locate_sibling_exe(name: &str) -> Result<PathBuf, String> {
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(dir) = exe.parent()
+    {
+        let sib = dir.join(name);
+        if sib.is_file() {
+            return Ok(sib);
+        }
+        if let Some(parent) = dir.parent() {
+            let p = parent.join(name);
+            if p.is_file() {
+                return Ok(p);
+            }
+        }
+    }
+    Err(format!("{name} not found next to tomoyo"))
+}
+
+pub fn spawn_capture_tool(mode: &str) -> Result<(), String> {
+    let cap_exe = locate_sibling_exe("tomoyo-capture")?;
+    let flag = match mode {
+        "ocr" => "--ocr",
+        "translate" => "--translate",
+        "record" => "--record",
+        "pin_clipboard" | "pin" => "--pin-clipboard",
+        _ => "--capture",
+    };
+    let mut child = Command::new(&cap_exe)
+        .arg(flag)
+        .spawn()
+        .map_err(|e| format!("failed to launch {}: {e}", cap_exe.display()))?;
+    let _ = std::thread::Builder::new().name("tomoyo-cap-reaper".into()).spawn(move || {
+        let _ = child.wait();
+    });
+    Ok(())
+}
+
+pub fn paste_into_previous_window_async(_prev_hwnd: isize) {
+    let _ = std::thread::Builder::new().name("tomoyo-autopaste".into()).spawn(|| {
+        std::thread::sleep(std::time::Duration::from_millis(85));
+        if command_in_path("wtype") {
+            let _ = Command::new("wtype").args(["-M", "ctrl", "v", "-m", "ctrl"]).status();
+        } else {
+            unsafe { tomoyo_linux_send_ctrl_chord(b'v' as c_char); }
+        }
+    });
+}
+
+pub fn send_ctrl_c_cleanly() {
+    if command_in_path("wtype") {
+        let _ = Command::new("wtype").args(["-M", "ctrl", "c", "-m", "ctrl"]).status();
+    } else {
+        unsafe { tomoyo_linux_send_ctrl_chord(b'c' as c_char); }
+    }
+}
+
+fn spawn_isolated(prog: &str, args: &[String], workdir: Option<&str>) -> bool {
+    if command_in_path("systemd-run") {
+        let mut sh = Command::new("sh");
+        sh.arg("-c")
+            .arg("systemd-run --user --scope --collect --quiet --slice=app.slice -- \"$@\" >/dev/null 2>&1 &")
+            .arg("tomoyo-launch")
+            .arg(prog)
+            .args(args);
+        if let Some(d) = workdir.filter(|d| Path::new(d).is_dir()) {
+            sh.current_dir(d);
+        }
+        sh.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+        if sh.status().is_ok_and(|s| s.success()) {
+            return true;
+        }
+    }
+    let mut cmd = Command::new(prog);
+    cmd.args(args);
+    if let Some(d) = workdir.filter(|d| Path::new(d).is_dir()) {
+        cmd.current_dir(d);
+    }
+    cmd.stdin(Stdio::null()).spawn().is_ok()
+}
+
+pub fn shell_open(target: &str, args: Option<&str>, workdir: Option<&str>) -> bool {
+    if target.ends_with(".desktop") && Path::new(target).is_file() {
+        if command_in_path("gio") && spawn_isolated("gio", &["launch".into(), target.into()], workdir) {
+            return true;
+        }
+        if let Ok(cs) = CString::new(target)
+            && unsafe { tomoyo_linux_launch_desktop(cs.as_ptr()) != 0 }
+        {
+            return true;
+        }
+        return Command::new("gio").args(["launch", target]).spawn().is_ok();
+    }
+
+    let is_url = target.contains("://") || target.starts_with("mailto:");
+    let use_xdg = is_url || (args.is_none() && !command_in_path(target));
+    if use_xdg {
+        spawn_isolated("xdg-open", &[target.to_string()], workdir)
+    } else {
+        let argv: Vec<String> = args
+            .map(|a| a.split_whitespace().map(ToString::to_string).collect())
+            .unwrap_or_default();
+        spawn_isolated(target, &argv, workdir)
+    }
+}
+
+pub fn shell_open_as_admin(target: &str, args: Option<&str>, workdir: Option<&str>) -> bool {
+    let mut cmd = Command::new("pkexec");
+    cmd.arg(target);
+    if let Some(a) = args {
+        cmd.args(a.split_whitespace());
+    }
+    if let Some(d) = workdir.filter(|d| Path::new(d).is_dir()) {
+        cmd.current_dir(d);
+    }
+    cmd.spawn().is_ok()
+}
+
+pub fn reveal_in_file_manager(path: &str) -> bool {
+    if tomoyo_core::linux_sys::dbus_reveal_file(path) {
+        return true;
+    }
+    let parent = Path::new(path).parent().and_then(|p| p.to_str()).unwrap_or(path);
+    shell_open(parent, None, None)
+}
+
+pub fn open_terminal_at(dir: &str) -> bool {
+    let target_dir = if Path::new(dir).is_dir() { dir } else { "." };
+    if let Ok(term) = std::env::var("TERMINAL")
+        && !term.trim().is_empty()
+        && Command::new(term.trim()).current_dir(target_dir).spawn().is_ok()
+    {
+        return true;
+    }
+    for (bin, flag) in [
+        ("konsole", Some("--workdir")),
+        ("alacritty", Some("--working-directory")),
+        ("kitty", Some("--directory")),
+        ("wezterm", Some("start --cwd")),
+        ("gnome-terminal", Some("--working-directory")),
+        ("xfce4-terminal", Some("--working-directory")),
+        ("xterm", None),
+    ] {
+        if !command_in_path(bin) {
+            continue;
+        }
+        let mut cmd = Command::new(bin);
+        if let Some(f) = flag {
+            for part in f.split_whitespace() {
+                cmd.arg(part);
+            }
+            cmd.arg(target_dir);
+        } else {
+            cmd.current_dir(target_dir);
+        }
+        if cmd.spawn().is_ok() {
+            return true;
+        }
+    }
+    false
+}
+
+pub fn focus_window(token: isize) {
+    if let Some(id) = tomoyo_providers::windows_switcher::resolve_linux_window_id(token) {
+        let _ = tomoyo_core::linux_sys::dbus_krunner_run(&id);
+    }
+}
+
+pub fn run_system_command(cmd: SystemCommandKind) {
+    match cmd {
+        SystemCommandKind::LockWorkstation => {
+            if Command::new("loginctl").arg("lock-session").spawn().is_err() {
+                let _ = Command::new("qdbus6")
+                    .args(["org.freedesktop.ScreenSaver", "/ScreenSaver", "Lock"])
+                    .spawn();
+            }
+        }
+        SystemCommandKind::Sleep => {
+            let _ = Command::new("systemctl").arg("suspend").spawn();
+        }
+        SystemCommandKind::EmptyRecycleBin => {
+            let data = std::env::var_os("XDG_DATA_HOME")
+                .map(PathBuf::from)
+                .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")));
+            if let Some(base) = data {
+                for sub in ["Trash/files", "Trash/info"] {
+                    let dir = base.join(sub);
+                    if let Ok(rd) = std::fs::read_dir(&dir) {
+                        for ent in rd.flatten() {
+                            let p = ent.path();
+                            if p.is_dir() {
+                                let _ = std::fs::remove_dir_all(&p);
+                            } else {
+                                let _ = std::fs::remove_file(&p);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        SystemCommandKind::OpenSettings => {
+            if !shell_open("systemsettings", None, None) {
+                let _ = shell_open("gnome-control-center", None, None);
+            }
+        }
+        SystemCommandKind::OpenTaskManager => {
+            let _ = ["plasma-systemmonitor", "ksysguard", "gnome-system-monitor"]
+                .iter()
+                .any(|b| command_in_path(b) && Command::new(b).spawn().is_ok());
+        }
+        SystemCommandKind::OpenTerminal => {
+            let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+            let _ = open_terminal_at(&home);
+        }
+    }
+}
+
+pub fn kill_process_by_pid(pid: u32) -> Result<(), String> {
+    if pid <= 1 || pid == std::process::id() {
+        return Err("拒绝结束受保护系统或自身进程".into());
+    }
+    if unsafe { kill(pid as i32, 15) } == 0 {
+        Ok(())
+    } else {
+        Err(format!("无法结束进程 PID {pid}"))
+    }
+}
+
+fn command_in_path(cmd: &str) -> bool {
+    let p = Path::new(cmd);
+    if p.is_file() {
+        return true;
+    }
+    let Ok(path_var) = std::env::var("PATH") else {
+        return false;
+    };
+    std::env::split_paths(&path_var).any(|d| d.join(cmd).is_file())
+}

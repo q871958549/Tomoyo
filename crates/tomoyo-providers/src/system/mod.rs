@@ -37,80 +37,125 @@ impl SystemProvider {
         config: Arc<RwLock<TomoyoConfig>>,
         updater: Arc<UpdateManager>,
     ) -> Self {
-        let specs: [(&str, &str, &str, &str, ActionKind); 8] = [
-            (
-                "sys:tomoyo_settings",
-                "Tomoyo 设置中心 Settings",
-                "打开图形化设置中心（主题、快捷键自动录入、语言、Everything、插件市场、检查更新）",
-                "SET",
-                ActionKind::InternalCommand {
-                    command: InternalCommandKind::OpenSettingsWindow,
-                },
-            ),
-            (
-                "sys:check_update",
-                "检查更新 Check for Updates",
-                "联网检查 GitHub 最新 Release 版本并查看更新日志",
-                "UPD",
-                ActionKind::InternalCommand {
-                    command: InternalCommandKind::CheckForUpdates,
-                },
-            ),
-            (
-                "sys:lock",
-                "Lock Screen 锁屏",
-                "Lock your Windows workstation immediately",
-                "SYS",
-                ActionKind::SystemCommand {
-                    command: SystemCommandKind::LockWorkstation,
-                },
-            ),
-            (
-                "sys:sleep",
-                "Sleep 睡眠",
-                "Put computer into low-power sleep mode",
-                "SYS",
-                ActionKind::SystemCommand {
-                    command: SystemCommandKind::Sleep,
-                },
-            ),
-            (
-                "sys:recycle",
-                "Empty Recycle Bin 清空回收站",
-                "Permanently clear Windows Recycle Bin",
-                "SYS",
-                ActionKind::SystemCommand {
-                    command: SystemCommandKind::EmptyRecycleBin,
-                },
-            ),
-            (
-                "sys:settings",
-                "Windows Settings 系统设置",
-                "Open Windows Settings (ms-settings:)",
-                "SYS",
-                ActionKind::SystemCommand {
-                    command: SystemCommandKind::OpenSettings,
-                },
-            ),
-            (
-                "sys:taskmgr",
-                "Task Manager 任务管理器",
-                "Open Windows Task Manager",
-                "SYS",
-                ActionKind::SystemCommand {
-                    command: SystemCommandKind::OpenTaskManager,
-                },
-            ),
-            (
-                "sys:terminal",
-                "Terminal 终端",
-                "Open Windows Terminal / PowerShell",
-                "SYS",
-                ActionKind::SystemCommand {
-                    command: SystemCommandKind::OpenTerminal,
-                },
-            ),
-        ];
+        let specs: [(&str, &str, &str, &str, ActionKind); 8] = if cfg!(target_os = "linux") {
+            [
+                (
+                    "sys:tomoyo_settings",
+                    "Tomoyo 设置中心 Settings",
+                    "打开图形化设置中心（主题、快捷键录入、语言、文件搜索、插件市场、检查更新）",
+                    "SET",
+                    ActionKind::InternalCommand { command: InternalCommandKind::OpenSettingsWindow },
+                ),
+                (
+                    "sys:check_update",
+                    "检查更新 Check for Updates",
+                    "联网检查 GitHub 最新 Release 版本并查看更新日志",
+                    "UPD",
+                    ActionKind::InternalCommand { command: InternalCommandKind::CheckForUpdates },
+                ),
+                (
+                    "sys:lock",
+                    "Lock Screen 锁屏",
+                    "立即锁定当前桌面会话 (loginctl lock-session)",
+                    "SYS",
+                    ActionKind::SystemCommand { command: SystemCommandKind::LockWorkstation },
+                ),
+                (
+                    "sys:sleep",
+                    "Sleep 睡眠",
+                    "进入低功耗挂起睡眠模式 (systemctl suspend)",
+                    "SYS",
+                    ActionKind::SystemCommand { command: SystemCommandKind::Sleep },
+                ),
+                (
+                    "sys:recycle",
+                    "Empty Trash 清空回收站",
+                    "清空桌面回收站文件 (gio trash --empty)",
+                    "SYS",
+                    ActionKind::SystemCommand { command: SystemCommandKind::EmptyRecycleBin },
+                ),
+                (
+                    "sys:settings",
+                    "System Settings 系统设置",
+                    "打开 KDE / 桌面系统设置中心",
+                    "SYS",
+                    ActionKind::SystemCommand { command: SystemCommandKind::OpenSettings },
+                ),
+                (
+                    "sys:taskmgr",
+                    "System Monitor 系统监视器",
+                    "打开系统监视器查看进程与资源占用",
+                    "SYS",
+                    ActionKind::SystemCommand { command: SystemCommandKind::OpenTaskManager },
+                ),
+                (
+                    "sys:terminal",
+                    "Terminal 终端",
+                    "打开系统默认终端模拟器",
+                    "SYS",
+                    ActionKind::SystemCommand { command: SystemCommandKind::OpenTerminal },
+                ),
+            ]
+        } else {
+            [
+                (
+                    "sys:tomoyo_settings",
+                    "Tomoyo 设置中心 Settings",
+                    "打开图形化设置中心（主题、快捷键自动录入、语言、Everything、插件市场、检查更新）",
+                    "SET",
+                    ActionKind::InternalCommand { command: InternalCommandKind::OpenSettingsWindow },
+                ),
+                (
+                    "sys:check_update",
+                    "检查更新 Check for Updates",
+                    "联网检查 GitHub 最新 Release 版本并查看更新日志",
+                    "UPD",
+                    ActionKind::InternalCommand { command: InternalCommandKind::CheckForUpdates },
+                ),
+                (
+                    "sys:lock",
+                    "Lock Screen 锁屏",
+                    "Lock your Windows workstation immediately",
+                    "SYS",
+                    ActionKind::SystemCommand { command: SystemCommandKind::LockWorkstation },
+                ),
+                (
+                    "sys:sleep",
+                    "Sleep 睡眠",
+                    "Put computer into low-power sleep mode",
+                    "SYS",
+                    ActionKind::SystemCommand { command: SystemCommandKind::Sleep },
+                ),
+                (
+                    "sys:recycle",
+                    "Empty Recycle Bin 清空回收站",
+                    "Permanently clear Windows Recycle Bin",
+                    "SYS",
+                    ActionKind::SystemCommand { command: SystemCommandKind::EmptyRecycleBin },
+                ),
+                (
+                    "sys:settings",
+                    "Windows Settings 系统设置",
+                    "Open Windows Settings (ms-settings:)",
+                    "SYS",
+                    ActionKind::SystemCommand { command: SystemCommandKind::OpenSettings },
+                ),
+                (
+                    "sys:taskmgr",
+                    "Task Manager 任务管理器",
+                    "Open Windows Task Manager",
+                    "SYS",
+                    ActionKind::SystemCommand { command: SystemCommandKind::OpenTaskManager },
+                ),
+                (
+                    "sys:terminal",
+                    "Terminal 终端",
+                    "Open Windows Terminal / PowerShell",
+                    "SYS",
+                    ActionKind::SystemCommand { command: SystemCommandKind::OpenTerminal },
+                ),
+            ]
+        };
 
         let commands = specs
             .into_iter()

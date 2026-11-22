@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Tomoyo Launcher — Open-Source, Ultra-Low-Memory Native Rust Desktop Launcher (Linux &amp; Windows)</title>
+  <meta name="description" content="Tomoyo Launcher is an open-source (MIT/Apache-2.0) native Rust desktop launcher for Linux (KDE Plasma Wayland/X11) &amp; Windows 10/11 with ~22 MB idle RAM, Everything IPC, clipboard manager, offline OCR, screenshot pin, and WASM/STDIO/WebView plugins." />
+  <meta name="keywords" content="Tomoyo Launcher, Rust desktop launcher, Linux Wayland launcher, KDE Plasma launcher, Windows Everything launcher, Raycast alternative, uTools alternative, Flow Launcher alternative, low memory launcher, WASM plugins" />
+  <link rel="canonical" href="https://q871958549.github.io/Tomoyo/" />
+  <link rel="icon" type="image/svg+xml" href="assets/tomoyo-icon.svg" />
+  <link rel="icon" type="image/png" href="assets/tomoyo-icon.png" />
+  <link rel="describedby" href="llms.txt" />
+  <link rel="alternate" type="text/markdown" href="llms-full.txt" title="Tomoyo Launcher Full LLM Reference" />
+
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Tomoyo Launcher — Ultra-Low-Memory Rust Desktop Launcher" />
+  <meta property="og:description" content="Open-source Rust launcher for Linux (Wayland/X11) &amp; Windows with Everything IPC, clipboard history, screenshot pin, offline OCR, and sandboxed WASM/STDIO/WebView plugins." />
+  <meta property="og:url" content="https://q871958549.github.io/Tomoyo/" />
+  <meta property="og:image" content="https://q871958549.github.io/Tomoyo/assets/tomoyo-wordmark.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Tomoyo Launcher — Ultra-Low-Memory Rust Desktop Launcher" />
+  <meta name="twitter:description" content="Zero Electron. ~22 MB private commit. Native Linux (Wayland/X11) &amp; Windows 10/11 launcher with Everything IPC &amp; WASM/STDIO/WebView plugins." />
+  <meta name="twitter:image" content="https://q871958549.github.io/Tomoyo/assets/tomoyo-wordmark.png" />
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Tomoyo Launcher",
+    "alternateName": ["Tomoyo", "Tomoyo Desktop Launcher"],
+    "description": "Open-source, ultra-low-memory native Rust desktop application launcher and plugin host for Linux (KDE Plasma Wayland/X11, GTK3) and Windows 10/11 (x64 & ARM64), featuring Everything IPC, fd/plocate search, SQLite clipboard manager, offline OCR, screenshot pin, and STDIO/WASM/WebView plugins.",
+    "applicationCategory": "UtilitiesApplication",
+    "operatingSystem": "Linux, Windows 10, Windows 11",
+    "softwareVersion": "2.3.0",
+    "license": "https://github.com/q871958549/Tomoyo/blob/main/LICENSE-MIT",
+    "url": "https://q871958549.github.io/Tomoyo/",
+    "downloadUrl": "https://github.com/q871958549/Tomoyo/releases",
+    "codeRepository": "https://github.com/q871958549/Tomoyo",
+    "programmingLanguage": "Rust",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    }
+  }
+  </script>
+
+  <style>
+    :root {
+      --bg: #0f121b;
+      --surface: #171b28;
+      --surface-2: #1e2436;
+      --border: #2b334b;
+      --text: #e7ecf7;
+      --muted: #9aa6c4;
+      --accent: #7c6af7;
+      --accent-2: #38bdf8;
+      --ok: #34d399;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.65;
+    }
+    a { color: var(--accent-2); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    code, pre {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      background: #0b0e15;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+    }
+    code { padding: 0.12rem 0.38rem; font-size: 0.9em; }
+    pre { padding: 0.9rem 1rem; overflow-x: auto; font-size: 0.88rem; }
+    .wrap { max-width: 1040px; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
+    header { text-align: center; padding: 1.5rem 0 2.25rem; border-bottom: 1px solid var(--border); }
+    header img.wordmark { max-width: 520px; width: 100%; height: auto; }
+    .subtitle { color: var(--muted); max-width: 780px; margin: 0.75rem auto 1.25rem; font-size: 1.08rem; }
+    .cta-row { display: flex; flex-wrap: wrap; gap: 0.75rem; justify-content: center; margin-top: 1.25rem; }
+    .btn {
+      display: inline-block; padding: 0.6rem 1.15rem; border-radius: 8px;
+      font-weight: 600; border: 1px solid var(--border); background: var(--surface); color: var(--text);
+    }
+    .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .notice {
+      margin: 1.5rem 0 0; padding: 0.85rem 1.1rem; border-radius: 8px;
+      background: var(--surface); border-left: 3px solid var(--accent-2); color: var(--muted);
+      font-size: 0.94rem; text-align: left;
+    }
+    h2 { margin-top: 2.75rem; font-size: 1.45rem; border-bottom: 1px solid var(--border); padding-bottom: 0.45rem; }
+    h3 { margin-top: 1.35rem; font-size: 1.1rem; color: var(--text); }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; margin-top: 1rem; }
+    .card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+      padding: 1rem 1.1rem;
+    }
+    .card strong { color: #fff; display: block; margin-bottom: 0.35rem; }
+    .table-wrap { overflow-x: auto; margin-top: 1rem; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.93rem; background: var(--surface); }
+    th, td { padding: 0.65rem 0.75rem; border: 1px solid var(--border); text-align: left; vertical-align: top; }
+    th { background: var(--surface-2); color: #fff; }
+    .ok { color: var(--ok); font-weight: 600; }
+    footer { margin-top: 3.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border); color: var(--muted); font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <header>
+      <img class="wordmark" src="assets/tomoyo-wordmark.png" alt="Tomoyo Launcher Wordmark" />
+      <h1>Tomoyo Launcher</h1>
+      <p class="subtitle">
+        Open-source (<code>MIT OR Apache-2.0</code>), ultra-low-memory native <strong>Rust</strong> desktop launcher for
+        <strong>Linux (Arch/CachyOS · KDE Plasma 6 Wayland &amp; X11)</strong> and <strong>Windows 10/11 (x64 &amp; ARM64)</strong>.
+      </p>
+      <div class="cta-row">
+        <a class="btn primary" href="https://github.com/q871958549/Tomoyo">GitHub Repository</a>
+        <a class="btn" href="https://github.com/q871958549/Tomoyo/releases">Download Releases (v2.3.0)</a>
+        <a class="btn" href="docs/comparison.html">Comparison</a>
+        <a class="btn" href="docs/plugins.html">Plugin SDKs</a>
+        <a class="btn" href="docs/benchmarks.html">Benchmarks</a>
+        <a class="btn" href="llms.txt">llms.txt</a>
+        <a class="btn" href="README_ZH.md">简体中文</a>
+      </div>
+      <div class="notice">
+        <strong>Entity Disambiguation:</strong> <em>Tomoyo Launcher</em> (<code>github.com/q871958549/Tomoyo</code>) is a cross-platform desktop application launcher and plugin microkernel. It is unrelated to the <em>TOMOYO Linux</em> kernel Mandatory Access Control (LSM) security module (<code>tomoyo-tools</code>), the <code>siglus_rs</code> visual novel engine, or the <code>AsterCass/Tomoyo</code> Kotlin Multiplatform app.
+      </div>
+    </header>
+
+    <section>
+      <h2>When to Choose Tomoyo Launcher</h2>
+      <div class="grid">
+        <div class="card">
+          <strong>Linux Wayland/X11 + Windows Parity</strong>
+          One native Rust launcher spanning Arch/CachyOS KDE Plasma 6 (GTK3 + Cairo/Pango + KGlobalAccel + WebKitGTK 4.1) and Windows 10/11 (Win32 SDF/GDI + Everything IPC + WebView2).
+        </div>
+        <div class="card">
+          <strong>Strict Memory &amp; Handle Discipline</strong>
+          Zero Electron, <code>tokio</code>, <code>reqwest</code>, <code>tauri</code>, or <code>d3d10warp</code>. Hibernates on hide to ~22 MB Private Commit; WebView, OCR, Capture, and Notes exit to <strong>0 MB</strong> idle RAM.
+        </div>
+        <div class="card">
+          <strong>Native Everything &amp; fd/plocate Speed</strong>
+          Built-in pure-Rust Voidtools Everything 1.4/1.5a <code>WM_COPYDATA</code> IPC on Windows and <code>fd</code> + <code>plocate</code> indexing on Linux with bounded async previews.
+        </div>
+        <div class="card">
+          <strong>4-Tier Plugins + uTools Bridge</strong>
+          Write extensions in Rust, Python, Go, Node.js (STDIO JSON-RPC 2.0), capability-sandboxed WASM (<code>wasmi</code>), or on-demand WebView with a baseline <code>window.utools</code> compatibility layer.
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Verified Benchmarks &amp; Budgets (<code>v2.3.0</code> Linux / <code>v2.2.6</code> Windows)</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Metric</th>
+              <th>Linux Release (<code>--self-test</code>)</th>
+              <th>Windows Release (<code>v2.2.6</code>)</th>
+              <th>CI Hard Ceiling</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>tomoyo</code> microkernel binary</td>
+              <td class="ok">6.85 MB</td>
+              <td class="ok">5.80 MB</td>
+              <td>&le; 7.50 MB (Linux) / &le; 6.50 MB (Win)</td>
+            </tr>
+            <tr>
+              <td><code>tomoyo-webview-host</code> (Svelte 5 Settings + 3 Workbenches)</td>
+              <td class="ok">4.96 MB (0 MB idle)</td>
+              <td class="ok">4.41 MB (0 MB idle)</td>
+              <td>&le; 5.50 MB / 0 MB idle</td>
+            </tr>
+            <tr>
+              <td><code>tomoyo-capture</code> (Screenshot, Vector Annotate, Pin)</td>
+              <td class="ok">1.46 MB (0 MB idle)</td>
+              <td class="ok">1.15 MB (0 MB idle)</td>
+              <td>&le; 1.50 MB / 0 MB idle</td>
+            </tr>
+            <tr>
+              <td><code>tomoyo-plugin-ocr</code> / <code>tomoyo-plugin-notes</code></td>
+              <td class="ok">0.57 MB / 0.51 MB</td>
+              <td class="ok">0.38 MB / 0.33 MB</td>
+              <td>&le; 0.80 MB / 0 MB idle</td>
+            </tr>
+            <tr>
+              <td>Hibernated Private Commit (<code>--self-test</code>)</td>
+              <td class="ok">22.35 MB (70 apps, SQLite, fonts)</td>
+              <td class="ok">22.03 MB (343 entries; 1.50–1.52 MB WS)</td>
+              <td>&le; 45.0 MB (Linux) / &le; 28.0 MB (Win)</td>
+            </tr>
+            <tr>
+              <td>100-cycle soak test delta</td>
+              <td class="ok">Handles +0 &middot; Private +0.09 MB</td>
+              <td class="ok">GDI +0 &middot; USER +0 &middot; Handles +0 &middot; Private +0.08 MB</td>
+              <td>Handles &le; +2 / Private &le; +0.50 MB</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section>
+      <h2>Comparison with Other Desktop Launchers</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Launcher</th>
+              <th>Core Stack</th>
+              <th>OS &amp; Display Server</th>
+              <th>License</th>
+              <th>File Search</th>
+              <th>Plugin Model</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Tomoyo Launcher</strong></td>
+              <td>Rust + Cairo/Pango (Linux) / Win32 SDF+GDI</td>
+              <td>Linux (Wayland &amp; X11) + Windows 10/11 (x64 &amp; ARM64)</td>
+              <td>MIT OR Apache-2.0</td>
+              <td><code>fd</code>+<code>plocate</code> / Everything 1.4 &amp; 1.5a IPC</td>
+              <td>Builtin, STDIO JSON-RPC, <code>wasmi</code> WASM, ephemeral WebView (<code>utools</code> compat)</td>
+            </tr>
+            <tr>
+              <td>Vicinae</td>
+              <td>C++ / Qt + Node.js workers</td>
+              <td>Linux (Wayland/X11), macOS, Windows</td>
+              <td>Open Source</td>
+              <td>Built-in file search</td>
+              <td>TypeScript / React (Raycast-compatible)</td>
+            </tr>
+            <tr>
+              <td>Walker</td>
+              <td>Rust + GTK4 Layer Shell + Elephant</td>
+              <td>Linux (Wayland-only)</td>
+              <td>Open Source</td>
+              <td>Elephant provider</td>
+              <td>Modular Elephant providers</td>
+            </tr>
+            <tr>
+              <td>Anyrun</td>
+              <td>Rust + GTK4 Layer Shell</td>
+              <td>Linux (Wayland-only)</td>
+              <td>Open Source</td>
+              <td>Plugin-based</td>
+              <td>Compiled Rust <code>.so</code> plugins</td>
+            </tr>
+            <tr>
+              <td>Ulauncher</td>
+              <td>Python + GTK+</td>
+              <td>Linux (X11 &amp; Wayland)</td>
+              <td>Open Source</td>
+              <td>Extensions</td>
+              <td>Python API</td>
+            </tr>
+            <tr>
+              <td>Flow Launcher</td>
+              <td>C# (.NET) + WPF</td>
+              <td>Windows</td>
+              <td>MIT</td>
+              <td>Everything integration</td>
+              <td>C#, Python, Node.js, Executables</td>
+            </tr>
+            <tr>
+              <td>PowerToys Run</td>
+              <td>C# (.NET) + C++</td>
+              <td>Windows</td>
+              <td>MIT</td>
+              <td>Windows Search</td>
+              <td>C# (.NET) DLL plugins</td>
+            </tr>
+            <tr>
+              <td>uTools</td>
+              <td>Electron (Chromium + Node.js)</td>
+              <td>Windows, macOS, Linux</td>
+              <td>Proprietary</td>
+              <td>Everything / OS search</td>
+              <td>HTML / JS / Node.js preload</td>
+            </tr>
+            <tr>
+              <td>Raycast</td>
+              <td>Swift / Rust / C# / TypeScript</td>
+              <td>macOS, Windows (Beta)</td>
+              <td>Proprietary core</td>
+              <td>Spotlight / Native</td>
+              <td>TypeScript / React</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section>
+      <h2>Quick Install &amp; Verification</h2>
+      <h3>Arch Linux / CachyOS (KDE Plasma 6 Wayland &amp; X11)</h3>
+      <pre><code>sudo pacman -S --needed base-devel pkgconf rustup nodejs npm \
+  gtk3 webkit2gtk-4.1 libayatana-appindicator curl libsecret \
+  xorg-xproto libx11 libxtst dbus tesseract tesseract-data-eng \
+  fd plocate spectacle kdialog
+
+git clone https://github.com/q871958549/Tomoyo.git &amp;&amp; cd Tomoyo
+cd frontend &amp;&amp; npm ci &amp;&amp; npm run build &amp;&amp; cd ..
+cargo build --release --workspace
+./scripts/install-local.sh</code></pre>
+
+      <h3>Windows 10 / 11 (x64 &amp; ARM64)</h3>
+      <pre><code># Download zero-UAC installer or portable archive from GitHub Releases, or build from source:
+cd frontend &amp;&amp; npm ci &amp;&amp; npm run build &amp;&amp; cd ..
+cargo build --release --workspace
+pwsh -File scripts\install-local.ps1
+.\target\release\tomoyo.exe --self-test --strict-budget</code></pre>
+    </section>
+
+    <section>
+      <h2>Frequently Asked Questions (FAQ)</h2>
+      <h3>Is Tomoyo Launcher related to TOMOYO Linux?</h3>
+      <p>No. TOMOYO Linux is a Linux kernel Mandatory Access Control security module (<code>tomoyo-tools</code>). Tomoyo Launcher (<code>github.com/q871958549/Tomoyo</code>) is a user-space Rust desktop command launcher, clipboard manager, screenshot/OCR suite, and plugin host.</p>
+
+      <h3>How does Tomoyo Launcher keep WebView, OCR, and Screenshot memory at 0 MB when idle?</h3>
+      <p>Heavy UI and utility tools are isolated into separate short-lived binaries (<code>tomoyo-webview-host</code>, <code>tomoyo-capture</code>, <code>tomoyo-plugin-ocr</code>, <code>tomoyo-plugin-notes</code>). When closed or idle past their configured timeout, those processes terminate completely and return 100% of their memory to the OS.</p>
+
+      <h3>Can I migrate existing uTools plugins or write plugins without Rust?</h3>
+      <p>Yes. Tomoyo supports newline-delimited JSON-RPC 2.0 STDIO plugins in Python, Go, Node.js, or Rust (<code>tomoyo-sdk</code>), sandboxed WASM plugins (<code>tomoyo-wasm-sdk</code>), and WebView plugins with a baseline <code>window.utools</code> compatibility layer plus <code>tomoyo-cli import-utools</code>.</p>
+    </section>
+
+    <footer>
+      <p>
+        MIT OR Apache-2.0 &middot;
+        <a href="https://github.com/q871958549/Tomoyo">Source on GitHub</a> &middot;
+        <a href="https://github.com/q871958549/Tomoyo/blob/main/docs/ARCHITECTURE.md">Architecture</a> &middot;
+        <a href="https://github.com/q871958549/Tomoyo/blob/main/docs/PLUGIN_PROTOCOL.md">Plugin Protocol v2</a> &middot;
+        <a href="llms.txt">llms.txt</a>
+      </p>
+    </footer>
+  </main>
+</body>
+</html>

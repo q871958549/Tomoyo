@@ -286,21 +286,21 @@ fn handle_tray_callback(hwnd: HWND, app: &mut AppShell, lparam: LPARAM) -> LRESU
     if ev == WM_LBUTTONUP || ev == WM_LBUTTONDBLCLK {
         app.toggle_launcher();
     } else if ev == WM_RBUTTONUP {
-        let (clip_on, tr_on, cap_on) = app
+        let (clip_on, tr_hk, cap_hk) = app
             .config
             .read()
             .map(|c| {
                 (
                     c.is_plugin_enabled(tomoyo_core::PLUGIN_CLIPBOARD),
-                    c.is_plugin_enabled(tomoyo_core::PLUGIN_TRANSLATE),
-                    c.is_plugin_enabled(tomoyo_core::PLUGIN_CAPTURE),
+                    c.is_plugin_enabled(tomoyo_core::PLUGIN_TRANSLATE).then(|| c.translate.hotkey.clone()),
+                    c.is_plugin_enabled(tomoyo_core::PLUGIN_CAPTURE).then(|| c.capture.hotkey.clone()),
                 )
             })
-            .unwrap_or((true, true, true));
+            .unwrap_or_else(|_| (true, Some("Alt+T".into()), Some("Alt+S".into())));
         let chosen = app.tray.as_ref().and_then(|tray| {
             tray.show_context_menu(
                 app.lang, app.theme, app.dpi_scale, app.font_regular, app.font_medium, clip_on,
-                tr_on, cap_on,
+                tr_hk.as_deref(), cap_hk.as_deref(),
             )
         });
         if let Some(id) = chosen {

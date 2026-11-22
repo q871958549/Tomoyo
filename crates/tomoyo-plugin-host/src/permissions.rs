@@ -93,7 +93,37 @@ fn prompt_user_for_permissions(manifest: &PluginManifest, dir: &Path, pending: &
     res == IDYES
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
+fn prompt_user_for_permissions(manifest: &PluginManifest, dir: &Path, pending: &[Permission]) -> bool {
+    let list: String = pending
+        .iter()
+        .map(|p| format!("• {}", permission_label_zh(*p)))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let body = format!(
+        "插件「{}」({} v{}) 首次运行请求以下敏感权限：\n\n{}\n\n来源目录：{}\n\n是否授予这些权限并允许继续运行？（之后可随时在设置中心撤销）",
+        manifest.name,
+        manifest.id,
+        manifest.version,
+        list,
+        dir.display()
+    );
+    if let Ok(st) = std::process::Command::new("kdialog")
+        .args(["--title", "Tomoyo 插件安全权限审批", "--yesno", &body])
+        .status()
+    {
+        return st.success();
+    }
+    if let Ok(st) = std::process::Command::new("zenity")
+        .args(["--question", "--title=Tomoyo 插件安全权限审批", "--text", &body])
+        .status()
+    {
+        return st.success();
+    }
+    false
+}
+
+#[cfg(all(not(windows), not(target_os = "linux")))]
 fn prompt_user_for_permissions(_manifest: &PluginManifest, _dir: &Path, _pending: &[Permission]) -> bool {
     false
 }

@@ -1,8 +1,19 @@
-//! Tiny zero-bloat Rust SDK for authoring capability-sandboxed Tomoyo WASM plugins
-//! targeting `wasm32-unknown-unknown`.
+//! Zero-bloat Rust SDK for authoring capability-sandboxed WebAssembly plugins
+//! for **Tomoyo Launcher** (`github.com/q871958549/Tomoyo`) targeting `wasm32-unknown-unknown`.
 //!
-//! Use `export_tomoyo_wasm_plugin!(MyPlugin)` to export the standard `tomoyo_alloc`,
-//! `tomoyo_free`, `tomoyo_query`, and `tomoyo_execute` ABI symbols cleanly.
+//! Plugins execute inside Tomoyo's `wasmi` fuel-metered sandbox with bounded linear memory
+//! and zero ambient host permissions. Use `export_tomoyo_wasm_plugin!(MyPlugin)` to export
+//! the `tomoyo_alloc`, `tomoyo_free`, `tomoyo_query`, and `tomoyo_execute` ABI symbols cleanly.
+//!
+//! ```no_run
+//! use tomoyo_wasm_sdk::{export_tomoyo_wasm_plugin, QueryContext, ResultItem, TomoyoWasmPlugin};
+//!
+//! struct MyWasmPlugin;
+//! impl TomoyoWasmPlugin for MyWasmPlugin {
+//!     fn query(_ctx: &QueryContext) -> Vec<ResultItem> { vec![] }
+//! }
+//! export_tomoyo_wasm_plugin!(MyWasmPlugin);
+//! ```
 
 pub use tomoyo_protocol::*;
 

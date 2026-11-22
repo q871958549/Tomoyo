@@ -64,10 +64,37 @@ impl Drop for JobGuard {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
+pub struct JobGuard {
+    pgid: i32,
+}
+
+#[cfg(target_os = "linux")]
+impl JobGuard {
+    pub fn assign_child(child: &std::process::Child, _max_memory_mb: u32) -> Result<Self, String> {
+        Ok(Self { pgid: child.id() as i32 })
+    }
+}
+
+#[cfg(target_os = "linux")]
+impl Drop for JobGuard {
+    fn drop(&mut self) {
+        if self.pgid > 0 {
+            unsafe extern "C" {
+                fn kill(pid: i32, sig: i32) -> i32;
+            }
+            const SIGKILL: i32 = 9;
+            unsafe {
+                let _ = kill(-self.pgid, SIGKILL);
+            }
+        }
+    }
+}
+
+#[cfg(all(not(windows), not(target_os = "linux")))]
 pub struct JobGuard;
 
-#[cfg(not(windows))]
+#[cfg(all(not(windows), not(target_os = "linux")))]
 impl JobGuard {
     pub fn assign_child(_child: &std::process::Child, _max_memory_mb: u32) -> Result<Self, String> {
         Ok(Self)

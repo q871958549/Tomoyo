@@ -2,7 +2,7 @@
 
 ![Tomoyo Wordmark](../assets/tomoyo-wordmark.png)
 
-> **设计目标**：使用 Rust 与原生 Win32 API 构建开源桌面启动器，支持 Everything 文件搜索与多语言插件隔离运行，同时将闲置后台资源占用保持在较低水平。
+> **设计目标**：使用 Rust 与系统原生轻量接口构建跨平台开源桌面启动器（主用 **Linux KDE Plasma Wayland/X11 + GTK3/WebKitGTK 4.1**，同时原生支持 **Windows 10/11 Win32 + WebView2**），支持高效全盘检索与多语言插件隔离运行，同时严控常驻资源占用。
 
 ---
 
@@ -11,11 +11,11 @@
 ### 1.1 核心功能对标
 | 维度 | 目标能力 | Tomoyo 实现策略 |
 |---|---|---|
-| **窗口呼出** | 全局快捷键（`Alt+Space`）唤起与隐藏 | 原生 Win32 窗口 + 纯 Rust SDF / ClearType GDI 绘制，无 Electron/浏览器常驻冷启动开销 |
-| **混合检索** | 应用启动、拼音/首字母匹配与高频排序 | 全拼/首字母匹配 + 时间衰减 Frecency + DeskBox/自定义目录扫描 + 计算与窗口切换 |
-| **文件搜索** | 快速检索本地文件 | 原生 Everything 1.4 / 1.5a `WM_COPYDATA` IPC 客户端，支持分类筛选下推与动作面板 |
+| **窗口呼出** | 全局快捷键（`Alt+Space` / `Ctrl+Space`）唤起与隐藏 | Linux 原生 GTK3/Cairo/Pango + 纯 Rust SDF（KGlobalAccel / X11）；Windows 原生 Win32 + SDF/ClearType GDI |
+| **混合检索** | 应用启动、拼音/首字母匹配与高频排序 | XDG `.desktop` (`inotify`) / Windows 应用目录 + 全拼/多音字/子序列匹配 + 时间衰减 Frecency |
+| **文件搜索** | 快速检索本地文件 | Linux `fd` + `plocate` 混合引擎；Windows Everything 1.4 / 1.5a `WM_COPYDATA` IPC 客户端 |
 | **上下文匹配** | 对剪贴板/输入中的时间戳、颜色、表达式、路径作出响应 | 内置轻量 `IntentDetector` 与 `Super Match` 粘贴胶囊处理 |
-| **扩展能力** | 兼顾列表型扩展与富交互面板 | 分层扩展方案：内置 Rust Provider + STDIO JSON-RPC + WASM (`wasmi`) + 按需 WebView 宿主 |
+| **扩展能力** | 兼顾列表型扩展与富交互面板 | 分层扩展方案：内置 Rust Provider + STDIO JSON-RPC + WASM (`wasmi`) + 按需 WebView 宿主（WebKitGTK 4.1 / WebView2） |
 
 ### 1.2 常见启动器开销来源
 1. **常驻进程内存偏高**：Electron 类应用后台通常常驻 Main + Renderer + GPU 等多个进程。
@@ -140,18 +140,18 @@ sequenceDiagram
 |---|---|---|
 | `crates/tomoyo-protocol` | 插件 Manifest、JSON-RPC 2.0、查询/筛选/Action/SDUI 类型 | 纯 Rust + `serde`，无 OS 依赖 |
 | `crates/tomoyo-everything` | Everything 1.4 / 1.5a `WM_COPYDATA` IPC 客户端 | 无第三方 DLL 依赖，带查询超时保护 |
-| `crates/tomoyo-core` | 配置、QueryRouter（两阶段检索与筛选）、Pinyin/Fuzzy、Frecency、Intent、WinHTTP/更新检查、遥测 | 不引入重型异步运行时，容器有界 |
-| `crates/tomoyo-providers` | 内置 Providers：Everything、Apps、Calc、Clipboard、Process、WebSearch、Windows、System | 原生 Win32 API + `pinyin` |
-| `crates/tomoyo-plugin-host` | 插件发现、按需加载、Job Object 隔离、JSON-RPC、`wasmi`、Idle Reaper | 进程与沙箱隔离 |
+| `crates/tomoyo-core` | 配置、QueryRouter（两阶段检索与筛选）、Pinyin/Fuzzy、Frecency、Intent、HTTP（`libcurl`/WinHTTP）、加密凭据（`libsecret`/DPAPI）、字体与遥测 | 不引入重型异步运行时，容器有界 |
+| `crates/tomoyo-providers` | 内置 Providers：`fd`+`plocate`/Everything、XDG/Win Apps、Calc、Clipboard、Process、WebSearch、KWin/Win32 Windows、System | Linux D-Bus/`inotify`/XDG + Win32 原生 API |
+| `crates/tomoyo-plugin-host` | 插件发现、按需加载、进程隔离（Linux 进程组+`PDEATHSIG` / Win Job Object）、JSON-RPC、`wasmi`、Idle Reaper | 进程与沙箱隔离 |
 | `crates/tomoyo-sdk` | Rust STDIO 插件开发包 (`TomoyoPlugin` trait) | 依赖 `tomoyo-protocol` |
 | `crates/tomoyo-wasm-sdk` | WebAssembly 插件开发包 | 依赖 `tomoyo-protocol` |
-| `crates/tomoyo-webview-host` | 按需独立 WebView2 宿主（承载设置中心、剪贴板工作台、多源翻译、OCR 审校与 `window.utools` 兼容桥） | 独立短生命周期进程（嵌入 `frontend/dist/*.html`） |
+| `crates/tomoyo-webview-host` | 按需独立 WebView 宿主（Linux WebKitGTK 4.1 / Windows WebView2，承载设置中心、剪贴板工作台、多源翻译、OCR 审校与 `window.utools` 兼容桥） | 独立短生命周期进程（嵌入 `frontend/dist/*.html`） |
 | `frontend/` | 极简现代风格工程化前端（Svelte 5 + Tailwind CSS v4 + TypeScript + `@lucide/svelte`） | Vite 单文件 IIFE 打包（0 后端常驻依赖），经 `svelte-check`/`Vitest`/`happy-dom` 门禁验证 |
-| `crates/tomoyo-cli` | 插件脚手架、检查、SHA-256 计算与 uTools 导入工具 | 命令行工具 |
-| `crates/tomoyo-app` | Windows 桌面主程序（Win32 + SDF/GDI + DPI + 托盘自愈 + CrashGuard + 休眠） | `windows` crate + `mimalloc` |
-| `crates/tomoyo-capture` | 按需原生截图、6 种标注、取色放大镜与桌面贴图独立进程 (`tomoyo-capture.exe`) | 纯 Rust BGRA + Win32 GDI，0 常驻内存 |
-| `crates/tomoyo-plugin-ocr` | 按需 Windows WinRT 离线 OCR 子进程插件 (`tomoyo-plugin-ocr.exe`) | 原生 WinRT `OcrEngine`，0 常驻内存 |
-| `crates/tomoyo-ui-shared` / `macos` / `linux` | 跨平台状态模型及 macOS / Linux 应用与文件后端适配层 | 无 OS 硬依赖 + 平台适配钩子 |
+| `crates/tomoyo-cli` | 插件脚手架、检查、SHA-256 计算、uTools 导入、`SIGUSR1` 热重载与安装工具 | 命令行工具 |
+| `crates/tomoyo-app` | 桌面主程序（Linux GTK3/Pango/Cairo/KGlobalAccel/AppIndicator + Windows Win32 SDF/GDI，异步图标/预览、崩溃守护与休眠） | 纯 Rust + 轻量 `-Werror` C shim / `windows` crate + `mimalloc` |
+| `crates/tomoyo-capture` | 按需原生截图、6 种标注、取色放大镜与桌面贴图独立进程（Linux Spectacle/`grim`/X11 + GTK3/Cairo；Windows GDI/DIB） | 0 常驻内存 |
+| `crates/tomoyo-plugin-ocr` | 按需离线 OCR 子进程插件（Linux Tesseract 5 CLI / Windows WinRT `OcrEngine`） | 0 常驻内存 |
+| `crates/tomoyo-ui-shared` / `linux` / `macos` | 跨平台状态模型及 Linux / macOS 应用与文件后端适配层 | 无重依赖平台适配钩子 |
 | `plugins/example-*` & `builtin-ocr` | Rust / Python / WASM / WebView / WinRT OCR 参考示例 | 用于插件接口与回归验证 |
 
 ---

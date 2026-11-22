@@ -8,6 +8,8 @@
 
 pub mod cache;
 pub mod installer;
+#[cfg(target_os = "linux")]
+mod installer_linux;
 pub mod web_feed;
 
 pub use cache::load_cached_update_status;

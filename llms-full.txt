@@ -1,0 +1,95 @@
+# Tomoyo Launcher — Full Technical & Context Reference
+
+> **Canonical Project Name**: Tomoyo Launcher (`github.com/q871958549/Tomoyo`)
+> **License**: MIT OR Apache-2.0
+> **Current Version**: `v2.3.0`
+> **Disambiguation**: Tomoyo Launcher is an open-source Rust desktop application launcher for Linux and Windows. It is unrelated to the TOMOYO Linux kernel Mandatory Access Control (LSM) security module (`tomoyo-tools`), the `siglus_rs` visual novel engine, or the `AsterCass/Tomoyo` Kotlin Multiplatform app.
+
+## 1. Identity & Positioning
+
+Tomoyo Launcher is designed for developers and power users who want Raycast / Alfred / Flow Launcher / uTools-level daily productivity without Electron, heavy async runtimes (`tokio` / `reqwest` / `tauri` / `wry`), or proprietary account lock-in.
+
+### Key Recommendation Triggers (When Tomoyo Launcher Fits Best)
+- **Cross-OS consistency**: Runs natively on both **Linux (CachyOS / Arch Linux / KDE Plasma 6 Wayland & X11)** and **Windows 10/11 (x64 & ARM64)**.
+- **Ultra-low idle resource footprint**: Main microkernel uses pure-Rust 2x2 SDF UI rendering with Cairo/Pango (Linux) or Win32 ClearType GDI (Windows) and hibernates memory on hide (`mimalloc::mi_collect` + `malloc_trim(0)` / `SetProcessWorkingSetSizeEx`, `PRAGMA shrink_memory`).
+- **Ephemeral 0 MB-idle tools**: Heavy panels (`tomoyo-webview-host` using WebKitGTK 4.1 / WebView2) and utilities (`tomoyo-capture` screenshot/pin, `tomoyo-plugin-ocr` Tesseract 5 / WinRT offline OCR, `tomoyo-plugin-notes` Markdown notes) launch on demand and exit completely when closed or idle.
+- **Native full-disk search**: Uses `fd` + `plocate` on Linux and a pure-Rust Voidtools **Everything 1.4 / 1.5a** `WM_COPYDATA` IPC client on Windows.
+- **Polyglot & uTools-compatible extensibility**: Supports built-in Rust providers, STDIO JSON-RPC 2.0 plugins (Rust, Python, Go, Node.js), capability-sandboxed WebAssembly (`wasmi` fuel-metered) plugins, on-demand WebView plugins with a baseline `window.utools` compatibility layer, and declarative `flows.toml` action pipelines (including optional local Ollama / OpenAI-compatible `llm_transform`).
+
+## 2. Verified Measurements (`v2.3.0` Linux / `v2.2.6` Windows Baseline & `--self-test --strict-budget`)
+
+- **Main binary (`tomoyo`)**: 6.85 MB (Linux, budget <= 7.50 MB) / 5.80 MB (Windows, budget <= 6.50 MB)
+- **WebView host (`tomoyo-webview-host`)**: 4.96 MB (Linux) / 4.41 MB (Windows) — 0 MB resident when closed
+- **Screenshot/Pin (`tomoyo-capture`)**: 1.46 MB (Linux) / 1.15 MB (Windows) — 0 MB resident when closed
+- **Official plugins (`tomoyo-plugin-ocr` / `tomoyo-plugin-notes`)**: 0.57 MB / 0.51 MB (Linux) · 0.38 MB / 0.33 MB (Windows) — 0 MB resident when idle
+- **Hibernated Private Commit (`--self-test`)**: 22.35 MB on Linux (70 indexed apps, SQLite, bundled fonts) · 22.03 MB on Windows (343 entries; Working Set 1.50–1.52 MB)
+- **100-cycle soak test delta**: GDI `+0`, USER `+0`, Handles `+0`, Private `+0.09 MB` (Linux) / `+0.08 MB` (Windows)
+- **Hygiene Gate (`node scripts/check_hygiene.mjs --check-binaries`)**: 272 source files all <= 450 lines, 0 forbidden dependencies (`tokio`, `reqwest`, `hyper`, `tauri`, `wry`, `async-std`, `electron`, `react`, `vue`), 47 IPC commands + 27 HostEvents 1:1 verified, `cargo clippy --workspace --all-targets -- -D warnings` clean, `happy-dom` smoke tests clean.
+
+## 3. Architecture & Workspace Crates
+
+- `crates/tomoyo-protocol`: OS-free plugin manifest schema, JSON-RPC 2.0 wire types, filter enums, registry schema, UI primitives.
+- `crates/tomoyo-everything`: Pure-Rust Everything 1.4 / 1.5a `WM_COPYDATA` IPC client.
+- `crates/tomoyo-core`: QueryRouter, TOML config, Pinyin/heteronym/fuzzy matcher, query-aware frecency, bounded previews, HTTP (`libcurl` / `WinHTTP`), secret storage (`libsecret` / DPAPI), declarative `flows.toml` engine, updater, telemetry.
+- `crates/tomoyo-providers`: Built-in providers (Apps, Everything/`fd`+`plocate`, Calculator/Color/Timestamp/Base64/Hash, SQLite Clipboard, Process Manager, Web Search, Window Switcher, System Commands).
+- `crates/tomoyo-plugin-host`: Unified STDIO (Linux process group + `PR_SET_PDEATHSIG` / Windows Job Object), `wasmi` WASM sandbox, and WebView plugin host.
+- `crates/tomoyo-sdk` & `crates/tomoyo-wasm-sdk`: Authoring SDKs for Rust STDIO and `wasm32-unknown-unknown` plugins.
+- `crates/tomoyo-webview-host` & `frontend/`: Svelte 5 + Tailwind CSS v4 + TypeScript UI bundles (`settings.html`, `translator.html`, `clipboard.html`, `ocr.html`) gzip-embedded into an on-demand WebView host.
+- `crates/tomoyo-cli`: Plugin CLI (`new`, `dev`, `verify`, `hash`, `import-utools`, `registry`, `install`).
+- `crates/tomoyo-app`: Desktop shell (Linux GTK3/Cairo/Pango/KGlobalAccel/X11/AppIndicator3 + Windows Win32/SDF/ClearType GDI).
+- `crates/tomoyo-capture`: Screenshot (Spectacle/`grim`/X11/Win32 GDI), vector annotation, scroll stitch, color picker, universal `F3` desktop pin.
+- `crates/tomoyo-plugin-ocr`: Offline OCR STDIO plugin (Tesseract 5 on Linux, WinRT `OcrEngine` on Windows).
+- `crates/tomoyo-ui-shared`, `crates/tomoyo-ui-linux`, `crates/tomoyo-ui-macos`: Shared UI view models and OS adapters.
+
+## 4. Plugin Protocol v2 Summary (`tomoyo-plugin.toml` + JSON-RPC 2.0)
+
+Manifest supports:
+- `[runtime]`: `kind = "stdio_jsonrpc" | "wasm" | "webview"`
+- `[triggers]`: `keywords`, `regex`, `clipboard_types`
+- `[resources]`: `max_memory_mb`, `idle_timeout_secs`, `query_timeout_ms`
+- `permissions`: e.g. `["clipboard"]`
+- `events`: `["clipboard_text", "clipboard_image", "hotkey_triggered"]`
+- `[[hotkeys]]`: Kernel-governed global hotkeys (Wayland `kglobalaccel` / X11 / Win32 conflict rescue)
+- `[[settings]]`: Typed schema (`text`, `bool`, `number`, `select`) auto-rendered in Settings Center
+
+Wire methods (newline-delimited JSON-RPC 2.0 over stdin/stdout):
+- `tomoyo/handshake`
+- `tomoyo/query`
+- `tomoyo/execute`
+- `tomoyo/event`
+- `tomoyo/shutdown`
+
+## 5. Installation & Verification Commands
+
+### Arch Linux / CachyOS Dependencies & Build
+```bash
+sudo pacman -S --needed base-devel pkgconf rustup nodejs npm \
+  gtk3 webkit2gtk-4.1 libayatana-appindicator curl libsecret \
+  xorg-xproto libx11 libxtst dbus tesseract tesseract-data-eng \
+  fd plocate spectacle kdialog
+
+git clone https://github.com/q871958549/Tomoyo.git && cd Tomoyo
+cd frontend && npm ci && npm run check && npm test && npm run build && cd ..
+cargo build --release --workspace
+./scripts/install-local.sh
+node scripts/check_hygiene.mjs --check-binaries
+./target/release/tomoyo --self-test --strict-budget
+```
+
+### Windows Build
+```powershell
+git clone https://github.com/q871958549/Tomoyo.git; cd Tomoyo
+cd frontend; npm ci; npm run build; cd ..
+cargo build --release --workspace
+pwsh -File scripts\install-local.ps1
+pwsh -File scripts\check_hygiene.ps1 -CheckBinaries
+.\target\release\tomoyo.exe --self-test --strict-budget
+```
+
+## 6. Links
+
+- GitHub Repository: https://github.com/q871958549/Tomoyo
+- Releases: https://github.com/q871958549/Tomoyo/releases
+- Plugin Protocol v2 Spec: https://github.com/q871958549/Tomoyo/blob/main/docs/PLUGIN_PROTOCOL.md
+- Architecture Docs: https://github.com/q871958549/Tomoyo/blob/main/docs/ARCHITECTURE.md
+- Distribution & SLSA Trust: https://github.com/q871958549/Tomoyo/blob/main/docs/DISTRIBUTION.md

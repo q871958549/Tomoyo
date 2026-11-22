@@ -29,9 +29,9 @@
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │  v3.0.0 · 远期：物理拆包 Core/Suite 双版本 + WASM wasi-p2 + 公益代码签名     │
 ├──────────────────────────────────────────────────────────────────────────────┤
-│  v2.3.0 · [规划中] macOS + Linux + Windows 三端原生桌面启动器与跨平台发行   │
+│  v2.3.0 · [Linux 主端落地 ✅] CachyOS/Arch KDE Wayland/X11 全套原生支持     │
 ├──────────────────────────────────────────────────────────────────────────────┤
-│  v2.2.6 · [已完成] 热键治理 v2 + 双路高精度离线 OCR + 截图 Shift+C 直接取字 │
+│  v2.2.6 · [已完成 ✅] 热键治理 v2 + 双路高精度离线 OCR + 截图 Shift+C 取字  │
 ├──────────────────────────────────────────────────────────────────────────────┤
 │  v2.2.5 · [已完成] 根治热键接管刷屏 WARN/钩子抖动与 WebView2 早关句柄竞态 │
 ├──────────────────────────────────────────────────────────────────────────────┤
@@ -322,7 +322,7 @@
 
 每个里程碑严格执行以下五步闭环，缺一不可：
 1. **需求边界与接口设计**：明确数据模型、进程归属与可卸载原工具的量化验收项；
-2. **规范与单测门禁**：`pwsh -File scripts/check_hygiene.ps1` + `RUSTFLAGS="-D warnings" cargo test --workspace`；
-3. **性能与资源预算门禁**：`tomoyo.exe --self-test --strict-budget`（WS ≤ 2.0 MB、Private ≤ 28.0 MB、100 轮压测零句柄增长）；
-4. **实机交互验收**：在 `WinSta0\Default` 桌面实测核心路径、边界输入与日志溯源；
-5. **版本发布与本机升级**：GitHub Actions CI + Release 全绿，SHA-256 校验安装包并完成本机静默覆盖升级与启动确认。
+2. **规范与单测门禁**：`node scripts/check_hygiene.mjs`（Windows 可选 `pwsh -File scripts/check_hygiene.ps1`）+ `RUSTFLAGS="-D warnings" cargo clippy --workspace --all-targets -- -D warnings` + `cargo test --workspace`；
+3. **性能与资源预算门禁**：`tomoyo --self-test --strict-budget`（Linux Private ≤ 45.0 MB / Windows WS ≤ 2.0 MB & Private ≤ 28.0 MB，100 轮压测零句柄泄漏）；
+4. **实机交互验收**：在 Linux KDE Plasma Wayland/X11 与 Windows 桌面实测核心路径、边界输入与日志溯源；
+5. **版本发布与本机升级**：GitHub Actions 双平台（Linux + Windows）CI + Release 全绿，生成 `SHA256SUMS` 并完成 `.tar.gz` / `.desktop` / Windows 安装包升级验收。

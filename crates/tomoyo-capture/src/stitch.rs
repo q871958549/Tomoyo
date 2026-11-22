@@ -1,3 +1,5 @@
+#![cfg_attr(not(windows), allow(dead_code))]
+
 //! Pure-Rust vertical & horizontal scrolling long-screenshot stitching engine.
 //!
 //! Scale-invariant relative-SAD matching calibrated for BOTH dense media AND sparse light/dark

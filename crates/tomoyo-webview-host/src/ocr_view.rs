@@ -65,9 +65,14 @@ fn resolve_image_virtual_host(img_path: &str) -> (Option<PathBuf>, Option<String
         return (None, None);
     };
     let encoded = percent_encode_segment(fname);
+    let scheme = if cfg!(target_os = "linux") {
+        "tomoyo-ocr-img://local"
+    } else {
+        "https://tomoyo-ocr-img.local"
+    };
     (
         Some(parent.to_path_buf()),
-        Some(format!("https://tomoyo-ocr-img.local/{encoded}")),
+        Some(format!("{scheme}/{encoded}")),
     )
 }
 

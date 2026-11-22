@@ -1,12 +1,15 @@
 //! Relevance & path-aware ranking for Everything search candidates.
 
+#[cfg(not(target_os = "linux"))]
 use std::collections::HashSet;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tomoyo_core::{score_match, IndexedText};
 use tomoyo_everything::EverythingEntry;
+#[cfg(not(target_os = "linux"))]
 use tomoyo_protocol::SearchFilter;
 
+#[cfg(not(target_os = "linux"))]
 pub(crate) fn build_prefix_query(
     search_text: &str,
     filter: SearchFilter,
@@ -23,6 +26,7 @@ pub(crate) fn build_prefix_query(
     parts.join(" ")
 }
 
+#[cfg(not(target_os = "linux"))]
 pub(crate) fn merge_unique_entries(base: &mut Vec<EverythingEntry>, extra: Vec<EverythingEntry>) {
     let mut seen: HashSet<String> = base
         .iter()

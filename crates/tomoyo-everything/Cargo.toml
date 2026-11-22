@@ -3,7 +3,12 @@ name = "tomoyo-everything"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Pure-Rust native IPC client for Voidtools Everything 1.4 & 1.5a (zero external DLL dependencies)"
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+description = "Pure-Rust native WM_COPYDATA IPC client for Voidtools Everything 1.4 & 1.5a (zero external DLLs, built for Tomoyo Launcher)"
+keywords = ["everything", "voidtools", "windows", "search", "ipc"]
+categories = ["os", "filesystem", "api-bindings"]
 
 [dependencies]
 thiserror = { workspace = true }

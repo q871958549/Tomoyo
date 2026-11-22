@@ -18,10 +18,18 @@ pub fn build_diagnostics_items(
     updater: &UpdateManager,
 ) -> Vec<ResultItem> {
     let stats = current_process_stats();
-    let ev_status = match tomoyo_everything::detect_running() {
-        Some(tomoyo_everything::EverythingVersion::V15Alpha) => "Everything 1.5a LIVE",
-        Some(tomoyo_everything::EverythingVersion::V14) => "Everything 1.4 LIVE",
-        None => "Everything Offline",
+    let ev_status = if cfg!(target_os = "linux") {
+        #[cfg(target_os = "linux")]
+        let avail = crate::everything_linux::is_linux_file_search_available();
+        #[cfg(not(target_os = "linux"))]
+        let avail = false;
+        if avail { "fd / plocate LIVE" } else { "fd / plocate Offline" }
+    } else {
+        match tomoyo_everything::detect_running() {
+            Some(tomoyo_everything::EverythingVersion::V15Alpha) => "Everything 1.5a LIVE",
+            Some(tomoyo_everything::EverythingVersion::V14) => "Everything 1.4 LIVE",
+            None => "Everything Offline",
+        }
     };
 
     let plugins = plugin_bridge.map(|b| b.summary_lines()).unwrap_or_default();

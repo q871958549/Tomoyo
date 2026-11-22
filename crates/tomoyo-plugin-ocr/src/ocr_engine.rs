@@ -1,11 +1,14 @@
 //! Offline Windows WinRT `OcrEngine` wrapper with adaptive Cubic upscaling,
 //! language selection, CJK inter-character space cleanup, and latest clipboard image lookup.
 
+#[cfg(windows)]
 use crate::ocr_preprocess::{
     build_high_contrast_bgra, compute_ocr_layout, estimate_bg_rgb, pad_bgra, score_ocr_lines,
 };
 use std::path::{Path, PathBuf};
-use std::time::{Instant, SystemTime};
+#[cfg(windows)]
+use std::time::Instant;
+use std::time::SystemTime;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LangPref {
@@ -26,13 +29,27 @@ pub struct OcrOutput {
     pub lang_note: Option<String>,
 }
 
-/// Returns `%LOCALAPPDATA%\Tomoyo` on Windows or `~/.tomoyo` elsewhere.
+/// Returns `%LOCALAPPDATA%\Tomoyo` on Windows, or XDG (`$XDG_DATA_HOME/tomoyo`,
+/// legacy `~/.tomoyo` if existing, else `~/.local/share/tomoyo`) on Linux.
 pub fn tomoyo_data_dir() -> PathBuf {
+    #[cfg(windows)]
     if let Ok(local) = std::env::var("LOCALAPPDATA") {
         return PathBuf::from(local).join("Tomoyo");
     }
-    if let Ok(home) = std::env::var("HOME") {
-        return PathBuf::from(home).join(".tomoyo");
+    #[cfg(not(windows))]
+    {
+        if let Ok(xdg) = std::env::var("XDG_DATA_HOME")
+            && !xdg.trim().is_empty()
+        {
+            return PathBuf::from(xdg.trim()).join("tomoyo");
+        }
+        if let Ok(home) = std::env::var("HOME") {
+            let legacy = PathBuf::from(&home).join(".tomoyo");
+            if legacy.is_dir() {
+                return legacy;
+            }
+            return PathBuf::from(home).join(".local").join("share").join("tomoyo");
+        }
     }
     PathBuf::from(".tomoyo")
 }
@@ -144,7 +161,7 @@ pub fn available_ocr_languages() -> Vec<String> {
 
 #[cfg(not(windows))]
 pub fn available_ocr_languages() -> Vec<String> {
-    Vec::new()
+    crate::ocr_linux::available_ocr_languages_linux()
 }
 
 #[cfg(windows)]
@@ -348,11 +365,11 @@ pub fn recognize_image(
 
 #[cfg(not(windows))]
 pub fn recognize_image(
-    _path: &Path,
-    _pref: LangPref,
-    _raw_mode: bool,
+    path: &Path,
+    pref: LangPref,
+    raw_mode: bool,
 ) -> Result<OcrOutput, String> {
-    Err("Windows.Media.Ocr is only available on Windows 10/11".into())
+    crate::ocr_linux::recognize_image_linux(path, pref, raw_mode)
 }
 
 #[cfg(test)]

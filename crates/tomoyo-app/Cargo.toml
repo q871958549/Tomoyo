@@ -3,7 +3,12 @@ name = "tomoyo-app"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Native Win32 + pure-Rust SDF anti-aliased ClearType GDI ultra-low-memory launcher shell for Tomoyo"
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+description = "Tomoyo Launcher — Ultra-low-memory native Rust desktop launcher for Linux (GTK3/Cairo/Wayland/X11) and Windows (Win32 SDF/GDI)"
+keywords = ["launcher", "wayland", "windows", "productivity", "tomoyo"]
+categories = ["gui", "command-line-utilities", "os"]
 
 [[bin]]
 name = "tomoyo"

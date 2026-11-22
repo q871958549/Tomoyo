@@ -89,7 +89,16 @@ pub fn decode_image_thumbnail_wic(
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
+pub fn decode_image_thumbnail_wic(
+    path: &Path,
+    max_w: u32,
+    max_h: u32,
+) -> Option<(u32, u32, u32, u32, Vec<u8>)> {
+    crate::linux_sys::decode_image_rgba(path, max_w, max_h)
+}
+
+#[cfg(all(not(windows), not(target_os = "linux")))]
 pub fn decode_image_thumbnail_wic(
     _path: &Path,
     _max_w: u32,

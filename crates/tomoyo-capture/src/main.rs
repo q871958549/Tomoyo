@@ -6,13 +6,24 @@
 //! Zero-idle-RAM architecture: exits completely (0 MB) once copy/save/OCR/translate finishes,
 //! or stays alive solely while a user-pinned desktop image window remains open.
 
-#[global_allocator]
-static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
-
 mod annotate;
 mod annotate_arrow;
 mod annotate_render;
 mod export;
+#[cfg(target_os = "linux")]
+mod linux_clip;
+#[cfg(target_os = "linux")]
+mod linux_overlay;
+#[cfg(target_os = "linux")]
+mod linux_overlay_input;
+#[cfg(target_os = "linux")]
+mod linux_pin;
+#[cfg(target_os = "linux")]
+mod linux_rec_hud;
+#[cfg(target_os = "linux")]
+mod linux_record;
+#[cfg(target_os = "linux")]
+mod linux_record_export;
 #[cfg(windows)]
 mod overlay;
 #[cfg(windows)]
@@ -23,6 +34,7 @@ mod overlay_icons;
 mod overlay_input;
 #[cfg(windows)]
 mod overlay_text;
+mod overlay_toolbar;
 #[cfg(windows)]
 mod pin_card;
 #[cfg(windows)]
@@ -30,6 +42,7 @@ mod pin_clipboard;
 #[cfg(windows)]
 mod pin_window;
 mod screen;
+mod snap_detect;
 #[cfg(windows)]
 mod scroll_capture;
 #[cfg(windows)]
@@ -75,6 +88,8 @@ fn run_windows_main() {
             ),
         };
         assert!(snap.width > 0 && snap.height > 0);
+        let mut sctx = snap_detect::SnapContext::new(vec![ScreenRect { x: 0, y: 0, w: snap.width, h: snap.height }], vec![], snap.width, snap.height);
+        assert!(sctx.hover_at(&snap, snap.width / 2, snap.height / 2).is_some());
         let (cw, ch, mut crop) = snap
             .crop_bgra(ScreenRect { x: 0, y: 0, w: snap.width.min(160), h: snap.height.min(120) })
             .expect("crop failed");
@@ -183,9 +198,107 @@ fn run_windows_main() {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
 fn run_windows_main() {
-    eprintln!("tomoyo-capture requires Windows");
+    use annotate::{AnnotColor, Annotation, AnnotationStack};
+    use annotate_render::render_annotations;
+    use export::{load_png_as_bgra, save_bgra_as_png};
+    use linux_overlay::{run_capture_overlay, CaptureMode, CaptureOutcome};
+    use linux_pin::{read_latest_clipboard_for_pin, render_text_or_color_pin_card, run_pin_window, run_pin_window_with_text};
+    use screen::{synthetic_dib_snapshot, ScreenRect};
+    use tomoyo_core::current_process_stats;
+
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.iter().any(|a| a == "--self-test") {
+        let before = current_process_stats();
+        let snap = synthetic_dib_snapshot(320, 240).expect("synthetic snapshot failed");
+        let mut sctx = snap_detect::SnapContext::new(vec![ScreenRect { x: 10, y: 10, w: 300, h: 220 }], vec![], 320, 240);
+        assert!(sctx.hover_at(&snap, 50, 50).is_some());
+        let rect = ScreenRect { x: 20, y: 20, w: 120, h: 90 };
+        let (cw, ch, mut crop) = snap.crop_bgra(rect).expect("crop failed");
+        let mut stack = AnnotationStack::default();
+        stack.push(Annotation::Rect {
+            rect: ScreenRect { x: 10, y: 10, w: 50, h: 40 },
+            color: AnnotColor(0x3B, 0x82, 0xF6),
+            thickness: 3,
+            filled: false,
+        });
+        stack.push(Annotation::arrow(15, 15, 95, 70, AnnotColor(0xEF, 0x44, 0x44), 3));
+        render_annotations(&mut crop, cw as i32, ch as i32, 0, 0, stack.items());
+
+        let tmp = std::env::temp_dir().join(format!("tomoyo_cap_self_{}.png", std::process::id()));
+        save_bgra_as_png(&tmp, cw, ch, &crop).expect("PNG save failed");
+        let (dw, dh, decoded) = load_png_as_bgra(&tmp).expect("PNG reload failed");
+        assert_eq!((dw, dh), (cw, ch));
+        assert_eq!(decoded.len(), crop.len());
+        let _ = std::fs::remove_file(&tmp);
+
+        let text_card = render_text_or_color_pin_card("Tomoyo Pin Text Self-Test\n#2563EB", "light", 1.0)
+            .expect("text pin card failed");
+        assert!(text_card.width >= 240 && text_card.height >= 60);
+        let color_card = render_text_or_color_pin_card("#10B981", "dark", 1.0)
+            .expect("color pin card failed");
+        assert_eq!((color_card.width, color_card.height), (290, 124));
+        for _ in 0..5 {
+            let _ = render_text_or_color_pin_card("Tomoyo F3 贴图零泄露校验\nfn main() {}", "midnight", 1.0)
+                .expect("repeated text pin card failed");
+            let _ = render_text_or_color_pin_card("rgb(37, 99, 235)", "light", 1.0)
+                .expect("repeated color pin card failed");
+        }
+        let after = current_process_stats();
+        let d_handles = after.handle_count as i64 - before.handle_count as i64;
+        assert!(d_handles <= 2, "FD leak in Linux capture self-test: {d_handles:+}");
+        println!(
+            "[OK] tomoyo-capture v{} Linux self-test passed ({}x{}, crop {cw}x{ch}, snap+Pango+PNG OK, Handles {d_handles:+})",
+            env!("CARGO_PKG_VERSION"), snap.width, snap.height
+        );
+        return;
+    }
+
+    if args.iter().any(|a| a == "--pin-clipboard") {
+        let cfg = tomoyo_core::TomoyoConfig::load_or_create();
+        if let Some(p) = read_latest_clipboard_for_pin(&cfg.theme) {
+            run_pin_window_with_text(p.width, p.height, p.bgra, i32::MIN, i32::MIN, p.source_text);
+        }
+        return;
+    }
+
+    if let Some(pos) = args.iter().position(|a| a == "--pin")
+        && let Some(path) = args.get(pos + 1)
+    {
+        if let Ok((w, h, bgra)) = load_png_as_bgra(std::path::Path::new(path)) {
+            run_pin_window(w, h, bgra, 120, 120);
+        }
+        return;
+    }
+
+    let mode = if args.iter().any(|a| a == "--ocr") {
+        CaptureMode::QuickOcr
+    } else if args.iter().any(|a| a == "--translate") {
+        CaptureMode::QuickTranslate
+    } else if args.iter().any(|a| a == "--record") {
+        if linux_record::try_stop_active_recording() { return; }
+        CaptureMode::Record
+    } else {
+        CaptureMode::Region
+    };
+
+    match run_capture_overlay(mode) {
+        Ok(CaptureOutcome::Pin { width, height, bgra, screen_x, screen_y }) => {
+            run_pin_window(width, height, bgra, screen_x, screen_y);
+        }
+        Ok(CaptureOutcome::Record(req)) => {
+            if let Err(e) = linux_record::run_screen_recording(req) {
+                let _ = std::process::Command::new("notify-send").args(["Tomoyo 录屏提示", &e]).spawn();
+            }
+        }
+        _ => {}
+    }
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
+fn run_windows_main() {
+    eprintln!("tomoyo-capture requires Windows or Linux");
 }
 
 fn main() {

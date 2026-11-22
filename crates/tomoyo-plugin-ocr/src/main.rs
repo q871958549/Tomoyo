@@ -5,6 +5,8 @@
 //! and an ephemeral split-pane OCR Inspector/Editor view.
 
 mod ocr_engine;
+#[cfg(not(windows))]
+mod ocr_linux;
 mod ocr_preprocess;
 
 use ocr_engine::{
@@ -355,7 +357,8 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.iter().any(|a| a == "--self-test") {
         let langs = available_ocr_languages();
-        println!("[OK] tomoyo-plugin-ocr WinRT languages: {:?}", langs);
+        let engine_kind = if cfg!(windows) { "WinRT" } else { "Tesseract" };
+        println!("[OK] tomoyo-plugin-ocr {engine_kind} languages: {:?}", langs);
         return;
     }
     if args.len() >= 2 && args[0] == "--recognize" {

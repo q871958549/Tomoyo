@@ -16,18 +16,49 @@ pub fn secrets_file_path() -> PathBuf {
 }
 
 pub fn set_secret(key: &str, plaintext: &str) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    {
+        if !ALLOWED_SECRET_KEYS.contains(&key) {
+            return Err("不支持的密钥字段".into());
+        }
+        let clean = plaintext.trim();
+        if clean.is_empty() {
+            return delete_secret(key);
+        }
+        if clean.len() > 512 || clean.chars().any(|c| c.is_control()) {
+            return Err("密钥长度超限或包含非法字符".into());
+        }
+        if crate::linux_sys::secret_store(key, clean) {
+            let _ = delete_secret_at(&secrets_file_path(), key);
+            return Ok(());
+        }
+    }
     set_secret_at(&secrets_file_path(), key, plaintext)
 }
 
 pub fn get_secret(key: &str) -> Option<String> {
+    #[cfg(target_os = "linux")]
+    if ALLOWED_SECRET_KEYS.contains(&key)
+        && let Some(val) = crate::linux_sys::secret_lookup(key)
+    {
+        return Some(val);
+    }
     get_secret_at(&secrets_file_path(), key)
 }
 
 pub fn has_secret(key: &str) -> bool {
+    #[cfg(target_os = "linux")]
+    if ALLOWED_SECRET_KEYS.contains(&key) && crate::linux_sys::secret_lookup(key).is_some() {
+        return true;
+    }
     has_secret_at(&secrets_file_path(), key)
 }
 
 pub fn delete_secret(key: &str) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    if ALLOWED_SECRET_KEYS.contains(&key) {
+        let _ = crate::linux_sys::secret_clear(key);
+    }
     delete_secret_at(&secrets_file_path(), key)
 }
 
@@ -152,13 +183,44 @@ fn dpapi_unprotect(cipher: &[u8]) -> Result<Vec<u8>, String> {
 }
 
 #[cfg(not(windows))]
+fn linux_keystream(path: &Path, len: usize) -> Vec<u8> {
+    use sha2::{Digest, Sha256};
+
+    let machine = std::fs::read_to_string("/etc/machine-id").unwrap_or_default();
+    let user = std::env::var("USER").unwrap_or_default();
+    let seed_file = path.with_extension("key");
+    let key_bytes = std::fs::read(&seed_file).unwrap_or_else(|_| {
+        let mut h = Sha256::new();
+        h.update(machine.trim().as_bytes());
+        h.update(b":tomoyo-secret:");
+        h.update(user.as_bytes());
+        h.update(path.to_string_lossy().as_bytes());
+        h.finalize().to_vec()
+    });
+    let mut out = Vec::with_capacity(len);
+    let mut ctr = 0u32;
+    while out.len() < len {
+        let mut h = Sha256::new();
+        h.update(&key_bytes);
+        h.update(ctr.to_le_bytes());
+        let block = h.finalize();
+        let take = (len - out.len()).min(block.len());
+        out.extend_from_slice(&block[..take]);
+        ctr += 1;
+    }
+    out
+}
+
+#[cfg(not(windows))]
 fn dpapi_protect(plain: &[u8]) -> Result<Vec<u8>, String> {
-    Ok(plain.iter().map(|b| b ^ 0x5A).collect())
+    let ks = linux_keystream(&secrets_file_path(), plain.len());
+    Ok(plain.iter().zip(ks).map(|(a, b)| a ^ b).collect())
 }
 
 #[cfg(not(windows))]
 fn dpapi_unprotect(cipher: &[u8]) -> Result<Vec<u8>, String> {
-    Ok(cipher.iter().map(|b| b ^ 0x5A).collect())
+    let ks = linux_keystream(&secrets_file_path(), cipher.len());
+    Ok(cipher.iter().zip(ks).map(|(a, b)| a ^ b).collect())
 }
 
 #[cfg(test)]

@@ -53,6 +53,7 @@ impl ScreenRect {
 }
 
 #[derive(Debug, Clone)]
+#[cfg_attr(not(windows), allow(dead_code))]
 pub struct DesktopSnapshot {
     pub origin_x: i32,
     pub origin_y: i32,
@@ -256,88 +257,139 @@ pub fn synthetic_dib_snapshot(width: i32, height: i32) -> Result<DesktopSnapshot
     }
 }
 
-/// Enumerates visible top-level desktop window rectangles (in virtual-screen-relative coords).
 #[cfg(windows)]
-pub fn enumerate_snap_windows(origin_x: i32, origin_y: i32, max_w: i32, max_h: i32) -> Vec<ScreenRect> {
+pub struct WinSnapInfo {
+    pub windows: Vec<ScreenRect>,
+    pub fullscreen: Vec<ScreenRect>,
+    pub monitors: Vec<ScreenRect>,
+}
+
+/// Enumerates visible top-level windows, borderless/fullscreen windows, and monitors.
+#[cfg(windows)]
+pub fn enumerate_snap_windows(origin_x: i32, origin_y: i32, max_w: i32, max_h: i32) -> WinSnapInfo {
     use std::ffi::c_void;
     use windows::core::BOOL;
     use windows::Win32::Foundation::{HWND, LPARAM, RECT};
-    use windows::Win32::Graphics::Dwm::{
-        DwmGetWindowAttribute, DWMWA_CLOAKED, DWMWA_EXTENDED_FRAME_BOUNDS,
-    };
+    use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED, DWMWA_EXTENDED_FRAME_BOUNDS};
+    use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST};
     use windows::Win32::UI::WindowsAndMessaging::{
-        EnumWindows, GetWindowLongW, GetWindowRect, IsIconic, IsWindowVisible, GWL_EXSTYLE,
-        WS_EX_TOOLWINDOW,
+        EnumWindows, GetWindowLongW, GetWindowRect, IsIconic, IsWindowVisible, GWL_EXSTYLE, GWL_STYLE,
+        WS_CAPTION, WS_EX_TOOLWINDOW,
     };
 
-    struct CollectCtx {
-        origin_x: i32,
-        origin_y: i32,
-        max_w: i32,
-        max_h: i32,
-        rects: Vec<ScreenRect>,
-    }
+    struct CollectCtx { origin_x: i32, origin_y: i32, max_w: i32, max_h: i32, out: WinSnapInfo }
 
     unsafe extern "system" fn enum_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
         unsafe {
-            if !IsWindowVisible(hwnd).as_bool() || IsIconic(hwnd).as_bool() {
-                return BOOL(1);
-            }
+            if !IsWindowVisible(hwnd).as_bool() || IsIconic(hwnd).as_bool() { return BOOL(1); }
             let ex = GetWindowLongW(hwnd, GWL_EXSTYLE) as u32;
-            if (ex & WS_EX_TOOLWINDOW.0) != 0 {
-                return BOOL(1);
-            }
+            if (ex & WS_EX_TOOLWINDOW.0) != 0 { return BOOL(1); }
             let mut cloaked: u32 = 0;
-            if DwmGetWindowAttribute(
-                hwnd,
-                DWMWA_CLOAKED,
-                &mut cloaked as *mut _ as *mut c_void,
-                std::mem::size_of::<u32>() as u32,
-            )
-            .is_ok()
-                && cloaked != 0
-            {
+            if DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, &mut cloaked as *mut _ as *mut c_void, 4).is_ok() && cloaked != 0 {
                 return BOOL(1);
             }
             let mut rc = RECT::default();
-            if DwmGetWindowAttribute(
-                hwnd,
-                DWMWA_EXTENDED_FRAME_BOUNDS,
-                &mut rc as *mut _ as *mut c_void,
-                std::mem::size_of::<RECT>() as u32,
-            )
-            .is_err()
-                && GetWindowRect(hwnd, &mut rc).is_err()
-            {
-                return BOOL(1);
-            }
+            let dwm_ok = DwmGetWindowAttribute(
+                hwnd, DWMWA_EXTENDED_FRAME_BOUNDS, &mut rc as *mut _ as *mut c_void, std::mem::size_of::<RECT>() as u32,
+            ).is_ok();
+            if !dwm_ok && GetWindowRect(hwnd, &mut rc).is_err() { return BOOL(1); }
             let ctx = &mut *(lparam.0 as *mut CollectCtx);
-            let sr = ScreenRect {
-                x: rc.left - ctx.origin_x,
-                y: rc.top - ctx.origin_y,
-                w: rc.right - rc.left,
-                h: rc.bottom - rc.top,
+            let sr = ScreenRect { x: rc.left - ctx.origin_x, y: rc.top - ctx.origin_y, w: rc.right - rc.left, h: rc.bottom - rc.top }
+                .clamp_to(ctx.max_w, ctx.max_h);
+            if sr.w < 48 || sr.h < 24 || ctx.out.windows.len() >= 64 { return BOOL(1); }
+            let hmon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+            let mut mi = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
+            if GetMonitorInfoW(hmon, &mut mi).as_bool() {
+                let mr = mi.rcMonitor;
+                let mon_sr = ScreenRect { x: mr.left - ctx.origin_x, y: mr.top - ctx.origin_y, w: mr.right - mr.left, h: mr.bottom - mr.top }
+                    .clamp_to(ctx.max_w, ctx.max_h);
+                if mon_sr.is_valid() && !ctx.out.monitors.contains(&mon_sr) { ctx.out.monitors.push(mon_sr); }
+                let style = GetWindowLongW(hwnd, GWL_STYLE) as u32;
+                if (style & WS_CAPTION.0) == 0 && rc.left <= mr.left && rc.top <= mr.top && rc.right >= mr.right && rc.bottom >= mr.bottom {
+                    ctx.out.fullscreen.push(sr);
+                }
             }
-            .clamp_to(ctx.max_w, ctx.max_h);
-            if sr.w >= 48 && sr.h >= 36 && ctx.rects.len() < 64 {
-                ctx.rects.push(sr);
-            }
+            ctx.out.windows.push(sr);
             BOOL(1)
         }
     }
 
     let mut ctx = CollectCtx {
-        origin_x,
-        origin_y,
-        max_w,
-        max_h,
-        rects: Vec::with_capacity(32),
+        origin_x, origin_y, max_w, max_h,
+        out: WinSnapInfo { windows: Vec::with_capacity(32), fullscreen: Vec::new(), monitors: Vec::new() },
     };
-    unsafe {
-        let _ = EnumWindows(Some(enum_proc), LPARAM(&mut ctx as *mut _ as isize));
-    }
-    ctx.rects
+    unsafe { let _ = EnumWindows(Some(enum_proc), LPARAM(&mut ctx as *mut _ as isize)); }
+    ctx.out
 }
+
+#[cfg(target_os = "linux")]
+pub fn capture_virtual_desktop() -> Result<DesktopSnapshot, String> {
+    unsafe extern "C" {
+        fn tomoyo_cap_kwin_grab(ow: *mut i32, oh: *mut i32, olen: *mut usize) -> *mut u8;
+        fn tomoyo_cap_x11_grab(ow: *mut i32, oh: *mut i32, olen: *mut usize) -> *mut u8;
+        fn tomoyo_cap_free(p: *mut std::ffi::c_void);
+    }
+    let has_wayland = std::env::var_os("WAYLAND_DISPLAY").is_some_and(|v| !v.is_empty());
+    if has_wayland {
+        let (mut kw, mut kh, mut klen) = (0i32, 0i32, 0usize);
+        let kptr = unsafe { tomoyo_cap_kwin_grab(&mut kw, &mut kh, &mut klen) };
+        if !kptr.is_null() && kw > 0 && kh > 0 && klen > 0 {
+            let bgra = unsafe { std::slice::from_raw_parts(kptr, klen) }.to_vec();
+            unsafe { tomoyo_cap_free(kptr.cast()); }
+            return Ok(DesktopSnapshot { origin_x: 0, origin_y: 0, width: kw, height: kh, bgra });
+        }
+    }
+
+    let tmp = std::env::temp_dir().join(format!("tomoyo_cap_grab_{}.png", std::process::id()));
+    let grabbed = has_wayland
+        && (std::process::Command::new("grim")
+            .arg(&tmp)
+            .status()
+            .is_ok_and(|s| s.success())
+            && tmp.is_file()
+            || std::process::Command::new("spectacle")
+                .args(["--fullscreen", "--background", "--nonotify", "--output"])
+                .arg(&tmp)
+                .status()
+                .is_ok_and(|s| s.success())
+                && tmp.is_file());
+    if grabbed {
+        let loaded = crate::export::load_png_as_bgra(&tmp);
+        let _ = std::fs::remove_file(&tmp);
+        if let Ok((w, h, bgra)) = loaded {
+            return Ok(DesktopSnapshot { origin_x: 0, origin_y: 0, width: w as i32, height: h as i32, bgra });
+        }
+    }
+    let _ = std::fs::remove_file(&tmp);
+
+    let (mut w, mut h, mut len) = (0i32, 0i32, 0usize);
+    let ptr = unsafe { tomoyo_cap_x11_grab(&mut w, &mut h, &mut len) };
+    if ptr.is_null() || w <= 0 || h <= 0 || len == 0 {
+        return Err("Linux 桌面抓屏失败（未检测到 KWin / grim / spectacle / X11）".into());
+    }
+    let bgra = unsafe { std::slice::from_raw_parts(ptr, len) }.to_vec();
+    unsafe { tomoyo_cap_free(ptr.cast()); }
+    Ok(DesktopSnapshot { origin_x: 0, origin_y: 0, width: w, height: h, bgra })
+}
+
+#[cfg(not(windows))]
+pub fn synthetic_dib_snapshot(width: i32, height: i32) -> Result<DesktopSnapshot, String> {
+    if width <= 0 || height <= 0 {
+        return Err("invalid synthetic dimensions".into());
+    }
+    let mut bgra = vec![0u8; (width as usize) * (height as usize) * 4];
+    for y in 0..height as usize {
+        for x in 0..width as usize {
+            let off = (y * (width as usize) + x) * 4;
+            bgra[off] = (x & 0xFF) as u8;
+            bgra[off + 1] = (y & 0xFF) as u8;
+            bgra[off + 2] = ((x + y) & 0xFF) as u8;
+            bgra[off + 3] = 255;
+        }
+    }
+    Ok(DesktopSnapshot { origin_x: 0, origin_y: 0, width, height, bgra })
+}
+
 
 #[cfg(test)]
 mod tests {
