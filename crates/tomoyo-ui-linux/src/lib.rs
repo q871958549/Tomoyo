@@ -140,11 +140,16 @@ impl PlatformBackend for LinuxBackend {
 
     #[cfg(target_os = "linux")]
     fn open_target(&self, target: &str) -> Result<(), String> {
-        std::process::Command::new("xdg-open")
-            .arg(target)
-            .spawn()
-            .map(|_| ())
-            .map_err(|e| format!("xdg-open failed: {e}"))
+        if tomoyo_core::linux_launch::spawn_isolated(
+            "xdg-open",
+            &[target.to_string()],
+            None,
+            Some("xdg-open"),
+        ) {
+            Ok(())
+        } else {
+            Err("xdg-open failed".into())
+        }
     }
 
     #[cfg(not(target_os = "linux"))]

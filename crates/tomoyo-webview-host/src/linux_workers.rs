@@ -78,6 +78,13 @@ pub fn eval_dispatch_json(wv: *mut c_void, json: &str) {
     if wv.is_null() {
         return;
     }
+    if let Some(q_json) = json.strip_prefix("__TOMOYO_REACTIVATE__:") {
+        let script = format!("window.tomoyo && window.tomoyo.__reactivate && window.tomoyo.__reactivate({q_json});");
+        if let Ok(cs) = CString::new(script) {
+            unsafe { tomoyo_wv_eval_js(wv, cs.as_ptr()); }
+        }
+        return;
+    }
     let quoted = serde_json::to_string(json).unwrap_or_else(|_| "\"{}\"".into());
     let script = format!("window.__tomoyoDispatchHostEvent && window.__tomoyoDispatchHostEvent({quoted});");
     if let Ok(cs) = CString::new(script) {
@@ -298,6 +305,7 @@ pub fn try_acquire_instance(
     mode_tag: &str,
     tr_mode: bool,
     clip_mode: bool,
+    plugin_query: Option<&str>,
     ch: &Arc<HostChannel>,
 ) -> Result<SocketGuard, ()> {
     unsafe extern "C" {
@@ -309,7 +317,12 @@ pub fn try_acquire_instance(
         .unwrap_or_else(std::env::temp_dir);
     let path = dir.join(format!("tomoyo-wv-{}-{mode_tag}.sock", unsafe { getuid() }));
     if let Ok(mut stream) = UnixStream::connect(&path) {
-        let _ = stream.write_all(b"activate\n");
+        if let Some(q) = plugin_query {
+            let jq = serde_json::to_string(q).unwrap_or_else(|_| "\"\"".into());
+            let _ = stream.write_all(format!("activate_plugin:{jq}\n").as_bytes());
+        } else {
+            let _ = stream.write_all(b"activate\n");
+        }
         return Err(());
     }
     let _ = std::fs::remove_file(&path);
@@ -334,6 +347,8 @@ pub fn try_acquire_instance(
                     let q = cmd.trim().strip_prefix("activate_clip:").unwrap_or("");
                     let _ = q;
                     c.push(crate::clip_view::handle_clip_list(""));
+                } else if let Some(q_json) = cmd.trim().strip_prefix("activate_plugin:") {
+                    c.push(format!("__TOMOYO_REACTIVATE__:{q_json}"));
                 }
                 c.request_present();
             }

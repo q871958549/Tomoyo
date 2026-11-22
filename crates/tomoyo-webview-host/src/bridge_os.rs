@@ -68,7 +68,12 @@ pub fn shell_open(target: &str) {
 
 #[cfg(target_os = "linux")]
 pub fn shell_open(target: &str) {
-    let _ = std::process::Command::new("xdg-open").arg(target).spawn();
+    let _ = tomoyo_core::linux_launch::spawn_isolated(
+        "xdg-open",
+        &[target.to_string()],
+        None,
+        Some("xdg-open"),
+    );
 }
 
 #[cfg(not(any(windows, target_os = "linux")))]

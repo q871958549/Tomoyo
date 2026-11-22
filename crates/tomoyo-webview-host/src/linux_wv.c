@@ -107,6 +107,8 @@ static gboolean on_delete_ev(GtkWidget *w, GdkEvent *ev, gpointer ud) {
     (void)w; (void)ev;
     tomoyo_wv_t *h = (tomoyo_wv_t *)ud;
     if (h && h->on_close) h->on_close(h->ctx);
+    WebKitWebContext *wctx = webkit_web_context_get_default();
+    if (wctx) webkit_web_context_clear_cache(wctx);
     gtk_main_quit();
     return FALSE;
 }
@@ -186,6 +188,9 @@ tomoyo_wv_t *tomoyo_wv_create(
     }
 
     WebKitWebContext *wctx = webkit_web_context_get_default();
+    webkit_web_context_set_cache_model(wctx, WEBKIT_CACHE_MODEL_DOCUMENT_VIEWER);
+    WebKitWebsiteDataManager *wdm = webkit_web_context_get_website_data_manager(wctx);
+    if (wdm) webkit_website_data_manager_set_favicons_enabled(wdm, FALSE);
     webkit_web_context_register_uri_scheme(wctx, "tomoyo-clip-img", on_uri_scheme, h, NULL);
     webkit_web_context_register_uri_scheme(wctx, "tomoyo-ocr-img", on_uri_scheme, h, NULL);
     WebKitSecurityManager *sm = webkit_web_context_get_security_manager(wctx);

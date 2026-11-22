@@ -5,7 +5,8 @@ use std::ffi::{c_char, c_int, CString};
 use std::io::Write;
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Command;
+use tomoyo_core::linux_launch::{command_in_path, sanitize_instance_tag, spawn_isolated};
 use tomoyo_protocol::SystemCommandKind;
 
 unsafe extern "C" {
@@ -77,7 +78,7 @@ pub fn spawn_translator_window(
     )
 }
 
-fn try_wake_singleton_socket(mode_tag: &str) -> bool {
+fn try_wake_singleton_socket(mode_tag: &str, payload: &str) -> bool {
     if mode_tag.is_empty() {
         return false;
     }
@@ -89,7 +90,7 @@ fn try_wake_singleton_socket(mode_tag: &str) -> bool {
     let Ok(mut stream) = UnixStream::connect(&sock) else {
         return false;
     };
-    stream.write_all(b"activate\n").is_ok()
+    stream.write_all(payload.as_bytes()).is_ok()
 }
 
 fn spawn_ephemeral_singleton(
@@ -100,7 +101,7 @@ fn spawn_ephemeral_singleton(
     width: i32,
     height: i32,
 ) -> Result<(), String> {
-    if try_wake_singleton_socket(mode_tag) {
+    if try_wake_singleton_socket(mode_tag, "activate\n") {
         return Ok(());
     }
     let host_exe = locate_sibling_exe("tomoyo-webview-host")?;
@@ -134,6 +135,13 @@ pub fn spawn_ephemeral_webview(
     _max_memory_mb: u32,
     is_dark: bool,
 ) -> Result<(), String> {
+    if !plugin_id.is_empty() {
+        let tag = sanitize_instance_tag(plugin_id);
+        let jq = serde_json::to_string(initial_query).unwrap_or_else(|_| "\"\"".into());
+        if try_wake_singleton_socket(&format!("plugin-{tag}"), &format!("activate_plugin:{jq}\n")) {
+            return Ok(());
+        }
+    }
     let host_exe = locate_sibling_exe("tomoyo-webview-host")?;
     let mut cmd = Command::new(&host_exe);
     cmd.args([
@@ -221,65 +229,40 @@ pub fn send_ctrl_c_cleanly() {
     }
 }
 
-fn spawn_isolated(prog: &str, args: &[String], workdir: Option<&str>) -> bool {
-    if command_in_path("systemd-run") {
-        let mut sh = Command::new("sh");
-        sh.arg("-c")
-            .arg("systemd-run --user --scope --collect --quiet --slice=app.slice -- \"$@\" >/dev/null 2>&1 &")
-            .arg("tomoyo-launch")
-            .arg(prog)
-            .args(args);
-        if let Some(d) = workdir.filter(|d| Path::new(d).is_dir()) {
-            sh.current_dir(d);
-        }
-        sh.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
-        if sh.status().is_ok_and(|s| s.success()) {
-            return true;
-        }
-    }
-    let mut cmd = Command::new(prog);
-    cmd.args(args);
-    if let Some(d) = workdir.filter(|d| Path::new(d).is_dir()) {
-        cmd.current_dir(d);
-    }
-    cmd.stdin(Stdio::null()).spawn().is_ok()
-}
-
 pub fn shell_open(target: &str, args: Option<&str>, workdir: Option<&str>) -> bool {
     if target.ends_with(".desktop") && Path::new(target).is_file() {
-        if command_in_path("gio") && spawn_isolated("gio", &["launch".into(), target.into()], workdir) {
-            return true;
-        }
-        if let Ok(cs) = CString::new(target)
-            && unsafe { tomoyo_linux_launch_desktop(cs.as_ptr()) != 0 }
+        if command_in_path("gio")
+            && spawn_isolated("gio", &["launch".into(), target.into()], workdir, Some(target))
         {
             return true;
         }
-        return Command::new("gio").args(["launch", target]).spawn().is_ok();
+        if command_in_path("kioclient")
+            && spawn_isolated("kioclient", &["exec".into(), target.into()], workdir, Some(target))
+        {
+            return true;
+        }
+        return CString::new(target)
+            .is_ok_and(|cs| unsafe { tomoyo_linux_launch_desktop(cs.as_ptr()) != 0 });
     }
 
     let is_url = target.contains("://") || target.starts_with("mailto:");
     let use_xdg = is_url || (args.is_none() && !command_in_path(target));
     if use_xdg {
-        spawn_isolated("xdg-open", &[target.to_string()], workdir)
+        spawn_isolated("xdg-open", &[target.to_string()], workdir, Some("xdg-open"))
     } else {
         let argv: Vec<String> = args
             .map(|a| a.split_whitespace().map(ToString::to_string).collect())
             .unwrap_or_default();
-        spawn_isolated(target, &argv, workdir)
+        spawn_isolated(target, &argv, workdir, Some(target))
     }
 }
 
 pub fn shell_open_as_admin(target: &str, args: Option<&str>, workdir: Option<&str>) -> bool {
-    let mut cmd = Command::new("pkexec");
-    cmd.arg(target);
+    let mut argv = vec![target.to_string()];
     if let Some(a) = args {
-        cmd.args(a.split_whitespace());
+        argv.extend(a.split_whitespace().map(ToString::to_string));
     }
-    if let Some(d) = workdir.filter(|d| Path::new(d).is_dir()) {
-        cmd.current_dir(d);
-    }
-    cmd.spawn().is_ok()
+    spawn_isolated("pkexec", &argv, workdir, Some(target))
 }
 
 pub fn reveal_in_file_manager(path: &str) -> bool {
@@ -292,11 +275,13 @@ pub fn reveal_in_file_manager(path: &str) -> bool {
 
 pub fn open_terminal_at(dir: &str) -> bool {
     let target_dir = if Path::new(dir).is_dir() { dir } else { "." };
-    if let Ok(term) = std::env::var("TERMINAL")
-        && !term.trim().is_empty()
-        && Command::new(term.trim()).current_dir(target_dir).spawn().is_ok()
-    {
-        return true;
+    if let Ok(term) = std::env::var("TERMINAL") {
+        let parts: Vec<String> = term.split_whitespace().map(ToString::to_string).collect();
+        if let Some(bin) = parts.first()
+            && spawn_isolated(bin, &parts[1..], Some(target_dir), Some(bin))
+        {
+            return true;
+        }
     }
     for (bin, flag) in [
         ("konsole", Some("--workdir")),
@@ -310,16 +295,13 @@ pub fn open_terminal_at(dir: &str) -> bool {
         if !command_in_path(bin) {
             continue;
         }
-        let mut cmd = Command::new(bin);
-        if let Some(f) = flag {
-            for part in f.split_whitespace() {
-                cmd.arg(part);
-            }
-            cmd.arg(target_dir);
-        } else {
-            cmd.current_dir(target_dir);
+        let mut argv: Vec<String> = flag
+            .map(|f| f.split_whitespace().map(ToString::to_string).collect())
+            .unwrap_or_default();
+        if flag.is_some() {
+            argv.push(target_dir.to_string());
         }
-        if cmd.spawn().is_ok() {
+        if spawn_isolated(bin, &argv, Some(target_dir), Some(bin)) {
             return true;
         }
     }
@@ -372,7 +354,7 @@ pub fn run_system_command(cmd: SystemCommandKind) {
         SystemCommandKind::OpenTaskManager => {
             let _ = ["plasma-systemmonitor", "ksysguard", "gnome-system-monitor"]
                 .iter()
-                .any(|b| command_in_path(b) && Command::new(b).spawn().is_ok());
+                .any(|b| spawn_isolated(b, &[], None, Some(b)));
         }
         SystemCommandKind::OpenTerminal => {
             let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
@@ -390,15 +372,4 @@ pub fn kill_process_by_pid(pid: u32) -> Result<(), String> {
     } else {
         Err(format!("无法结束进程 PID {pid}"))
     }
-}
-
-fn command_in_path(cmd: &str) -> bool {
-    let p = Path::new(cmd);
-    if p.is_file() {
-        return true;
-    }
-    let Ok(path_var) = std::env::var("PATH") else {
-        return false;
-    };
-    std::env::split_paths(&path_var).any(|d| d.join(cmd).is_file())
 }

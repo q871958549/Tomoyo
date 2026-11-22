@@ -23,6 +23,22 @@ done
 
 if command -v systemctl >/dev/null 2>&1; then
   systemctl --user stop tomoyo-launcher.service tomoyo-tray.service >/dev/null 2>&1 || true
+  systemctl --user reset-failed tomoyo-launcher.service tomoyo-tray.service >/dev/null 2>&1 || true
+  AUTOSTART_CGROUP="/sys/fs/cgroup/user.slice/user-$(id -u).slice/user@$(id -u).service/app.slice/app-tomoyo@autostart.service/cgroup.procs"
+  if [ -r "$AUTOSTART_CGROUP" ]; then
+    foreign_procs=""
+    while IFS= read -r pid; do
+      [ -n "$pid" ] || continue
+      comm="$(cat "/proc/$pid/comm" 2>/dev/null || true)"
+      case "$comm" in
+        ""|tomoyo|tomoyo-*) ;;
+        *) foreign_procs="${foreign_procs}${comm}($pid) " ;;
+      esac
+    done < "$AUTOSTART_CGROUP"
+    if [ -z "$foreign_procs" ]; then
+      systemctl --user stop app-tomoyo@autostart.service >/dev/null 2>&1 || true
+    fi
+  fi
 fi
 for proc in tomoyo tomoyo-webview-host tomoyo-capture; do
   pkill -x "$proc" >/dev/null 2>&1 || true

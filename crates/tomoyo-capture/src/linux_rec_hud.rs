@@ -254,7 +254,12 @@ unsafe extern "C" fn hud_mouse_cb(ctx: *mut c_void, kind: c_int, x: c_int, y: c_
             }
             HudCmd::Play => {
                 if let Ok(fp) = st.shared.final_path.lock() && let Some(p) = fp.as_ref() {
-                    let _ = Command::new("xdg-open").arg(p).spawn();
+                    let _ = tomoyo_core::linux_launch::spawn_isolated(
+                        "xdg-open",
+                        &[p.to_string_lossy().into_owned()],
+                        None,
+                        Some("xdg-open"),
+                    );
                 }
             }
             HudCmd::Reveal => {
@@ -262,7 +267,12 @@ unsafe extern "C" fn hud_mouse_cb(ctx: *mut c_void, kind: c_int, x: c_int, y: c_
                     && !tomoyo_core::linux_sys::dbus_reveal_file(&p.to_string_lossy())
                     && let Some(par) = p.parent()
                 {
-                    let _ = Command::new("xdg-open").arg(par).spawn();
+                    let _ = tomoyo_core::linux_launch::spawn_isolated(
+                        "xdg-open",
+                        &[par.to_string_lossy().into_owned()],
+                        None,
+                        Some("xdg-open"),
+                    );
                 }
             }
         }

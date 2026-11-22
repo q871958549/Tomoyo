@@ -281,13 +281,14 @@ fn run_self_test(fonts: &PrivateFonts, strict_budget: bool) {
         shell.is_renderer_hibernated(),
         "renderer should release surfaces on hibernate"
     );
-    let baseline = current_process_stats();
-    log_mem("3. baseline (hibernated+mi_purge)");
-
     let soak_queries = ["jsq", "f Cargo.toml", "2^16", ":stats", "g rust", "cb", "@pdf"];
-    for cycle in 0..100 {
-        let q = soak_queries[cycle % soak_queries.len()];
-        let _ = shell.self_test_paint_and_hibernate(q);
+    let mut baseline = current_process_stats();
+    for cycle in 0..(soak_queries.len() + 100) {
+        if cycle == soak_queries.len() {
+            baseline = current_process_stats();
+            log_mem("3. baseline (hibernated+mi_purge)");
+        }
+        let _ = shell.self_test_paint_and_hibernate(soak_queries[cycle % soak_queries.len()]);
         shell.wait_background_idle_for_test();
         let _ = shell.run_hibernate();
         shell.wait_background_idle_for_test();

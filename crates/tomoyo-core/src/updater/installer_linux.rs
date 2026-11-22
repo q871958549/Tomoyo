@@ -44,7 +44,12 @@ pub(super) fn launch_linux_update(installer_path: &Path) -> Result<bool, String>
             "#!/usr/bin/env sh\n\
              set -eu\n\
              sleep 0.4\n\
+             if command -v systemctl >/dev/null 2>&1; then\n\
+               systemctl --user stop tomoyo-launcher.service >/dev/null 2>&1 || true\n\
+               systemctl --user reset-failed tomoyo-launcher.service >/dev/null 2>&1 || true\n\
+             fi\n\
              pkill -x tomoyo-webview-host >/dev/null 2>&1 || true\n\
+             pkill -x tomoyo-capture >/dev/null 2>&1 || true\n\
              pkill -x tomoyo >/dev/null 2>&1 || true\n\
              sleep 0.2\n\
              mkdir -p \"{inst}\"\n\
@@ -53,22 +58,31 @@ pub(super) fn launch_linux_update(installer_path: &Path) -> Result<bool, String>
                if [ -n \"$src\" ]; then install -m 0755 \"$src\" \"{inst}/$f\"; fi\n\
              done\n\
              rm -rf \"{stage}\" \"{arch}\"\n\
-             if [ -x \"{exe}\" ]; then nohup \"{exe}\" --updated >/dev/null 2>&1 & fi\n",
+             if [ -x \"{exe}\" ]; then\n\
+               if ! (command -v systemd-run >/dev/null 2>&1 && systemd-run --user --unit=tomoyo-launcher --collect --quiet --slice=app.slice --description=\"Tomoyo\" --property=ExitType=cgroup --working-directory=\"${{HOME:-/}}\" -- \"{exe}\" --updated >/dev/null 2>&1); then\n\
+                 nohup \"{exe}\" --updated </dev/null >/dev/null 2>&1 &\n\
+               fi\n\
+             fi\n",
             inst = install_dir.display(),
             stage = stage_dir.display(),
             arch = installer_path.display(),
             exe = target_exe.display(),
         );
         std::fs::write(&script, body).map_err(|e| format!("write update script: {e}"))?;
-        Command::new("sh")
-            .arg(&script)
-            .spawn()
-            .map_err(|e| format!("拉起更新脚本失败: {e}"))?;
+        let script_str = script.to_string_lossy().into_owned();
+        if !crate::linux_launch::spawn_isolated("sh", &[script_str], None, Some("tomoyo-updater")) {
+            return Err("拉起更新脚本失败".into());
+        }
         return Ok(true);
     }
 
     if let Some(parent) = installer_path.parent() {
-        let _ = Command::new("xdg-open").arg(parent).spawn();
+        let _ = crate::linux_launch::spawn_isolated(
+            "xdg-open",
+            &[parent.to_string_lossy().into_owned()],
+            None,
+            Some("xdg-open"),
+        );
     }
     Ok(false)
 }

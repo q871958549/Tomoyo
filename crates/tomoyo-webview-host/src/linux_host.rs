@@ -258,17 +258,23 @@ pub fn run_linux_host(opts: LaunchArgs) {
     let ocr_mode = is_ocr_viewer_entry(&opts.entry);
     let channel = HostChannel::new(opts.notify_hwnd);
 
+    let plugin_tag;
     let mode_tag = if opts.settings_mode {
         Some("settings")
     } else if clip_mode {
         Some("clipboard")
     } else if tr_mode {
         Some("translate")
+    } else if !opts.self_test && !ocr_mode && !opts.plugin_id.is_empty() {
+        plugin_tag = format!("plugin-{}", tomoyo_core::linux_launch::sanitize_instance_tag(&opts.plugin_id));
+        Some(plugin_tag.as_str())
     } else {
         None
     };
+    let plugin_query = (!opts.settings_mode && !clip_mode && !tr_mode && !ocr_mode)
+        .then_some(opts.query.as_str());
     let _sock_guard = match mode_tag {
-        Some(tag) => match try_acquire_instance(tag, tr_mode, clip_mode, &channel) {
+        Some(tag) => match try_acquire_instance(tag, tr_mode, clip_mode, plugin_query, &channel) {
             Ok(g) => Some(g),
             Err(()) => return,
         },

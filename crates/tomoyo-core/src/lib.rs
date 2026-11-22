@@ -14,6 +14,8 @@ pub mod http;
 pub mod i18n;
 pub mod intent;
 #[cfg(target_os = "linux")]
+pub mod linux_launch;
+#[cfg(target_os = "linux")]
 pub mod linux_sys;
 pub mod matcher;
 pub mod matcher_highlight;

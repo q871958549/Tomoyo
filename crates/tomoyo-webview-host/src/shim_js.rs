@@ -179,6 +179,14 @@ pub fn build_init_script(
     _enterHandlers.forEach(fn => {{ try {{ fn(payload); }} catch (e) {{ console.error(e); }} }});
   }});
 
+  window.tomoyo.__reactivate = (nextQuery) => {{
+    if (typeof nextQuery === 'string') {{
+      window.tomoyo.initialQuery = nextQuery;
+      const payload = {{ code: PLUGIN_ID, type: 'text', payload: nextQuery }};
+      _enterHandlers.forEach(fn => {{ try {{ fn(payload); }} catch (e) {{ console.error(e); }} }});
+    }}
+  }};
+
   window.addEventListener('keydown', (e) => {{
     if (e.ctrlKey && e.shiftKey && (e.key === 'T' || e.key === 't')) {{
       e.preventDefault();

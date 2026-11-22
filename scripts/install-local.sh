@@ -41,9 +41,28 @@ VERSION="$(sed -n 's/^version = "\([^"]*\)"/\1/p' "$REPO_ROOT/Cargo.toml" | head
 VERSION="${VERSION:-2.3.0}"
 echo "=== Installing Tomoyo v$VERSION -> $BIN_DIR & $DATA_DIR ==="
 
-# Stop any running instances before overwriting binaries
+# Stop any running Tomoyo instances safely before overwriting binaries
 if command -v systemctl >/dev/null 2>&1; then
   systemctl --user stop tomoyo-launcher.service tomoyo-tray.service >/dev/null 2>&1 || true
+  systemctl --user reset-failed tomoyo-launcher.service tomoyo-tray.service >/dev/null 2>&1 || true
+  AUTOSTART_CGROUP="/sys/fs/cgroup/user.slice/user-$(id -u).slice/user@$(id -u).service/app.slice/app-tomoyo@autostart.service/cgroup.procs"
+  if [ -r "$AUTOSTART_CGROUP" ]; then
+    foreign_procs=""
+    while IFS= read -r pid; do
+      [ -n "$pid" ] || continue
+      comm="$(cat "/proc/$pid/comm" 2>/dev/null || true)"
+      case "$comm" in
+        ""|tomoyo|tomoyo-*) ;;
+        *) foreign_procs="${foreign_procs}${comm}($pid) " ;;
+      esac
+    done < "$AUTOSTART_CGROUP"
+    if [ -z "$foreign_procs" ]; then
+      systemctl --user stop app-tomoyo@autostart.service >/dev/null 2>&1 || true
+    else
+      echo "[WARN] app-tomoyo@autostart.service still holds legacy child processes: $foreign_procs" >&2
+      echo "       Leaving those apps running; restart them once to clear the old autostart cgroup." >&2
+    fi
+  fi
 fi
 for proc in tomoyo tomoyo-webview-host tomoyo-capture; do
   pkill -x "$proc" >/dev/null 2>&1 || true
@@ -118,8 +137,13 @@ echo "[OK] Installed Tomoyo v$VERSION binaries -> $BIN_DIR"
 echo "[OK] Desktop entry -> $DESKTOP_DST"
 
 if [ "$NO_LAUNCH" -eq 0 ]; then
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl --user reset-failed tomoyo-launcher.service >/dev/null 2>&1 || true
+  fi
   if ! (command -v systemd-run >/dev/null 2>&1 \
-    && systemd-run --user --unit=tomoyo-launcher --collect --working-directory="$HOME" -- "$BIN_DIR/tomoyo" --silent >/dev/null 2>&1); then
+    && systemd-run --user --unit=tomoyo-launcher --collect --quiet --slice=app.slice \
+      --description="Tomoyo" --property=ExitType=cgroup --working-directory="$HOME" \
+      -- "$BIN_DIR/tomoyo" --silent >/dev/null 2>&1); then
     nohup "$BIN_DIR/tomoyo" --silent </dev/null >/dev/null 2>&1 &
   fi
   sleep 1.0
