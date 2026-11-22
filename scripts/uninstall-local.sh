@@ -22,8 +22,8 @@ for arg in "$@"; do
 done
 
 if command -v systemctl >/dev/null 2>&1; then
-  systemctl --user stop tomoyo-launcher.service tomoyo-tray.service >/dev/null 2>&1 || true
-  systemctl --user reset-failed tomoyo-launcher.service tomoyo-tray.service >/dev/null 2>&1 || true
+  systemctl --user stop app-tomoyo@launcher.service tomoyo-launcher.service tomoyo-tray.service >/dev/null 2>&1 || true
+  systemctl --user reset-failed app-tomoyo@launcher.service tomoyo-launcher.service tomoyo-tray.service >/dev/null 2>&1 || true
   AUTOSTART_CGROUP="/sys/fs/cgroup/user.slice/user-$(id -u).slice/user@$(id -u).service/app.slice/app-tomoyo@autostart.service/cgroup.procs"
   if [ -r "$AUTOSTART_CGROUP" ]; then
     foreign_procs=""

@@ -101,7 +101,9 @@ pub fn systemd_app_unit_name(hint: Option<&str>) -> String {
         .map(sanitize_unit_id)
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "launch".into());
-    format!("app-{app_id}@tomoyo-{pid}-{seq}.service")
+    // Use `_` in the `@<instance>` suffix so KDE libprocesscore's greedy `(?:[^-]*-)?`
+    // prefix matcher never consumes part of `<app_id>` as a launcher prefix.
+    format!("app-{app_id}@tomoyo_{pid}_{seq}.service")
 }
 
 /// Launches `prog` inside an isolated `systemd-run --user` transient service (`app.slice`,
@@ -216,8 +218,9 @@ mod tests {
     fn generates_unique_app_service_names() {
         let a = systemd_app_unit_name(Some("/usr/share/applications/steam.desktop"));
         let b = systemd_app_unit_name(Some("/usr/share/applications/steam.desktop"));
-        assert!(a.starts_with("app-steam@tomoyo-"));
+        assert!(a.starts_with("app-steam@tomoyo_"));
         assert!(a.ends_with(".service"));
+        assert!(!a.split_once('@').unwrap().1.contains('-'));
         assert_ne!(a, b);
     }
 
@@ -268,7 +271,7 @@ mod tests {
             let parent_cg = std::fs::read_to_string("/proc/self/cgroup").unwrap_or_default();
             if parent_cg.contains("user@") {
                 assert_ne!(content.trim(), parent_cg.trim());
-                assert!(content.contains(r"app-tomoyo\x2dtest\x2diso@tomoyo-"));
+                assert!(content.contains(r"app-tomoyo\x2dtest\x2diso@tomoyo_"));
             }
         }
     }

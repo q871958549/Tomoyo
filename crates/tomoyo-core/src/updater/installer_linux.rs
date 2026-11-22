@@ -45,8 +45,8 @@ pub(super) fn launch_linux_update(installer_path: &Path) -> Result<bool, String>
              set -eu\n\
              sleep 0.4\n\
              if command -v systemctl >/dev/null 2>&1; then\n\
-               systemctl --user stop tomoyo-launcher.service >/dev/null 2>&1 || true\n\
-               systemctl --user reset-failed tomoyo-launcher.service >/dev/null 2>&1 || true\n\
+               systemctl --user stop app-tomoyo@launcher.service tomoyo-launcher.service >/dev/null 2>&1 || true\n\
+               systemctl --user reset-failed app-tomoyo@launcher.service tomoyo-launcher.service >/dev/null 2>&1 || true\n\
              fi\n\
              pkill -x tomoyo-webview-host >/dev/null 2>&1 || true\n\
              pkill -x tomoyo-capture >/dev/null 2>&1 || true\n\
@@ -59,7 +59,7 @@ pub(super) fn launch_linux_update(installer_path: &Path) -> Result<bool, String>
              done\n\
              rm -rf \"{stage}\" \"{arch}\"\n\
              if [ -x \"{exe}\" ]; then\n\
-               if ! (command -v systemd-run >/dev/null 2>&1 && systemd-run --user --unit=tomoyo-launcher --collect --quiet --slice=app.slice --description=\"Tomoyo\" --property=ExitType=cgroup --working-directory=\"${{HOME:-/}}\" -- \"{exe}\" --updated >/dev/null 2>&1); then\n\
+               if ! (command -v systemd-run >/dev/null 2>&1 && systemd-run --user --unit=app-tomoyo@launcher.service --collect --quiet --slice=app.slice --description=\"Tomoyo\" --property=ExitType=cgroup --working-directory=\"${{HOME:-/}}\" -- \"{exe}\" --updated >/dev/null 2>&1); then\n\
                  nohup \"{exe}\" --updated </dev/null >/dev/null 2>&1 &\n\
                fi\n\
              fi\n",

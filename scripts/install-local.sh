@@ -43,8 +43,8 @@ echo "=== Installing Tomoyo v$VERSION -> $BIN_DIR & $DATA_DIR ==="
 
 # Stop any running Tomoyo instances safely before overwriting binaries
 if command -v systemctl >/dev/null 2>&1; then
-  systemctl --user stop tomoyo-launcher.service tomoyo-tray.service >/dev/null 2>&1 || true
-  systemctl --user reset-failed tomoyo-launcher.service tomoyo-tray.service >/dev/null 2>&1 || true
+  systemctl --user stop app-tomoyo@launcher.service tomoyo-launcher.service tomoyo-tray.service >/dev/null 2>&1 || true
+  systemctl --user reset-failed app-tomoyo@launcher.service tomoyo-launcher.service tomoyo-tray.service >/dev/null 2>&1 || true
   AUTOSTART_CGROUP="/sys/fs/cgroup/user.slice/user-$(id -u).slice/user@$(id -u).service/app.slice/app-tomoyo@autostart.service/cgroup.procs"
   if [ -r "$AUTOSTART_CGROUP" ]; then
     foreign_procs=""
@@ -138,10 +138,10 @@ echo "[OK] Desktop entry -> $DESKTOP_DST"
 
 if [ "$NO_LAUNCH" -eq 0 ]; then
   if command -v systemctl >/dev/null 2>&1; then
-    systemctl --user reset-failed tomoyo-launcher.service >/dev/null 2>&1 || true
+    systemctl --user reset-failed app-tomoyo@launcher.service >/dev/null 2>&1 || true
   fi
   if ! (command -v systemd-run >/dev/null 2>&1 \
-    && systemd-run --user --unit=tomoyo-launcher --collect --quiet --slice=app.slice \
+    && systemd-run --user --unit=app-tomoyo@launcher.service --collect --quiet --slice=app.slice \
       --description="Tomoyo" --property=ExitType=cgroup --working-directory="$HOME" \
       -- "$BIN_DIR/tomoyo" --silent >/dev/null 2>&1); then
     nohup "$BIN_DIR/tomoyo" --silent </dev/null >/dev/null 2>&1 &

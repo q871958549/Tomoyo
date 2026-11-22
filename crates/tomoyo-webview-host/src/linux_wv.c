@@ -189,8 +189,10 @@ tomoyo_wv_t *tomoyo_wv_create(
 
     WebKitWebContext *wctx = webkit_web_context_get_default();
     webkit_web_context_set_cache_model(wctx, WEBKIT_CACHE_MODEL_DOCUMENT_VIEWER);
+#if WEBKIT_CHECK_VERSION(2, 53, 1)
     WebKitWebsiteDataManager *wdm = webkit_web_context_get_website_data_manager(wctx);
     if (wdm) webkit_website_data_manager_set_favicons_enabled(wdm, FALSE);
+#endif
     webkit_web_context_register_uri_scheme(wctx, "tomoyo-clip-img", on_uri_scheme, h, NULL);
     webkit_web_context_register_uri_scheme(wctx, "tomoyo-ocr-img", on_uri_scheme, h, NULL);
     WebKitSecurityManager *sm = webkit_web_context_get_security_manager(wctx);
