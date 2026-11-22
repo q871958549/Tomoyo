@@ -827,6 +827,8 @@ dependencies = [
 name = "tomoyo-cli"
 version = "2.3.0"
 dependencies = [
+ "crc32fast",
+ "flate2",
  "serde",
  "serde_json",
  "sha2",

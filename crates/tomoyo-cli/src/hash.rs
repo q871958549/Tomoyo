@@ -33,8 +33,8 @@ pub fn collect_plugin_files(
         let name_str = name.to_string_lossy();
         if matches!(
             name_str.as_ref(),
-            "target" | "node_modules" | "__pycache__" | ".git" | "Cargo.lock"
-        ) {
+            "target" | "node_modules" | "__pycache__" | ".git" | "Cargo.lock" | "dist"
+        ) || name_str.to_ascii_lowercase().ends_with(".zip") {
             continue;
         }
         if path.is_dir() {

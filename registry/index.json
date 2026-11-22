@@ -13,7 +13,7 @@
       "runtime_kind": "stdio_jsonrpc",
       "keywords": ["note", "memo", "bw"],
       "source": "plugins/official-notes",
-      "sha256": "0bd40257978e0278f72abfabb2f5a868ce1abb5af9fe5d031f84799e3f0f1050"
+      "sha256": "441635409b7ebf79504b412b3c42b87314c6a72c0a9312c2f84acd2a2b481611"
     },
     {
       "id": "dev.tomoyo.example-hello",
@@ -49,7 +49,7 @@
       "runtime_kind": "wasm",
       "keywords": ["wasm", "jwt", "unit"],
       "source": "plugins/example-wasm",
-      "sha256": "a5520b2f444f8e91d48bbb3ce025c6ed84d3536817ddecac151aa5ac65e2cedc"
+      "sha256": "9aa8f6d9fd154088f82986ef204340adfb541749d1f58b5c50544883d82bf103"
     },
     {
       "id": "dev.tomoyo.example-webview-json",

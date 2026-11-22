@@ -102,7 +102,8 @@ for p in example-hello example-python example-wasm example-webview-json builtin-
   rm -rf "$DATA_DIR/plugins/$p/target" "$DATA_DIR/plugins/$p/__pycache__"
 done
 
-install -Dm644 "$REPO_ROOT/assets/tomoyo-icon.png" "$XDG_DATA/icons/hicolor/256x256/apps/tomoyo.png"
+install -Dm644 "$REPO_ROOT/assets/tomoyo-icon-transparent.png" "$XDG_DATA/icons/hicolor/512x512/apps/tomoyo.png"
+install -Dm644 "$REPO_ROOT/assets/tomoyo-icon-transparent.png" "$XDG_DATA/icons/hicolor/256x256/apps/tomoyo.png"
 install -Dm644 "$REPO_ROOT/assets/tomoyo-icon.svg" "$XDG_DATA/icons/hicolor/scalable/apps/tomoyo.svg"
 
 DESKTOP_DST="$XDG_DATA/applications/tomoyo.desktop"

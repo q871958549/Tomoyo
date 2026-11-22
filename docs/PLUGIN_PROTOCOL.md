@@ -102,3 +102,4 @@ Plugins MUST write protocol responses to `stdout` and diagnostic logs strictly t
 - **Centralized Hotkey Governance**: Plugins never install their own OS hooks. Declared `[[hotkeys]]` are registered by `tomoyo.exe` and automatically benefit from conflict auto-rescue (`WH_KEYBOARD_LL`) and fullscreen/remote-desktop avoidance.
 - **Job Object & WASM Isolation**: STDIO plugins run inside a Windows Job Object with `KILL_ON_JOB_CLOSE` and `PROCESS_MEMORY` cap; WASM plugins run inside `wasmi` with fuel metering and zero ambient host access.
 - **Reference Implementations**: See `plugins/official-notes` (`dev.tomoyo.notes`) and `plugins/builtin-ocr` (`dev.tomoyo.ocr`) for complete Protocol v2 plugins.
+- **Developer Handbook & Tooling**: See [`docs/PLUGIN_DEV_GUIDE.md`](PLUGIN_DEV_GUIDE.md) and [`docs/tomoyo.d.ts`](tomoyo.d.ts) for `tomoyo-cli new / dev / verify / pack` workflows, Rust/WASM builders, and WebView TypeScript definitions.

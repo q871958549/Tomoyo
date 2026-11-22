@@ -7,6 +7,7 @@
 //! *Disambiguation: Tomoyo Launcher is an open-source Rust desktop launcher for Linux
 //! and Windows, unrelated to the TOMOYO Linux kernel LSM module.*
 
+mod builders;
 pub mod filter;
 pub mod manifest;
 pub mod rpc;

@@ -129,7 +129,11 @@ tomoyo_app_t *tomoyo_linux_ui_create(
     tomoyo_void_cb on_text_changed, tomoyo_void_cb on_paste, tomoyo_void_cb on_focus_out,
     tomoyo_void_cb on_clip_change, tomoyo_cmd_cb on_tray_cmd
 ) {
+    g_set_prgname("tomoyo");
+    g_set_application_name("Tomoyo");
     if (!gtk_init_check(NULL, NULL)) return NULL;
+    gdk_set_program_class("tomoyo");
+    gtk_window_set_default_icon_name("tomoyo");
     tomoyo_app_t *a = (tomoyo_app_t *)calloc(1, sizeof(tomoyo_app_t));
     if (!a) return NULL;
     a->ctx = ctx; a->on_draw = on_draw; a->on_key = on_key; a->on_mouse = on_mouse;
@@ -139,6 +143,7 @@ tomoyo_app_t *tomoyo_linux_ui_create(
     a->window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_widget_set_name(a->window, "tomoyo-shell");
     gtk_window_set_title(GTK_WINDOW(a->window), "Tomoyo");
+    gtk_window_set_icon_name(GTK_WINDOW(a->window), "tomoyo");
     GdkScreen *scr = gdk_screen_get_default();
     GdkVisual *vis = scr ? gdk_screen_get_rgba_visual(scr) : NULL;
     if (vis) gtk_widget_set_visual(a->window, vis);

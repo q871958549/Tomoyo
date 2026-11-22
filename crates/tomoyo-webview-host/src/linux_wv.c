@@ -154,7 +154,11 @@ tomoyo_wv_t *tomoyo_wv_create(
     wv_void_cb on_close,
     void *ctx
 ) {
+    g_set_prgname("tomoyo");
+    g_set_application_name("Tomoyo");
     if (!gtk_init_check(NULL, NULL)) return NULL;
+    gdk_set_program_class("tomoyo");
+    gtk_window_set_default_icon_name("tomoyo");
 
     tomoyo_wv_t *h = (tomoyo_wv_t *)calloc(1, sizeof(tomoyo_wv_t));
     if (!h) return NULL;
@@ -167,6 +171,7 @@ tomoyo_wv_t *tomoyo_wv_create(
 
     h->window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_window_set_title(GTK_WINDOW(h->window), title ? title : "Tomoyo");
+    gtk_window_set_icon_name(GTK_WINDOW(h->window), "tomoyo");
     gtk_window_set_default_size(GTK_WINDOW(h->window), width > 200 ? width : 960, height > 200 ? height : 670);
     gtk_window_set_position(GTK_WINDOW(h->window), GTK_WIN_POS_CENTER);
     h->header = gtk_header_bar_new();

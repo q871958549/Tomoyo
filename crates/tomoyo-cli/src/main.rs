@@ -1,7 +1,8 @@
 //! Tomoyo Open Ecosystem CLI (`tomoyo-cli`):
-//! - `tomoyo-cli new <name> --lang <rust|wasm|python|webview>`
-//! - `tomoyo-cli dev <plugin-dir> [--query "<args>"] [--once]`
+//! - `tomoyo-cli new <name> --lang <rust|wasm|python|webview> [--dir <path>] [--sdk-dir <path>]`
+//! - `tomoyo-cli dev <plugin-dir> [--query "<args>"] [--build] [--exec <id>] [--event <kind>] [--once]`
 //! - `tomoyo-cli verify <plugin-dir>`
+//! - `tomoyo-cli pack <plugin-dir> [--out <bundle.zip>]`
 //! - `tomoyo-cli hash <plugin-dir>`
 //! - `tomoyo-cli import-utools <utools-plugin-dir>`
 //! - `tomoyo-cli registry list|check [--index <path-or-https-url>]`
@@ -9,15 +10,15 @@
 
 mod dev;
 mod hash;
+mod pack;
 mod scaffold;
 mod utools;
+mod verify;
 
 use hash::{compute_plugin_sha256, copy_plugin_files};
 use scaffold::{scaffold_python, scaffold_rust, scaffold_wasm, scaffold_webview};
 use std::path::{Path, PathBuf};
-use tomoyo_core::ExternalPluginBridge;
-use tomoyo_plugin_host::PluginHost;
-use tomoyo_protocol::{PluginManifest, PluginRegistryIndex, QueryContext};
+use tomoyo_protocol::{PluginManifest, PluginRegistryIndex};
 use utools::cmd_import_utools;
 
 fn main() {
@@ -30,7 +31,8 @@ fn main() {
     let code = match args[0].as_str() {
         "new" => cmd_new(&args[1..]),
         "dev" => dev::cmd_dev(&args[1..]),
-        "verify" => cmd_verify(&args[1..]),
+        "verify" => verify::cmd_verify(&args[1..]),
+        "pack" => pack::cmd_pack(&args[1..]),
         "hash" => cmd_hash(&args[1..]),
         "import-utools" => cmd_import_utools(&args[1..]),
         "registry" => cmd_registry(&args[1..]),
@@ -52,9 +54,10 @@ fn print_usage() {
         "tomoyo-cli {} — Open Plugin SDK, uTools Importer & Decentralized Registry Tool\n\
          \n\
          USAGE:\n\
-         \t tomoyo-cli new <name> [--lang rust|wasm|python|webview] [--dir <path>]\n\
-         \t tomoyo-cli dev <plugin-dir> [--query \"<args>\"] [--once]\n\
+         \t tomoyo-cli new <name> [--lang rust|wasm|python|webview] [--dir <path>] [--sdk-dir <crates-dir>]\n\
+         \t tomoyo-cli dev <plugin-dir> [--query \"<args>\"] [--build] [--exec <id>] [--event <kind>] [--once]\n\
          \t tomoyo-cli verify <plugin-dir>\n\
+         \t tomoyo-cli pack <plugin-dir> [--out <bundle.zip>]\n\
          \t tomoyo-cli hash <plugin-dir>\n\
          \t tomoyo-cli import-utools <utools-plugin-dir>\n\
          \t tomoyo-cli registry list|check [--index <path-or-https-url>]\n\
@@ -69,13 +72,14 @@ pub(crate) fn flag_val<'a>(args: &'a [String], flag: &str) -> Option<&'a str> {
 
 fn cmd_new(args: &[String]) -> i32 {
     let Some(name) = args.first().filter(|s| !s.starts_with('-')) else {
-        eprintln!("Usage: tomoyo-cli new <name> [--lang rust|wasm|python|webview]");
+        eprintln!("Usage: tomoyo-cli new <name> [--lang rust|wasm|python|webview] [--dir <path>] [--sdk-dir <path>]");
         return 1;
     };
     let lang = flag_val(args, "--lang").unwrap_or("python");
     let root = flag_val(args, "--dir")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("plugins"));
+    let sdk_dir = flag_val(args, "--sdk-dir").map(PathBuf::from);
     let slug = name
         .to_ascii_lowercase()
         .replace(|c: char| !c.is_ascii_alphanumeric(), "-");
@@ -92,8 +96,8 @@ fn cmd_new(args: &[String]) -> i32 {
 
     let result = match lang {
         "python" => scaffold_python(&target_dir, name, &slug),
-        "rust" => scaffold_rust(&target_dir, name, &slug),
-        "wasm" => scaffold_wasm(&target_dir, name, &slug),
+        "rust" => scaffold_rust(&target_dir, name, &slug, sdk_dir.as_deref()),
+        "wasm" => scaffold_wasm(&target_dir, name, &slug, sdk_dir.as_deref()),
         "webview" => scaffold_webview(&target_dir, name, &slug),
         other => {
             eprintln!("Unsupported --lang `{other}`. Choose: rust, wasm, python, webview");
@@ -129,62 +133,6 @@ fn cmd_hash(args: &[String]) -> i32 {
             1
         }
     }
-}
-
-fn cmd_verify(args: &[String]) -> i32 {
-    let Some(dir_str) = args.first() else {
-        eprintln!("Usage: tomoyo-cli verify <plugin-dir>");
-        return 1;
-    };
-    let dir = Path::new(dir_str);
-    let manifest_path = dir.join("tomoyo-plugin.toml");
-    let raw = match std::fs::read_to_string(&manifest_path) {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("Failed to read {}: {e}", manifest_path.display());
-            return 1;
-        }
-    };
-    let manifest = match PluginManifest::from_toml_str(&raw) {
-        Ok(m) => m,
-        Err(e) => {
-            eprintln!("Invalid manifest: {e}");
-            return 1;
-        }
-    };
-    let sha = match compute_plugin_sha256(dir) {
-        Ok(h) => h,
-        Err(e) => {
-            eprintln!("Failed to hash plugin directory: {e}");
-            return 1;
-        }
-    };
-
-    println!(
-        "[OK] Manifest valid: `{}` ({}) v{} [{}]",
-        manifest.name,
-        manifest.id,
-        manifest.version,
-        manifest.runtime.kind_badge()
-    );
-    println!("[OK] Triggers: {:?}", manifest.triggers.keywords);
-    println!(
-        "[OK] Resource cap: {} MB · idle {}s",
-        manifest.resources.max_memory_mb, manifest.resources.idle_timeout_secs
-    );
-    println!("[OK] Bundle SHA-256: {sha}");
-
-    if let (Some(parent), Some(first_kw)) = (dir.parent(), manifest.triggers.keywords.first()) {
-        let host = PluginHost::new(vec![parent.to_path_buf()]);
-        let ctx = QueryContext::new(format!("{first_kw} hello"), 1, 5).with_keyword(first_kw, "hello");
-        let items = host.query_keyword(first_kw, &ctx);
-        println!("[OK] Live query `{first_kw} hello` returned {} result(s)", items.len());
-        if let Some(first) = items.first() {
-            println!("     Top hit: `{}` — {}", first.title, first.subtitle);
-        }
-        host.shutdown_all();
-    }
-    0
 }
 
 fn cmd_registry(args: &[String]) -> i32 {

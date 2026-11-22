@@ -98,7 +98,8 @@ package() {
   done
 
   install -Dm644 packaging/linux/tomoyo.desktop "$pkgdir/usr/share/applications/tomoyo.desktop"
-  install -Dm644 assets/tomoyo-icon.png "$pkgdir/usr/share/icons/hicolor/256x256/apps/tomoyo.png"
+  install -Dm644 assets/tomoyo-icon-transparent.png "$pkgdir/usr/share/icons/hicolor/512x512/apps/tomoyo.png"
+  install -Dm644 assets/tomoyo-icon-transparent.png "$pkgdir/usr/share/icons/hicolor/256x256/apps/tomoyo.png"
   install -Dm644 assets/tomoyo-icon.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/tomoyo.svg"
   install -Dm644 LICENSE-MIT "$pkgdir/usr/share/licenses/$pkgname/LICENSE-MIT"
   install -Dm644 LICENSE-APACHE "$pkgdir/usr/share/licenses/$pkgname/LICENSE-APACHE"
