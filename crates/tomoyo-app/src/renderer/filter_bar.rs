@@ -5,14 +5,17 @@ use super::canvas::Canvas;
 use super::gdi::{dip_rect, draw_text_gdi, FontPack};
 use super::theme::ThemePalette;
 use std::path::Path;
+#[cfg(not(windows))]
 use std::time::Instant;
 use tomoyo_protocol::{ActionKind, ResultCategory, ResultItem, SearchFilter, VisibleFilterTab};
 #[cfg(windows)]
 use windows::Win32::Graphics::Gdi::{GdiFlush, HDC, DT_CENTER};
 
 pub const FILTER_BAR_HEIGHT_DIP: i32 = 38;
+#[cfg(not(windows))]
 const PILL_ANIM_MS: f32 = 135.0;
 
+#[cfg(not(windows))]
 #[derive(Clone, Copy)]
 pub struct FilterPillAnim {
     pub from_x0: f32,
@@ -22,6 +25,7 @@ pub struct FilterPillAnim {
     pub started_at: Instant,
 }
 
+#[cfg(not(windows))]
 impl FilterPillAnim {
     pub fn from_spans(from: Option<(f32, f32)>, to: Option<(f32, f32)>) -> Option<Self> {
         let ((fx0, fx1), (tx0, tx1)) = (from?, to?);
@@ -74,6 +78,7 @@ pub fn compute_filter_counts(items: &[ResultItem], tabs: &[VisibleFilterTab]) ->
 }
 
 /// Checks whether a result item belongs to `tab`, used both for filter counts and instant cache preview.
+#[cfg(not(windows))]
 pub fn item_matches_filter(item: &ResultItem, filter: SearchFilter, tabs: &[VisibleFilterTab]) -> bool {
     let Some(tab) = tabs.iter().find(|t| t.filter == filter) else {
         return false;

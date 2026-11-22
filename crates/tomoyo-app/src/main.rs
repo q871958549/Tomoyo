@@ -339,12 +339,12 @@ fn wake_existing_instance(silent: bool) {
 
 fn main() {
     const MI_OPTION_PURGE_DELAY: std::ffi::c_int = 15;
-    const MI_OPTION_ALLOW_THP: std::ffi::c_int = 43;
     unsafe extern "C" {
         fn mi_option_set(option: std::ffi::c_int, value: std::ffi::c_long);
     }
     #[cfg(target_os = "linux")]
     if std::env::var_os("MIMALLOC_ALLOW_THP").is_none() {
+        const MI_OPTION_ALLOW_THP: std::ffi::c_int = 43;
         linux::disable_transparent_hugepages();
         unsafe { mi_option_set(MI_OPTION_ALLOW_THP, 0); }
     }

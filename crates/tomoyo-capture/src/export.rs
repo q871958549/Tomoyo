@@ -260,7 +260,7 @@ pub use crate::linux_clip::{
     copy_bgra_to_clipboard, copy_text_to_clipboard, read_clipboard_image_bgra,
 };
 
-#[cfg(any(windows, target_os = "linux"))]
+#[cfg(target_os = "linux")]
 pub fn handoff_text_to_translator(text: &str) {
     let trimmed = text.trim();
     if trimmed.is_empty() {

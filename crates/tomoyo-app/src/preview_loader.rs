@@ -55,6 +55,7 @@ impl AsyncPreviewLoader {
         let w_seq = Arc::clone(&seq);
         let w_flight = Arc::clone(&in_flight);
         let w_hwnd = Arc::clone(&notify_hwnd);
+        #[cfg(not(windows))]
         let w_cb = Arc::clone(&notify_cb);
 
         let _ = std::thread::Builder::new()

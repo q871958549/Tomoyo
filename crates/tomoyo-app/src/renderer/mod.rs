@@ -11,13 +11,16 @@ mod theme;
 
 pub use canvas::Canvas;
 pub use filter_bar::{
-    compute_filter_counts, compute_filter_hitboxes, item_matches_filter, FilterCounts,
-    FilterPillAnim, FILTER_BAR_HEIGHT_DIP,
+    compute_filter_counts, compute_filter_hitboxes, FilterCounts, FILTER_BAR_HEIGHT_DIP,
 };
+#[cfg(not(windows))]
+pub use filter_bar::{item_matches_filter, FilterPillAnim};
 #[cfg(windows)]
 pub use gdi::{dip_rect, draw_text_gdi, DibSurface, FontPack};
 pub(crate) use sdf_pass::paint_sdf_pass;
-pub use theme::{category_rgb, Rgb, ThemePalette};
+pub use theme::{Rgb, ThemePalette};
+#[cfg(not(windows))]
+pub use theme::category_rgb;
 
 #[cfg(windows)]
 use crate::icons::IconCache;
