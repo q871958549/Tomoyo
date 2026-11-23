@@ -36,8 +36,8 @@ optdepends=(
   'grim: wlroots Wayland screenshot backend'
   'kdialog: native KDE folder & confirmation dialogs'
 )
-source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('SKIP')
+source=("Tomoyo-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('f6e03195f8da2012e81a20d79b7f5824513b9142aa296c679841b67afe3dfa07')
 
 prepare() {
   cd "$srcdir/Tomoyo-$pkgver"
@@ -51,7 +51,7 @@ build() {
   export CARGO_TARGET_DIR=target
 
   (cd frontend && npm ci && npm run check && npm test && npm run build)
-  if rustup target list --installed | grep -qx "wasm32-unknown-unknown"; then
+  if command -v rustup >/dev/null 2>&1 && rustup target list --installed | grep -qx "wasm32-unknown-unknown"; then
     cargo build --manifest-path plugins/example-wasm/Cargo.toml \
       --target wasm32-unknown-unknown --release
     cp plugins/example-wasm/target/wasm32-unknown-unknown/release/tomoyo_plugin_wasm_demo.wasm \

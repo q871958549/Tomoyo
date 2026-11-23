@@ -1,0 +1,111 @@
+# Maintainer: Tomoyo Open Source Contributors
+pkgname=tomoyo-launcher
+pkgver=2.6.0
+pkgrel=1
+pkgdesc="Tomoyo Launcher — ultra-low-memory native Rust desktop launcher, clipboard manager, screenshot, OCR & translator"
+arch=('x86_64' 'aarch64')
+url="https://github.com/q871958549/Tomoyo"
+license=('MIT' 'Apache-2.0')
+provides=('tomoyo')
+conflicts=('tomoyo')
+depends=(
+  'gtk3'
+  'webkit2gtk-4.1'
+  'libayatana-appindicator'
+  'curl'
+  'libsecret'
+  'glib2'
+  'cairo'
+  'pango'
+  'fontconfig'
+  'gdk-pixbuf2'
+  'libx11'
+  'libxext'
+  'libxtst'
+  'wayland'
+  'dbus'
+  'pipewire'
+)
+makedepends=('cargo' 'rust' 'nodejs' 'npm' 'pkgconf' 'gcc')
+optdepends=(
+  'ffmpeg: native Wayland region screen recording (MP4/GIF)'
+  'tesseract: offline OCR plugin runtime'
+  'tesseract-data-eng: English OCR recognition data'
+  'tesseract-data-chi_sim: Simplified Chinese OCR recognition data'
+  'fd: fast filesystem indexing for file search'
+  'plocate: indexed system-wide file search'
+  'spectacle: KDE Plasma Wayland screenshot backend'
+  'grim: wlroots Wayland screenshot backend'
+  'kdialog: native KDE folder & confirmation dialogs'
+)
+source=("Tomoyo-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('f6e03195f8da2012e81a20d79b7f5824513b9142aa296c679841b67afe3dfa07')
+
+prepare() {
+  cd "$srcdir/Tomoyo-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+  cd "$srcdir/Tomoyo-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR=target
+
+  (cd frontend && npm ci && npm run check && npm test && npm run build)
+  if command -v rustup >/dev/null 2>&1 && rustup target list --installed | grep -qx "wasm32-unknown-unknown"; then
+    cargo build --manifest-path plugins/example-wasm/Cargo.toml \
+      --target wasm32-unknown-unknown --release
+    cp plugins/example-wasm/target/wasm32-unknown-unknown/release/tomoyo_plugin_wasm_demo.wasm \
+      plugins/example-wasm/plugin.wasm
+  fi
+  cargo build --frozen --release --workspace
+}
+
+check() {
+  cd "$srcdir/Tomoyo-$pkgver"
+  cargo test --frozen --workspace
+  ./target/release/tomoyo --self-test --strict-budget
+  ./target/release/tomoyo-webview-host --self-test
+  ./target/release/tomoyo-capture --self-test
+  ./target/release/tomoyo-plugin-ocr --self-test
+}
+
+package() {
+  cd "$srcdir/Tomoyo-$pkgver"
+  local bins=(
+    tomoyo
+    tomoyo-webview-host
+    tomoyo-capture
+    tomoyo-cli
+    tomoyo-plugin-ocr
+    tomoyo-plugin-notes
+    tomoyo-plugin-md-editor
+    tomoyo-plugin-hello
+  )
+  for b in "${bins[@]}"; do
+    install -Dm755 "target/release/$b" "$pkgdir/usr/bin/$b"
+  done
+
+  install -dm755 "$pkgdir/usr/share/tomoyo/fonts" \
+    "$pkgdir/usr/share/tomoyo/plugin-icons" \
+    "$pkgdir/usr/share/tomoyo/registry" \
+    "$pkgdir/usr/share/tomoyo/plugins"
+  install -Dm644 assets/fonts/*.ttf "$pkgdir/usr/share/tomoyo/fonts/"
+  install -Dm644 assets/plugin-icons/*.png "$pkgdir/usr/share/tomoyo/plugin-icons/"
+  install -Dm644 registry/index.json "$pkgdir/usr/share/tomoyo/registry/index.json"
+
+  for p in example-hello example-python example-wasm example-webview-json builtin-ocr official-notes official-md-editor; do
+    mkdir -p "$pkgdir/usr/share/tomoyo/plugins/$p"
+    cp -a "plugins/$p/." "$pkgdir/usr/share/tomoyo/plugins/$p/"
+    rm -rf "$pkgdir/usr/share/tomoyo/plugins/$p/target" \
+      "$pkgdir/usr/share/tomoyo/plugins/$p/__pycache__"
+  done
+
+  install -Dm644 packaging/linux/tomoyo.desktop "$pkgdir/usr/share/applications/tomoyo.desktop"
+  install -Dm644 assets/tomoyo-icon-transparent.png "$pkgdir/usr/share/icons/hicolor/512x512/apps/tomoyo.png"
+  install -Dm644 assets/tomoyo-icon-transparent.png "$pkgdir/usr/share/icons/hicolor/256x256/apps/tomoyo.png"
+  install -Dm644 assets/tomoyo-icon.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/tomoyo.svg"
+  install -Dm644 LICENSE-MIT "$pkgdir/usr/share/licenses/$pkgname/LICENSE-MIT"
+  install -Dm644 LICENSE-APACHE "$pkgdir/usr/share/licenses/$pkgname/LICENSE-APACHE"
+}

@@ -100,7 +100,9 @@ pub fn detect_quiet_md_binary(custom_path: Option<&str>) -> Option<PathBuf> {
         }
     }
 
-    let mut candidates = Vec::new();
+    #[cfg_attr(not(any(windows, target_os = "linux")), allow(unused_mut))]
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    #[cfg(any(windows, target_os = "linux"))]
     let tools = quiet_md_tools_dir();
     #[cfg(windows)]
     {

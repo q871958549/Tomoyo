@@ -74,6 +74,7 @@ pub enum HostMessage {
 pub struct HostAction {
     pub should_close: bool,
     pub window_ready: bool,
+    #[cfg_attr(not(windows), allow(dead_code))]
     pub pop_out_window: bool,
     pub apply_theme: Option<String>,
     pub toggle_topmost: bool,

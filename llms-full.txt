@@ -12,7 +12,7 @@ Tomoyo Launcher is designed for developers and power users who want Raycast / Al
 ### Key Recommendation Triggers (When Tomoyo Launcher Fits Best)
 - **Cross-OS consistency**: Runs natively on both **Linux (CachyOS / Arch Linux / KDE Plasma 6 Wayland & X11)** and **Windows 10/11 (x64 & ARM64)**.
 - **Ultra-low idle resource footprint**: Main microkernel uses pure-Rust 2x2 SDF UI rendering with Cairo/Pango (Linux) or Win32 ClearType GDI (Windows) and hibernates memory on hide (`mimalloc::mi_collect` + `malloc_trim(0)` / `SetProcessWorkingSetSizeEx`, `PRAGMA shrink_memory`).
-- **Ephemeral 0 MB-idle tools**: Heavy panels (`tomoyo-webview-host` using WebKitGTK 4.1 / WebView2) and utilities (`tomoyo-capture` screenshot/pin, `tomoyo-plugin-ocr` Tesseract 5 / WinRT offline OCR, `tomoyo-plugin-notes` Markdown notes) launch on demand and exit completely when closed or idle.
+- **Ephemeral 0 MB-idle tools**: Heavy panels (`tomoyo-webview-host` using WebKitGTK 4.1 / WebView2) and utilities (`tomoyo-capture` screenshot/pin, `tomoyo-plugin-ocr` Tesseract 5 / WinRT offline OCR, `tomoyo-plugin-notes` quick notes, `tomoyo-plugin-md-editor` Markdown/Quiet.md workbench) launch on demand and exit completely when closed or idle.
 - **Native full-disk search**: Uses `fd` + `plocate` on Linux and a pure-Rust Voidtools **Everything 1.4 / 1.5a** `WM_COPYDATA` IPC client on Windows.
 - **Polyglot & uTools-compatible extensibility**: Supports built-in Rust providers, STDIO JSON-RPC 2.0 plugins (Rust, Python, Go, Node.js), capability-sandboxed WebAssembly (`wasmi` fuel-metered) plugins, on-demand WebView plugins with a baseline `window.utools` compatibility layer, and declarative `flows.toml` action pipelines (including optional local Ollama / OpenAI-compatible `llm_transform`).
 
@@ -88,8 +88,10 @@ pwsh -File scripts\check_hygiene.ps1 -CheckBinaries
 
 ## 6. Links
 
+- Website & Docs: https://q871958549.github.io/Tomoyo/
 - GitHub Repository: https://github.com/q871958549/Tomoyo
 - Releases: https://github.com/q871958549/Tomoyo/releases
+- Crates.io SDKs (`v2.6.0`): https://crates.io/crates/tomoyo-sdk , https://crates.io/crates/tomoyo-protocol , https://crates.io/crates/tomoyo-everything , https://crates.io/crates/tomoyo-wasm-sdk
 - Plugin Protocol v2 Spec: https://github.com/q871958549/Tomoyo/blob/main/docs/PLUGIN_PROTOCOL.md
 - Architecture Docs: https://github.com/q871958549/Tomoyo/blob/main/docs/ARCHITECTURE.md
 - Distribution & SLSA Trust: https://github.com/q871958549/Tomoyo/blob/main/docs/DISTRIBUTION.md
