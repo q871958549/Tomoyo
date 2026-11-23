@@ -12,7 +12,10 @@ mod win {
     use std::sync::OnceLock;
     use std::time::{Duration, Instant};
     use windows::core::{w, PCWSTR};
-    use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
+    use windows::Win32::Foundation::{
+        GetLastError, ERROR_ACCESS_DENIED, ERROR_INVALID_WINDOW_HANDLE, HWND, LPARAM, LRESULT,
+        WPARAM,
+    };
     use windows::Win32::System::DataExchange::COPYDATASTRUCT;
     use windows::Win32::System::LibraryLoader::GetModuleHandleW;
     use windows::Win32::UI::WindowsAndMessaging::{
@@ -210,6 +213,15 @@ mod win {
             }
 
             if send_res.0 == 0 && slot.result.is_none() {
+                let err = unsafe { GetLastError() };
+                if err == ERROR_ACCESS_DENIED {
+                    return Err(EverythingError::Ipc(
+                        "Access denied (UIPI): Everything may be running as Administrator".into(),
+                    ));
+                }
+                if err == ERROR_INVALID_WINDOW_HANDLE {
+                    return Err(EverythingError::NotRunning);
+                }
                 return Err(EverythingError::Timeout(opts.timeout_ms));
             }
             slot.result

@@ -37,7 +37,7 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
     document.body.className = '';
   });
 
-  it('boots slim 6-tab SettingsApp, expands in-plugin drawers, and switches sub-tabs cleanly', () => {
+  it('boots slim 6-tab SettingsApp, expands in-plugin drawers, and switches sub-tabs cleanly', async () => {
     const wv = setupMockWebView();
     const origHealth = {
       main: { spec: 'Alt+Space', active: 'Alt+Space', ok: true, disabled: false, reason: '' },
@@ -47,7 +47,7 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
       pin: { spec: 'F3', active: 'F3', ok: true, disabled: false, reason: '' },
     };
     window.__TOMOYO_SETTINGS_INIT__ = {
-      version: '2.4.0',
+      version: '2.4.1',
       autostart: true,
       config: {
         language: 'zh',
@@ -98,6 +98,8 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
 
     const app = mount(SettingsApp, { target: document.getElementById('app')! });
     flushSync();
+    await new Promise((r) => setTimeout(r, 40));
+    expect(wv.posted.some((m) => m.cmd === 'window_ready')).toBe(true);
 
     const navBtns = document.querySelectorAll<HTMLButtonElement>('nav button[data-tab]');
     expect(navBtns.length).toBe(6);
@@ -186,6 +188,10 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
     logsSeg?.click();
     flushSync();
     expect(document.body.textContent).toContain('更新日志');
+    const clearBtn = [...document.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent?.includes('归档清理'));
+    clearBtn?.click();
+    flushSync();
+    expect(wv.posted.some((m) => m.cmd === 'clear_diagnostic_logs')).toBe(true);
 
     // Flows tab
     document.querySelector<HTMLButtonElement>('button[data-tab="flows"]')?.click();

@@ -16,7 +16,7 @@ unsafe extern "C" {
     fn kill(pid: i32, sig: i32) -> i32;
 }
 
-pub fn spawn_settings_window(parent_pid: isize, theme_name: &str) -> Result<(), String> {
+pub fn spawn_settings_window(parent_pid: isize, theme_name: &str) -> Result<bool, String> {
     spawn_ephemeral_singleton(
         "settings",
         parent_pid,
@@ -25,6 +25,7 @@ pub fn spawn_settings_window(parent_pid: isize, theme_name: &str) -> Result<(), 
         960,
         670,
     )
+    .map(|()| true)
 }
 
 pub fn spawn_clipboard_manager_window(

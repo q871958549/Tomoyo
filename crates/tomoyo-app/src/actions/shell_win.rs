@@ -4,9 +4,9 @@ use std::process::Command;
 use tomoyo_plugin_host::JobGuard;
 use tomoyo_protocol::SystemCommandKind;
 
-pub fn spawn_settings_window(parent_hwnd: isize, theme_name: &str) -> Result<(), String> {
+pub fn spawn_settings_window(parent_hwnd: isize, theme_name: &str) -> Result<bool, String> {
     if try_focus_existing_settings_window() {
-        return Ok(());
+        return Ok(false);
     }
     let host_exe = locate_webview_host()?;
     let mut cmd = Command::new(&host_exe);
@@ -30,7 +30,7 @@ pub fn spawn_settings_window(parent_hwnd: isize, theme_name: &str) -> Result<(),
             let _keep_job = job;
             let _ = child.wait();
         });
-    Ok(())
+    Ok(true)
 }
 
 pub fn spawn_clipboard_manager_window(

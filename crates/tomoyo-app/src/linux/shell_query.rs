@@ -288,6 +288,7 @@ impl AppCore {
             lang: self.lang,
             theme: self.theme,
             query: &self.current_query,
+            hovered_logo: false,
             mode_badge: badge,
             attached_capsule: cap.as_deref(),
             update_badge: upd_badge.as_deref(),

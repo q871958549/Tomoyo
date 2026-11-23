@@ -31,6 +31,10 @@ pub(crate) fn paint_sdf_pass(
     canvas.fill_rect_dip(0.0, lay.fy0, lay.w_dip, lay.h_dip, pal.footer_bg);
     canvas.fill_rect_dip(0.0, lay.fy0, lay.w_dip, lay.fy0 + 1.0, pal.divider);
 
+    if state.hovered_logo {
+        canvas.fill_rounded_rect(10.0, 9.0, 54.0, 53.0, 10.0, pal.card_sel);
+        canvas.stroke_rounded_rect(10.0, 9.0, 54.0, 53.0, 10.0, pal.sel_border);
+    }
     paint_modern_white_emblem(
         canvas.buf,
         width,

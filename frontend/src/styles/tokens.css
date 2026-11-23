@@ -222,6 +222,7 @@ html, body {
 .tab-head h2, .tab-head-bar h2 { margin: 0 0 4px; font-size: 18px; font-weight: 600; }
 .tab-lead { margin: 0; font-size: 12.5px; color: var(--muted); }
 .tab-head-bar { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+.mono { font-family: "Cascadia Mono", Consolas, monospace; }
 .col-row { flex-direction: column; align-items: stretch; gap: 10px; }
 .row-actions { display: flex; align-items: center; gap: 10px; }
 .chip-grid { display: flex; flex-wrap: wrap; gap: 6px; }

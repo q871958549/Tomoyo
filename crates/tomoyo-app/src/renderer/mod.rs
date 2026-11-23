@@ -45,6 +45,7 @@ pub struct RenderState<'a> {
     pub lang: Lang,
     pub theme: ThemePalette,
     pub query: &'a str,
+    pub hovered_logo: bool,
     pub mode_badge: Option<&'a str>,
     pub attached_capsule: Option<&'a str>,
     pub update_badge: Option<&'a str>,

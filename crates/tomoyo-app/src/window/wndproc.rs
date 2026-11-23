@@ -12,8 +12,9 @@ use super::wndproc_mouse::{
 };
 use super::{
     AppShell, HOTKEY_CLIPBOARD_ID, HOTKEY_ID, HOTKEY_TRANSLATE_ID, TIMER_CLEAR_TOAST,
-    TIMER_FOCUS_GUARD, TIMER_HIBERNATE, TIMER_LAUNCH_HIDE, WM_APP_CONFIG_SAVED, WM_APP_EDIT_KEY,
-    WM_APP_FLOW_DONE, WM_APP_LAUNCH_DONE, WM_APP_PASTE_INTERCEPT, WM_APP_RESULTS_READY,
+    TIMER_FADE_HIDE, TIMER_FOCUS_GUARD, TIMER_HIBERNATE, TIMER_LAUNCH_HIDE, TIMER_SETTINGS_HIDE,
+    WM_APP_CONFIG_SAVED, WM_APP_EDIT_KEY, WM_APP_FLOW_DONE, WM_APP_LAUNCH_DONE,
+    WM_APP_PASTE_INTERCEPT, WM_APP_RESULTS_READY, WM_APP_SHOW_CONTEXT_MENU,
     WM_APP_UPDATE_INSTALLED, WM_APP_UPDATE_READY, WM_APP_WAKE_EXISTING,
 };
 use crate::icons::WM_APP_ICON_READY;
@@ -102,6 +103,7 @@ pub(super) unsafe extern "system" fn main_wndproc(
         WM_COMMAND => dispatch_wm_command(hwnd, app, wparam),
         WM_APP_CONFIG_SAVED => {
             match wparam.0 {
+                6 => app.on_settings_window_ready(),
                 5 => {
                     tracing::info!("Updater requested graceful shutdown; exiting Tomoyo cleanly");
                     app.shutdown_clean();
@@ -195,6 +197,7 @@ pub(super) unsafe extern "system" fn main_wndproc(
         WM_APP_UPDATE_INSTALLED => { app.on_update_installed(); LRESULT(0) }
         WM_APP_FLOW_DONE => { app.on_async_flow_done(); LRESULT(0) }
         WM_APP_LAUNCH_DONE => { app.on_async_launch_done(); LRESULT(0) }
+        WM_APP_SHOW_CONTEXT_MENU => { app.show_launcher_context_menu(wparam.0 != 0); LRESULT(0) }
         WM_DPICHANGED => {
             let new_dpi = (wparam.0 & 0xFFFF) as u32;
             let suggested = (lparam.0 != 0).then(|| unsafe { &*(lparam.0 as *const RECT) });
@@ -283,6 +286,8 @@ fn handle_timer(hwnd: HWND, app: &mut AppShell, timer_id: usize) -> LRESULT {
                 app.hide_launcher();
             }
         }
+        TIMER_SETTINGS_HIDE => app.on_settings_window_ready(),
+        TIMER_FADE_HIDE => app.step_fade_hide(),
         _ => {}
     }
     LRESULT(0)

@@ -43,7 +43,7 @@ pub(super) fn hit_test_window_chrome(hwnd: HWND, app: &AppShell, lparam: LPARAM)
         _ => {
             let header_px = (HEADER_HEIGHT_DIP as f32 * app.dpi_scale.max(1.0)) as i32;
             let footer_px = (FOOTER_HEIGHT_DIP as f32 * app.dpi_scale.max(1.0)) as i32;
-            if app.hit_test_update_badge(pt.x, pt.y) {
+            if app.hit_test_update_badge(pt.x, pt.y) || app.hit_test_logo_icon(pt.x, pt.y) {
                 HTCLIENT
             } else if pt.y < header_px || pt.y >= h - footer_px {
                 HTCAPTION
@@ -76,7 +76,7 @@ pub(super) fn handle_set_cursor(
             }
             return LRESULT(1);
         }
-        if app.hit_test_update_badge(pt.x, pt.y)
+        if (app.hit_test_update_badge(pt.x, pt.y) || app.hit_test_logo_icon(pt.x, pt.y))
             && let Ok(cur) = unsafe { LoadCursorW(None, IDC_HAND) }
         {
             unsafe {
@@ -106,6 +106,10 @@ pub(super) fn handle_rbutton_up(app: &mut AppShell, lparam: LPARAM) -> LRESULT {
 
 pub(super) fn handle_mouse_down(hwnd: HWND, app: &mut AppShell, lparam: LPARAM) -> LRESULT {
     let (x, y) = unpack_xy(lparam);
+    if app.hit_test_logo_icon(x, y) {
+        app.inter.pressed_logo = true;
+        return LRESULT(0);
+    }
     if app.hit_test_update_badge(x, y) {
         app.set_query_text(":update");
         return LRESULT(0);
@@ -208,15 +212,20 @@ pub(super) fn handle_mouse_move(
         app.inter.in_modal_overlay = false;
         return LRESULT(0);
     }
+    let new_logo_hover = app.hit_test_logo_icon(x, y);
     let new_filter_hover = app.hit_test_filter(x, y);
     let new_hover = if new_filter_hover.is_some() {
         None
     } else {
         app.hit_test_row(x, y)
     };
-    if new_hover != app.inter.hovered || new_filter_hover != app.inter.hovered_filter {
+    if new_hover != app.inter.hovered
+        || new_filter_hover != app.inter.hovered_filter
+        || new_logo_hover != app.inter.hovered_logo
+    {
         app.inter.hovered = new_hover;
         app.inter.hovered_filter = new_filter_hover;
+        app.inter.hovered_logo = new_logo_hover;
         app.invalidate();
     }
     LRESULT(0)
@@ -224,7 +233,10 @@ pub(super) fn handle_mouse_move(
 
 pub(super) fn handle_mouse_leave(app: &mut AppShell) -> LRESULT {
     app.inter.mouse_tracked = false;
-    let changed = app.inter.hovered.take().is_some() | app.inter.hovered_filter.take().is_some();
+    app.inter.pressed_logo = false;
+    let changed = app.inter.hovered.take().is_some()
+        | app.inter.hovered_filter.take().is_some()
+        | std::mem::replace(&mut app.inter.hovered_logo, false);
     if changed {
         app.invalidate();
     }
@@ -233,6 +245,18 @@ pub(super) fn handle_mouse_leave(app: &mut AppShell) -> LRESULT {
 
 pub(super) fn handle_lbutton_up(app: &mut AppShell) -> LRESULT {
     app.inter.drag_origin = None;
+    if app.inter.pressed_logo {
+        app.inter.pressed_logo = false;
+        let mut pt = POINT::default();
+        unsafe {
+            let _ = GetCursorPos(&mut pt);
+            let _ = ScreenToClient(app.hwnd, &mut pt);
+        }
+        if app.hit_test_logo_icon(pt.x, pt.y) {
+            app.open_settings_center();
+            return LRESULT(0);
+        }
+    }
     if app.inter.dragging_divider {
         app.inter.dragging_divider = false;
         unsafe {

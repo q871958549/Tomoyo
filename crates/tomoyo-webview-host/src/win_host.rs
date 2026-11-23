@@ -15,7 +15,10 @@ use crate::tr_view::{
     read_latest_translate_req_event,
 };
 use crate::hotkey_capture::HotkeyCaptureController;
-use crate::win_theme::{apply_host_window_theme, load_embedded_window_icons, map_vdir, to_file_url};
+use crate::win_theme::{
+    apply_host_window_theme, configure_controller_visuals, create_themed_host_window, map_vdir,
+    reveal_host_window_and_notify, to_file_url, toggle_pin_topmost_window,
+};
 use crate::win_workers::dispatch_async_workers;
 use crate::{assemble_settings_html, build_settings_init_script_for, LaunchArgs};
 use std::cell::RefCell;
@@ -35,22 +38,19 @@ use webview2_com::{
 use windows::core::{w, HSTRING, Interface, PCWSTR, PWSTR};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED};
-use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::HiDpi::{
     SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetClientRect, GetMessageW,
-    GetSystemMetrics, GetWindowLongPtrW, IsIconic, IsWindow, LoadCursorW, PostMessageW,
-    PostQuitMessage, RegisterClassExW, SendMessageW, SetForegroundWindow, SetWindowLongPtrW,
-    SetWindowPos, SetWindowTextW, ShowWindow, TranslateMessage, GWLP_USERDATA, HWND_NOTOPMOST,
-    HWND_TOPMOST, ICON_BIG, ICON_SMALL, IDC_ARROW, MSG, SM_CXSCREEN, SM_CYSCREEN, SWP_NOACTIVATE,
-    SWP_NOMOVE, SWP_NOSIZE, SW_RESTORE, SW_SHOW, WM_ACTIVATE, WM_CLOSE, WM_DESTROY, WM_SETICON,
-    WM_SIZE, WNDCLASSEXW, WS_OVERLAPPEDWINDOW, WS_VISIBLE,
+    DefWindowProcW, DestroyWindow, DispatchMessageW, GetClientRect, GetMessageW,
+    GetWindowLongPtrW, IsIconic, IsWindow, PostMessageW, PostQuitMessage, SetForegroundWindow,
+    SetTimer, SetWindowLongPtrW, ShowWindow, TranslateMessage, GWLP_USERDATA, MSG, SW_RESTORE,
+    SW_SHOW, WM_ACTIVATE, WM_CLOSE, WM_DESTROY, WM_SIZE, WM_TIMER,
 };
 
 const WM_APP_WEBVIEW_EVENT: u32 = 0x8000 + 31;
 const WM_APP_PICK_FOLDER: u32 = 0x8000 + 33;
+const TIMER_REVEAL_FALLBACK: usize = 901;
 
 struct HostWindowState {
     controller: Option<ICoreWebView2Controller>,
@@ -61,6 +61,7 @@ struct HostWindowState {
     is_topmost: bool,
     picking_folder: bool,
     settings_mode: bool,
+    window_revealed: bool,
     notify_hwnd: Option<isize>,
     last_activate_probe: Instant,
     hk_capture: HotkeyCaptureController,
@@ -156,6 +157,16 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             }
             unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
         }
+        WM_TIMER => {
+            if wparam.0 == TIMER_REVEAL_FALLBACK && !ptr.is_null() {
+                let st = unsafe { &mut *ptr };
+                if !st.window_revealed {
+                    st.window_revealed = true;
+                    unsafe { reveal_host_window_and_notify(hwnd, TIMER_REVEAL_FALLBACK, st.notify_hwnd); }
+                }
+            }
+            LRESULT(0)
+        }
         WM_CLOSE => {
             if !ptr.is_null() {
                 let st = unsafe { &mut *ptr };
@@ -197,52 +208,23 @@ pub fn run_windows_host(opts: LaunchArgs) {
         let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
     }
 
-    let hinst = unsafe { GetModuleHandleW(None).unwrap() };
-    let (big_icon, small_icon) = load_embedded_window_icons(hinst);
     let cls = match (opts.settings_mode, clip_mode, tr_mode) {
         (true, _, _) => SETTINGS_WINDOW_CLASS,
         (_, true, _) => CLIPBOARD_WINDOW_CLASS,
         (_, _, true) => TRANSLATOR_WINDOW_CLASS,
         _ => EPHEMERAL_WINDOW_CLASS,
     };
-    unsafe {
-        let wc = WNDCLASSEXW {
-            cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
-            lpfnWndProc: Some(wndproc),
-            hInstance: hinst.into(),
-            hIcon: big_icon.unwrap_or_default(),
-            hIconSm: small_icon.unwrap_or_default(),
-            hCursor: LoadCursorW(None, IDC_ARROW).unwrap_or_default(),
-            lpszClassName: cls,
-            ..Default::default()
-        };
-        let _ = RegisterClassExW(&wc);
-    }
-
-    let sw = unsafe { GetSystemMetrics(SM_CXSCREEN) };
-    let sh = unsafe { GetSystemMetrics(SM_CYSCREEN) };
-    let x = ((sw - opts.width) / 2).max(40);
-    let y = ((sh - opts.height) / 2).max(40);
-    let title_w = HSTRING::from(opts.title.clone());
-
     let hwnd = unsafe {
-        CreateWindowExW(
-            Default::default(), cls, PCWSTR(title_w.as_ptr()),
-            WS_OVERLAPPEDWINDOW | WS_VISIBLE, x, y, opts.width, opts.height,
-            None, None, Some(hinst.into()), None,
+        create_themed_host_window(
+            cls,
+            Some(wndproc),
+            &opts.title,
+            &opts.theme,
+            opts.width,
+            opts.height,
+            !opts.settings_mode,
         )
-        .expect("CreateWindowExW failed")
     };
-
-    unsafe {
-        if let Some(ic) = small_icon {
-            SendMessageW(hwnd, WM_SETICON, Some(WPARAM(ICON_SMALL as usize)), Some(LPARAM(ic.0 as isize)));
-        }
-        if let Some(ic) = big_icon {
-            SendMessageW(hwnd, WM_SETICON, Some(WPARAM(ICON_BIG as usize)), Some(LPARAM(ic.0 as isize)));
-        }
-    }
-    apply_host_window_theme(hwnd, &opts.theme);
 
     let (event_tx, event_rx) = mpsc::channel::<String>();
     let mut state = Box::new(HostWindowState {
@@ -254,6 +236,7 @@ pub fn run_windows_host(opts: LaunchArgs) {
         is_topmost: false,
         picking_folder: false,
         settings_mode: opts.settings_mode,
+        window_revealed: !opts.settings_mode,
         notify_hwnd: opts.notify_hwnd,
         last_activate_probe: Instant::now(),
         hk_capture: HotkeyCaptureController::new(opts.notify_hwnd),
@@ -261,7 +244,11 @@ pub fn run_windows_host(opts: LaunchArgs) {
     let state_ptr = &mut *state as *mut HostWindowState;
     unsafe {
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, state_ptr as isize);
-        let _ = ShowWindow(hwnd, SW_SHOW);
+        if opts.settings_mode {
+            let _ = SetTimer(Some(hwnd), TIMER_REVEAL_FALLBACK, 360, None);
+        } else {
+            let _ = ShowWindow(hwnd, SW_SHOW);
+        }
     }
 
     let plugin_db = Rc::new(RefCell::new(PluginDb::open(&opts.plugin_id)));
@@ -292,6 +279,7 @@ pub fn run_windows_host(opts: LaunchArgs) {
     let user_data_w = HSTRING::from(user_data_dir.to_string_lossy().as_ref());
     let fonts_dir_opt = locate_fonts_dir();
     let db_for_msg = Rc::clone(&plugin_db);
+    let theme_clone = opts.theme.clone();
 
     let env_handler = CreateCoreWebView2EnvironmentCompletedHandler::create(Box::new(
         move |res, env| {
@@ -306,6 +294,7 @@ pub fn run_windows_host(opts: LaunchArgs) {
             let clip_dir_inner = clip_img_dir.clone();
             let db_inner = Rc::clone(&db_for_msg);
             let tx_inner = event_tx.clone();
+            let theme_inner = theme_clone.clone();
 
             let ctrl_handler = CreateCoreWebView2ControllerCompletedHandler::create(Box::new(
                 move |res, controller| {
@@ -326,6 +315,7 @@ pub fn run_windows_host(opts: LaunchArgs) {
                         let _ = GetClientRect(hwnd, &mut rc);
                         let _ = controller.SetBounds(rc);
                         let _ = controller.SetIsVisible(true);
+                        configure_controller_visuals(&controller, &theme_inner);
 
                         if let Ok(webview) = controller.CoreWebView2() {
                             if let Ok(wv3) = webview.cast::<ICoreWebView2_3>() {
@@ -351,8 +341,13 @@ pub fn run_windows_host(opts: LaunchArgs) {
                                             if let Some(theme) = &act.apply_theme {
                                                 apply_host_window_theme(hwnd, theme);
                                             }
+                                            if act.window_ready && !(*state_ptr).window_revealed {
+                                                (*state_ptr).window_revealed = true;
+                                                reveal_host_window_and_notify(hwnd, TIMER_REVEAL_FALLBACK, notify_hwnd);
+                                            }
                                             if act.toggle_topmost {
-                                                toggle_pin_topmost(hwnd, &mut *state_ptr);
+                                                let bt = (*state_ptr).base_title.clone();
+                                                toggle_pin_topmost_window(hwnd, &bt, &mut (*state_ptr).is_topmost);
                                             }
                                             if act.pick_folder_mode != 0 {
                                                 // Defer modal IFileOpenDialog out of WebMessageReceived to avoid WebView2 COM reentrancy.
@@ -431,20 +426,5 @@ pub fn run_windows_host(opts: LaunchArgs) {
         }
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
         CoUninitialize();
-    }
-}
-
-unsafe fn toggle_pin_topmost(hwnd: HWND, st: &mut HostWindowState) {
-    st.is_topmost = !st.is_topmost;
-    let insert_after = if st.is_topmost { HWND_TOPMOST } else { HWND_NOTOPMOST };
-    unsafe {
-        let _ = SetWindowPos(hwnd, Some(insert_after), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-        let new_title = if st.is_topmost {
-            format!("📌 {}", st.base_title)
-        } else {
-            st.base_title.clone()
-        };
-        let tw = HSTRING::from(new_title);
-        let _ = SetWindowTextW(hwnd, PCWSTR(tw.as_ptr()));
     }
 }

@@ -198,6 +198,7 @@
     setToast(tr(lang, 'toast_ready'));
     postHost({ cmd: 'check_hotkey_health' });
     if (init.initial_route) applyInitialRoute(init.initial_route);
+    requestAnimationFrame(() => postHost({ cmd: 'window_ready' }));
 
     const unsub = subscribeHost((data) => {
       const ev = String(data.event || '');
@@ -242,6 +243,7 @@
         const iss = (data.issues || {}) as { warnings?: number; errors?: number; has_crash_report?: boolean };
         logMeta = `${data.source || logSource} · ERROR ${iss.errors || 0} / WARN ${iss.warnings || 0}${iss.has_crash_report ? ' · 存在崩溃快照' : ''} · ${data.logs_dir || init.logs_dir}`;
         logContent = String(data.content || '');
+        if (data.cleared) setToast(lang === 'en' ? '✓ Archived logs & crash snapshot' : '✓ 已归档旧日志与崩溃快照');
       } else if (ev === 'diag_bundle_copied') {
         setToast(lang === 'en' ? '✓ Diagnostic bundle copied' : '✓ 已复制脱敏诊断报告到剪贴板');
       } else if (ev === 'config_backup_exported' && typeof data.json === 'string') {

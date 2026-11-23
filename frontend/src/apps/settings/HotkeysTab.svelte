@@ -292,9 +292,6 @@
 </div>
 
 <style>
-  .tab-head-bar { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
-  .tab-head-bar h2 { margin: 0 0 4px; font-size: 18px; font-weight: 600; }
-  .tab-lead { margin: 0; font-size: 12.5px; color: var(--muted); }
   .kpi-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-bottom: 14px; }
   .kpi-pill {
     display: flex; align-items: center; justify-content: space-between; padding: 9px 12px;
@@ -312,7 +309,6 @@
   .probe-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .probe-body { font-size: 12.5px; display: flex; flex-direction: column; gap: 3px; }
   .probe-meta { font-size: 11.5px; color: var(--text-secondary); word-break: break-all; }
-  .mono { font-family: "Cascadia Mono", Consolas, monospace; }
   .mat-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }
   .custom-probe { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
   .probe-inp { flex: 1; font-family: "Cascadia Mono", Consolas, monospace; font-size: 12px; }

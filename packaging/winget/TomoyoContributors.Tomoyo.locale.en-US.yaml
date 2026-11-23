@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.28.0.schema.json
 
 PackageIdentifier: TomoyoContributors.Tomoyo
-PackageVersion: 2.4.0
+PackageVersion: 2.4.1
 PackageLocale: en-US
 Publisher: Tomoyo Open Source Contributors
 PublisherUrl: https://github.com/q871958549/Tomoyo
@@ -10,7 +10,7 @@ Author: Tomoyo Contributors
 PackageName: Tomoyo
 PackageUrl: https://q871958549.github.io/Tomoyo/
 License: MIT OR Apache-2.0
-LicenseUrl: https://github.com/q871958549/Tomoyo/blob/v2.4.0/LICENSE-MIT
+LicenseUrl: https://github.com/q871958549/Tomoyo/blob/v2.4.1/LICENSE-MIT
 Copyright: Copyright (c) 2026 Tomoyo Contributors
 ShortDescription: Keyboard-driven cross-platform application launcher written in Rust with Everything search, WASM plugins, clipboard history, and screen capture.
 Description: |-
@@ -37,7 +37,7 @@ Tags:
 - raycast-alternative
 - utools-alternative
 - quick-launch
-ReleaseNotesUrl: https://github.com/q871958549/Tomoyo/releases/tag/v2.4.0
+ReleaseNotesUrl: https://github.com/q871958549/Tomoyo/releases/tag/v2.4.1
 Documentations:
 - DocumentLabel: Documentation
   DocumentUrl: https://q871958549.github.io/Tomoyo/

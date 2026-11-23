@@ -64,6 +64,9 @@
         <RefreshCw size={13} />
         {tr(lang, 'btn_refresh_logs')}
       </Button>
+      <Button variant="secondary" size="sm" onclick={() => postHost({ cmd: 'clear_diagnostic_logs', source, errors_only: errorsOnly })}>
+        {tr(lang, 'btn_clear_logs')}
+      </Button>
     </div>
   </div>
 

@@ -338,7 +338,6 @@
 </div>
 
 <style>
-  .col-row { flex-direction: column; align-items: stretch; gap: 10px; }
   .hdr-split { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
   .fit-badge, .count-pill {
     font-size: 11px; padding: 2px 8px; border-radius: 999px; white-space: nowrap; flex-shrink: 0;
@@ -357,16 +356,9 @@
   .pv-chip.is-custom { border-style: dashed; }
   .pv-chip.is-active { background: var(--accent-soft); border-color: var(--accent); border-style: solid; color: var(--accent); font-weight: 600; }
   .pv-kbd { font-size: 10px; opacity: 0.65; font-family: "Cascadia Mono", Consolas, monospace; }
-  .chip-grid { display: flex; flex-wrap: wrap; gap: 6px; }
-  .t-chip {
-    height: 28px; padding: 0 10px; border-radius: 7px; border: 1px solid var(--border);
-    background: var(--canvas); color: var(--text-secondary); font-family: inherit;
-    font-size: 12px; cursor: pointer; white-space: nowrap; transition: all 0.12s ease;
-    display: inline-flex; align-items: center; gap: 5px;
-  }
+  .t-chip { display: inline-flex; align-items: center; gap: 5px; }
   .t-chip:hover:not(:disabled) { border-color: var(--border-strong); color: var(--text); }
   .t-chip:disabled { opacity: 0.72; cursor: default; }
-  .t-chip.is-on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 500; }
   .t-chip.is-locked { background: var(--sidebar); color: var(--muted); cursor: default; }
   .chip-sub { font-size: 10.5px; opacity: 0.65; }
   .editor-box {

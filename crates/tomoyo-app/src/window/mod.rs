@@ -56,10 +56,13 @@ pub const WM_APP_WAKE_EXISTING: u32 = WM_APP + 21;
 pub(super) const WM_APP_UPDATE_INSTALLED: u32 = WM_APP + 22;
 pub(super) const WM_APP_FLOW_DONE: u32 = WM_APP + 24;
 pub(super) const WM_APP_LAUNCH_DONE: u32 = WM_APP + 25;
+pub(super) const WM_APP_SHOW_CONTEXT_MENU: u32 = WM_APP + 26;
 pub(super) const TIMER_HIBERNATE: usize = 1001;
 pub(super) const TIMER_CLEAR_TOAST: usize = 1002;
 pub(super) const TIMER_FOCUS_GUARD: usize = 1003;
 pub(super) const TIMER_LAUNCH_HIDE: usize = 1004;
+pub(super) const TIMER_SETTINGS_HIDE: usize = 1005;
+pub(super) const TIMER_FADE_HIDE: usize = 1006;
 pub(super) const EM_SETCUEBANNER: u32 = 0x1501;
 pub(super) const EM_GETSEL: u32 = 0x00B0;
 pub(super) const EM_SETSEL: u32 = 0x00B1;
@@ -94,6 +97,10 @@ pub(super) struct WindowGeometry {
 pub(super) struct InteractionState {
     pub hovered: Option<usize>,
     pub hovered_filter: Option<SearchFilter>,
+    pub hovered_logo: bool,
+    pub pressed_logo: bool,
+    pub settings_pending: bool,
+    pub fade_alpha: Option<u8>,
     pub filter_counts: Option<FilterCounts>,
     pub mouse_tracked: bool,
     pub in_size_move: bool,
@@ -166,6 +173,24 @@ impl AppShell {
         self.show_launcher_with_query(None);
     }
 
+    fn reset_transient_ui_state(&mut self) {
+        self.action_menu_open = false;
+        self.selected_action = 0;
+        self.inter.hovered = None;
+        self.inter.hovered_filter = None;
+        self.inter.hovered_logo = false;
+        self.inter.pressed_logo = false;
+        self.inter.settings_pending = false;
+        self.inter.in_modal_overlay = false;
+        self.inter.fade_alpha = None;
+        selftest::restore_launcher_opacity(self.hwnd);
+        self.inter.filter_counts = None;
+        unsafe {
+            let _ = KillTimer(Some(self.hwnd), TIMER_SETTINGS_HIDE);
+            let _ = KillTimer(Some(self.hwnd), TIMER_FADE_HIDE);
+        }
+    }
+
     pub fn show_launcher_with_query(&mut self, initial_query: Option<&str>) {
         unsafe {
             let fg = GetForegroundWindow();
@@ -175,11 +200,7 @@ impl AppShell {
             let _ = KillTimer(Some(self.hwnd), TIMER_HIBERNATE);
         }
         self.everything_status = detect_everything_label();
-        self.action_menu_open = false;
-        self.selected_action = 0;
-        self.inter.hovered = None;
-        self.inter.hovered_filter = None;
-        self.inter.filter_counts = None;
+        self.reset_transient_ui_state();
         if let Some(q) = initial_query {
             self.active_filter = SearchFilter::All;
             self.attached = None;
@@ -212,11 +233,7 @@ impl AppShell {
     }
 
     pub fn hide_launcher(&mut self) {
-        self.action_menu_open = false;
-        self.selected_action = 0;
-        self.inter.hovered = None;
-        self.inter.hovered_filter = None;
-        self.inter.filter_counts = None;
+        self.reset_transient_ui_state();
         self.toast = None;
         self.inter.drag_origin = None;
         self.inter.last_click = None;
@@ -394,7 +411,7 @@ impl AppShell {
                 .map(|idx| (idx, l.finished_ok))
         });
         let state = RenderState {
-            lang: self.lang, theme: self.theme, query: &self.current_query,
+            lang: self.lang, theme: self.theme, query: &self.current_query, hovered_logo: self.inter.hovered_logo,
             mode_badge: mode.as_deref(), attached_capsule: attached_label.as_deref(),
             update_badge: update_label.as_deref(), filter_bar_visible: filter_vis,
             filter_tabs: &filter_tabs, active_filter: self.active_filter,

@@ -278,8 +278,15 @@ fn spawn_query_worker(
                     continue;
                 }
 
-                // Brief 25ms debounce before slow IPC so rapid typing never stalls on Everything
-                match query_rx.recv_timeout(Duration::from_millis(25)) {
+                // Debounce slow IPC: 85ms for unprefixed global typing bursts, 25ms for dedicated `f ` / file tabs.
+                let debounce_ms = if batch.effective_ctx.keyword.is_some()
+                    || batch.effective_ctx.filter.is_file_only()
+                {
+                    25
+                } else {
+                    85
+                };
+                match query_rx.recv_timeout(Duration::from_millis(debounce_ms)) {
                     Ok(newer) => {
                         next_pending = Some(newer);
                         continue;

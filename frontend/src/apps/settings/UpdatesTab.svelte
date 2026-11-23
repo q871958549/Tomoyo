@@ -260,5 +260,4 @@
     border: 1px solid var(--border); font-size: 12px; color: var(--text-secondary);
     white-space: pre-wrap; max-height: 170px; overflow-y: auto;
   }
-  .col-row { flex-direction: column; align-items: flex-start; gap: 10px; }
 </style>

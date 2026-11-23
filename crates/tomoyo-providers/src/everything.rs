@@ -2,11 +2,59 @@ use crate::everything_items::{build_entry_item, empty_result_item, hint_items, o
 use crate::everything_rank::compute_ev_score;
 #[cfg(not(target_os = "linux"))]
 use crate::everything_rank::{build_prefix_query, merge_unique_entries};
-use std::sync::{Arc, RwLock};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
+use std::time::{SystemTime, UNIX_EPOCH};
 use tomoyo_core::{Lang, Provider, TomoyoConfig};
 #[cfg(not(target_os = "linux"))]
 use tomoyo_everything::{EverythingQueryOptions, SortOrder};
 use tomoyo_protocol::{QueryContext, ResultItem, SearchFilter};
+
+#[cfg(not(target_os = "linux"))]
+static EV_TIMEOUT_STREAK: AtomicU64 = AtomicU64::new(0);
+#[cfg(not(target_os = "linux"))]
+static EV_COOLDOWN_UNTIL_MS: AtomicU64 = AtomicU64::new(0);
+#[cfg(not(target_os = "linux"))]
+static LAST_WARN_KEY: OnceLock<Mutex<String>> = OnceLock::new();
+
+#[cfg(not(target_os = "linux"))]
+fn now_epoch_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// Skips global unprefixed Everything IPC for non-file inputs (math like `5564*0.05` or 2-char ASCII).
+pub(crate) fn should_skip_global_everything(search_text: &str) -> bool {
+    let s = search_text.trim();
+    if s.is_empty() || s.starts_with("http") || matches!(s.as_bytes().first(), Some(b'=' | b'?' | b'>' | b':')) {
+        return true;
+    }
+    if looks_like_pure_math(s) {
+        return true;
+    }
+    let has_path_or_ext = s.contains('.') || s.contains(':') || s.contains('\\') || s.contains('/');
+    !has_path_or_ext && s.is_ascii() && s.len() < 3
+}
+
+fn looks_like_pure_math(s: &str) -> bool {
+    let low = s.to_ascii_lowercase();
+    if low.starts_with("0x") && low.len() > 2 && low[2..].bytes().all(|b| b.is_ascii_hexdigit()) {
+        return true;
+    }
+    if low.starts_with("0b") && low.len() > 2 && low[2..].bytes().all(|b| b == b'0' || b == b'1') {
+        return true;
+    }
+    let has_digit = s.bytes().any(|b| b.is_ascii_digit());
+    let has_op = s.bytes().any(|b| matches!(b, b'+' | b'-' | b'*' | b'/' | b'%' | b'^'));
+    if !has_digit || !has_op {
+        return false;
+    }
+    s.bytes().all(|b| {
+        b.is_ascii_digit() || matches!(b, b' ' | b'.' | b'+' | b'-' | b'*' | b'/' | b'%' | b'^' | b'(' | b')')
+    })
+}
 
 /// First-class file search provider: Everything 1.4/1.5a IPC on Windows, `fd`/`plocate` on Linux.
 pub struct EverythingProvider {
@@ -62,11 +110,11 @@ impl Provider for EverythingProvider {
             };
         }
 
-        if !dedicated && !filtered_file_mode && search_text.chars().count() < 2 {
+        if !dedicated && !filtered_file_mode && should_skip_global_everything(search_text) {
             return Vec::new();
         }
-        if search_text.starts_with("http") {
-            return Vec::new();
+        if dedicated && search_text.is_empty() && !filtered_file_mode {
+            return hint_items(lang, &self.config);
         }
 
         let (cfg_global, cfg_ded, _extra_filter, _custom_expr, custom_tab) = self
@@ -137,6 +185,10 @@ impl Provider for EverythingProvider {
         #[cfg(not(target_os = "linux"))]
         {
             let _ = custom_tab;
+            if !expanded && now_epoch_ms() < EV_COOLDOWN_UNTIL_MS.load(Ordering::Relaxed) {
+                tracing::debug!("Everything global query `{search_text}` skipped during IPC cooldown");
+                return Vec::new();
+            }
             let mut parts: Vec<String> = Vec::with_capacity(3);
             if !search_text.is_empty() {
                 parts.push(search_text.to_string());
@@ -162,12 +214,14 @@ impl Provider for EverythingProvider {
                 } else {
                     SortOrder::NameAsc
                 },
-                timeout_ms: if expanded { 800 } else { 450 },
+                timeout_ms: if expanded { 900 } else { 650 },
                 ..Default::default()
             };
 
             match tomoyo_everything::query(&effective_query, &opts) {
                 Ok(mut resp) => {
+                    EV_TIMEOUT_STREAK.store(0, Ordering::Relaxed);
+                    EV_COOLDOWN_UNTIL_MS.store(0, Ordering::Relaxed);
                     let is_plain_token = !search_text.is_empty()
                         && !search_text.contains(char::is_whitespace)
                         && !search_text.contains(':');
@@ -177,7 +231,7 @@ impl Provider for EverythingProvider {
                         let prefix_opts = EverythingQueryOptions {
                             max_results: 32,
                             sort: SortOrder::NameAsc,
-                            timeout_ms: 250,
+                            timeout_ms: 280,
                             ..Default::default()
                         };
                         if let Ok(pref_resp) = tomoyo_everything::query(&prefix_q, &prefix_opts) {
@@ -211,10 +265,48 @@ impl Provider for EverythingProvider {
                     }
                 }
                 Err(e) => {
-                    tracing::warn!("Everything query `{effective_query}` failed: {e}");
+                    let is_timeout = matches!(e, tomoyo_everything::EverythingError::Timeout(_));
+                    if is_timeout {
+                        let streak = EV_TIMEOUT_STREAK.fetch_add(1, Ordering::Relaxed) + 1;
+                        if streak >= 2 {
+                            EV_COOLDOWN_UNTIL_MS.store(now_epoch_ms().saturating_add(2_500), Ordering::Relaxed);
+                        }
+                        if expanded || streak == 1 {
+                            tracing::warn!("Everything query `{effective_query}` failed: {e} (hint: Everything indexing/UI busy; coalescing bursts)");
+                        } else {
+                            tracing::debug!("Everything query `{effective_query}` timed out (streak={streak}): {e}");
+                        }
+                    } else {
+                        let msg_key = e.to_string();
+                        let lock = LAST_WARN_KEY.get_or_init(|| Mutex::new(String::new()));
+                        if let Ok(mut prev) = lock.lock()
+                            && *prev != msg_key
+                        {
+                            *prev = msg_key;
+                            tracing::warn!("Everything query `{effective_query}` failed: {e}");
+                        }
+                    }
                     Vec::new()
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_skip_global_everything;
+
+    #[test]
+    fn skips_math_and_short_ascii_in_global_everything() {
+        assert!(should_skip_global_everything("5564*0.05"));
+        assert!(should_skip_global_everything("5564*"));
+        assert!(should_skip_global_everything("55"));
+        assert!(should_skip_global_everything("ru"));
+        assert!(should_skip_global_everything("oc"));
+        assert!(!should_skip_global_everything("rust"));
+        assert!(!should_skip_global_everything("a.rs"));
+        assert!(!should_skip_global_everything("报告"));
+        assert!(!should_skip_global_everything("v2-4"));
     }
 }

@@ -3,17 +3,22 @@
 use std::ffi::c_void;
 use std::path::PathBuf;
 use webview2_com::Microsoft::Web::WebView2::Win32::{
-    ICoreWebView2_3, COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_ALLOW,
+    ICoreWebView2Controller, ICoreWebView2Controller2, ICoreWebView2_3, COREWEBVIEW2_COLOR,
+    COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_ALLOW,
 };
-use windows::core::{HSTRING, PCWSTR};
+use windows::core::{Interface, HSTRING, PCWSTR};
 use windows::Win32::Foundation::{COLORREF, HMODULE, HWND};
 use windows::Win32::Graphics::Dwm::{
     DwmSetWindowAttribute, DWMWA_CAPTION_COLOR, DWMWA_TEXT_COLOR, DWMWA_USE_IMMERSIVE_DARK_MODE,
 };
+use windows::Win32::Graphics::Gdi::{CreateSolidBrush, HBRUSH};
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetSystemMetrics, LoadImageW, SetWindowPos, HICON, IMAGE_ICON, LR_SHARED, SM_CXICON,
-    SM_CXSMICON, SM_CYICON, SM_CYSMICON, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
-    SWP_NOZORDER,
+    CreateWindowExW, GetSystemMetrics, KillTimer, LoadCursorW, LoadImageW, RegisterClassExW,
+    SendMessageW, SetForegroundWindow, SetWindowPos, SetWindowTextW, ShowWindow, HICON,
+    HWND_NOTOPMOST, HWND_TOPMOST, ICON_BIG, ICON_SMALL, IDC_ARROW, IMAGE_ICON, LR_SHARED,
+    SM_CXICON, SM_CXSCREEN, SM_CXSMICON, SM_CYICON, SM_CYSCREEN, SM_CYSMICON, SWP_FRAMECHANGED,
+    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SW_SHOW, WM_SETICON, WNDCLASSEXW,
+    WNDPROC, WS_OVERLAPPEDWINDOW, WS_VISIBLE,
 };
 
 /// Loads the embedded Tomoyo application logo (`RT_GROUP_ICON` ID `1` from `winresource`)
@@ -45,6 +50,106 @@ pub fn load_embedded_window_icons(hinst: HMODULE) -> (Option<HICON>, Option<HICO
         (big, small)
     }
 }
+
+pub fn theme_canvas_rgb(theme: &str) -> (u8, u8, u8) {
+    match theme.trim().to_ascii_lowercase().as_str() {
+        "light" | "white" => (0xF6, 0xF8, 0xFC),
+        "midnight" => (0x0A, 0x0F, 0x1A),
+        _ => (0x13, 0x14, 0x1C),
+    }
+}
+
+pub fn create_theme_bg_brush(theme: &str) -> HBRUSH {
+    let (r, g, b) = theme_canvas_rgb(theme);
+    unsafe { CreateSolidBrush(COLORREF((r as u32) | ((g as u32) << 8) | ((b as u32) << 16))) }
+}
+
+pub unsafe fn configure_controller_visuals(controller: &ICoreWebView2Controller, theme: &str) {
+    let (r, g, b) = theme_canvas_rgb(theme);
+    if let Ok(ctrl2) = controller.cast::<ICoreWebView2Controller2>() {
+        let _ = unsafe {
+            ctrl2.SetDefaultBackgroundColor(COREWEBVIEW2_COLOR { A: 255, R: r, G: g, B: b })
+        };
+    }
+}
+
+pub unsafe fn reveal_host_window_and_notify(
+    hwnd: HWND,
+    fallback_timer_id: usize,
+    notify_hwnd: Option<isize>,
+) {
+    unsafe {
+        let _ = KillTimer(Some(hwnd), fallback_timer_id);
+        let _ = ShowWindow(hwnd, SW_SHOW);
+        let _ = SetForegroundWindow(hwnd);
+    }
+    if let Some(target) = notify_hwnd {
+        crate::bridge_os::notify_parent_mode(target, 6);
+    }
+}
+
+pub unsafe fn toggle_pin_topmost_window(hwnd: HWND, base_title: &str, is_topmost: &mut bool) {
+    *is_topmost = !*is_topmost;
+    let insert_after = if *is_topmost { HWND_TOPMOST } else { HWND_NOTOPMOST };
+    unsafe {
+        let _ = SetWindowPos(hwnd, Some(insert_after), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+        let new_title = if *is_topmost {
+            format!("📌 {base_title}")
+        } else {
+            base_title.to_string()
+        };
+        let tw = HSTRING::from(new_title);
+        let _ = SetWindowTextW(hwnd, PCWSTR(tw.as_ptr()));
+    }
+}
+
+pub unsafe fn create_themed_host_window(
+    cls: PCWSTR,
+    wndproc: WNDPROC,
+    title: &str,
+    theme: &str,
+    width: i32,
+    height: i32,
+    visible_initially: bool,
+) -> HWND {
+    unsafe {
+        let hinst = windows::Win32::System::LibraryLoader::GetModuleHandleW(None).unwrap();
+        let (big_icon, small_icon) = load_embedded_window_icons(hinst);
+        let wc = WNDCLASSEXW {
+            cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
+            lpfnWndProc: wndproc,
+            hInstance: hinst.into(),
+            hIcon: big_icon.unwrap_or_default(),
+            hIconSm: small_icon.unwrap_or_default(),
+            hCursor: LoadCursorW(None, IDC_ARROW).unwrap_or_default(),
+            hbrBackground: create_theme_bg_brush(theme),
+            lpszClassName: cls,
+            ..Default::default()
+        };
+        let _ = RegisterClassExW(&wc);
+        let x = ((GetSystemMetrics(SM_CXSCREEN) - width) / 2).max(40);
+        let y = ((GetSystemMetrics(SM_CYSCREEN) - height) / 2).max(40);
+        let title_w = HSTRING::from(title);
+        let style = if visible_initially { WS_OVERLAPPEDWINDOW | WS_VISIBLE } else { WS_OVERLAPPEDWINDOW };
+        let hwnd = CreateWindowExW(
+            Default::default(), cls, PCWSTR(title_w.as_ptr()),
+            style, x, y, width, height,
+            None, None, Some(hinst.into()), None,
+        )
+        .expect("CreateWindowExW failed");
+        if let Some(ic) = small_icon {
+            SendMessageW(hwnd, WM_SETICON, Some(WPARAM_SETICON_SMALL), Some(windows::Win32::Foundation::LPARAM(ic.0 as isize)));
+        }
+        if let Some(ic) = big_icon {
+            SendMessageW(hwnd, WM_SETICON, Some(WPARAM_SETICON_BIG), Some(windows::Win32::Foundation::LPARAM(ic.0 as isize)));
+        }
+        apply_host_window_theme(hwnd, theme);
+        hwnd
+    }
+}
+
+const WPARAM_SETICON_SMALL: windows::Win32::Foundation::WPARAM = windows::Win32::Foundation::WPARAM(ICON_SMALL as usize);
+const WPARAM_SETICON_BIG: windows::Win32::Foundation::WPARAM = windows::Win32::Foundation::WPARAM(ICON_BIG as usize);
 
 pub fn apply_host_window_theme(hwnd: HWND, theme: &str) {
     let (is_dark, caption_bgr, text_bgr) = match theme.trim().to_ascii_lowercase().as_str() {

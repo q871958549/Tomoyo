@@ -95,7 +95,16 @@ pub(crate) fn handle_set_plugin_permission(
 }
 
 pub(crate) fn handle_read_logs(source: String, errors_only: bool) -> HostAction {
-    let safe_file = match source.as_str() {
+    build_logs_action(&source, errors_only, false)
+}
+
+pub(crate) fn handle_clear_logs(source: String, errors_only: bool) -> HostAction {
+    let archived = tomoyo_core::archive_diagnostic_issues().is_ok();
+    build_logs_action(&source, errors_only, archived)
+}
+
+fn build_logs_action(source: &str, errors_only: bool, cleared: bool) -> HostAction {
+    let safe_file = match source {
         "webview.log" => "webview.log",
         "update.log" => "update.log",
         "inno_setup.log" => "inno_setup.log",
@@ -108,6 +117,7 @@ pub(crate) fn handle_read_logs(source: String, errors_only: bool) -> HostAction 
         "event": "logs_loaded",
         "source": safe_file,
         "errors_only": errors_only,
+        "cleared": cleared,
         "content": content,
         "issues": {
             "warnings": warnings,

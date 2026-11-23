@@ -163,15 +163,16 @@ impl AppShell {
         }
         let width = (self.desired_width_dip() as f32 * self.dpi_scale) as i32;
         let height = (self.desired_height_dip() as f32 * self.dpi_scale) as i32;
+        let z_flag = if self.inter.in_modal_overlay { SWP_NOZORDER } else { Default::default() };
         unsafe {
             let _ = SetWindowPos(
                 self.hwnd,
-                Some(HWND_TOPMOST),
+                (!self.inter.in_modal_overlay).then_some(HWND_TOPMOST),
                 rect.left,
                 rect.top,
                 width,
                 height,
-                SWP_NOACTIVATE | SWP_SHOWWINDOW,
+                SWP_NOACTIVATE | SWP_SHOWWINDOW | z_flag,
             );
         }
         self.layout_edit_control(width);
@@ -271,6 +272,12 @@ impl AppShell {
         } else {
             w_dip
         }
+    }
+
+    pub(super) fn hit_test_logo_icon(&self, x_px: i32, y_px: i32) -> bool {
+        let scale = self.dpi_scale.max(1.0);
+        let (xd, yd) = (x_px as f32 / scale, y_px as f32 / scale);
+        (10.0..=54.0).contains(&xd) && (9.0..=53.0).contains(&yd)
     }
 
     pub(super) fn hit_test_update_badge(&self, x_px: i32, y_px: i32) -> bool {

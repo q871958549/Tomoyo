@@ -247,10 +247,7 @@
 </div>
 
 <style>
-  .tab-head { margin-bottom: 16px; }
   .head-bar { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-  .tab-head h2 { margin: 0 0 4px; font-size: 18px; font-weight: 600; }
-  .tab-lead { margin: 0; font-size: 12.5px; color: var(--muted); }
   .flow-list { padding: 8px 16px; }
   .empty-msg { padding: 14px 0; font-size: 12.5px; color: var(--muted); }
   .flow-item { border-bottom: 1px solid var(--border); }

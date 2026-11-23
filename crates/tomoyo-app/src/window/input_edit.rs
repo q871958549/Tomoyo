@@ -1,7 +1,7 @@
 //! Win32 single-line EDIT control subclassing: intercepts launcher navigation shortcuts
 //! and suppresses `WM_CHAR` / `WM_SYSCHAR` control-character `MessageBeep` sounds.
 
-use super::{EM_GETSEL, EM_SETSEL, WM_APP_EDIT_KEY, WM_APP_PASTE_INTERCEPT};
+use super::{EM_GETSEL, EM_SETSEL, WM_APP_EDIT_KEY, WM_APP_PASTE_INTERCEPT, WM_APP_SHOW_CONTEXT_MENU};
 use crate::actions::clipboard_has_rich_attachment;
 use std::ffi::c_void;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
@@ -10,8 +10,8 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 };
 use windows::Win32::UI::Shell::DefSubclassProc;
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetWindowTextLengthW, PostMessageW, SendMessageW, WM_CHAR, WM_KEYDOWN, WM_SYSCHAR,
-    WM_SYSKEYDOWN,
+    GetWindowTextLengthW, PostMessageW, SendMessageW, WM_CHAR, WM_CONTEXTMENU, WM_KEYDOWN,
+    WM_SYSCHAR, WM_SYSKEYDOWN,
 };
 
 pub(super) unsafe extern "system" fn edit_subclass_proc(
@@ -98,6 +98,12 @@ pub(super) unsafe extern "system" fn edit_subclass_proc(
                     return LRESULT(0);
                 }
             }
+        }
+        WM_CONTEXTMENU => {
+            unsafe {
+                let _ = PostMessageW(Some(parent), WM_APP_SHOW_CONTEXT_MENU, WPARAM(1), lparam);
+            }
+            return LRESULT(0);
         }
         WM_CHAR => {
             // Suppress single-line EDIT control MessageBeep on Esc/Enter/Tab/Ctrl-chord chars.

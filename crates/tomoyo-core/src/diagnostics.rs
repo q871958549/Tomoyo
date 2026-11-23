@@ -216,6 +216,50 @@ pub fn count_recent_log_issues() -> (usize, usize, bool) {
     (warns, errs, has_crash)
 }
 
+/// Archives `last_crash.txt` and active logs into `%LOCALAPPDATA%\Tomoyo\logs\archive\` and clears active warnings.
+pub fn archive_diagnostic_issues() -> Result<usize, String> {
+    archive_diagnostic_issues_in(&logs_dir())
+}
+
+pub(crate) fn archive_diagnostic_issues_in(dir: &Path) -> Result<usize, String> {
+    let stamp = Utc::now()
+        .with_timezone(&FixedOffset::east_opt(8 * 3600).unwrap())
+        .format("%Y%m%d_%H%M%S")
+        .to_string();
+    let archive_dir = dir.join("archive").join(stamp);
+    std::fs::create_dir_all(&archive_dir).map_err(|e| format!("Failed to create archive dir: {e}"))?;
+
+    let mut archived = 0usize;
+    let crash_path = dir.join("last_crash.txt");
+    if crash_path.is_file() {
+        let dest = archive_dir.join("last_crash.txt");
+        if std::fs::rename(&crash_path, &dest).is_err() {
+            std::fs::copy(&crash_path, &dest).map_err(|e| format!("Failed to copy crash snapshot: {e}"))?;
+            let _ = std::fs::remove_file(&crash_path);
+        }
+        archived += 1;
+    }
+
+    for name in ["tomoyo.log", "webview.log", "update.log"] {
+        let src = dir.join(name);
+        if !src.is_file() {
+            continue;
+        }
+        let len = std::fs::metadata(&src).map(|m| m.len()).unwrap_or(0);
+        if len > 0 {
+            let _ = std::fs::copy(&src, archive_dir.join(name));
+            archived += 1;
+        }
+        if let Ok(f) = OpenOptions::new().write(true).open(&src) {
+            let _ = f.set_len(0);
+        }
+    }
+    if archived == 0 {
+        let _ = std::fs::remove_dir(&archive_dir);
+    }
+    Ok(archived)
+}
+
 /// Builds a concise, copyable diagnostic bundle for troubleshooting & bug reports.
 pub fn build_diagnostic_bundle() -> String {
     let stats = current_process_stats();
@@ -362,5 +406,20 @@ mod tests {
         let ts = format_beijing_now();
         assert!(ts.ends_with(" +08:00"), "unexpected timestamp: {ts}");
         assert_eq!(ts.len(), 30, "expected YYYY-MM-DD HH:MM:SS.mmm +08:00, got: {ts}");
+    }
+
+    #[test]
+    fn archive_diagnostics_rotates_open_logs_and_crash_snapshot() {
+        let dir = std::env::temp_dir().join(format!("tomoyo-arch-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut st = RollingLogState::open(&dir, "tomoyo", 64 * 1024, false);
+        st.write_bytes(b"2026-11-23 10:00:00.000 +08:00  WARN test warning\n");
+        std::fs::write(dir.join("last_crash.txt"), b"=== TOMOYO CRASH RECORD ===\n").unwrap();
+
+        let count = archive_diagnostic_issues_in(&dir).expect("archive should succeed");
+        assert!(count >= 2);
+        assert!(!dir.join("last_crash.txt").exists(), "crash snapshot should be archived away");
+        assert_eq!(std::fs::metadata(dir.join("tomoyo.log")).unwrap().len(), 0);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

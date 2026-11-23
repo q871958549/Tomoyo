@@ -7,8 +7,12 @@ use crate::actions::spawn_settings_window;
 use crate::renderer::{compute_filter_counts, ThemePalette, MIN_WINDOW_WIDTH_DIP};
 use tomoyo_core::{Lang, TomoyoConfig};
 use tomoyo_protocol::{AttachedContext, SearchFilter};
+use windows::Win32::Foundation::{COLORREF, HWND};
 use windows::Win32::Graphics::Gdi::{CreateSolidBrush, DeleteObject, InvalidateRect};
-use windows::Win32::UI::WindowsAndMessaging::{IsWindowVisible, KillTimer};
+use windows::Win32::UI::WindowsAndMessaging::{
+    GetWindowLongW, IsWindowVisible, KillTimer, SetLayeredWindowAttributes, SetTimer,
+    SetWindowLongW, GWL_EXSTYLE, LWA_ALPHA, WS_EX_LAYERED,
+};
 
 impl AppShell {
     pub fn apply_theme(&mut self, theme_name: &str, persist: bool) {
@@ -37,9 +41,63 @@ impl AppShell {
     }
 
     pub fn open_settings_center(&mut self) {
+        if self.inter.settings_pending {
+            return;
+        }
         match spawn_settings_window(self.hwnd.0 as isize, &self.theme_name) {
-            Ok(()) => self.hide_launcher(),
+            Ok(true) => {
+                self.inter.settings_pending = true;
+                self.inter.in_modal_overlay = true;
+                self.show_toast(self.lang.pick("⚙ 正在开启设置中心…", "⚙ Opening Settings Center…"));
+                unsafe {
+                    let _ = InvalidateRect(Some(self.hwnd), None, false);
+                    let _ = SetTimer(Some(self.hwnd), super::TIMER_SETTINGS_HIDE, 850, None);
+                }
+            }
+            Ok(false) => {
+                self.begin_fade_hide();
+            }
             Err(e) => self.show_toast(&format!("设置中心启动失败: {e}")),
+        }
+    }
+
+    pub(super) fn on_settings_window_ready(&mut self) {
+        unsafe {
+            let _ = KillTimer(Some(self.hwnd), super::TIMER_SETTINGS_HIDE);
+        }
+        self.inter.settings_pending = false;
+        self.inter.in_modal_overlay = false;
+        if unsafe { IsWindowVisible(self.hwnd).as_bool() } {
+            self.begin_fade_hide();
+        }
+    }
+
+    pub(super) fn begin_fade_hide(&mut self) {
+        if self.inter.fade_alpha.is_some() {
+            return;
+        }
+        unsafe {
+            let ex = GetWindowLongW(self.hwnd, GWL_EXSTYLE);
+            if (ex & WS_EX_LAYERED.0 as i32) == 0 {
+                SetWindowLongW(self.hwnd, GWL_EXSTYLE, ex | WS_EX_LAYERED.0 as i32);
+            }
+            let _ = SetLayeredWindowAttributes(self.hwnd, COLORREF(0), 215, LWA_ALPHA);
+            let _ = SetTimer(Some(self.hwnd), super::TIMER_FADE_HIDE, 16, None);
+        }
+        self.inter.fade_alpha = Some(215);
+    }
+
+    pub(super) fn step_fade_hide(&mut self) {
+        let next = match self.inter.fade_alpha {
+            Some(a) if a > 95 => a - 65,
+            _ => {
+                self.hide_launcher();
+                return;
+            }
+        };
+        self.inter.fade_alpha = Some(next);
+        unsafe {
+            let _ = SetLayeredWindowAttributes(self.hwnd, COLORREF(0), next, LWA_ALPHA);
         }
     }
 
@@ -192,6 +250,16 @@ impl AppShell {
             self.position_on_active_monitor();
             self.dispatch_query();
             self.invalidate();
+        }
+    }
+}
+
+pub(super) fn restore_launcher_opacity(hwnd: HWND) {
+    unsafe {
+        let ex = GetWindowLongW(hwnd, GWL_EXSTYLE);
+        if (ex & WS_EX_LAYERED.0 as i32) != 0 {
+            let _ = SetLayeredWindowAttributes(hwnd, COLORREF(0), 255, LWA_ALPHA);
+            SetWindowLongW(hwnd, GWL_EXSTYLE, ex & !(WS_EX_LAYERED.0 as i32));
         }
     }
 }

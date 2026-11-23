@@ -1,7 +1,7 @@
 //! Dispatches incoming WebView2 host messages safely to native OS helpers, DB, and Plugin Store.
 
 use crate::bridge_ops::{
-    finish_clip_mutation, handle_copy_diag_bundle, handle_install_plugin,
+    finish_clip_mutation, handle_clear_logs, handle_copy_diag_bundle, handle_install_plugin,
     handle_open_clipboard_manager, handle_open_logs_dir, handle_read_logs,
     handle_set_plugin_permission, handle_uninstall_plugin,
 };
@@ -36,6 +36,7 @@ pub enum HostMessage {
     SetPluginPermission { plugin_id: String, permission: String, allowed: bool },
     ReportJsError { message: String, #[serde(default)] source: String, #[serde(default)] line: u32 },
     ReadLogs { source: String, #[serde(default)] errors_only: bool },
+    ClearDiagnosticLogs { #[serde(default)] source: String, #[serde(default)] errors_only: bool },
     CopyDiagnosticBundle,
     OpenLogsDir,
     OpenClipboardManager,
@@ -63,12 +64,14 @@ pub enum HostMessage {
     ExportConfigBackup,
     ImportConfigBackup { json: String },
     OpenSettings { #[serde(default)] target: String },
+    WindowReady,
     Close,
 }
 
 #[derive(Debug, Default)]
 pub struct HostAction {
     pub should_close: bool,
+    pub window_ready: bool,
     pub apply_theme: Option<String>,
     pub toggle_topmost: bool,
     /// `0` = none, `1` = app scan folder, `2` = capture save folder, `3` = sync folder.
@@ -178,6 +181,7 @@ pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isi
             HostAction::default()
         }
         HostMessage::ReadLogs { source, errors_only } => handle_read_logs(source, errors_only),
+        HostMessage::ClearDiagnosticLogs { source, errors_only } => handle_clear_logs(source, errors_only),
         HostMessage::CopyDiagnosticBundle => handle_copy_diag_bundle(),
         HostMessage::OpenLogsDir => handle_open_logs_dir(),
         HostMessage::OpenClipboardManager => handle_open_clipboard_manager(notify_hwnd),
@@ -271,6 +275,7 @@ pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isi
             if ok && let Some(t) = notify_hwnd { notify_parent_reload(t, true); }
             HostAction { reply_json: Some(reply), async_refresh_hotkey_health: ok && notify_hwnd.is_some(), ..Default::default() }
         }
+        HostMessage::WindowReady => HostAction { window_ready: true, ..Default::default() },
         HostMessage::Close => HostAction { should_close: true, ..Default::default() },
     }
 }
