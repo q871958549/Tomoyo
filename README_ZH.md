@@ -15,7 +15,7 @@
   <a href="https://github.com/q871958549/Tomoyo/actions/workflows/ci.yml"><img src="https://github.com/q871958549/Tomoyo/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="LICENSE-MIT"><img src="https://img.shields.io/badge/license-MIT%20%2F%20Apache--2.0-blue.svg" alt="License" /></a>
   <img src="https://img.shields.io/badge/platform-Linux%20(CachyOS%2FArch%20KDE%20Wayland%2FX11)%20%7C%20Windows%2010%2F11-1793D1.svg" alt="Linux & Windows" />
-  <img src="https://img.shields.io/badge/version-v2.5.1-7c6af7.svg" alt="Version" />
+  <img src="https://img.shields.io/badge/version-v2.6.0-7c6af7.svg" alt="Version" />
 </p>
 
 ---

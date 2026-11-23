@@ -56,6 +56,25 @@ pub fn scan_plugin_dirs(search_dirs: &[PathBuf]) -> Vec<DiscoveredManifest> {
     found
 }
 
+/// Resolves a safe local image path (`icon.png` / `icon.ico` / `manifest.icon`) inside `plugin_dir`.
+pub fn resolve_plugin_icon_path(manifest: &PluginManifest, dir: &Path) -> Option<String> {
+    let mut candidates: Vec<String> = Vec::new();
+    if let Some(raw) = manifest.icon.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        candidates.push(raw.to_string());
+    }
+    candidates.extend(["icon.png".into(), "logo.png".into(), "icon.ico".into()]);
+    for rel in candidates {
+        if rel.contains("..") {
+            continue;
+        }
+        let path = dir.join(&rel);
+        if path.is_file() {
+            return Some(path.to_string_lossy().into_owned());
+        }
+    }
+    None
+}
+
 /// Builds a lightweight trigger result for a WebView plugin (0 bytes of WebView2 RAM until Enter).
 pub fn build_webview_trigger_item(
     manifest: &PluginManifest,
@@ -72,44 +91,92 @@ pub fn build_webview_trigger_item(
     } else {
         "WebView"
     };
+    let icon_path = resolve_plugin_icon_path(manifest, dir);
+    let icon = icon_path
+        .as_ref()
+        .map(|p| IconSpec::ImageFile(p.clone()))
+        .unwrap_or_else(|| IconSpec::Monogram("WV".into()));
+    let default_mode = manifest.display_mode.as_str().to_string();
+    let initial_query = ctx.args.trim().to_string();
+    let max_memory_mb = manifest.resources.max_memory_mb.max(256);
+
+    let (primary_mode, alt_mode, alt_label) = match default_mode.as_str() {
+        "inline" => (
+            Some("inline".to_string()),
+            "window",
+            format!("在独立窗口中打开 {} (Window)", manifest.name),
+        ),
+        "window" => (
+            Some("window".to_string()),
+            "inline",
+            format!("在搜索结果预览区嵌入 {} (Inline)", manifest.name),
+        ),
+        _ => (
+            None,
+            "inline",
+            format!("在搜索结果预览区嵌入 {} (Inline)", manifest.name),
+        ),
+    };
+
     ResultItem {
         id: format!("webview:{}", manifest.id),
         provider_id: manifest.id.clone(),
         title: format!(
-            "Open {} {}",
+            "打开 {} {}",
             manifest.name,
-            if ctx.args.trim().is_empty() {
+            if initial_query.is_empty() {
                 String::new()
             } else {
-                format!("— {}", ctx.args.trim())
+                format!("— {initial_query}")
             }
         )
         .trim()
         .to_string(),
         subtitle: format!(
-            "{} · Ephemeral WebView Host (0 idle RAM, killed on close)",
+            "{} · 按需隔离 WebView（退出即释放内存）",
             manifest.description
         ),
         category: ResultCategory::Plugin,
         score: 9_600,
-        icon: IconSpec::Monogram("WV".into()),
+        icon,
         badge: Some(compat_tag.into()),
         copy_text: None,
-        actions: vec![ActionSpec {
-            id: "open_webview".into(),
-            label: format!("Launch {} (Isolated WebView)", manifest.name),
-            shortcut: Some("Enter".into()),
-            kind: ActionKind::OpenWebView {
-                plugin_id: manifest.id.clone(),
-                title: manifest.name.clone(),
-                entry_path,
-                utools_compat,
-                initial_query: ctx.args.trim().to_string(),
-                width,
-                height,
-                max_memory_mb: manifest.resources.max_memory_mb.max(256),
+        actions: vec![
+            ActionSpec {
+                id: "open_webview".into(),
+                label: format!("打开 {} ({})", manifest.name, compat_tag),
+                shortcut: Some("Enter".into()),
+                kind: ActionKind::OpenWebView {
+                    plugin_id: manifest.id.clone(),
+                    title: manifest.name.clone(),
+                    entry_path: entry_path.clone(),
+                    utools_compat,
+                    initial_query: initial_query.clone(),
+                    width,
+                    height,
+                    max_memory_mb,
+                    icon_path: icon_path.clone(),
+                    display_mode: primary_mode,
+                },
             },
-        }],
+            ActionSpec {
+                id: format!("open_webview_{alt_mode}"),
+                label: alt_label,
+                shortcut: Some("Ctrl+Enter".into()),
+                kind: ActionKind::OpenWebView {
+                    plugin_id: manifest.id.clone(),
+                    title: manifest.name.clone(),
+                    entry_path,
+                    utools_compat,
+                    initial_query,
+                    width,
+                    height,
+                    max_memory_mb,
+                    icon_path,
+                    display_mode: Some(alt_mode.into()),
+                },
+            },
+        ],
         preview: Some(PreviewSpec::KeyValue {
             title: manifest.name.clone(),
             entries: vec![

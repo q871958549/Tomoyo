@@ -22,6 +22,8 @@ mod hotkey_capture;
 mod hotkey_doctor;
 #[cfg(windows)]
 mod hotkey_signatures;
+#[cfg(windows)]
+mod inline_dock;
 #[cfg(target_os = "linux")]
 mod linux_host;
 #[cfg(target_os = "linux")]
@@ -33,6 +35,7 @@ mod shim_js;
 #[cfg(windows)]
 mod single_instance;
 mod store;
+mod store_index;
 mod tr_view;
 #[cfg(windows)]
 mod win_host;
@@ -119,9 +122,18 @@ pub struct LaunchArgs {
     pub height: i32,
     pub utools_compat: bool,
     pub theme: String,
+    pub icon: Option<String>,
     pub settings_mode: bool,
     pub notify_hwnd: Option<isize>,
+    pub inline_hwnd: Option<isize>,
+    pub dock_rect: Option<(i32, i32, i32, i32)>,
     pub self_test: bool,
+}
+
+fn parse_dock_rect(raw: Option<String>) -> Option<(i32, i32, i32, i32)> {
+    let s = raw?;
+    let mut parts = s.split(',').filter_map(|p| p.trim().parse::<i32>().ok());
+    Some((parts.next()?, parts.next()?, parts.next()?, parts.next()?))
 }
 
 fn parse_args() -> LaunchArgs {
@@ -131,6 +143,7 @@ fn parse_args() -> LaunchArgs {
     };
     let settings_mode = args.iter().any(|a| a == "--settings");
     let entry = val("--entry").unwrap_or_default();
+    let plugin_id = val("--plugin-id").unwrap_or_else(|| "dev.tomoyo.webview".into());
     let cfg_theme = if settings_mode
         || ocr_view::is_ocr_viewer_entry(&entry)
         || clip_view::is_clip_manager_entry(&entry)
@@ -143,9 +156,17 @@ fn parse_args() -> LaunchArgs {
         "dark".into()
     };
     let theme = val("--theme").unwrap_or(cfg_theme);
+    let icon = val("--icon")
+        .filter(|s| !s.trim().is_empty())
+        .or_else(|| {
+            (!settings_mode)
+                .then(|| tomoyo_core::resolve_bundled_module_icon(&plugin_id))
+                .flatten()
+                .map(|p| p.to_string_lossy().into_owned())
+        });
 
     LaunchArgs {
-        plugin_id: val("--plugin-id").unwrap_or_else(|| "dev.tomoyo.webview".into()),
+        plugin_id,
         title: val("--title").unwrap_or_else(|| {
             if settings_mode {
                 "Tomoyo 设置中心".into()
@@ -163,8 +184,11 @@ fn parse_args() -> LaunchArgs {
             .unwrap_or(if settings_mode { 670 } else { 600 }),
         utools_compat: args.iter().any(|a| a == "--utools-compat"),
         theme,
+        icon,
         settings_mode,
         notify_hwnd: val("--notify-hwnd").and_then(|s| s.parse().ok()),
+        inline_hwnd: val("--inline-hwnd").and_then(|s| s.parse().ok()),
+        dock_rect: parse_dock_rect(val("--dock-rect")),
         self_test: args.iter().any(|a| a == "--self-test"),
     }
 }
@@ -181,9 +205,25 @@ pub fn build_settings_init_script_for(initial_route: &str) -> String {
         .list_plugins()
         .into_iter()
         .map(|p| {
+            let icon_url = p
+                .icon_path
+                .as_deref()
+                .and_then(|ip| tomoyo_core::read_icon_data_url(std::path::Path::new(ip)))
+                .or_else(|| {
+                    tomoyo_core::resolve_bundled_module_icon(&p.id)
+                        .and_then(|ip| tomoyo_core::read_icon_data_url(&ip))
+                });
             serde_json::json!({
                 "id": p.id,
                 "name": p.name,
+                "version": p.version,
+                "description": p.description,
+                "author": p.author,
+                "license": p.license,
+                "homepage": p.homepage,
+                "category": p.category,
+                "display_mode": p.display_mode,
+                "icon_url": icon_url,
                 "runtime": p.runtime_badge,
                 "keywords": p.keywords,
                 "max_memory_mb": p.max_memory_mb,
@@ -197,6 +237,25 @@ pub fn build_settings_init_script_for(initial_route: &str) -> String {
         })
         .collect();
     host.shutdown_all();
+
+    let mut official_icons = serde_json::Map::new();
+    for mid in [
+        tomoyo_core::PLUGIN_CLIPBOARD,
+        tomoyo_core::PLUGIN_TRANSLATE,
+        tomoyo_core::PLUGIN_CAPTURE,
+        tomoyo_core::PLUGIN_OCR,
+        tomoyo_core::PLUGIN_NOTES,
+        tomoyo_core::PLUGIN_MD_EDITOR,
+    ] {
+        if let Some(url) = tomoyo_core::resolve_bundled_module_icon(mid)
+            .and_then(|ip| tomoyo_core::read_icon_data_url(&ip))
+        {
+            official_icons.insert(mid.to_string(), serde_json::Value::String(url));
+        }
+    }
+    let quiet_md_path = tomoyo_core::detect_quiet_md_binary(None)
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_default();
 
     let plugins_dir = tomoyo_core::data_dir().join("plugins");
     let _ = std::fs::create_dir_all(&plugins_dir);
@@ -222,6 +281,8 @@ pub fn build_settings_init_script_for(initial_route: &str) -> String {
         "cached_update": cached_update,
         "has_bundled_alibaba_font": locate_fonts_dir().is_some(),
         "system_fonts": tomoyo_core::list_system_font_families(),
+        "official_icons": official_icons,
+        "quiet_md_path": quiet_md_path,
         "initial_route": initial_route,
     });
     format!(

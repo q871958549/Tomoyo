@@ -120,6 +120,7 @@ impl AppShell {
     pub(super) fn shutdown_clean(&mut self) {
         if self.shutting_down { return; }
         self.shutting_down = true;
+        self.close_inline_dock();
         self.plugin_host.shutdown_all();
         self.clipboard.shutdown_checkpoint();
         self.preview_loader.cancel_all();

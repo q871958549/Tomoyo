@@ -8,6 +8,7 @@ use super::gdi::{
 use super::theme::{category_rgb, Rgb};
 use super::{FrameLayout, RenderState};
 use crate::icons::IconCache;
+use crate::image_icons::ImageIconCache;
 use std::path::Path;
 use tomoyo_core::{current_process_stats, highlight_title_ranges, Lang};
 use tomoyo_protocol::{extension_short_tag, IconSpec, ResultCategory, ResultItem};
@@ -19,6 +20,7 @@ pub(super) fn paint_gdi_pass(
     surface: &mut DibSurface,
     fonts: &FontPack,
     icons: &mut IconCache,
+    image_icons: &mut ImageIconCache,
     width: i32,
     height: i32,
     scale: f32,
@@ -71,12 +73,18 @@ pub(super) fn paint_gdi_pass(
             let key_top = y0 + (lay.row_h - 20.0) * 0.5;
 
             let mut drew_shell_icon = false;
-            if let IconSpec::ShellPath(path) = &item.icon
-                && let Some(hicon) = icons.get_or_enqueue(path) {
-                    let isize = (30.0 * scale).round() as i32;
-                    let _ = DrawIconEx(dc, (22.0 * scale).round() as i32, (icon_top * scale).round() as i32, hicon, isize, isize, 0, None, DI_NORMAL);
-                    drew_shell_icon = true;
-                }
+            let icon_px = (30.0 * scale).round() as u32;
+            if let IconSpec::ImageFile(path) = &item.icon
+                && image_icons.get_cached(path, icon_px).is_some()
+            {
+                drew_shell_icon = true;
+            } else if let IconSpec::ShellPath(path) = &item.icon
+                && let Some(hicon) = icons.get_or_enqueue(path)
+            {
+                let isize = (30.0 * scale).round() as i32;
+                let _ = DrawIconEx(dc, (22.0 * scale).round() as i32, (icon_top * scale).round() as i32, hicon, isize, isize, 0, None, DI_NORMAL);
+                drew_shell_icon = true;
+            }
             if !drew_shell_icon {
                 if matches!(item.icon, IconSpec::ShellPath(_)) {
                     let mut c = Canvas { buf: surface.pixels_mut(), w: width, h: height, scale };
@@ -212,6 +220,7 @@ fn fallback_badge_label(item: &ResultItem) -> &str {
     match &item.icon {
         IconSpec::Monogram(m) => m.as_str(),
         IconSpec::Symbol(s) => s.as_str(),
+        IconSpec::ImageFile(_) => item.category.short_label(),
         IconSpec::ShellPath(p) => {
             if item.category == ResultCategory::File {
                 let ext = Path::new(p).extension().and_then(|e| e.to_str()).unwrap_or("");

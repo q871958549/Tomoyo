@@ -40,6 +40,8 @@ impl ResultCategory {
 pub enum IconSpec {
     /// Extract native Windows shell icon for a file, folder, or `.lnk` path.
     ShellPath(String),
+    /// Render a local PNG/ICO/WebP/JPG plugin or item logo image (`<= 256x256`).
+    ImageFile(String),
     /// Use a built-in lightweight vector glyph or Unicode symbol.
     Symbol(String),
     /// Short monochrome monogram (1-2 chars) rendered inside a rounded pill.
@@ -252,6 +254,10 @@ pub enum ActionKind {
         height: u32,
         #[serde(default = "default_wv_mem")]
         max_memory_mb: u32,
+        #[serde(default)]
+        icon_path: Option<String>,
+        #[serde(default)]
+        display_mode: Option<String>,
     },
 }
 
@@ -307,6 +313,7 @@ pub enum InternalCommandKind {
     CopyFileContents { path: String },
     ComputeFileSha256 { path: String },
     RunFlow { flow_id: String, input: String },
+    InstallQuietMd,
 }
 
 /// Declarative Server-Driven UI (SDUI) preview card rendered natively without WebView.

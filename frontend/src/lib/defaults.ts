@@ -6,9 +6,11 @@ export const PLUGIN_TRANSLATE = 'dev.tomoyo.translate';
 export const PLUGIN_CAPTURE = 'dev.tomoyo.capture';
 export const PLUGIN_OCR = 'dev.tomoyo.ocr';
 export const PLUGIN_NOTES = 'dev.tomoyo.notes';
+export const PLUGIN_MD_EDITOR = 'dev.tomoyo.markdown-editor';
 
 export interface OfficialPluginMeta {
   id: string;
+  category: string;
   zhName: string;
   enName: string;
   zhDesc: string;
@@ -19,6 +21,7 @@ export interface OfficialPluginMeta {
 export const OFFICIAL_PLUGINS: OfficialPluginMeta[] = [
   {
     id: PLUGIN_CLIPBOARD,
+    category: 'productivity',
     zhName: '剪贴板管理中心',
     enName: 'Clipboard Center',
     zhDesc: '历史采集、图片缓存、隐私屏蔽与工作台；关闭即卸载系统剪贴板监听与热键',
@@ -27,6 +30,7 @@ export const OFFICIAL_PLUGINS: OfficialPluginMeta[] = [
   },
   {
     id: PLUGIN_TRANSLATE,
+    category: 'ai',
     zhName: '多源划词翻译',
     enName: 'Multi-Source Translator',
     zhDesc: '划词即译、中英词典音标与多引擎并行对比；关闭即释放热键与入口',
@@ -35,6 +39,7 @@ export const OFFICIAL_PLUGINS: OfficialPluginMeta[] = [
   },
   {
     id: PLUGIN_CAPTURE,
+    category: 'media',
     zhName: '原生截图与贴图',
     enName: 'Native Capture & Pin',
     zhDesc: '区域截图、平滑标注、长截图实时预览、取色器与贴图（按需独立进程）',
@@ -43,6 +48,7 @@ export const OFFICIAL_PLUGINS: OfficialPluginMeta[] = [
   },
   {
     id: PLUGIN_OCR,
+    category: 'ai',
     zhName: '离线识图 OCR',
     enName: 'Offline WinRT OCR',
     zhDesc: '本地 WinRT 离线识字与审校面板（独立 STDIO 沙箱插件，零云端上传）',
@@ -51,11 +57,21 @@ export const OFFICIAL_PLUGINS: OfficialPluginMeta[] = [
   },
   {
     id: PLUGIN_NOTES,
-    zhName: '本地 Markdown 备忘录',
-    enName: 'Local Markdown Notes',
-    zhDesc: '纯外部独立插件：本地 .md 文件全文/标签检索、一键新建与剪贴板转存（0 常驻内存）',
-    enDesc: 'Pure standalone STDIO plugin: local .md full-text/tag search & quick capture (0 idle RAM)',
+    category: 'docs',
+    zhName: '本地快速备忘录',
+    enName: 'Quick Local Notes',
+    zhDesc: '专注秒级记录与 #标签检索的快速备忘插件（与 Markdown 编辑器解耦，0 常驻内存）',
+    enDesc: 'Fast capture & #tag search standalone notes plugin (decoupled from rich MD editor)',
     triggers: 'note / memo',
+  },
+  {
+    id: PLUGIN_MD_EDITOR,
+    category: 'docs',
+    zhName: 'Quiet.md Markdown 编辑器',
+    enName: 'Quiet.md Markdown Editor',
+    zhDesc: '专业所见即所得桌面 Markdown 编辑器集成（s1dashu/quiet-md MIT）：与备忘录分离，零核心膨胀',
+    enDesc: 'Dedicated rich Markdown editor integration powered by s1dashu/quiet-md (MIT, GPUI)',
+    triggers: 'md / quiet',
   },
 ];
 
@@ -141,6 +157,7 @@ export function makeDefaultConfig(): TomoyoConfig {
     update: { auto_check: true, check_interval_hours: 24, repo: OFFICIAL_REPO, last_checked_unix: 0 },
     plugin_hotkeys: {},
     plugin_settings: {},
+    plugin_display_modes: {},
     web_searches: [],
   };
 }
@@ -150,7 +167,7 @@ export function hydrateSettingsInit(): SettingsInitPayload {
   const def = makeDefaultConfig();
   const rc = (raw.config ?? {}) as Partial<TomoyoConfig>;
   return {
-    version: raw.version || '2.5.1',
+    version: raw.version || '2.6.0',
     platform: raw.platform || 'linux',
     autostart: !!raw.autostart,
     plugins: Array.isArray(raw.plugins) ? raw.plugins : [],
@@ -164,6 +181,8 @@ export function hydrateSettingsInit(): SettingsInitPayload {
     secrets_status: { deepl: !!raw.secrets_status?.deepl, openai: !!raw.secrets_status?.openai },
     hotkey_health: raw.hotkey_health || {},
     cached_update: raw.cached_update ?? null,
+    official_icons: typeof raw.official_icons === 'object' && raw.official_icons ? raw.official_icons : {},
+    quiet_md_path: typeof raw.quiet_md_path === 'string' ? raw.quiet_md_path : '',
     system_fonts: Array.isArray(raw.system_fonts) ? raw.system_fonts : [],
     initial_route: typeof raw.initial_route === 'string' ? raw.initial_route : '',
     config: {

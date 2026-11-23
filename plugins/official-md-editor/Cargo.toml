@@ -1,0 +1,14 @@
+[package]
+name = "tomoyo-plugin-md-editor"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Official Tomoyo plugin: dedicated Markdown editor integration powered by Quiet.md (MIT, GPUI)"
+
+[[bin]]
+name = "tomoyo-plugin-md-editor"
+path = "src/main.rs"
+
+[dependencies]
+tomoyo-sdk = { workspace = true }
+serde_json = { workspace = true }

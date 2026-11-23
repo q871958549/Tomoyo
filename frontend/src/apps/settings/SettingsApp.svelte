@@ -1,18 +1,15 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { Keyboard, Package, RefreshCw, Search, SlidersHorizontal, Workflow } from '@lucide/svelte';
   import { hydrateSettingsInit, isPluginEnabled, PLUGIN_CAPTURE, PLUGIN_CLIPBOARD, PLUGIN_TRANSLATE } from '../../lib/defaults';
   import { assignCoreHotkeyWithSwap, type CoreHotkeySlot } from '../../lib/hotkeys';
   import { applyThemeClass, installErrorTelemetry, postHost, subscribeHost } from '../../lib/ipc';
   import { OFFICIAL_REPO, tr, type Lang } from '../../lib/i18n';
-  import { searchSettingsEntries, type SettingSearchEntry } from '../../lib/settingsSearch';
+  import type { SettingSearchEntry } from '../../lib/settingsSearch';
   import type {
     CustomFilterTab, HotkeyAuditReport, HotkeyHealthReport, LiveProbeResult,
     ReleaseInfo, TomoyoConfig, UpdateStatus, WorkflowDef,
   } from '../../lib/types';
-  import tomoyoLogo from '../../assets/tomoyo-logo.png';
   import Button from '../../lib/ui/Button.svelte';
-  import Input from '../../lib/ui/Input.svelte';
   import Segmented from '../../lib/ui/Segmented.svelte';
   import AppearanceTab from './AppearanceTab.svelte';
   import FlowsTab from './FlowsTab.svelte';
@@ -21,7 +18,8 @@
   import LogsTab from './LogsTab.svelte';
   import PluginsTab from './PluginsTab.svelte';
   import SearchClipTab from './SearchClipTab.svelte';
-  import StoreTab, { type StoreItem } from './StoreTab.svelte';
+  import SettingsSidebar, { type SettingsTabId } from './SettingsSidebar.svelte';
+  import StoreTab, { type StoreItem, type StorePageMeta, type StoreQueryParams } from './StoreTab.svelte';
   import UpdatesTab from './UpdatesTab.svelte';
   import WebSearchTab from './WebSearchTab.svelte';
 
@@ -35,13 +33,12 @@
   let flows = $state<WorkflowDef[]>(init.flows || []);
   let secretsStatus = $state(init.secrets_status);
   let hotkeyHealth = $state<HotkeyHealthReport>(init.hotkey_health || {});
-  let activeTab = $state<'core' | 'search' | 'hotkeys' | 'flows' | 'plugins' | 'system'>('core');
+  let activeTab = $state<SettingsTabId>('core');
   let subCore = $state('general');
   let subSearch = $state('indexing');
   let subPlugins = $state('installed');
   let subSystem = $state('updates');
   let expandedPlugin = $state<string | null>(null);
-  let quickQuery = $state('');
   let toastMsg = $state('');
   let toastWarn = $state(false);
   let folderErr = $state('');
@@ -54,7 +51,10 @@
   let storeLoaded = $state(false);
   let storeLoading = $state(false);
   let storeItems = $state<StoreItem[]>([]);
+  let storeMeta = $state<StorePageMeta>({ total: 0, catalogTotal: 0, page: 1, totalPages: 1, categoryCounts: {} });
   let storeStatus = $state('');
+  let quietMdPath = $state(init.quiet_md_path || '');
+  let installingQuietMd = $state(false);
   let logSource = $state('tomoyo.log');
   let logErrorsOnly = $state(false);
   let logContent = $state('');
@@ -69,7 +69,6 @@
   let installProgress = $state<{ percent: number; message: string; done?: boolean; ok?: boolean } | null>(null);
 
   let lang = $derived<Lang>(cfg.language === 'en' ? 'en' : 'zh');
-  let searchHits = $derived(searchSettingsEntries(quickQuery));
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
 
   let conflictSlots = $derived.by(() => {
@@ -85,15 +84,6 @@
     return entries.filter((e) => e.on && e.st && !e.st.disabled && !e.st.ok && e.st.spec);
   });
 
-  const navItems = [
-    { id: 'core' as const, key: 'nav_core', icon: SlidersHorizontal },
-    { id: 'search' as const, key: 'nav_search', icon: Search },
-    { id: 'hotkeys' as const, key: 'nav_hotkeys', icon: Keyboard },
-    { id: 'flows' as const, key: 'nav_flows', icon: Workflow },
-    { id: 'plugins' as const, key: 'nav_plugins', icon: Package },
-    { id: 'system' as const, key: 'nav_system', icon: RefreshCw },
-  ];
-
   function jumpToHotkeyConflict() { switchTab('hotkeys'); }
   function onToggleOverride(v: boolean) { cfg.override_conflict_hotkeys = v; scheduleSave(0); setTimeout(runHotkeyAudit, 260); }
   function onUpdateFilters(hidden: string[], custom: CustomFilterTab[], layout?: string) {
@@ -104,9 +94,16 @@
   function onUpdateAvoidance(fullscreen: boolean, excluded: string[]) {
     cfg.suspend_hotkeys_in_fullscreen = fullscreen; cfg.hotkey_excluded_apps = excluded; scheduleSave(0);
   }
-  function onUpdatePluginConfig(hotkeys: Record<string, string>, settings: Record<string, Record<string, string | number | boolean>>) {
-    cfg.plugin_hotkeys = hotkeys; cfg.plugin_settings = settings; scheduleSave(120);
+  function onUpdatePluginConfig(
+    hotkeys: Record<string, string>,
+    settings: Record<string, Record<string, string | number | boolean>>,
+    displayModes?: Record<string, string>
+  ) {
+    cfg.plugin_hotkeys = hotkeys; cfg.plugin_settings = settings;
+    if (displayModes !== undefined) { cfg.plugin_display_modes = displayModes; scheduleSave(0); }
+    else scheduleSave(120);
   }
+  function onInstallQuietMd() { installingQuietMd = true; postHost({ cmd: 'install_quiet_md' }); setToast(lang === 'en' ? 'Downloading & verifying Quiet.md…' : '正在从 GitHub 校验下载并安装 Quiet.md…'); }
   function onSaveFlows(next: WorkflowDef[]) {
     flows = next;
     postHost({ cmd: 'save_flows', flows: $state.snapshot(next) });
@@ -147,7 +144,6 @@
   }
 
   function applySearchHit(hit: SettingSearchEntry) {
-    quickQuery = '';
     if (hit.sub) {
       if (hit.tab === 'core') subCore = hit.sub;
       else if (hit.tab === 'search') subSearch = hit.sub;
@@ -172,7 +168,15 @@
     }
   }
 
-  function fetchStore() { storeLoading = true; postHost({ cmd: 'fetch_store', sources: cfg.plugin_registries?.length ? cfg.plugin_registries : ['registry/index.json'] }); }
+  function fetchStore(p?: StoreQueryParams) {
+    storeLoading = true;
+    postHost({
+      cmd: 'fetch_store',
+      sources: cfg.plugin_registries?.length ? cfg.plugin_registries : ['registry/index.json'],
+      query: p?.query || '', category: p?.category || 'all', runtime: p?.runtime || 'all',
+      sort: p?.sort || 'default', page: p?.page || 1, page_size: 24, force_refresh: !!p?.force_refresh,
+    });
+  }
   function refreshLogs() { postHost({ cmd: 'read_logs', source: logSource, errors_only: logErrorsOnly }); }
   function checkUpdatesNow(manual = true) {
     if (checkTimer) { clearTimeout(checkTimer); checkTimer = null; }
@@ -235,9 +239,21 @@
       } else if (ev === 'store_loaded') {
         storeLoading = false;
         storeItems = Array.isArray(data.items) ? (data.items as StoreItem[]) : [];
+        storeMeta = {
+          total: Number(data.total ?? storeItems.length),
+          catalogTotal: Number(data.catalog_total ?? storeItems.length),
+          page: Number(data.page ?? 1),
+          totalPages: Number(data.total_pages ?? 1),
+          categoryCounts: (data.category_counts as Record<string, number>) || {},
+        };
+        if (typeof data.quiet_md_path === 'string' && data.quiet_md_path) quietMdPath = data.quiet_md_path;
         const srcs = Array.isArray(data.sources) ? (data.sources as string[]).join(' · ') : 'Registry';
         const errs = Array.isArray(data.errors) && data.errors.length ? ` (${(data.errors as string[]).join('; ')})` : '';
         storeStatus = srcs + errs;
+      } else if (ev === 'quiet_md_status') {
+        installingQuietMd = false;
+        if (data.ok && typeof data.path === 'string' && data.path) quietMdPath = data.path;
+        setToast(`${data.ok ? '✓ ' : '✗ '}${data.message || ''}`, !data.ok);
       } else if (ev === 'store_action_result' || ev === 'perm_action_result') {
         setToast(`${data.ok ? '✓ ' : '✗ '}${data.message || ''}`, !data.ok);
         if (ev === 'store_action_result' && data.ok) fetchStore();
@@ -302,43 +318,7 @@
 </script>
 
 <div class="shell">
-  <aside class="sidebar">
-    <div class="brand">
-      <img class="brand-logo" src={tomoyoLogo} alt="Tomoyo" width="32" height="32" draggable="false" />
-      <div>
-        <div class="brand-name">Tomoyo</div>
-        <div class="brand-sub">{tr(lang, 'brand_sub')}</div>
-      </div>
-    </div>
-
-    <div class="side-search">
-      <Input bind:value={quickQuery} type="search" size="sm" placeholder={tr(lang, 'search_settings_ph')} />
-      {#if searchHits.length > 0}
-        <div class="hit-pop">
-          {#each searchHits as hit}
-            <button type="button" class="hit-item" onclick={() => applySearchHit(hit)}>
-              {lang === 'en' ? hit.en : hit.zh}
-            </button>
-          {/each}
-        </div>
-      {/if}
-    </div>
-
-    <nav class="nav">
-      {#each navItems as item}
-        {@const Icon = item.icon}
-        <button type="button" data-tab={item.id} class="nav-item {activeTab === item.id ? 'is-active' : ''}" onclick={() => switchTab(item.id)}>
-          <span class="nav-ico"><Icon size={15} /></span>
-          <span>{tr(lang, item.key)}</span>
-          {#if item.id === 'hotkeys' && conflictSlots.length > 0}
-            <span class="nav-badge">{conflictSlots.length}</span>
-          {/if}
-        </button>
-      {/each}
-    </nav>
-
-    <div class="side-foot">{tr(lang, 'sidebar_foot')}</div>
-  </aside>
+  <SettingsSidebar {lang} {activeTab} conflictCount={conflictSlots.length} onSelectTab={switchTab} onApplyHit={applySearchHit} />
 
   <main class="main">
     <div class="scroll">
@@ -370,9 +350,9 @@
             <Segmented value={subPlugins} options={[{ value: 'installed', label: lang === 'en' ? 'Modules & Plugins' : '已安装与插件设置' }, { value: 'store', label: tr(lang, 'nav_store') }]} onchange={(v) => { subPlugins = v; if (v === 'store' && !storeLoaded) { storeLoaded = true; fetchStore(); } }} />
           </div>
           {#if subPlugins === 'installed'}
-            <PluginsTab {cfg} {lang} {plugins} {configPath} pluginsDir={init.plugins_dir} runningApps={init.running_apps} {secretsStatus} {hotkeyHealth} showRecord={init.platform !== 'windows'} expandedId={expandedPlugin} onToggleExpand={(id) => (expandedPlugin = id)} {onTogglePlugin} {onUpdatePluginConfig} onJumpDoctor={() => switchTab('hotkeys')} onToast={setToast} onSave={scheduleSave} />
+            <PluginsTab {cfg} {lang} {plugins} officialIcons={init.official_icons || {}} {quietMdPath} {installingQuietMd} {configPath} pluginsDir={init.plugins_dir} runningApps={init.running_apps} {secretsStatus} {hotkeyHealth} showRecord={init.platform !== 'windows'} expandedId={expandedPlugin} onToggleExpand={(id) => (expandedPlugin = id)} {onTogglePlugin} {onInstallQuietMd} {onUpdatePluginConfig} onJumpDoctor={() => switchTab('hotkeys')} onToast={setToast} onSave={scheduleSave} />
           {:else}
-            <StoreTab {lang} items={storeItems} statusText={storeStatus} loading={storeLoading} onRefresh={fetchStore} />
+            <StoreTab {lang} items={storeItems} meta={storeMeta} statusText={storeStatus} loading={storeLoading} onQuery={fetchStore} />
           {/if}
         {:else if activeTab === 'system'}
           <div class="subbar">
@@ -405,23 +385,6 @@
 
 <style>
   .shell { display: flex; height: 100%; width: 100%; overflow: hidden; }
-  .sidebar { width: 218px; flex-shrink: 0; background: var(--sidebar); border-right: 1px solid var(--border); display: flex; flex-direction: column; padding: 14px 10px; }
-  .brand { display: flex; align-items: center; gap: 10px; padding: 2px 8px 12px; border-bottom: 1px solid var(--border); margin-bottom: 10px; }
-  .brand-logo { width: 32px; height: 32px; border-radius: 8px; display: block; flex-shrink: 0; filter: drop-shadow(0 1px 2px rgba(15, 23, 42, 0.14)); }
-  .brand-name { font-size: 14.5px; font-weight: 600; }
-  .brand-sub { font-size: 11px; color: var(--muted); }
-  .side-search { position: relative; margin-bottom: 10px; }
-  .hit-pop { position: absolute; left: 0; right: 0; top: 38px; z-index: 20; background: var(--surface); border: 1px solid var(--border-strong); border-radius: 8px; box-shadow: 0 8px 20px rgba(0,0,0,0.16); padding: 4px; display: flex; flex-direction: column; gap: 2px; }
-  .hit-item { border: 0; background: transparent; text-align: left; padding: 6px 8px; border-radius: 6px; font-family: inherit; font-size: 12px; color: var(--text); cursor: pointer; }
-  .hit-item:hover { background: var(--accent-soft); color: var(--accent); }
-  .nav { display: flex; flex-direction: column; gap: 3px; overflow-y: auto; }
-  .nav-item { position: relative; display: flex; align-items: center; gap: 9px; width: 100%; height: 35px; padding: 0 10px; border: 0; border-radius: 7px; background: transparent; color: var(--text-secondary); font-family: inherit; font-size: 13px; font-weight: 500; text-align: left; white-space: nowrap; cursor: pointer; transition: background-color 0.12s ease, color 0.12s ease; }
-  .nav-item:hover:not(.is-active) { background: var(--hover); color: var(--text); }
-  .nav-item.is-active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
-  .nav-item.is-active::before { content: ""; position: absolute; left: 0; top: 7px; bottom: 7px; width: 3px; border-radius: 999px; background: var(--accent); }
-  .nav-ico { display: inline-flex; opacity: 0.85; flex-shrink: 0; }
-  .nav-badge { margin-left: auto; min-width: 17px; height: 17px; padding: 0 5px; border-radius: 999px; background: var(--danger); color: #fff; font-size: 10.5px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; }
-  .side-foot { margin-top: auto; padding: 10px 8px 0; border-top: 1px solid var(--border); font-size: 11px; color: var(--muted); line-height: 1.5; }
   .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
   .scroll { flex: 1; overflow-y: auto; padding: 20px 28px; }
   .container { max-width: 740px; }

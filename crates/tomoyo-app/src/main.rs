@@ -12,6 +12,8 @@ mod crash_guard;
 mod drag;
 #[cfg(windows)]
 mod icons;
+#[cfg(windows)]
+mod image_icons;
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(windows)]

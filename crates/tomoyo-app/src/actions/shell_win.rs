@@ -176,7 +176,7 @@ fn try_focus_existing_window(class_name: windows::core::PCWSTR, activate_msg: u3
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn spawn_ephemeral_webview(
+pub fn spawn_ephemeral_webview_ex(
     plugin_id: &str,
     title: &str,
     entry_path: &str,
@@ -186,7 +186,10 @@ pub fn spawn_ephemeral_webview(
     height: u32,
     max_memory_mb: u32,
     is_dark: bool,
-) -> Result<(), String> {
+    icon_path: Option<&str>,
+    inline_hwnd: Option<isize>,
+    dock_rect: Option<(i32, i32, i32, i32)>,
+) -> Result<u32, String> {
     let host_exe = locate_webview_host()?;
     let mut cmd = Command::new(&host_exe);
     cmd.args([
@@ -203,6 +206,15 @@ pub fn spawn_ephemeral_webview(
         "--height",
         &height.to_string(),
     ]);
+    if let Some(ip) = icon_path.filter(|s| !s.is_empty()) {
+        cmd.args(["--icon", ip]);
+    }
+    if let Some(ih) = inline_hwnd {
+        cmd.args(["--inline-hwnd", &ih.to_string()]);
+    }
+    if let Some((x, y, w, h)) = dock_rect {
+        cmd.args(["--dock-rect", &format!("{x},{y},{w},{h}")]);
+    }
     if utools_compat {
         cmd.arg("--utools-compat");
     }
@@ -213,6 +225,7 @@ pub fn spawn_ephemeral_webview(
     let mut child = cmd
         .spawn()
         .map_err(|e| format!("failed to launch {}: {e}", host_exe.display()))?;
+    let pid = child.id();
     let job = JobGuard::assign_webview_child(&child, max_memory_mb.max(512)).ok();
     let _ = std::thread::Builder::new()
         .name("tomoyo-wv-reaper".into())
@@ -220,7 +233,7 @@ pub fn spawn_ephemeral_webview(
             let _keep_job = job;
             let _ = child.wait();
         });
-    Ok(())
+    Ok(pid)
 }
 
 fn locate_sibling_exe(name: &str) -> Result<std::path::PathBuf, String> {

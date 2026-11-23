@@ -4,9 +4,10 @@ use crate::discovery::{build_webview_trigger_item, scan_plugin_dirs};
 use crate::process::ProcessError;
 use crate::runtime::{ensure_live, plugin_error_result_item, LiveRuntime, RegisteredPlugin};
 use crate::v2_support::{
-    build_runtime_info, collect_active_plugin_hotkeys, dispatch_plugin_event,
-    effective_plugin_settings, ActivePluginHotkey,
+    build_runtime_info, collect_active_plugin_hotkeys, decorate_plugin_items,
+    dispatch_plugin_event, effective_plugin_settings, ActivePluginHotkey,
 };
+pub use crate::v2_support::PluginRuntimeInfo;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -16,31 +17,9 @@ use tomoyo_core::{
     next_trace_id, ExternalPluginBridge, PermissionStore, PluginSummary, TomoyoConfig,
 };
 use tomoyo_protocol::{
-    ExecuteRequest, ExecuteResponse, PluginEventKind, PluginEventPayload, PluginHotkeyDecl,
-    PluginSettingField, QueryContext, QueryResponse, ResultItem, RuntimeConfig, METHOD_EXECUTE,
-    METHOD_QUERY,
+    ExecuteRequest, ExecuteResponse, PluginEventKind, PluginEventPayload, QueryContext,
+    QueryResponse, ResultItem, RuntimeConfig, METHOD_EXECUTE, METHOD_QUERY,
 };
-
-#[derive(Debug, Clone)]
-pub struct PluginRuntimeInfo {
-    pub id: String,
-    pub name: String,
-    pub version: String,
-    pub description: String,
-    pub runtime_badge: String,
-    pub keywords: Vec<String>,
-    pub running: bool,
-    pub pid: Option<u32>,
-    pub working_set_bytes: Option<u64>,
-    pub max_memory_mb: u32,
-    pub idle_timeout_secs: u64,
-    pub declared_permissions: Vec<String>,
-    pub granted_permissions: Vec<String>,
-    pub bundled_trusted: bool,
-    pub declared_hotkeys: Vec<PluginHotkeyDecl>,
-    pub declared_events: Vec<PluginEventKind>,
-    pub settings_schema: Vec<PluginSettingField>,
-}
 
 struct HostState {
     search_dirs: Vec<PathBuf>,
@@ -284,16 +263,12 @@ impl PluginHost {
             let elapsed_ms = started.elapsed().as_millis();
 
             match query_res {
-                Ok(resp) => {
+                Ok(mut resp) => {
                     if elapsed_ms >= 800 {
                         tracing::warn!(trace_id = %trace_id, plugin_id = %plug.manifest.id, ms = elapsed_ms, hits = resp.items.len(), "Slow plugin query");
                     }
-                    for mut item in resp.items {
-                        if item.provider_id.is_empty() {
-                            item.provider_id = plug.manifest.id.clone();
-                        }
-                        items.push(item);
-                    }
+                    decorate_plugin_items(plug, &mut resp.items);
+                    items.extend(resp.items);
                 }
                 Err(err) => {
                     let stderr_tail = match plug.live.as_ref() {

@@ -8,9 +8,12 @@ pub const PLUGIN_CLIPBOARD: &str = "dev.tomoyo.clipboard";
 pub const PLUGIN_TRANSLATE: &str = "dev.tomoyo.translate";
 pub const PLUGIN_CAPTURE: &str = "dev.tomoyo.capture";
 pub const PLUGIN_OCR: &str = "dev.tomoyo.ocr";
+pub const PLUGIN_NOTES: &str = "dev.tomoyo.notes";
+pub const PLUGIN_MD_EDITOR: &str = "dev.tomoyo.markdown-editor";
 
 pub const MAX_CUSTOM_FILTER_TABS: usize = 32;
-pub const MAX_DISABLED_PLUGINS: usize = 64;
+pub const MAX_DISABLED_PLUGINS: usize = 512;
+pub const MAX_PLUGIN_DISPLAY_MODES: usize = 512;
 
 const BUILTIN_FILTER_IDS: &[&str] = &[
     "app", "folder", "pdf", "excel", "word", "ppt", "image", "archive",
@@ -146,7 +149,7 @@ pub fn sanitize_filters_and_plugins(cfg: &mut TomoyoConfig) {
     let mut clean_pset = BTreeMap::new();
     for (pid, map) in std::mem::take(&mut cfg.plugin_settings) {
         let pid_clean = pid.trim().to_ascii_lowercase();
-        if pid_clean.is_empty() || pid_clean.len() > 96 || clean_pset.len() >= 32 {
+        if pid_clean.is_empty() || pid_clean.len() > 96 || clean_pset.len() >= 256 {
             continue;
         }
         let mut inner = BTreeMap::new();
@@ -172,4 +175,18 @@ pub fn sanitize_filters_and_plugins(cfg: &mut TomoyoConfig) {
         }
     }
     cfg.plugin_settings = clean_pset;
+
+    let mut clean_modes = BTreeMap::new();
+    for (pid, mode) in std::mem::take(&mut cfg.plugin_display_modes) {
+        let pid_clean = pid.trim().to_ascii_lowercase();
+        let mode_clean = mode.trim().to_ascii_lowercase();
+        if !pid_clean.is_empty()
+            && pid_clean.len() <= 96
+            && matches!(mode_clean.as_str(), "inline" | "window")
+            && clean_modes.len() < MAX_PLUGIN_DISPLAY_MODES
+        {
+            clean_modes.insert(pid_clean, mode_clean);
+        }
+    }
+    cfg.plugin_display_modes = clean_modes;
 }

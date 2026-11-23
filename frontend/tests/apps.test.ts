@@ -47,7 +47,7 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
       pin: { spec: 'F3', active: 'F3', ok: true, disabled: false, reason: '' },
     };
     window.__TOMOYO_SETTINGS_INIT__ = {
-      version: '2.5.1',
+      version: '2.6.0',
       autostart: true,
       config: {
         language: 'zh',
@@ -167,8 +167,42 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
     document.querySelector<HTMLButtonElement>('button[data-config-plugin="dev.tomoyo.ocr"]')?.click();
     flushSync();
     expect(document.querySelector('[data-plugin-drawer="dev.tomoyo.ocr"]')).not.toBeNull();
+    expect(document.body.textContent).toContain('Quiet.md Markdown 编辑器');
     document.querySelector<HTMLButtonElement>('button[role="switch"][aria-label="dev.tomoyo.ocr:raw_output"]')?.click();
     flushSync();
+    const inlineBtn = [...document.querySelectorAll<HTMLButtonElement>('[data-plugin-drawer="dev.tomoyo.ocr"] .t-seg button')].find((b) => b.textContent?.includes('搜索结果内嵌'));
+    inlineBtn?.click();
+    flushSync();
+    expect(wv.posted.some((m) => m.cmd === 'save_settings' && (m.config as { plugin_display_modes?: Record<string, string> })?.plugin_display_modes?.['dev.tomoyo.ocr'] === 'inline')).toBe(true);
+
+    // Scalable StoreTab search + pagination + dedicated logos
+    const storeSeg = [...document.querySelectorAll<HTMLButtonElement>('.subbar button')].find((b) => b.textContent?.includes('插件市场'));
+    storeSeg?.click();
+    flushSync();
+    wv.emit({
+      event: 'store_loaded',
+      total: 10000,
+      catalog_total: 10000,
+      page: 1,
+      total_pages: 417,
+      category_counts: { docs: 1200, dev: 3400 },
+      sources: ['registry/index.json'],
+      items: [{
+        id: 'dev.tomoyo.markdown-editor',
+        name: 'Quiet.md Markdown 编辑器',
+        version: '2.6.0',
+        description: '专业 Markdown 编辑器',
+        runtime_kind: 'stdio_jsonrpc',
+        category: 'docs',
+        display_mode: 'window',
+        source: 'plugins/official-md-editor',
+        sha256: '0'.repeat(64),
+      }],
+    });
+    flushSync();
+    expect(document.body.textContent).toContain('10000');
+    expect(document.body.textContent).toContain('417');
+    expect(document.body.textContent).toContain('Quiet.md Markdown 编辑器');
 
     // Search & Web sub-tabs
     document.querySelector<HTMLButtonElement>('button[data-tab="search"]')?.click();

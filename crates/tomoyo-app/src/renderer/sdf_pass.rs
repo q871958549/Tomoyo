@@ -5,10 +5,41 @@ use super::filter_bar::paint_filter_bar_sdf;
 use super::theme::{category_rgb, Rgb};
 use super::{FrameLayout, RenderState};
 use crate::brand::paint_modern_white_emblem;
+#[cfg(windows)]
+use crate::image_icons::ImageIconCache;
 use tomoyo_protocol::IconSpec;
 
+#[cfg(windows)]
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn paint_sdf_pass(
     pixels: &mut [u8],
+    image_icons: &mut ImageIconCache,
+    width: i32,
+    height: i32,
+    scale: f32,
+    lay: &FrameLayout,
+    state: &RenderState<'_>,
+) {
+    let icon_px = (30.0 * scale).round() as u32;
+    paint_sdf_pass_inner(pixels, Some((image_icons, icon_px)), width, height, scale, lay, state);
+}
+
+#[cfg(not(windows))]
+pub(crate) fn paint_sdf_pass(
+    pixels: &mut [u8],
+    width: i32,
+    height: i32,
+    scale: f32,
+    lay: &FrameLayout,
+    state: &RenderState<'_>,
+) {
+    paint_sdf_pass_inner(pixels, None, width, height, scale, lay, state);
+}
+
+fn paint_sdf_pass_inner(
+    pixels: &mut [u8],
+    #[cfg(windows)] mut image_icons: Option<(&mut ImageIconCache, u32)>,
+    #[cfg(not(windows))] _image_icons: Option<()>,
     width: i32,
     height: i32,
     scale: f32,
@@ -107,7 +138,21 @@ pub(crate) fn paint_sdf_pass(
         } else if state.hovered == Some(idx) {
             canvas.fill_rounded_rect(10.0, y0 + 2.0, lay.list_w_dip - 12.0, y1 - 2.0, 8.0, pal.card_hover);
         }
-        if !matches!(item.icon, IconSpec::ShellPath(_)) {
+        #[cfg(windows)]
+        let mut drew_img = false;
+        #[cfg(windows)]
+        if let IconSpec::ImageFile(path) = &item.icon
+            && let Some((ref mut ic, sz)) = image_icons
+            && let Some((iw, ih, rgba)) = ic.get_cached(path, sz)
+        {
+            canvas.draw_rgba_image(22.0, icon_top, 30.0, 30.0, *iw, *ih, rgba);
+            drew_img = true;
+        }
+        #[cfg(windows)]
+        let need_tile = !drew_img && !matches!(item.icon, IconSpec::ShellPath(_));
+        #[cfg(not(windows))]
+        let need_tile = !matches!(item.icon, IconSpec::ShellPath(_) | IconSpec::ImageFile(_));
+        if need_tile {
             canvas.fill_rounded_rect(22.0, icon_top, 52.0, icon_top + 30.0, 7.0, category_rgb(item.category));
         }
         let mut text_right = lay.list_w_dip - 20.0;

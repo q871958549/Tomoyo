@@ -68,22 +68,23 @@ jobs:
       - name: Stage Linux tarball & SHA-256 checksum
         run: |
           tag="${GITHUB_REF_NAME:-}"
-          case "$tag" in v*) ;; *) tag="v2.5.1" ;; esac
+          case "$tag" in v*) ;; *) tag="v2.6.0" ;; esac
           stage="dist/stage-linux"
           rm -rf "$stage"
-          mkdir -p "$stage/assets/fonts" "$stage/registry" "$stage/packaging/linux" "$stage/scripts"
+          mkdir -p "$stage/assets/fonts" "$stage/assets/plugin-icons" "$stage/registry" "$stage/packaging/linux" "$stage/scripts"
 
-          for bin in tomoyo tomoyo-webview-host tomoyo-capture tomoyo-cli tomoyo-plugin-hello tomoyo-plugin-ocr tomoyo-plugin-notes; do
+          for bin in tomoyo tomoyo-webview-host tomoyo-capture tomoyo-cli tomoyo-plugin-hello tomoyo-plugin-ocr tomoyo-plugin-notes tomoyo-plugin-md-editor; do
             install -Dm755 "target/release/$bin" "$stage/$bin"
           done
           install -Dm644 LICENSE-MIT LICENSE-APACHE README.md "$stage/"
           install -Dm644 assets/fonts/*.ttf "$stage/assets/fonts/"
+          install -Dm644 assets/plugin-icons/*.png "$stage/assets/plugin-icons/"
           install -Dm644 assets/tomoyo-icon.png assets/tomoyo-icon.svg "$stage/assets/"
           install -Dm644 registry/index.json "$stage/registry/index.json"
           install -Dm644 packaging/linux/tomoyo.desktop packaging/linux/PKGBUILD "$stage/packaging/linux/"
           install -Dm755 scripts/install-local.sh scripts/uninstall-local.sh "$stage/scripts/"
 
-          for p in example-hello example-python example-wasm example-webview-json builtin-ocr official-notes; do
+          for p in example-hello example-python example-wasm example-webview-json builtin-ocr official-notes official-md-editor; do
             mkdir -p "$stage/plugins/$p"
             cp -a "plugins/$p/." "$stage/plugins/$p/"
             rm -rf "$stage/plugins/$p/target" "$stage/plugins/$p/__pycache__"
@@ -161,20 +162,21 @@ jobs:
       - name: Stage release bundle, build Inno Setup installer & portable ZIP
         shell: pwsh
         run: |
-          $tag = if ($env:GITHUB_REF_NAME -and $env:GITHUB_REF_NAME.StartsWith("v")) { $env:GITHUB_REF_NAME } else { "v2.5.1" }
+          $tag = if ($env:GITHUB_REF_NAME -and $env:GITHUB_REF_NAME.StartsWith("v")) { $env:GITHUB_REF_NAME } else { "v2.6.0" }
           $ver = $tag.TrimStart("v")
           $stage = "dist/stage"
-          New-Item -ItemType Directory -Force -Path $stage, "$stage/assets/fonts", "$stage/registry" | Out-Null
+          New-Item -ItemType Directory -Force -Path $stage, "$stage/assets/fonts", "$stage/assets/plugin-icons", "$stage/registry" | Out-Null
 
-          foreach ($bin in @("tomoyo.exe", "tomoyo-webview-host.exe", "tomoyo-capture.exe", "tomoyo-cli.exe", "tomoyo-plugin-hello.exe", "tomoyo-plugin-ocr.exe", "tomoyo-plugin-notes.exe")) {
+          foreach ($bin in @("tomoyo.exe", "tomoyo-webview-host.exe", "tomoyo-capture.exe", "tomoyo-cli.exe", "tomoyo-plugin-hello.exe", "tomoyo-plugin-ocr.exe", "tomoyo-plugin-notes.exe", "tomoyo-plugin-md-editor.exe")) {
             Copy-Item "target/release/$bin" "$stage/"
           }
           Copy-Item LICENSE-MIT, LICENSE-APACHE, README.md "$stage/"
           Copy-Item assets/fonts/*.ttf "$stage/assets/fonts/"
+          Copy-Item assets/plugin-icons/*.png "$stage/assets/plugin-icons/"
           Copy-Item assets/tomoyo.ico "$stage/assets/"
           Copy-Item registry/index.json "$stage/registry/"
 
-          foreach ($p in @("example-hello", "example-python", "example-wasm", "example-webview-json", "builtin-ocr", "official-notes")) {
+          foreach ($p in @("example-hello", "example-python", "example-wasm", "example-webview-json", "builtin-ocr", "official-notes", "official-md-editor")) {
             New-Item -ItemType Directory -Force -Path "$stage/plugins/$p" | Out-Null
             Get-ChildItem "plugins/$p" -Exclude "target","__pycache__" | Copy-Item -Destination "$stage/plugins/$p" -Recurse -Force
           }
@@ -273,17 +275,18 @@ jobs:
       - name: Package Windows ARM64 Portable ZIP & SHA-256
         shell: pwsh
         run: |
-          $tag = if ($env:GITHUB_REF_NAME -and $env:GITHUB_REF_NAME.StartsWith("v")) { $env:GITHUB_REF_NAME } else { "v2.5.1" }
+          $tag = if ($env:GITHUB_REF_NAME -and $env:GITHUB_REF_NAME.StartsWith("v")) { $env:GITHUB_REF_NAME } else { "v2.6.0" }
           $stage = "dist/stage-arm64"
-          New-Item -ItemType Directory -Force -Path $stage, "$stage/assets/fonts", "$stage/registry" | Out-Null
-          foreach ($bin in @("tomoyo.exe", "tomoyo-webview-host.exe", "tomoyo-capture.exe", "tomoyo-cli.exe", "tomoyo-plugin-hello.exe", "tomoyo-plugin-ocr.exe", "tomoyo-plugin-notes.exe")) {
+          New-Item -ItemType Directory -Force -Path $stage, "$stage/assets/fonts", "$stage/assets/plugin-icons", "$stage/registry" | Out-Null
+          foreach ($bin in @("tomoyo.exe", "tomoyo-webview-host.exe", "tomoyo-capture.exe", "tomoyo-cli.exe", "tomoyo-plugin-hello.exe", "tomoyo-plugin-ocr.exe", "tomoyo-plugin-notes.exe", "tomoyo-plugin-md-editor.exe")) {
             Copy-Item "target/release/$bin" "$stage/"
           }
           Copy-Item LICENSE-MIT, LICENSE-APACHE, README.md "$stage/"
           Copy-Item assets/fonts/*.ttf "$stage/assets/fonts/"
+          Copy-Item assets/plugin-icons/*.png "$stage/assets/plugin-icons/"
           Copy-Item assets/tomoyo.ico "$stage/assets/"
           Copy-Item registry/index.json "$stage/registry/"
-          foreach ($p in @("example-hello", "example-python", "example-wasm", "example-webview-json", "builtin-ocr", "official-notes")) {
+          foreach ($p in @("example-hello", "example-python", "example-wasm", "example-webview-json", "builtin-ocr", "official-notes", "official-md-editor")) {
             New-Item -ItemType Directory -Force -Path "$stage/plugins/$p" | Out-Null
             Get-ChildItem "plugins/$p" -Exclude "target","__pycache__" | Copy-Item -Destination "$stage/plugins/$p" -Recurse -Force
           }

@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.28.0.schema.json
 
 PackageIdentifier: TomoyoContributors.Tomoyo
-PackageVersion: 2.5.1
+PackageVersion: 2.6.0
 InstallerLocale: en-US
 Platform:
 - Windows.Desktop
@@ -18,13 +18,13 @@ Commands:
 ProductCode: '{8F4E29A1-6C74-4D3B-9B2A-7E3F50D81C20}_is1'
 ReleaseDate: 2026-11-23
 AppsAndFeaturesEntries:
-- DisplayName: Tomoyo v2.5.1
+- DisplayName: Tomoyo v2.6.0
   ProductCode: '{8F4E29A1-6C74-4D3B-9B2A-7E3F50D81C20}_is1'
 InstallationMetadata:
   DefaultInstallLocation: '%LocalAppData%\Programs\Tomoyo'
 Installers:
 - Architecture: x64
-  InstallerUrl: https://github.com/q871958549/Tomoyo/releases/download/v2.5.1/Tomoyo-v2.5.1-windows-x64-setup.exe
+  InstallerUrl: https://github.com/q871958549/Tomoyo/releases/download/v2.6.0/Tomoyo-v2.6.0-windows-x64-setup.exe
   InstallerSha256: PLACEHOLDER_UPDATED_BY_RELEASE_SHA256SUMS
 ManifestType: installer
 ManifestVersion: 1.28.0

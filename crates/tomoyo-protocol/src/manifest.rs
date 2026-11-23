@@ -11,6 +11,34 @@ pub enum ManifestError {
     Invalid(String),
 }
 
+/// Preferred UI presentation mode declared by a plugin.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PluginDisplayMode {
+    #[default]
+    Auto,
+    Inline,
+    Window,
+}
+
+impl PluginDisplayMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Inline => "inline",
+            Self::Window => "window",
+        }
+    }
+
+    pub fn from_opt_str(raw: Option<&str>) -> Self {
+        match raw.map(str::trim).unwrap_or("").to_ascii_lowercase().as_str() {
+            "inline" => Self::Inline,
+            "window" => Self::Window,
+            _ => Self::Auto,
+        }
+    }
+}
+
 /// Plugin manifest stored as `tomoyo-plugin.toml`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PluginManifest {
@@ -25,6 +53,18 @@ pub struct PluginManifest {
     pub license: String,
     #[serde(default)]
     pub homepage: Option<String>,
+    /// Relative asset path (e.g. `"icon.png"`) inside the plugin directory for dedicated logo rendering.
+    #[serde(default)]
+    pub icon: Option<String>,
+    /// Catalog category (`"productivity"`, `"docs"`, `"dev"`, `"ai"`, `"media"`, `"system"`).
+    #[serde(default)]
+    pub category: Option<String>,
+    /// Preferred host display mode (`"auto"`, `"inline"`, or `"window"`).
+    #[serde(default)]
+    pub display_mode: PluginDisplayMode,
+    /// Searchable tags in the scalable Plugin Center.
+    #[serde(default)]
+    pub tags: Vec<String>,
     pub runtime: RuntimeConfig,
     #[serde(default)]
     pub triggers: TriggerConfig,
@@ -199,6 +239,19 @@ impl PluginManifest {
     }
 }
 
+/// Registry shard pointer for scalable catalogs holding 10,000+ community plugins.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RegistryShardEntry {
+    pub id: String,
+    #[serde(default)]
+    pub category: String,
+    pub source: String,
+    #[serde(default)]
+    pub count: usize,
+    #[serde(default)]
+    pub sha256: String,
+}
+
 /// Decentralized open plugin registry index (`registry/index.json`) — zero login wall, SHA-256 verified.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PluginRegistryIndex {
@@ -206,6 +259,11 @@ pub struct PluginRegistryIndex {
     pub name: String,
     #[serde(default)]
     pub updated_at: String,
+    #[serde(default)]
+    pub total_count: Option<usize>,
+    #[serde(default)]
+    pub shards: Vec<RegistryShardEntry>,
+    #[serde(default)]
     pub plugins: Vec<RegistryPluginEntry>,
 }
 
@@ -219,11 +277,25 @@ pub struct RegistryPluginEntry {
     pub license: String,
     pub runtime_kind: String,
     #[serde(default)]
+    pub category: String,
+    #[serde(default)]
+    pub icon: Option<String>,
+    #[serde(default)]
+    pub display_mode: PluginDisplayMode,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
     pub keywords: Vec<String>,
     /// Local relative path or HTTPS download URL for plugin directory/bundle.
     pub source: String,
     /// Required SHA-256 hex digest of `tomoyo-plugin.toml` + primary payload for integrity verification.
     pub sha256: String,
+    #[serde(default)]
+    pub homepage: Option<String>,
+    #[serde(default)]
+    pub updated_at: String,
+    #[serde(default)]
+    pub downloads: u64,
 }
 
 #[cfg(test)]

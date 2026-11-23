@@ -30,20 +30,22 @@ Start-Sleep -Milliseconds 300
 
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $InstallDir "assets\fonts") | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $InstallDir "assets\plugin-icons") | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $InstallDir "registry") | Out-Null
 
 # Copy executables & license/docs
-foreach ($bin in @("tomoyo.exe", "tomoyo-webview-host.exe", "tomoyo-capture.exe", "tomoyo-cli.exe", "tomoyo-plugin-hello.exe", "tomoyo-plugin-ocr.exe", "tomoyo-plugin-notes.exe")) {
+foreach ($bin in @("tomoyo.exe", "tomoyo-webview-host.exe", "tomoyo-capture.exe", "tomoyo-cli.exe", "tomoyo-plugin-hello.exe", "tomoyo-plugin-ocr.exe", "tomoyo-plugin-notes.exe", "tomoyo-plugin-md-editor.exe")) {
     Copy-Item (Join-Path $releaseDir $bin) $InstallDir -Force
 }
 Copy-Item (Join-Path $repoRoot "LICENSE-MIT"), (Join-Path $repoRoot "LICENSE-APACHE"), (Join-Path $repoRoot "README.md") $InstallDir -Force
 Copy-Item (Join-Path $repoRoot "assets\fonts\*.ttf") (Join-Path $InstallDir "assets\fonts") -Force
+Copy-Item (Join-Path $repoRoot "assets\plugin-icons\*.png") (Join-Path $InstallDir "assets\plugin-icons") -Force
 Copy-Item (Join-Path $repoRoot "assets\tomoyo.ico") (Join-Path $InstallDir "assets\tomoyo.ico") -Force
 Copy-Item (Join-Path $repoRoot "registry\index.json") (Join-Path $InstallDir "registry\index.json") -Force
 Copy-Item (Join-Path $PSScriptRoot "uninstall-local.ps1") (Join-Path $InstallDir "uninstall.ps1") -Force
 
 # Copy bundled reference plugins (excluding build caches)
-foreach ($p in @("example-hello", "example-python", "example-wasm", "example-webview-json", "builtin-ocr", "official-notes")) {
+foreach ($p in @("example-hello", "example-python", "example-wasm", "example-webview-json", "builtin-ocr", "official-notes", "official-md-editor")) {
     $dstP = Join-Path $InstallDir "plugins\$p"
     New-Item -ItemType Directory -Force -Path $dstP | Out-Null
     Get-ChildItem (Join-Path $repoRoot "plugins\$p") -Exclude "target","__pycache__" |

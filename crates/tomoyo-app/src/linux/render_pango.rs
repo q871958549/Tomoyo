@@ -147,7 +147,7 @@ impl LinuxRenderer {
             let has_theme_icon = extract_icon_hint(item)
                 .and_then(|hint| self.load_cached_icon(hint, icon_sz))
                 .is_some();
-            if !has_theme_icon && matches!(item.icon, IconSpec::ShellPath(_)) {
+            if !has_theme_icon && matches!(item.icon, IconSpec::ShellPath(_) | IconSpec::ImageFile(_)) {
                 let mut c = Canvas {
                     buf: &mut self.pixels,
                     w: width,
@@ -392,6 +392,9 @@ fn draw_pango(
 }
 
 fn extract_icon_hint(item: &ResultItem) -> Option<&str> {
+    if let IconSpec::ImageFile(p) = &item.icon {
+        return Some(p.as_str());
+    }
     if let IconSpec::ShellPath(p) = &item.icon
         && p.ends_with(".desktop")
         && let Some(start) = item.subtitle.rfind('[')
@@ -426,6 +429,7 @@ fn fallback_badge_label(item: &ResultItem) -> &str {
     match &item.icon {
         IconSpec::Monogram(m) => m.as_str(),
         IconSpec::Symbol(s) => s.as_str(),
+        IconSpec::ImageFile(_) => item.category.short_label(),
         IconSpec::ShellPath(p) => {
             if item.category == ResultCategory::File {
                 let ext = Path::new(p).extension().and_then(|e| e.to_str()).unwrap_or("");

@@ -4,6 +4,8 @@ version = "0.1.0"
 description = "基于 tomoyo-sdk 编写的 Rust 原生 STDIO 参考插件：即时完成大小写、蛇形/驼峰命名与反转转换"
 author = "Tomoyo Contributors"
 license = "MIT"
+icon = "icon.png"
+category = "dev"
 
 [runtime]
 kind = "stdio_jsonrpc"

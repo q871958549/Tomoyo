@@ -30,9 +30,10 @@ pub enum HostMessage {
     TogglePinTopmost,
     CheckUpdates { repo: String },
     InstallUpdate { release: Box<tomoyo_core::ReleaseInfo> },
-    FetchStore { sources: Vec<String> },
+    FetchStore { sources: Vec<String>, #[serde(default)] query: String, #[serde(default)] category: String, #[serde(default)] runtime: String, #[serde(default)] sort: String, #[serde(default)] page: usize, #[serde(default)] page_size: usize, #[serde(default)] force_refresh: bool },
     InstallPlugin { plugin_id: String, source: String, sha256: String },
     UninstallPlugin { plugin_id: String },
+    InstallQuietMd,
     SetPluginPermission { plugin_id: String, permission: String, allowed: bool },
     ReportJsError { message: String, #[serde(default)] source: String, #[serde(default)] line: u32 },
     ReadLogs { source: String, #[serde(default)] errors_only: bool },
@@ -64,6 +65,7 @@ pub enum HostMessage {
     ExportConfigBackup,
     ImportConfigBackup { json: String },
     OpenSettings { #[serde(default)] target: String },
+    PopOutWindow,
     WindowReady,
     Close,
 }
@@ -72,6 +74,7 @@ pub enum HostMessage {
 pub struct HostAction {
     pub should_close: bool,
     pub window_ready: bool,
+    pub pop_out_window: bool,
     pub apply_theme: Option<String>,
     pub toggle_topmost: bool,
     /// `0` = none, `1` = app scan folder, `2` = capture save folder, `3` = sync folder.
@@ -79,7 +82,8 @@ pub struct HostAction {
     pub reply_json: Option<String>,
     pub async_check_updates: Option<String>,
     pub async_install_update: Option<tomoyo_core::ReleaseInfo>,
-    pub async_fetch_store: Option<Vec<String>>,
+    pub async_fetch_store: Option<crate::store_index::StoreQuery>,
+    pub async_install_quiet_md: bool,
     pub async_translate: Option<(String, String, String)>,
     pub async_refresh_hotkey_health: bool,
     /// `1` = start temporary exclusive WH_KEYBOARD_LL capture, `-1` = stop.
@@ -165,8 +169,21 @@ pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isi
             async_install_update: Some(*release),
             ..Default::default()
         },
-        HostMessage::FetchStore { sources } => HostAction {
-            async_fetch_store: Some(sources),
+        HostMessage::FetchStore { sources, query, category, runtime, sort, page, page_size, force_refresh } => HostAction {
+            async_fetch_store: Some(crate::store_index::StoreQuery {
+                sources,
+                query,
+                category,
+                runtime,
+                sort,
+                page,
+                page_size,
+                force_refresh,
+            }),
+            ..Default::default()
+        },
+        HostMessage::InstallQuietMd => HostAction {
+            async_install_quiet_md: true,
             ..Default::default()
         },
         HostMessage::InstallPlugin { plugin_id, source, sha256 } => {
@@ -275,6 +292,7 @@ pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isi
             if ok && let Some(t) = notify_hwnd { notify_parent_reload(t, true); }
             HostAction { reply_json: Some(reply), async_refresh_hotkey_health: ok && notify_hwnd.is_some(), ..Default::default() }
         }
+        HostMessage::PopOutWindow => HostAction { pop_out_window: true, ..Default::default() },
         HostMessage::WindowReady => HostAction { window_ready: true, ..Default::default() },
         HostMessage::Close => HostAction { should_close: true, ..Default::default() },
     }

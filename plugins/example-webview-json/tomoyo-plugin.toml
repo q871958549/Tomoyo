@@ -4,6 +4,9 @@ version = "0.2.0"
 description = "基于按需 WebView 宿主与 window.utools / window.tomoyo 桥接的交互式 JSON 美化与树形检视工具（关闭即释放 0 常驻内存）"
 author = "Tomoyo Contributors"
 license = "MIT"
+icon = "icon.png"
+category = "dev"
+display_mode = "inline"
 
 [runtime]
 kind = "webview"

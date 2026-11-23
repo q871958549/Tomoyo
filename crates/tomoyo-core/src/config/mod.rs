@@ -18,7 +18,8 @@ pub use hotkey::{
     ParsedHotkey,
 };
 pub use modules::{
-    sanitize_filters_and_plugins, PLUGIN_CAPTURE, PLUGIN_CLIPBOARD, PLUGIN_OCR, PLUGIN_TRANSLATE,
+    sanitize_filters_and_plugins, PLUGIN_CAPTURE, PLUGIN_CLIPBOARD, PLUGIN_MD_EDITOR,
+    PLUGIN_NOTES, PLUGIN_OCR, PLUGIN_TRANSLATE,
 };
 pub use paths::{
     default_excluded_apps, default_hotkey_excluded_apps, default_web_searches, normalize_exe_name,
@@ -85,6 +86,9 @@ pub struct TomoyoConfig {
     /// Protocol v2: declarative per-plugin settings values keyed by `plugin_id -> setting_key`.
     #[serde(default)]
     pub plugin_settings: BTreeMap<String, BTreeMap<String, serde_json::Value>>,
+    /// Per-plugin presentation override (`"inline"` inside launcher preview vs `"window"` detached).
+    #[serde(default)]
+    pub plugin_display_modes: BTreeMap<String, String>,
     /// Persistent window dimensions and optional user-dragged position.
     #[serde(default)]
     pub window: WindowConfig,
@@ -362,6 +366,7 @@ impl Default for TomoyoConfig {
             disabled_plugins: Vec::new(),
             plugin_hotkeys: BTreeMap::new(),
             plugin_settings: BTreeMap::new(),
+            plugin_display_modes: BTreeMap::new(),
             window: WindowConfig::default(),
             apps: AppsConfig::default(),
             everything: EverythingConfig::default(),

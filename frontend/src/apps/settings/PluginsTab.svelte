@@ -13,6 +13,8 @@
   import { tr, type Lang } from '../../lib/i18n';
   import type { HotkeyHealthReport, PluginEntry, TomoyoConfig } from '../../lib/types';
   import Button from '../../lib/ui/Button.svelte';
+  import Input from '../../lib/ui/Input.svelte';
+  import Select from '../../lib/ui/Select.svelte';
   import Switch from '../../lib/ui/Switch.svelte';
   import CaptureTab from './CaptureTab.svelte';
   import ClipboardPluginCard from './ClipboardPluginCard.svelte';
@@ -23,6 +25,9 @@
     cfg: TomoyoConfig;
     lang: Lang;
     plugins: PluginEntry[];
+    officialIcons?: Record<string, string>;
+    quietMdPath?: string;
+    installingQuietMd?: boolean;
     configPath: string;
     pluginsDir: string;
     runningApps: string[];
@@ -32,9 +37,11 @@
     expandedId: string | null;
     onToggleExpand: (id: string | null) => void;
     onTogglePlugin: (id: string, enabled: boolean) => void;
+    onInstallQuietMd?: () => void;
     onUpdatePluginConfig: (
       hotkeys: Record<string, string>,
-      settings: Record<string, Record<string, string | number | boolean>>
+      settings: Record<string, Record<string, string | number | boolean>>,
+      displayModes?: Record<string, string>
     ) => void;
     onJumpDoctor?: () => void;
     onToast: (msg: string, warn?: boolean) => void;
@@ -42,21 +49,60 @@
   }
 
   let {
-    cfg, lang, plugins, configPath, pluginsDir, runningApps, secretsStatus,
-    hotkeyHealth, showRecord, expandedId, onToggleExpand, onTogglePlugin,
-    onUpdatePluginConfig, onJumpDoctor, onToast, onSave,
+    cfg, lang, plugins, officialIcons = {}, quietMdPath = '', installingQuietMd = false,
+    configPath, pluginsDir, runningApps, secretsStatus, hotkeyHealth, showRecord, expandedId,
+    onToggleExpand, onTogglePlugin, onInstallQuietMd, onUpdatePluginConfig, onJumpDoctor, onToast, onSave,
   }: Props = $props();
 
+  let filterText = $state('');
+  let filterCat = $state('all');
   let isEn = $derived(lang === 'en');
   let officialIdSet = new Set(OFFICIAL_PLUGINS.map((m) => m.id.toLowerCase()));
-  let externalPlugins = $derived(plugins.filter((p) => !officialIdSet.has(p.id.toLowerCase())));
+
+  let filteredOfficials = $derived.by(() => {
+    const q = filterText.trim().toLowerCase();
+    return OFFICIAL_PLUGINS.filter((m) => {
+      if (filterCat !== 'all' && m.category !== filterCat) return false;
+      if (!q) return true;
+      return `${m.id} ${m.zhName} ${m.enName} ${m.triggers} ${m.zhDesc}`.toLowerCase().includes(q);
+    });
+  });
+
+  let filteredExternals = $derived.by(() => {
+    const q = filterText.trim().toLowerCase();
+    return plugins.filter((p) => {
+      if (officialIdSet.has(p.id.toLowerCase())) return false;
+      if (filterCat !== 'all' && (p.category || 'dev') !== filterCat) return false;
+      if (!q) return true;
+      return `${p.id} ${p.name} ${(p.keywords || []).join(' ')} ${p.description || ''}`.toLowerCase().includes(q);
+    });
+  });
 
   function hasV2Config(p: PluginEntry): boolean {
-    return (p.declared_hotkeys?.length || 0) > 0 || (p.settings_schema?.length || 0) > 0;
+    return (p.declared_hotkeys?.length || 0) > 0 || (p.settings_schema?.length || 0) > 0 || !!p.display_mode;
   }
 
   function hasOfficialDrawer(id: string, entry?: PluginEntry): boolean {
     return id === PLUGIN_CLIPBOARD || id === PLUGIN_TRANSLATE || id === PLUGIN_CAPTURE || !!entry;
+  }
+
+  function resolveIcon(id: string, entry?: PluginEntry): string {
+    return entry?.icon_url || officialIcons[id.toLowerCase()] || officialIcons[id] || '';
+  }
+
+  function modeBadge(id: string, entry?: PluginEntry): string {
+    const ov = (cfg.plugin_display_modes || {})[id.toLowerCase()];
+    const eff = ov || entry?.display_mode || '';
+    if (eff === 'inline') return isEn ? 'Inline' : '内嵌';
+    if (eff === 'window') return isEn ? 'Window' : '独立窗';
+    return '';
+  }
+
+  function onChangeDisplayMode(pluginId: string, mode: string) {
+    const nextModes = { ...(cfg.plugin_display_modes || {}) };
+    if (mode === 'inline' || mode === 'window') nextModes[pluginId] = mode;
+    else delete nextModes[pluginId];
+    onUpdatePluginConfig({ ...(cfg.plugin_hotkeys || {}) }, { ...(cfg.plugin_settings || {}) }, nextModes);
   }
 
   function onChangeHotkey(slotKey: string, spec: string) {
@@ -81,23 +127,58 @@
   }
 </script>
 
+<div class="t-card mod-card" style="margin-bottom:12px">
+  <div class="filter-bar">
+    <div style="flex:1;min-width:180px">
+      <Input bind:value={filterText} size="sm" type="search" placeholder={isEn ? 'Filter installed plugins by name, id, trigger…' : '检索已安装插件（名称 / ID / 触发词）…'} />
+    </div>
+    <Select
+      size="sm"
+      minWidth="136px"
+      value={filterCat}
+      options={[
+        { value: 'all', label: isEn ? 'All Categories' : '全部分类' },
+        { value: 'productivity', label: isEn ? 'Productivity' : '效率工具' },
+        { value: 'docs', label: isEn ? 'Docs & Notes' : '文档与笔记' },
+        { value: 'ai', label: isEn ? 'AI & OCR' : 'AI 与识字' },
+        { value: 'media', label: isEn ? 'Capture & Media' : '截图与图像' },
+        { value: 'dev', label: isEn ? 'Developer' : '开发调试' },
+      ]}
+      onchange={(v) => (filterCat = v)}
+    />
+  </div>
+</div>
+
 <div class="t-card mod-card">
   <div class="sec-head">
     <Layers size={14} class="sec-ico" />
-    <span>{isEn ? 'Official Feature Modules (Click Config Inside Each Plugin)' : '官方功能插件（按需启停 · 参数收口于插件内配置）'}</span>
+    <span>{isEn ? 'Official Feature Plugins (Dedicated Logo & Per-Plugin Settings)' : '官方功能插件（独立 Logo · 备忘录与 Quiet.md 分离 · 按需启停）'}</span>
   </div>
 
-  {#each OFFICIAL_PLUGINS as item}
+  {#if filteredOfficials.length === 0}
+    <div class="empty-plug">{isEn ? 'No matching official plugins.' : '当前筛选条件下无匹配官方插件。'}</div>
+  {/if}
+  {#each filteredOfficials as item}
     {@const enabled = isPluginEnabled(cfg, item.id)}
     {@const entry = plugins.find((p) => p.id.toLowerCase() === item.id.toLowerCase())}
+    {@const iconSrc = resolveIcon(item.id, entry)}
     {@const canConfig = hasOfficialDrawer(item.id, entry)}
     {@const isOpen = expandedId === item.id}
+    {@const mTag = modeBadge(item.id, entry)}
     <div class="mod-item">
       <div class="mod-row {enabled ? '' : 'is-off'}">
-        <div class="mod-info">
+        <div class="plug-avatar">
+          {#if iconSrc}
+            <img src={iconSrc} alt={item.id} width="32" height="32" />
+          {:else}
+            <span>{item.zhName.slice(0, 1)}</span>
+          {/if}
+        </div>
+        <div class="mod-info" style="flex:1">
           <div class="mod-top">
             <span class="t-label">{isEn ? item.enName : item.zhName}</span>
             <span class="t-pill">{item.triggers}</span>
+            {#if mTag}<span class="t-pill">{mTag}</span>{/if}
             {#if entry}
               <span class="t-pill">{localizeRuntime(entry.runtime, isEn)} · {entry.max_memory_mb} MB</span>
             {/if}
@@ -107,14 +188,9 @@
         </div>
         <div class="mod-acts">
           {#if canConfig}
-            <button
-              type="button"
-              class="cfg-pill {isOpen ? 'is-open' : ''}"
-              data-config-plugin={item.id}
-              onclick={() => onToggleExpand(isOpen ? null : item.id)}
-            >
+            <button type="button" class="cfg-pill {isOpen ? 'is-open' : ''}" data-config-plugin={item.id} onclick={() => onToggleExpand(isOpen ? null : item.id)}>
               <SlidersHorizontal size={11} />
-              <span>{isEn ? 'Settings' : '参数与设置'}</span>
+              <span>{isEn ? 'Settings' : '配置'}</span>
               {#if isOpen}<ChevronUp size={11} />{:else}<ChevronDown size={11} />{/if}
             </button>
           {/if}
@@ -142,7 +218,7 @@
                 {/each}
               </div>
             {/if}
-            <PluginConfigDrawer plugin={entry} {cfg} {lang} {onChangeHotkey} {onChangeSetting} />
+            <PluginConfigDrawer plugin={entry} {cfg} {lang} {quietMdPath} {installingQuietMd} {onInstallQuietMd} {onChangeDisplayMode} {onChangeHotkey} {onChangeSetting} />
           {/if}
         </div>
       {/if}
@@ -159,32 +235,39 @@
     <span style="text-align:right">{tr(lang, 'th_cap')}</span>
     <span style="text-align:right">{isEn ? 'State' : '启停'}</span>
   </div>
-  {#if externalPlugins.length === 0}
-    <div class="empty-plug">{isEn ? 'No third-party plugins installed yet (browse Plugin Catalog above).' : '暂无第三方扩展插件（可切换上方「插件市场」浏览安装）。'}</div>
+  {#if filteredExternals.length === 0}
+    <div class="empty-plug">{isEn ? 'No matching third-party plugins (browse Plugin Catalog).' : '暂无匹配的扩展插件（可在上方「插件市场」按分类搜索安装）。'}</div>
   {:else}
-    {#each externalPlugins as p}
+    {#each filteredExternals as p}
       {@const enabled = isPluginEnabled(cfg, p.id)}
       {@const configurable = hasV2Config(p)}
       {@const isOpen = expandedId === p.id}
+      {@const extIcon = resolveIcon(p.id, p)}
+      {@const mTag = modeBadge(p.id, p)}
       <div class="plug-item">
         <div class="plug-grid plug-row {enabled ? '' : 'is-off'}">
-          <div class="plug-name">
-            <div class="plug-title-row">
-              <span class="t-label">{p.name}</span>
-              {#if configurable}
-                <button
-                  type="button"
-                  class="cfg-pill {isOpen ? 'is-open' : ''}"
-                  data-config-plugin={p.id}
-                  onclick={() => onToggleExpand(isOpen ? null : p.id)}
-                >
-                  <SlidersHorizontal size={11} />
-                  <span>{isEn ? 'Config' : '参数与热键'}</span>
-                  {#if isOpen}<ChevronUp size={11} />{:else}<ChevronDown size={11} />{/if}
-                </button>
+          <div class="plug-name" style="display:flex;align-items:center;gap:9px">
+            <div class="plug-avatar sm">
+              {#if extIcon}
+                <img src={extIcon} alt={p.id} width="26" height="26" />
+              {:else}
+                <span>{p.name.slice(0, 1)}</span>
               {/if}
             </div>
-            <div class="plug-id">{p.id}</div>
+            <div style="min-width:0;flex:1">
+              <div class="plug-title-row">
+                <span class="t-label">{p.name}</span>
+                {#if mTag}<span class="t-pill">{mTag}</span>{/if}
+                {#if configurable}
+                  <button type="button" class="cfg-pill {isOpen ? 'is-open' : ''}" data-config-plugin={p.id} onclick={() => onToggleExpand(isOpen ? null : p.id)}>
+                    <SlidersHorizontal size={11} />
+                    <span>{isEn ? 'Config' : '配置'}</span>
+                    {#if isOpen}<ChevronUp size={11} />{:else}<ChevronDown size={11} />{/if}
+                  </button>
+                {/if}
+              </div>
+              <div class="plug-id">{p.id}</div>
+            </div>
           </div>
           <div><span class="t-pill">{localizeRuntime(p.runtime, isEn)}</span></div>
           <div class="plug-kw">{(p.keywords || []).join(', ')}</div>
@@ -207,7 +290,7 @@
           </div>
         </div>
         {#if configurable && isOpen}
-          <PluginConfigDrawer plugin={p} {cfg} {lang} {onChangeHotkey} {onChangeSetting} />
+          <PluginConfigDrawer plugin={p} {cfg} {lang} {quietMdPath} {installingQuietMd} {onInstallQuietMd} {onChangeDisplayMode} {onChangeHotkey} {onChangeSetting} />
         {/if}
       </div>
     {/each}
@@ -216,46 +299,37 @@
 
 <div class="t-card" style="margin-top:14px">
   <div class="t-row">
-    <div style="min-width:0">
-      <div class="t-label">{tr(lang, 'lbl_cfg_path')}</div>
-      <div class="path-sub">{configPath}</div>
-    </div>
-    <Button variant="secondary" onclick={() => configPath && postHost({ cmd: 'open_path', path: configPath })}>
-      <FileCode size={14} />{tr(lang, 'btn_open_cfg')}
-    </Button>
+    <div style="min-width:0"><div class="t-label">{tr(lang, 'lbl_cfg_path')}</div><div class="path-sub">{configPath}</div></div>
+    <Button variant="secondary" onclick={() => configPath && postHost({ cmd: 'open_path', path: configPath })}><FileCode size={14} />{tr(lang, 'btn_open_cfg')}</Button>
   </div>
   <div class="t-row">
-    <div style="min-width:0">
-      <div class="t-label">{tr(lang, 'lbl_plug_dir')}</div>
-      <div class="path-sub">{pluginsDir}</div>
-    </div>
-    <Button variant="secondary" onclick={() => pluginsDir && postHost({ cmd: 'open_path', path: pluginsDir })}>
-      <FolderOpen size={14} />{tr(lang, 'btn_open_plug')}
-    </Button>
+    <div style="min-width:0"><div class="t-label">{tr(lang, 'lbl_plug_dir')}</div><div class="path-sub">{pluginsDir}</div></div>
+    <Button variant="secondary" onclick={() => pluginsDir && postHost({ cmd: 'open_path', path: pluginsDir })}><FolderOpen size={14} />{tr(lang, 'btn_open_plug')}</Button>
   </div>
 </div>
 
 <style>
-  .mod-card { padding: 14px 16px; }
+  .mod-card { padding: 12px 16px; }
+  .filter-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .sec-head { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
   :global(.sec-ico) { color: var(--accent); flex-shrink: 0; }
   .mod-item { border-top: 1px solid var(--border); }
-  .mod-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 11px 0; }
+  .mod-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; }
   .mod-row.is-off, .plug-row.is-off { opacity: 0.56; }
-  .mod-info { min-width: 0; }
-  .mod-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .mod-acts { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
-  .mod-drawer {
-    margin: 2px 0 12px; padding: 12px 14px; border-radius: 10px;
-    background: var(--canvas); border: 1px solid var(--border);
+  .plug-avatar {
+    width: 32px; height: 32px; border-radius: 8px; flex-shrink: 0; overflow: hidden;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: var(--accent-soft); color: var(--accent); font-weight: 700; font-size: 13px;
   }
+  .plug-avatar.sm { width: 26px; height: 26px; border-radius: 7px; font-size: 11px; }
+  .plug-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .mod-info { min-width: 0; }
+  .mod-top { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+  .mod-acts { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+  .mod-drawer { margin: 2px 0 12px; padding: 12px 14px; border-radius: 10px; background: var(--canvas); border: 1px solid var(--border); }
   .perm-strip { display: flex; flex-wrap: wrap; gap: 12px; padding-bottom: 8px; margin-bottom: 8px; border-bottom: 1px solid var(--border); }
   .plug-wrap { padding: 12px 16px; }
-  .plug-grid {
-    display: grid;
-    grid-template-columns: minmax(140px, 1.4fr) 74px minmax(64px, 0.8fr) minmax(105px, 1fr) 58px 46px;
-    gap: 10px; align-items: center;
-  }
+  .plug-grid { display: grid; grid-template-columns: minmax(150px, 1.45fr) 70px minmax(64px, 0.75fr) minmax(105px, 1fr) 56px 46px; gap: 10px; align-items: center; }
   .plug-head { font-size: 11.5px; font-weight: 600; color: var(--muted); padding-bottom: 8px; border-bottom: 1px solid var(--border); }
   .plug-item { border-bottom: 1px solid var(--border); }
   .plug-item:last-child { border-bottom: 0; }
@@ -265,7 +339,6 @@
     display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 999px;
     border: 1px solid var(--border-strong); background: var(--surface); color: var(--text-secondary);
     font-family: inherit; font-size: 11.5px; font-weight: 500; cursor: pointer; white-space: nowrap;
-    transition: border-color 0.12s ease, color 0.12s ease, background-color 0.12s ease;
   }
   .cfg-pill:hover, .cfg-pill.is-open { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
   .empty-plug { padding: 12px 0 4px; font-size: 12px; color: var(--muted); }

@@ -1,9 +1,12 @@
 id = "dev.tomoyo.notes"
-name = "本地 Markdown 备忘录 (官方插件)"
-version = "2.0.0"
-description = "纯本地 Markdown 备忘录插件（零核心膨胀、零私有库锁定）：支持 note/memo 全文检索、#标签过滤、一键新建、剪贴板转存与外部编辑器直达"
+name = "本地快速备忘录 (Quick Notes)"
+version = "2.6.0"
+description = "轻量即时备忘录插件（与专业 Markdown 编辑器解耦）：支持 note/memo 秒级检索、#标签过滤、剪贴板一键记录与交付 Quiet.md 精编（0 常驻内存）"
 author = "Tomoyo Contributors"
 license = "MIT"
+icon = "icon.png"
+category = "docs"
+display_mode = "inline"
 
 [runtime]
 kind = "stdio_jsonrpc"

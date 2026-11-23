@@ -2,7 +2,6 @@
 
 use crate::bridge::HostAction;
 use crate::linux_hotkeys::{audit_system_hotkeys, probe_hotkey_owner_live};
-use crate::store::fetch_store_catalog_json;
 use std::ffi::{c_char, c_int, c_void, CStr, CString};
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -251,10 +250,16 @@ pub fn dispatch_async_workers(act: HostAction, ch: &Arc<HostChannel>) {
     if let Some(rel) = act.async_install_update {
         spawn_install_update_worker(rel, Arc::clone(ch));
     }
-    if let Some(sources) = act.async_fetch_store {
+    if let Some(req) = act.async_fetch_store {
         let c = Arc::clone(ch);
         let _ = std::thread::Builder::new().name("tomoyo-wv-store".into()).spawn(move || {
-            c.push(fetch_store_catalog_json(&sources));
+            c.push(crate::store_index::query_store_page_json(&req));
+        });
+    }
+    if act.async_install_quiet_md {
+        let c = Arc::clone(ch);
+        let _ = std::thread::Builder::new().name("tomoyo-quietmd-install".into()).spawn(move || {
+            c.push(crate::store_index::make_install_quiet_md_event());
         });
     }
     if let Some((text, src, tgt)) = act.async_translate {

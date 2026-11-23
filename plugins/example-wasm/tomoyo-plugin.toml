@@ -4,6 +4,8 @@ version = "0.2.0"
 description = "零环境权限与指令燃料计量的 WebAssembly 沙箱插件：即时解码 JWT 令牌与换算 B/KB/MB/GB/TB 单位"
 author = "Tomoyo Contributors"
 license = "MIT"
+icon = "icon.png"
+category = "dev"
 
 [runtime]
 kind = "wasm"

@@ -82,6 +82,7 @@ jobs:
           ./target/release/tomoyo-cli registry list
           ./target/release/tomoyo-cli registry check --manifest-only
           ./target/release/tomoyo-cli dev plugins/official-notes --query "hello" --once
+          ./target/release/tomoyo-cli dev plugins/official-md-editor --query "" --once
 
   windows-test:
     runs-on: windows-latest
@@ -184,6 +185,7 @@ jobs:
           .\target\release\tomoyo-cli.exe registry list
           .\target\release\tomoyo-cli.exe registry check --manifest-only
           .\target\release\tomoyo-cli.exe dev plugins/official-notes --query "hello" --once
+          .\target\release\tomoyo-cli.exe dev plugins/official-md-editor --query "" --once
 
   macos-core-check:
     runs-on: macos-latest

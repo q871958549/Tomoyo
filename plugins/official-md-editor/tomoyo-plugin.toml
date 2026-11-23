@@ -1,0 +1,55 @@
+id = "dev.tomoyo.markdown-editor"
+name = "Quiet.md Markdown 编辑器 (官方插件)"
+version = "2.6.0"
+description = "与备忘录分离的专业 Markdown 编辑器（集成开源 s1dashu/quiet-md · MIT）：支持所见即所得排版、.md 文件直达、工作区新建与一键 SHA-256 校验安装，零 Tomoyo 核心膨胀"
+author = "Tomoyo Contributors · Engine by Quiet.md (MIT)"
+license = "MIT"
+homepage = "https://github.com/s1dashu/quiet-md"
+icon = "icon.png"
+category = "docs"
+display_mode = "window"
+tags = ["markdown", "editor", "quiet-md", "docs", "gpui"]
+
+[runtime]
+kind = "stdio_jsonrpc"
+command = "tomoyo-plugin-md-editor"
+args = []
+
+[triggers]
+keywords = ["md", "markdown", "quiet", "edit"]
+
+permissions = ["filesystem_read", "filesystem_write", "network", "shell_exec"]
+
+[resources]
+max_memory_mb = 48
+idle_timeout_secs = 20
+query_timeout_ms = 1200
+
+[[hotkeys]]
+id = "open_md_editor"
+label = "快速呼出 Markdown 编辑器"
+default_hotkey = ""
+trigger_query = "md "
+
+[[settings]]
+key = "docs_dir"
+label = "Markdown 文档库目录"
+description = "留空默认使用 %USERPROFILE%\\Documents\\Markdown 或同步目录\\markdown（与快速备忘录 notes\\ 严格分离）"
+type = "text"
+placeholder = "例如 D:\\Writing\\Markdown"
+default = ""
+
+[[settings]]
+key = "custom_bin_path"
+label = "自定义 Quiet.md 可执行文件路径"
+description = "如安装在非标准路径，可在此指定 quiet-md.exe；留空则自动探测或引导官方安装"
+type = "text"
+placeholder = "例如 D:\\Tools\\Quiet.md\\quiet-md.exe"
+default = ""
+
+[[settings]]
+key = "open_new_in_quiet"
+label = "新建 .md 文档后立即用 Quiet.md 打开"
+description = "通过 `md + 标题` 新建文档后自动拉起 Quiet.md 窗口编辑"
+type = "bool"
+default = true

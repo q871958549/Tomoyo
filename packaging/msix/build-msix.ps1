@@ -1,8 +1,8 @@
 # Builds a staged Windows MSIX package from target\release using Windows SDK MakeAppx.exe
 param(
-    [string]$Version = "2.5.1",
+    [string]$Version = "2.6.0",
     [string]$StageDir = "dist\msix-stage",
-    [string]$OutPath = "dist\Tomoyo-v2.5.1-x64.msix"
+    [string]$OutPath = "dist\Tomoyo-v2.6.0-x64.msix"
 )
 
 $ErrorActionPreference = "Stop"
@@ -14,14 +14,15 @@ if (-not (Test-Path (Join-Path $rel "tomoyo.exe"))) {
 }
 
 $stageAbs = Join-Path $repoRoot $StageDir
-New-Item -ItemType Directory -Force -Path $stageAbs, (Join-Path $stageAbs "assets\fonts") | Out-Null
+New-Item -ItemType Directory -Force -Path $stageAbs, (Join-Path $stageAbs "assets\fonts"), (Join-Path $stageAbs "assets\plugin-icons") | Out-Null
 
-foreach ($bin in @("tomoyo.exe", "tomoyo-webview-host.exe", "tomoyo-capture.exe", "tomoyo-cli.exe", "tomoyo-plugin-hello.exe", "tomoyo-plugin-ocr.exe", "tomoyo-plugin-notes.exe")) {
+foreach ($bin in @("tomoyo.exe", "tomoyo-webview-host.exe", "tomoyo-capture.exe", "tomoyo-cli.exe", "tomoyo-plugin-hello.exe", "tomoyo-plugin-ocr.exe", "tomoyo-plugin-notes.exe", "tomoyo-plugin-md-editor.exe")) {
     if (Test-Path (Join-Path $rel $bin)) {
         Copy-Item (Join-Path $rel $bin) $stageAbs -Force
     }
 }
 Copy-Item (Join-Path $repoRoot "assets\tomoyo.ico"), (Join-Path $repoRoot "assets\tomoyo-icon.png") (Join-Path $stageAbs "assets") -Force
+Copy-Item (Join-Path $repoRoot "assets\plugin-icons\*.png") (Join-Path $stageAbs "assets\plugin-icons") -Force
 Copy-Item (Join-Path $repoRoot "assets\fonts\*.ttf") (Join-Path $stageAbs "assets\fonts") -Force
 
 $manifestRaw = Get-Content (Join-Path $PSScriptRoot "AppxManifest.xml") -Raw

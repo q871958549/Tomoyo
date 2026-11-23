@@ -29,6 +29,12 @@
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │  v3.0.0 · 远期：物理拆包 Core/Suite 双版本 + WASM wasi-p2 + 公益代码签名     │
 ├──────────────────────────────────────────────────────────────────────────────┤
+│  v2.8.0 · 规划：社区脚本一键打包发布流水线 + WASM 声明式富卡片扩展           │
+├──────────────────────────────────────────────────────────────────────────────┤
+│  v2.7.0 · 规划：万级插件中心 2.0（分片索引 / Rust 侧检索分类分页 / 详情抽屉） │
+├──────────────────────────────────────────────────────────────────────────────┤
+│  v2.6.0 · [已完成 ✅] 备忘录与 Quiet.md 分离 · 插件专属 Logo · 内嵌/独立双模态   │
+├──────────────────────────────────────────────────────────────────────────────┤
 │  v2.5.1 · [已完成 ✅] 补充 UI 设计规范 §1.3/§2.8 并重构分类栏列表与 FontSelect│
 ├──────────────────────────────────────────────────────────────────────────────┤
 │  v2.5.0 · [已完成 ✅] 分类栏多行/+N溢出支持 32 标签 + 结果字体/字重精细可配置 │
@@ -356,6 +362,30 @@
 2. **设置中心规范修复与极简分层（`Select.svelte` + `AppearanceTab.svelte` + `FilterTabsCard.svelte`）**：
    - 为 `Select.svelte` 增加 `searchable` 实时检索过滤，替换 `AppearanceTab.svelte` 的原生 `<select>`，修复 `.tab-head` 与 `.t-row` 标准容器排版。
    - 重构 `FilterTabsCard.svelte` 为清晰三段式行结构（排版模式 `Segmented` + 中性内置分类开关 + `38 px` 紧凑自定义标签列表/`Select` 预设菜单/标准 `<Input />` 内联编辑器），彻底消除多层边框堆砌与胶囊混杂。
+
+### 阶段十九：`v2.6.0` — 备忘录与 Markdown 编辑器解耦、插件专属 Logo 与双呈态模式（已完成 ✅）
+1. **备忘录（Quick Notes）与 Markdown 编辑器（`Quiet.md`）职责分离**：
+   - **备忘录（`plugins/official-notes`，`dev.tomoyo.notes`）**：专注本地快速记录、即时检索、#标签筛选、剪贴板转存与右侧轻量预览；支持一键交付 **Quiet.md** 精编（`preferred_editor` 可选 `auto [Quiet.md]` / `system` / `custom`）。
+   - **Markdown 编辑器（`plugins/official-md-editor`，`dev.tomoyo.markdown-editor`）**：官方集成开源桌面编辑器 [`s1dashu/quiet-md`](https://github.com/s1dashu/quiet-md)（MIT，Rust + GPUI）；零 `tomoyo.exe` 体积膨胀——自动探测本机 `quiet-md.exe`（或 Linux `quiet-md`）直传文件路径编辑，未安装时支持从官方 Release 按 `SHA256SUMS` 校验下载部署至 `%LOCALAPPDATA%\Tomoyo\tools\quiet-md\`，并为全仓与 Everything `.md` 结果补齐快速打开入口。
+2. **插件专属 Logo 全链路体系（`IconSpec::ImageFile` + Manifest `icon` + Host `WM_SETICON`）**：
+   - 协议层（`PluginManifest`）新增 `icon`、`category`、`display_mode`、`tags`，`IconSpec` 新增 `ImageFile(String)`（基于零额外依赖 `WIC / png` 异步解码缓存），覆盖搜索结果行（Windows SDF + Linux Pango）、**WebView 宿主独立窗口标题栏与任务栏图标（动态构建 ARGB `HICON` / GTK icon，不再千篇一律显示 Tomoyo Logo）**、以及设置中心插件/市场图标徽章。
+   - 为全套内置模块（剪贴板 / 多源翻译 / 截图贴图 / OCR / 备忘录 / Markdown 编辑器）与官方参考插件设计独立、高辨识度的现代矢量图标。
+3. **插件双呈态展示：`inline` 搜索结果内嵌展示 vs `window` 独立窗口分离**：
+   - 插件可在 `tomoyo-plugin.toml` 声明默认 `display_mode`（`auto` / `inline` / `window`），用户亦可针对任意插件在设置中心「插件中心」与搜索结果动作菜单中自由覆盖切换。
+   - `inline` 模式将 WebView 宿主按无边框从属面精准贴靠在搜索框右侧预览区域内，主窗体聚焦保护自动识别子宿主（点击不误关），跟随缩放/关闭即时销毁释放全部 WebView 内存，并支持顶部一键「分离为独立窗口（Pop Out）」热切换至带专属 Logo 标题栏的 `WS_OVERLAPPEDWINDOW`。
+
+### 阶段二十：`v2.7.0` — 面向成千上万款插件的「插件中心 2.0」可扩展架构（架构奠基 → 深化）
+1. **分片注册清单协议（Registry Schema v2）**：
+   - 支持 `schema_version: 2` 轻量主清单 + 按分类分片（`shards` + ETag 304 + `%LOCALAPPDATA%\Tomoyo\cache\store\` 本地缓存），向下兼容全部 v1 清单；内置分类（`efficiency / docs / dev / ai / media / system`）、评分/下载量元信息、校验徽章与按需图标。
+2. **Rust 侧检索引擎与分页 IPC 协议（防前端 DOM / 内存膨胀）**：
+   - 严禁在设置初始化 `__TOMOYO_SETTINGS_INIT__` 中全量注入市场列表；改为由 `tomoyo-webview-host` 在 Rust 侧构建常驻内存检索引擎（关键词 / 分类 / 运行时 / 排序 / 装机状态过滤），通过 `QueryStore` / `StorePage` 分页协议每次仅向 Svelte 交付一页（如 `24` 条）与按页按需的轻量缩略图标，`10,000+` 插件下 DOM 节点始终 `< 100` 且检索耗时 `< 5 ms`，`settings.html` 仍严守 `≤ 320 KB`。
+3. **设置中心双栏检索与插件详情交互（`PluginsTab` + `StoreTab`）**：
+   - 已安装插件列表与插件市场均支持即时关键字搜索、分类芯片筛选、呈现模式快捷切换，以及惰性拉取的插件详情抽屉（权限透明列表、支持触发词、作者与主页）。
+
+### 阶段二十一：`v2.8.0` — 社区生态拓展与打包分发流水线
+1. **`tomoyo-cli pack` 标准化社区插件包生成器**：校验 `icon.png`、`display_mode`、Protocol v2 Schema 与确定性 `SHA-256` 清单生成；
+2. **WASM 声明式卡片输出原语**：允许零权限 WASM 沙箱插件输出结构化 Markdown/表格/快捷动作卡片在搜索结果右侧直接内嵌呈现；
+3. **插件一键体检与多源仓库镜像健康检测**：自动检测过期清单、不可达镜像与插件版本升级提示。
 
 ---
 

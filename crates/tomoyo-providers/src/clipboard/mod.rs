@@ -172,7 +172,7 @@ fn build_clip_commands(provider_id: &str, cmd: &str, capturing: bool, lang: Lang
             subtitle: lang.pick("按需拉起独立窗口，支持编辑文本、标注标签与导出 JSON，关闭即释放 100% 内存", "Ephemeral workbench for editing, tagging & backup (0 idle RAM)").into(),
             category: ResultCategory::Clipboard,
             score: 9_900,
-            icon: IconSpec::Monogram("CB".into()),
+            icon: tomoyo_core::official_icon_or_monogram(tomoyo_core::PLUGIN_CLIPBOARD, "CB"),
             badge: Some("Ctrl+E".into()),
             copy_text: None,
             actions: vec![ActionSpec {
@@ -257,7 +257,7 @@ fn empty_clipboard_item(provider_id: &str, filter: &str, lang: Lang) -> ResultIt
             .into(),
         category: ResultCategory::Clipboard,
         score: 5_000,
-        icon: IconSpec::Monogram("CB".into()),
+        icon: tomoyo_core::official_icon_or_monogram(tomoyo_core::PLUGIN_CLIPBOARD, "CB"),
         badge: Some("0".into()),
         copy_text: None,
         actions: vec![ActionSpec {

@@ -38,7 +38,7 @@ if [ ! -x "$RELEASE_DIR/tomoyo" ]; then
 fi
 
 VERSION="$(sed -n 's/^version = "\([^"]*\)"/\1/p' "$REPO_ROOT/Cargo.toml" | head -n1)"
-VERSION="${VERSION:-2.5.1}"
+VERSION="${VERSION:-2.6.0}"
 echo "=== Installing Tomoyo v$VERSION -> $BIN_DIR & $DATA_DIR ==="
 
 # Stop any running Tomoyo instances safely before overwriting binaries
@@ -82,6 +82,7 @@ BINS=(
   tomoyo-plugin-hello
   tomoyo-plugin-ocr
   tomoyo-plugin-notes
+  tomoyo-plugin-md-editor
 )
 for b in "${BINS[@]}"; do
   install -Dm755 "$RELEASE_DIR/$b" "$BIN_DIR/$b"
@@ -91,11 +92,12 @@ install -Dm644 "$REPO_ROOT/LICENSE-MIT" "$DATA_DIR/LICENSE-MIT"
 install -Dm644 "$REPO_ROOT/LICENSE-APACHE" "$DATA_DIR/LICENSE-APACHE"
 install -Dm644 "$REPO_ROOT/README.md" "$DATA_DIR/README.md"
 install -Dm644 "$REPO_ROOT"/assets/fonts/*.ttf "$DATA_DIR/fonts/"
+install -Dm644 "$REPO_ROOT"/assets/plugin-icons/*.png "$DATA_DIR/plugin-icons/"
 install -Dm644 "$REPO_ROOT/assets/tomoyo-icon.png" "$DATA_DIR/assets/tomoyo-icon.png"
 install -Dm644 "$REPO_ROOT/registry/index.json" "$DATA_DIR/registry/index.json"
 install -Dm755 "$REPO_ROOT/scripts/uninstall-local.sh" "$DATA_DIR/uninstall.sh"
 
-for p in example-hello example-python example-wasm example-webview-json builtin-ocr official-notes; do
+for p in example-hello example-python example-wasm example-webview-json builtin-ocr official-notes official-md-editor; do
   rm -rf "$DATA_DIR/plugins/$p"
   mkdir -p "$DATA_DIR/plugins/$p"
   cp -a "$REPO_ROOT/plugins/$p/." "$DATA_DIR/plugins/$p/"

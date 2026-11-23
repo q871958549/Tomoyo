@@ -11,10 +11,11 @@ pub(crate) fn handle_install_plugin(
     notify_hwnd: Option<isize>,
 ) -> HostAction {
     let res = install_plugin_from_source(&plugin_id, &source, &sha256);
-    if res.is_ok()
-        && let Some(target) = notify_hwnd
-    {
-        notify_parent_reload(target, true);
+    if res.is_ok() {
+        crate::store_index::invalidate_catalog_cache();
+        if let Some(target) = notify_hwnd {
+            notify_parent_reload(target, true);
+        }
     }
     let evt = match res {
         Ok(dest) => serde_json::json!({
@@ -37,10 +38,11 @@ pub(crate) fn handle_install_plugin(
 
 pub(crate) fn handle_uninstall_plugin(plugin_id: String, notify_hwnd: Option<isize>) -> HostAction {
     let res = uninstall_user_plugin(&plugin_id);
-    if res.is_ok()
-        && let Some(target) = notify_hwnd
-    {
-        notify_parent_reload(target, true);
+    if res.is_ok() {
+        crate::store_index::invalidate_catalog_cache();
+        if let Some(target) = notify_hwnd {
+            notify_parent_reload(target, true);
+        }
     }
     let evt = match res {
         Ok(()) => serde_json::json!({

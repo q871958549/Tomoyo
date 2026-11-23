@@ -5,7 +5,7 @@ use std::sync::{Arc, RwLock};
 use tomoyo_core::translate::{resolve_target_lang, TranslateStore};
 use tomoyo_core::{Lang, Provider, TomoyoConfig, PLUGIN_TRANSLATE};
 use tomoyo_protocol::{
-    ActionKind, ActionSpec, IconSpec, InternalCommandKind, PreviewSpec, QueryContext,
+    ActionKind, ActionSpec, InternalCommandKind, PreviewSpec, QueryContext,
     ResultCategory, ResultItem,
 };
 
@@ -86,7 +86,7 @@ impl Provider for TranslateProvider {
                     .into(),
                 category: ResultCategory::Plugin,
                 score: 10_600,
-                icon: IconSpec::Monogram("译".into()),
+                icon: tomoyo_core::official_icon_or_monogram(tomoyo_core::PLUGIN_TRANSLATE, "译"),
                 badge: Some(tgt_label.into()),
                 copy_text: Some(text.clone()),
                 actions: vec![ActionSpec {
@@ -167,7 +167,7 @@ impl Provider for TranslateProvider {
                 .into(),
             category: ResultCategory::Plugin,
             score: 10_500,
-            icon: IconSpec::Monogram("译".into()),
+            icon: tomoyo_core::official_icon_or_monogram(tomoyo_core::PLUGIN_TRANSLATE, "译"),
             badge: Some("Alt+T".into()),
             copy_text: clip_text.clone(),
             actions: vec![ActionSpec {
@@ -254,7 +254,7 @@ fn cache_item(
         subtitle: subtitle.trim().into(),
         category: ResultCategory::Clipboard,
         score,
-        icon: IconSpec::Monogram("译".into()),
+        icon: tomoyo_core::official_icon_or_monogram(tomoyo_core::PLUGIN_TRANSLATE, "译"),
         badge: Some(badge.into()),
         copy_text: Some(translated.into()),
         actions: vec![

@@ -11,14 +11,17 @@ use windows::Win32::Foundation::{COLORREF, HMODULE, HWND};
 use windows::Win32::Graphics::Dwm::{
     DwmSetWindowAttribute, DWMWA_CAPTION_COLOR, DWMWA_TEXT_COLOR, DWMWA_USE_IMMERSIVE_DARK_MODE,
 };
-use windows::Win32::Graphics::Gdi::{CreateSolidBrush, HBRUSH};
+use windows::Win32::Graphics::Gdi::{
+    CreateBitmap, CreateDIBSection, CreateSolidBrush, DeleteObject, BITMAPINFO, BITMAPINFOHEADER,
+    BI_RGB, DIB_RGB_COLORS, HBRUSH,
+};
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, GetSystemMetrics, KillTimer, LoadCursorW, LoadImageW, RegisterClassExW,
-    SendMessageW, SetForegroundWindow, SetWindowPos, SetWindowTextW, ShowWindow, HICON,
-    HWND_NOTOPMOST, HWND_TOPMOST, ICON_BIG, ICON_SMALL, IDC_ARROW, IMAGE_ICON, LR_SHARED,
-    SM_CXICON, SM_CXSCREEN, SM_CXSMICON, SM_CYICON, SM_CYSCREEN, SM_CYSMICON, SWP_FRAMECHANGED,
-    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SW_SHOW, WM_SETICON, WNDCLASSEXW,
-    WNDPROC, WS_OVERLAPPEDWINDOW, WS_VISIBLE,
+    CreateIconIndirect, CreateWindowExW, DestroyIcon, GetSystemMetrics, KillTimer, LoadCursorW,
+    LoadImageW, RegisterClassExW, SendMessageW, SetForegroundWindow, SetWindowPos, SetWindowTextW,
+    ShowWindow, HICON, HWND_NOTOPMOST, HWND_TOPMOST, ICONINFO, ICON_BIG, ICON_SMALL, IDC_ARROW,
+    IMAGE_ICON, LR_SHARED, SM_CXICON, SM_CXSCREEN, SM_CXSMICON, SM_CYICON, SM_CYSCREEN,
+    SM_CYSMICON, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SW_SHOW,
+    WM_SETICON, WNDCLASSEXW, WNDPROC, WS_OVERLAPPEDWINDOW, WS_VISIBLE,
 };
 
 /// Loads the embedded Tomoyo application logo (`RT_GROUP_ICON` ID `1` from `winresource`)
@@ -48,6 +51,97 @@ pub fn load_embedded_window_icons(hinst: HMODULE) -> (Option<HICON>, Option<HICO
         .map(|h| HICON(h.0))
         .or(big);
         (big, small)
+    }
+}
+
+fn create_hicon_from_image(path: &str, size: i32) -> Option<HICON> {
+    let sz = size.clamp(16, 128) as u32;
+    let (_, _, dw, dh, rgba) =
+        tomoyo_core::wic_thumb::decode_image_thumbnail_wic(std::path::Path::new(path), sz, sz)?;
+    let resized = if dw != sz || dh != sz {
+        tomoyo_core::wic_thumb::scale_rgba_bilinear(&rgba, dw, dh, sz, sz)
+    } else {
+        rgba
+    };
+    let bmi = BITMAPINFO {
+        bmiHeader: BITMAPINFOHEADER {
+            biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+            biWidth: sz as i32,
+            biHeight: -(sz as i32),
+            biPlanes: 1,
+            biBitCount: 32,
+            biCompression: BI_RGB.0,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let mut bits: *mut c_void = std::ptr::null_mut();
+    unsafe {
+        let color_bmp = CreateDIBSection(None, &bmi, DIB_RGB_COLORS, &mut bits, None, 0).ok()?;
+        if bits.is_null() {
+            let _ = DeleteObject(color_bmp.into());
+            return None;
+        }
+        let dst = std::slice::from_raw_parts_mut(bits as *mut u8, (sz * sz * 4) as usize);
+        for (src_px, dst_px) in resized.as_chunks::<4>().0.iter().zip(dst.as_chunks_mut::<4>().0.iter_mut()) {
+            dst_px[0] = src_px[2];
+            dst_px[1] = src_px[1];
+            dst_px[2] = src_px[0];
+            dst_px[3] = src_px[3];
+        }
+        let mask_bmp = CreateBitmap(sz as i32, sz as i32, 1, 1, None);
+        let info = ICONINFO {
+            fIcon: true.into(),
+            xHotspot: 0,
+            yHotspot: 0,
+            hbmMask: mask_bmp,
+            hbmColor: color_bmp,
+        };
+        let icon = CreateIconIndirect(&info).ok();
+        let _ = DeleteObject(color_bmp.into());
+        if !mask_bmp.is_invalid() {
+            let _ = DeleteObject(mask_bmp.into());
+        }
+        icon
+    }
+}
+
+/// Loads custom plugin `HICON` handles if provided, otherwise falls back to embedded Tomoyo icon.
+/// Returns `(big, small, owns_handles)`.
+pub fn load_window_icons(hinst: HMODULE, icon_path: Option<&str>) -> (Option<HICON>, Option<HICON>, bool) {
+    if let Some(p) = icon_path.map(str::trim).filter(|s| !s.is_empty()) {
+        let (big_sz, sm_sz) = unsafe { (GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CXSMICON)) };
+        if let Some(big) = create_hicon_from_image(p, big_sz) {
+            let small = create_hicon_from_image(p, sm_sz);
+            return (Some(big), small.or(Some(big)), true);
+        }
+    }
+    let (big, small) = load_embedded_window_icons(hinst);
+    (big, small, false)
+}
+
+pub unsafe fn apply_window_icons(hwnd: HWND, icons: (Option<HICON>, Option<HICON>)) {
+    unsafe {
+        if let Some(ic) = icons.1 {
+            SendMessageW(hwnd, WM_SETICON, Some(WPARAM_SETICON_SMALL), Some(windows::Win32::Foundation::LPARAM(ic.0 as isize)));
+        }
+        if let Some(ic) = icons.0 {
+            SendMessageW(hwnd, WM_SETICON, Some(WPARAM_SETICON_BIG), Some(windows::Win32::Foundation::LPARAM(ic.0 as isize)));
+        }
+    }
+}
+
+pub unsafe fn destroy_owned_icons(big: Option<HICON>, small: Option<HICON>, owns: bool) {
+    if !owns {
+        return;
+    }
+    unsafe {
+        if let Some(b) = big && !b.is_invalid() {
+            let _ = DestroyIcon(b);
+        }
+        if let Some(s) = small && !s.is_invalid() && Some(s) != big {
+            let _ = DestroyIcon(s);
+        }
     }
 }
 
@@ -103,6 +197,7 @@ pub unsafe fn toggle_pin_topmost_window(hwnd: HWND, base_title: &str, is_topmost
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub unsafe fn create_themed_host_window(
     cls: PCWSTR,
     wndproc: WNDPROC,
@@ -111,16 +206,14 @@ pub unsafe fn create_themed_host_window(
     width: i32,
     height: i32,
     visible_initially: bool,
+    icons: (Option<HICON>, Option<HICON>),
 ) -> HWND {
     unsafe {
         let hinst = windows::Win32::System::LibraryLoader::GetModuleHandleW(None).unwrap();
-        let (big_icon, small_icon) = load_embedded_window_icons(hinst);
         let wc = WNDCLASSEXW {
             cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
             lpfnWndProc: wndproc,
             hInstance: hinst.into(),
-            hIcon: big_icon.unwrap_or_default(),
-            hIconSm: small_icon.unwrap_or_default(),
             hCursor: LoadCursorW(None, IDC_ARROW).unwrap_or_default(),
             hbrBackground: create_theme_bg_brush(theme),
             lpszClassName: cls,
@@ -137,12 +230,7 @@ pub unsafe fn create_themed_host_window(
             None, None, Some(hinst.into()), None,
         )
         .expect("CreateWindowExW failed");
-        if let Some(ic) = small_icon {
-            SendMessageW(hwnd, WM_SETICON, Some(WPARAM_SETICON_SMALL), Some(windows::Win32::Foundation::LPARAM(ic.0 as isize)));
-        }
-        if let Some(ic) = big_icon {
-            SendMessageW(hwnd, WM_SETICON, Some(WPARAM_SETICON_BIG), Some(windows::Win32::Foundation::LPARAM(ic.0 as isize)));
-        }
+        apply_window_icons(hwnd, icons);
         apply_host_window_theme(hwnd, theme);
         hwnd
     }

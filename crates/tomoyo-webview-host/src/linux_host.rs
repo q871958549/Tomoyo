@@ -314,7 +314,12 @@ pub fn run_linux_host(opts: LaunchArgs) {
     let c_init = CString::new(init_script).unwrap_or_default();
     let mode = theme_mode(&opts.theme);
 
-    let icon_decoded = tomoyo_core::wic_thumb::decode_png_rgba_bytes(EMBEDDED_ICON_PNG);
+    let custom_icon = opts
+        .icon
+        .as_deref()
+        .and_then(|p| tomoyo_core::wic_thumb::decode_image_thumbnail_wic(std::path::Path::new(p), 64, 64))
+        .map(|(_, _, w, h, rgba)| (w, h, rgba));
+    let icon_decoded = custom_icon.or_else(|| tomoyo_core::wic_thumb::decode_png_rgba_bytes(EMBEDDED_ICON_PNG));
     let (icon_ptr, icon_w, icon_h) = match &icon_decoded {
         Some((w, h, rgba)) => (rgba.as_ptr(), *w as c_int, *h as c_int),
         None => (std::ptr::null(), 0, 0),

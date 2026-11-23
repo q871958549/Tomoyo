@@ -185,6 +185,8 @@ fn build_ocr_result_items(img_path: &Path, out: &OcrOutput, source_label: &str) 
                     width: 1080,
                     height: 680,
                     max_memory_mb: 256,
+                    icon_path: None,
+                    display_mode: None,
                 },
             },
             ActionSpec {

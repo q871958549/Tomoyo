@@ -1,6 +1,5 @@
 //! Protocol v2 runtime helpers: effective plugin settings merge, declared hotkey resolution & event dispatch.
 
-use crate::host::PluginRuntimeInfo;
 use crate::permissions::is_bundled_plugin_dir;
 use crate::runtime::{ensure_live, LiveRuntime, RegisteredPlugin};
 use serde_json::Value;
@@ -8,8 +7,67 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::time::Duration;
 use tomoyo_core::{permission_key, PermissionStore, TomoyoConfig};
 use tomoyo_protocol::{
-    ExecuteResponse, Permission, PluginEventKind, PluginEventPayload, PluginManifest, METHOD_EVENT,
+    ActionKind, ExecuteResponse, IconSpec, Permission, PluginEventKind, PluginEventPayload,
+    PluginHotkeyDecl, PluginManifest, PluginSettingField, ResultItem, METHOD_EVENT,
 };
+
+#[derive(Debug, Clone)]
+pub struct PluginRuntimeInfo {
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    pub description: String,
+    pub runtime_badge: String,
+    pub category: String,
+    pub display_mode: String,
+    pub icon_path: Option<String>,
+    pub author: String,
+    pub license: String,
+    pub homepage: Option<String>,
+    pub keywords: Vec<String>,
+    pub running: bool,
+    pub pid: Option<u32>,
+    pub working_set_bytes: Option<u64>,
+    pub max_memory_mb: u32,
+    pub idle_timeout_secs: u64,
+    pub declared_permissions: Vec<String>,
+    pub granted_permissions: Vec<String>,
+    pub bundled_trusted: bool,
+    pub declared_hotkeys: Vec<PluginHotkeyDecl>,
+    pub declared_events: Vec<PluginEventKind>,
+    pub settings_schema: Vec<PluginSettingField>,
+}
+
+/// Decorates plugin result items with resolved plugin logo & default presentation mode.
+pub(crate) fn decorate_plugin_items(plug: &RegisteredPlugin, items: &mut [ResultItem]) {
+    let plug_icon = crate::discovery::resolve_plugin_icon_path(&plug.manifest, &plug.dir);
+    let default_mode = plug.manifest.display_mode.as_str();
+    for item in items.iter_mut() {
+        if item.provider_id.is_empty() {
+            item.provider_id = plug.manifest.id.clone();
+        }
+        if let Some(ip) = &plug_icon {
+            if matches!(item.icon, IconSpec::Monogram(_)) {
+                item.icon = IconSpec::ImageFile(ip.clone());
+            }
+            for act in &mut item.actions {
+                if let ActionKind::OpenWebView {
+                    icon_path,
+                    display_mode,
+                    ..
+                } = &mut act.kind
+                {
+                    if icon_path.is_none() {
+                        *icon_path = Some(ip.clone());
+                    }
+                    if display_mode.is_none() && default_mode != "auto" {
+                        *display_mode = Some(default_mode.to_string());
+                    }
+                }
+            }
+        }
+    }
+}
 
 /// Builds a serializable runtime snapshot of a discovered plugin including Protocol v2 metadata.
 pub(crate) fn build_runtime_info(p: &RegisteredPlugin, perms: &PermissionStore) -> PluginRuntimeInfo {
@@ -31,6 +89,16 @@ pub(crate) fn build_runtime_info(p: &RegisteredPlugin, perms: &PermissionStore) 
         version: p.manifest.version.clone(),
         description: p.manifest.description.clone(),
         runtime_badge: p.manifest.runtime.kind_badge().to_string(),
+        category: p
+            .manifest
+            .category
+            .clone()
+            .unwrap_or_else(|| "productivity".into()),
+        display_mode: p.manifest.display_mode.as_str().to_string(),
+        icon_path: crate::discovery::resolve_plugin_icon_path(&p.manifest, &p.dir),
+        author: p.manifest.author.clone(),
+        license: p.manifest.license.clone(),
+        homepage: p.manifest.homepage.clone(),
         keywords: p.manifest.triggers.keywords.clone(),
         running: p.live.is_some(),
         pid: p.live.as_ref().and_then(|l| l.pid()),

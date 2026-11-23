@@ -1,6 +1,6 @@
 //! Background threads for Settings Center updater checks, installer execution & Store loading.
 
-use crate::store::fetch_store_catalog_json;
+use crate::store_index::{make_install_quiet_md_event, query_store_page_json, StoreQuery};
 use std::ffi::c_void;
 use std::sync::mpsc;
 use tomoyo_core::{
@@ -116,7 +116,7 @@ pub fn spawn_install_update_worker(
 }
 
 pub fn spawn_store_worker(
-    sources: Vec<String>,
+    req: StoreQuery,
     tx: mpsc::Sender<String>,
     hwnd_raw: usize,
     notify_msg: u32,
@@ -124,7 +124,7 @@ pub fn spawn_store_worker(
     let _ = std::thread::Builder::new()
         .name("tomoyo-settings-store".into())
         .spawn(move || {
-            let evt = fetch_store_catalog_json(&sources);
+            let evt = query_store_page_json(&req);
             if tx.send(evt).is_ok() {
                 unsafe {
                     let _ = PostMessageW(
@@ -135,6 +135,18 @@ pub fn spawn_store_worker(
                     );
                 }
             }
+        });
+}
+
+pub fn spawn_quiet_md_install_worker(
+    tx: mpsc::Sender<String>,
+    hwnd_raw: usize,
+    notify_msg: u32,
+) {
+    let _ = std::thread::Builder::new()
+        .name("tomoyo-quietmd-install".into())
+        .spawn(move || {
+            push_evt(&tx, hwnd_raw, notify_msg, make_install_quiet_md_event());
         });
 }
 
@@ -274,8 +286,11 @@ pub fn dispatch_async_workers(
     if let Some(rel) = act.async_install_update {
         spawn_install_update_worker(rel, parent_hwnd, tx.clone(), hwnd_raw, notify_msg);
     }
-    if let Some(sources) = act.async_fetch_store {
-        spawn_store_worker(sources, tx.clone(), hwnd_raw, notify_msg);
+    if let Some(req) = act.async_fetch_store {
+        spawn_store_worker(req, tx.clone(), hwnd_raw, notify_msg);
+    }
+    if act.async_install_quiet_md {
+        spawn_quiet_md_install_worker(tx.clone(), hwnd_raw, notify_msg);
     }
     if let Some((txt, src, tgt)) = act.async_translate {
         spawn_translate_worker(txt, src, tgt, tx.clone(), hwnd_raw, notify_msg);

@@ -64,17 +64,8 @@ impl AppShell {
             self.font_medium,
         );
         let new_font = create_edit_font(self.dpi_scale, face);
-        unsafe {
-            SendMessageW(
-                self.edit_hwnd,
-                WM_SETFONT,
-                Some(WPARAM(new_font.0 as usize)),
-                Some(LPARAM(1)),
-            );
-            if !self.edit_font.is_invalid() {
-                let _ = DeleteObject(self.edit_font.into());
-            }
-        }
+        unsafe { let _ = SendMessageW(self.edit_hwnd, WM_SETFONT, Some(WPARAM(new_font.0 as usize)), Some(LPARAM(1)));
+            if !self.edit_font.is_invalid() { let _ = DeleteObject(self.edit_font.into()); } }
         self.edit_font = new_font;
     }
 
@@ -107,6 +98,7 @@ impl AppShell {
             }
             self.layout_edit_control(w);
         }
+        self.sync_inline_dock_bounds();
         self.invalidate();
     }
 
@@ -207,7 +199,7 @@ impl AppShell {
     }
 
     pub(super) fn is_preview_visible(&self) -> bool {
-        self.cached_preview.is_some() && !self.results.is_empty()
+        (self.cached_preview.is_some() || self.inter.inline_dock_pid.is_some()) && !self.results.is_empty()
     }
 
     pub(super) fn is_filter_bar_visible(&self) -> bool {
@@ -266,7 +258,7 @@ impl AppShell {
         if rows == 0 {
             HEADER_HEIGHT_DIP + filter_h + FOOTER_HEIGHT_DIP
         } else {
-            let min_preview_rows = if self.cached_preview.is_some() { 5 } else { 0 };
+            let min_preview_rows = if self.inter.inline_dock_pid.is_some() { 7 } else if self.cached_preview.is_some() { 5 } else { 0 };
             let eff_rows = rows.max(min_preview_rows);
             HEADER_HEIGHT_DIP + filter_h + 8 + eff_rows * self.typography.row_height_dip() + FOOTER_HEIGHT_DIP
         }
@@ -443,6 +435,7 @@ impl AppShell {
                 self.geom.max_visible_rows = (avail_h / self.typography.row_height_dip()).clamp(4, 18) as usize;
             }
         }
+        self.sync_inline_dock_bounds();
         self.invalidate();
     }
 }

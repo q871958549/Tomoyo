@@ -45,7 +45,7 @@ for proc in tomoyo tomoyo-webview-host tomoyo-capture; do
 done
 sleep 0.3
 
-for b in tomoyo tomoyo-webview-host tomoyo-capture tomoyo-cli tomoyo-plugin-hello tomoyo-plugin-ocr tomoyo-plugin-notes; do
+for b in tomoyo tomoyo-webview-host tomoyo-capture tomoyo-cli tomoyo-plugin-hello tomoyo-plugin-ocr tomoyo-plugin-notes tomoyo-plugin-md-editor; do
   rm -f "$BIN_DIR/$b"
 done
 
@@ -57,8 +57,8 @@ rm -f "$XDG_DATA/applications/tomoyo.desktop" \
 if [ "$PURGE" -eq 1 ]; then
   rm -rf "$DATA_DIR"
 else
-  rm -rf "$DATA_DIR/fonts" "$DATA_DIR/assets" "$DATA_DIR/registry" "$DATA_DIR/uninstall.sh"
-  for p in example-hello example-python example-wasm example-webview-json builtin-ocr official-notes; do
+  rm -rf "$DATA_DIR/fonts" "$DATA_DIR/plugin-icons" "$DATA_DIR/assets" "$DATA_DIR/registry" "$DATA_DIR/uninstall.sh"
+  for p in example-hello example-python example-wasm example-webview-json builtin-ocr official-notes official-md-editor; do
     rm -rf "$DATA_DIR/plugins/$p"
   done
 fi

@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=https://aka.ms/winget-manifest.locale.1.28.0.schema.json
 
 PackageIdentifier: TomoyoContributors.Tomoyo
-PackageVersion: 2.5.1
+PackageVersion: 2.6.0
 PackageLocale: zh-CN
 Publisher: Tomoyo Open Source Contributors
 PublisherUrl: https://github.com/q871958549/Tomoyo
@@ -30,7 +30,7 @@ Tags:
 - wasm
 - 插件扩展
 - 生产力工具
-ReleaseNotesUrl: https://github.com/q871958549/Tomoyo/releases/tag/v2.5.1
+ReleaseNotesUrl: https://github.com/q871958549/Tomoyo/releases/tag/v2.6.0
 Documentations:
 - DocumentLabel: 项目文档
   DocumentUrl: https://q871958549.github.io/Tomoyo/

@@ -185,9 +185,15 @@ fn build_note_item(doc: &NoteDoc, score: i64) -> ResultItem {
                 kind: ActionKind::CopyText { text: doc.body.clone(), paste_immediately: false },
             },
             ActionSpec {
-                id: "open_md".into(),
-                label: "用编辑器打开 .md 文件".into(),
+                id: "edit_in_md".into(),
+                label: "交付 Quiet.md / Markdown 编辑器精编".into(),
                 shortcut: Some("Ctrl+Enter".into()),
+                kind: ActionKind::FillQuery { query: format!("md \"{path_str}\"") },
+            },
+            ActionSpec {
+                id: "open_system".into(),
+                label: "用系统默认关联程序打开".into(),
+                shortcut: None,
                 kind: ActionKind::LaunchPath { path: path_str.clone(), args: None, working_dir: None },
             },
             ActionSpec {
@@ -213,7 +219,7 @@ fn build_note_item(doc: &NoteDoc, score: i64) -> ResultItem {
 
 impl TomoyoPlugin for NotesPlugin {
     fn meta(&self) -> PluginMeta {
-        PluginMeta::new("本地 Markdown 备忘录", "2.0.0")
+        PluginMeta::new("本地快速备忘录", "2.6.0")
     }
 
     fn query(&self, ctx: &QueryContext) -> Vec<ResultItem> {

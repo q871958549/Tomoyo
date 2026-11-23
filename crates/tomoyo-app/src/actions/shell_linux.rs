@@ -125,7 +125,7 @@ fn spawn_ephemeral_singleton(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn spawn_ephemeral_webview(
+pub fn spawn_ephemeral_webview_ex(
     plugin_id: &str,
     title: &str,
     entry_path: &str,
@@ -135,12 +135,15 @@ pub fn spawn_ephemeral_webview(
     height: u32,
     _max_memory_mb: u32,
     is_dark: bool,
-) -> Result<(), String> {
+    icon_path: Option<&str>,
+    _inline_hwnd: Option<isize>,
+    _dock_rect: Option<(i32, i32, i32, i32)>,
+) -> Result<u32, String> {
     if !plugin_id.is_empty() {
         let tag = sanitize_instance_tag(plugin_id);
         let jq = serde_json::to_string(initial_query).unwrap_or_else(|_| "\"\"".into());
         if try_wake_singleton_socket(&format!("plugin-{tag}"), &format!("activate_plugin:{jq}\n")) {
-            return Ok(());
+            return Ok(0);
         }
     }
     let host_exe = locate_sibling_exe("tomoyo-webview-host")?;
@@ -159,6 +162,9 @@ pub fn spawn_ephemeral_webview(
         "--height",
         &height.to_string(),
     ]);
+    if let Some(ip) = icon_path.filter(|s| !s.is_empty()) {
+        cmd.args(["--icon", ip]);
+    }
     if utools_compat {
         cmd.arg("--utools-compat");
     }
@@ -168,10 +174,11 @@ pub fn spawn_ephemeral_webview(
     let mut child = cmd
         .spawn()
         .map_err(|e| format!("failed to launch {}: {e}", host_exe.display()))?;
+    let pid = child.id();
     let _ = std::thread::Builder::new().name("tomoyo-wv-reaper".into()).spawn(move || {
         let _ = child.wait();
     });
-    Ok(())
+    Ok(pid)
 }
 
 fn locate_sibling_exe(name: &str) -> Result<PathBuf, String> {

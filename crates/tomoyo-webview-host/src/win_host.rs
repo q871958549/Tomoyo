@@ -1,26 +1,29 @@
 //! Native Win32 WebView2 container window, DWM titlebar theme sync, topmost pin & async worker relay.
 
 use crate::bridge::handle_host_message;
-use crate::clip_view::{assemble_clip_manager_html, is_clip_manager_entry, load_clip_manager_bootstrap};
+use crate::clip_view::{assemble_clip_manager_html, is_clip_manager_entry};
 use crate::db::PluginDb;
-use crate::ocr_view::{assemble_ocr_viewer_html, is_ocr_viewer_entry, load_ocr_viewer_bootstrap};
-use crate::shim_js::build_init_script;
+use crate::hotkey_capture::HotkeyCaptureController;
+use crate::inline_dock::{
+    clear_inline_hwnd_marker, create_inline_dock_window, inline_dock_overlay_js,
+    prepare_host_bootstrap, promote_inline_to_window, write_inline_hwnd_marker,
+};
+use crate::ocr_view::{assemble_ocr_viewer_html, is_ocr_viewer_entry};
 use crate::single_instance::{
     acquire_or_activate_clipboard, acquire_or_activate_settings, acquire_or_activate_translator,
     CLIPBOARD_WINDOW_CLASS, EPHEMERAL_WINDOW_CLASS, SETTINGS_WINDOW_CLASS, TRANSLATOR_WINDOW_CLASS,
     WM_APP_ACTIVATE_CLIPBOARD, WM_APP_ACTIVATE_SETTINGS, WM_APP_ACTIVATE_TRANSLATOR,
 };
 use crate::tr_view::{
-    assemble_translator_html, is_translator_entry, load_translator_bootstrap,
-    read_latest_translate_req_event,
+    assemble_translator_html, is_translator_entry, read_latest_translate_req_event,
 };
-use crate::hotkey_capture::HotkeyCaptureController;
 use crate::win_theme::{
-    apply_host_window_theme, configure_controller_visuals, create_themed_host_window, map_vdir,
-    reveal_host_window_and_notify, to_file_url, toggle_pin_topmost_window,
+    apply_host_window_theme, configure_controller_visuals, create_themed_host_window,
+    destroy_owned_icons, load_window_icons, map_vdir, reveal_host_window_and_notify,
+    toggle_pin_topmost_window,
 };
 use crate::win_workers::dispatch_async_workers;
-use crate::{assemble_settings_html, build_settings_init_script_for, LaunchArgs};
+use crate::{assemble_settings_html, LaunchArgs};
 use std::cell::RefCell;
 use std::ffi::c_void;
 use std::rc::Rc;
@@ -58,11 +61,16 @@ struct HostWindowState {
     event_tx: mpsc::Sender<String>,
     event_rx: mpsc::Receiver<String>,
     base_title: String,
+    theme: String,
+    pref_w: i32,
+    pref_h: i32,
+    icons: (Option<windows::Win32::UI::WindowsAndMessaging::HICON>, Option<windows::Win32::UI::WindowsAndMessaging::HICON>, bool),
     is_topmost: bool,
     picking_folder: bool,
     settings_mode: bool,
     window_revealed: bool,
     notify_hwnd: Option<isize>,
+    inline_owner: Option<isize>,
     last_activate_probe: Instant,
     hk_capture: HotkeyCaptureController,
 }
@@ -180,7 +188,14 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             LRESULT(0)
         }
         WM_DESTROY => {
-            unsafe { PostQuitMessage(0) };
+            unsafe {
+                clear_inline_hwnd_marker(hwnd);
+                if !ptr.is_null() {
+                    let st = &*ptr;
+                    destroy_owned_icons(st.icons.0, st.icons.1, st.icons.2);
+                }
+                PostQuitMessage(0);
+            }
             LRESULT(0)
         }
         _ => unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) },
@@ -214,16 +229,17 @@ pub fn run_windows_host(opts: LaunchArgs) {
         (_, _, true) => TRANSLATOR_WINDOW_CLASS,
         _ => EPHEMERAL_WINDOW_CLASS,
     };
+    let hinst = unsafe { windows::Win32::System::LibraryLoader::GetModuleHandleW(None).unwrap() };
+    let icons = load_window_icons(hinst, opts.icon.as_deref());
+    let docked_inline = !opts.settings_mode && opts.inline_hwnd.is_some() && opts.dock_rect.is_some();
     let hwnd = unsafe {
-        create_themed_host_window(
-            cls,
-            Some(wndproc),
-            &opts.title,
-            &opts.theme,
-            opts.width,
-            opts.height,
-            !opts.settings_mode,
-        )
+        if let (Some(owner), Some(rect)) = (opts.inline_hwnd, opts.dock_rect) && docked_inline {
+            let h = create_inline_dock_window(cls, Some(wndproc), &opts.title, &opts.theme, owner, rect, (icons.0, icons.1));
+            write_inline_hwnd_marker(h, std::process::id(), &opts.plugin_id);
+            h
+        } else {
+            create_themed_host_window(cls, Some(wndproc), &opts.title, &opts.theme, opts.width, opts.height, !opts.settings_mode, (icons.0, icons.1))
+        }
     };
 
     let (event_tx, event_rx) = mpsc::channel::<String>();
@@ -233,11 +249,16 @@ pub fn run_windows_host(opts: LaunchArgs) {
         event_tx: event_tx.clone(),
         event_rx,
         base_title: opts.title.clone(),
+        theme: opts.theme.clone(),
+        pref_w: opts.width,
+        pref_h: opts.height,
+        icons,
         is_topmost: false,
         picking_folder: false,
         settings_mode: opts.settings_mode,
         window_revealed: !opts.settings_mode,
         notify_hwnd: opts.notify_hwnd,
+        inline_owner: opts.inline_hwnd,
         last_activate_probe: Instant::now(),
         hk_capture: HotkeyCaptureController::new(opts.notify_hwnd),
     });
@@ -255,24 +276,13 @@ pub fn run_windows_host(opts: LaunchArgs) {
     let settings_mode = opts.settings_mode;
     let ocr_mode = is_ocr_viewer_entry(&opts.entry);
     let notify_hwnd = opts.notify_hwnd;
-    let (init_script, ocr_img_dir, clip_img_dir) = if settings_mode {
-        (build_settings_init_script_for(&opts.query), None, None)
-    } else if ocr_mode {
-        let boot = load_ocr_viewer_bootstrap(&opts.theme, &opts.query);
-        (boot.init_script, boot.image_dir, None)
-    } else if clip_mode {
-        let boot = load_clip_manager_bootstrap(&opts.theme, &opts.query);
-        (boot.init_script, None, Some(boot.images_dir))
-    } else if tr_mode {
-        (load_translator_bootstrap(&opts.theme), None, None)
-    } else {
-        (build_init_script(&opts.plugin_id, &opts.query, opts.theme != "light", opts.utools_compat, &plugin_db.borrow().snapshot_json()), None, None)
-    };
-    let entry_url = if settings_mode || ocr_mode || clip_mode || tr_mode {
-        String::new()
-    } else {
-        to_file_url(&opts.entry)
-    };
+    let boot = prepare_host_bootstrap(&opts, &plugin_db.borrow());
+    let (init_script, ocr_img_dir, clip_img_dir, entry_url) = (
+        boot.init_script,
+        boot.ocr_img_dir,
+        boot.clip_img_dir,
+        boot.entry_url,
+    );
 
     let user_data_dir = tomoyo_core::data_dir().join("webview-cache");
     let _ = std::fs::create_dir_all(&user_data_dir);
@@ -325,6 +335,10 @@ pub fn run_windows_host(opts: LaunchArgs) {
                             }
                             let script_w = HSTRING::from(&init_script_inner);
                             let _ = webview.AddScriptToExecuteOnDocumentCreated(PCWSTR(script_w.as_ptr()), None);
+                            if docked_inline {
+                                let dock_w = HSTRING::from(inline_dock_overlay_js(&theme_inner));
+                                let _ = webview.AddScriptToExecuteOnDocumentCreated(PCWSTR(dock_w.as_ptr()), None);
+                            }
 
                             let db_cb = Rc::clone(&db_inner);
                             let tx_cb = tx_inner.clone();
@@ -339,7 +353,13 @@ pub fn run_windows_host(opts: LaunchArgs) {
                                             windows::Win32::System::Com::CoTaskMemFree(Some(raw.0 as *const c_void));
                                             let act = handle_host_message(&s, &mut db_cb.borrow_mut(), notify_hwnd);
                                             if let Some(theme) = &act.apply_theme {
+                                                (*state_ptr).theme = theme.clone();
                                                 apply_host_window_theme(hwnd, theme);
+                                            }
+                                            if act.pop_out_window {
+                                                let st_ref = &*state_ptr;
+                                                promote_inline_to_window(hwnd, st_ref.pref_w, st_ref.pref_h, &st_ref.base_title, &st_ref.theme, (st_ref.icons.0, st_ref.icons.1), st_ref.inline_owner.or(notify_hwnd));
+                                                (*state_ptr).inline_owner = None;
                                             }
                                             if act.window_ready && !(*state_ptr).window_revealed {
                                                 (*state_ptr).window_revealed = true;

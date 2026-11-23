@@ -27,14 +27,11 @@ pub use file_ops::{
 pub use shell_win::send_ctrl_c_cleanly;
 pub use shell_win::{
     kill_process_by_pid, paste_into_previous_window_async, shell_open, shell_open_as_admin,
-    spawn_capture_tool, spawn_clipboard_manager_window, spawn_settings_window,
-    spawn_translator_window,
+    spawn_capture_tool, spawn_clipboard_manager_window, spawn_ephemeral_webview_ex,
+    spawn_settings_window, spawn_translator_window,
 };
 
-use shell_win::{
-    focus_window, open_terminal_at, reveal_in_file_manager, run_system_command,
-    spawn_ephemeral_webview,
-};
+use shell_win::{focus_window, open_terminal_at, reveal_in_file_manager, run_system_command};
 use std::sync::Arc;
 use tomoyo_plugin_host::PluginHost;
 use tomoyo_protocol::{ActionKind, ExecuteRequest, InternalCommandKind};
@@ -219,7 +216,9 @@ pub fn execute_action(
             width,
             height,
             max_memory_mb,
-        } => match spawn_ephemeral_webview(
+            icon_path,
+            ..
+        } => match spawn_ephemeral_webview_ex(
             plugin_id,
             title,
             entry_path,
@@ -229,8 +228,11 @@ pub fn execute_action(
             *height,
             *max_memory_mb,
             is_dark_theme,
+            icon_path.as_deref(),
+            None,
+            None,
         ) {
-            Ok(()) => ActionOutcome { hide_window: true, ..Default::default() },
+            Ok(_) => ActionOutcome { hide_window: true, ..Default::default() },
             Err(e) => {
                 let tid = tomoyo_core::next_trace_id("WV");
                 tracing::error!(trace_id = %tid, plugin_id = %plugin_id, entry = %entry_path, "OpenWebView failed: {e}");

@@ -25,6 +25,8 @@ pub use theme::category_rgb;
 #[cfg(windows)]
 use crate::icons::IconCache;
 #[cfg(windows)]
+use crate::image_icons::ImageIconCache;
+#[cfg(windows)]
 use gdi_pass::paint_gdi_pass;
 use tomoyo_core::{Lang, ResolvedPreview, TypographyConfig};
 use tomoyo_protocol::{ResultItem, SearchFilter, VisibleFilterTab};
@@ -90,6 +92,7 @@ pub struct FluentRenderer {
     surface: Option<DibSurface>,
     fonts: Option<FontPack>,
     icons: IconCache,
+    image_icons: ImageIconCache,
     font_regular: &'static str,
     font_medium: &'static str,
 }
@@ -101,6 +104,7 @@ impl FluentRenderer {
             surface: None,
             fonts: None,
             icons: IconCache::new(),
+            image_icons: ImageIconCache::new(),
             font_regular,
             font_medium,
         })
@@ -108,18 +112,23 @@ impl FluentRenderer {
 
     pub fn set_notify_hwnd(&self, hwnd: isize) {
         self.icons.set_notify_hwnd(hwnd);
+        self.image_icons.set_notify_hwnd(hwnd);
     }
 
     pub fn drain_ready_icons(&mut self) -> bool {
-        self.icons.drain_ready()
+        let shell_upd = self.icons.drain_ready();
+        let img_upd = self.image_icons.drain_ready();
+        shell_upd || img_upd
     }
 
     pub fn wait_icons_idle_for_test(&mut self) {
         self.icons.wait_idle_and_drain();
+        self.image_icons.wait_idle_and_drain();
     }
 
     pub fn hibernate_release(&mut self) {
         self.icons.clear();
+        self.image_icons.clear();
         self.surface = None;
         self.fonts = None;
     }
@@ -151,8 +160,17 @@ impl FluentRenderer {
         let Some(fonts) = self.fonts.as_ref() else { return };
 
         let lay = compute_frame_layout(width, height, scale, state);
-        paint_sdf_pass(surface.pixels_mut(), width, height, scale, &lay, state);
-        paint_gdi_pass(surface, fonts, &mut self.icons, width, height, scale, &lay, state, screen_hdc);
+        let img_px = (30.0 * scale).round() as u32;
+        for slot in 0..lay.visible_count {
+            let idx = state.scroll_offset + slot;
+            if let Some(item) = state.items.get(idx)
+                && let tomoyo_protocol::IconSpec::ImageFile(p) = &item.icon
+            {
+                let _ = self.image_icons.get_or_enqueue(p, img_px);
+            }
+        }
+        paint_sdf_pass(surface.pixels_mut(), &mut self.image_icons, width, height, scale, &lay, state);
+        paint_gdi_pass(surface, fonts, &mut self.icons, &mut self.image_icons, width, height, scale, &lay, state, screen_hdc);
     }
 }
 

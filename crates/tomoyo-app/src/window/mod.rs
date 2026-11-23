@@ -6,6 +6,7 @@ mod commands;
 mod flow_exec;
 mod hotkey_avoid;
 mod hotkey_override;
+mod inline_host;
 mod input;
 mod input_edit;
 mod launch_ctrl;
@@ -113,6 +114,7 @@ pub(super) struct InteractionState {
     pub in_modal_overlay: bool,
     pub suppress_next_clip_img: bool,
     pub suppress_edit_change: bool,
+    pub inline_dock_pid: Option<u32>,
     pub last_shown_at: Option<Instant>,
 }
 
@@ -237,6 +239,7 @@ impl AppShell {
     }
 
     pub fn hide_launcher(&mut self) {
+        self.close_inline_dock();
         self.reset_transient_ui_state();
         self.toast = None;
         self.inter.drag_origin = None;
@@ -398,9 +401,7 @@ impl AppShell {
         }
         self.invalidate();
     }
-    pub(super) fn invalidate(&self) {
-        unsafe { let _ = InvalidateRect(Some(self.hwnd), None, false); }
-    }
+    pub(super) fn invalidate(&self) { unsafe { let _ = InvalidateRect(Some(self.hwnd), None, false); } }
 
     pub(super) fn render_into_hdc(&mut self, hdc: HDC, width: i32, height: i32) {
         let mode = self.active_mode_badge();

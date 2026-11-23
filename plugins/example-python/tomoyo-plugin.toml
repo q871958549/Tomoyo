@@ -4,6 +4,8 @@ version = "0.1.0"
 description = "零第三方依赖 Python 3 参考插件：即时计算 SHA-256 / MD5 摘要与 UTF-8 字符字节统计"
 author = "Tomoyo Contributors"
 license = "MIT"
+icon = "icon.png"
+category = "dev"
 
 [runtime]
 kind = "stdio_jsonrpc"

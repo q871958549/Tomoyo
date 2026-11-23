@@ -72,6 +72,7 @@ pub(super) unsafe extern "system" fn main_wndproc(
         }
         WM_EXITSIZEMOVE => {
             app.inter.in_size_move = false;
+            app.sync_inline_dock_bounds();
             app.persist_window_geometry();
             LRESULT(0)
         }
@@ -103,6 +104,7 @@ pub(super) unsafe extern "system" fn main_wndproc(
         WM_COMMAND => dispatch_wm_command(hwnd, app, wparam),
         WM_APP_CONFIG_SAVED => {
             match wparam.0 {
+                7 => app.on_inline_host_detached(),
                 6 => app.on_settings_window_ready(),
                 5 => {
                     tracing::info!("Updater requested graceful shutdown; exiting Tomoyo cleanly");
@@ -162,8 +164,10 @@ pub(super) unsafe extern "system" fn main_wndproc(
         }
         WM_ACTIVATE => {
             let in_grace = app.inter.last_shown_at.is_some_and(|t| t.elapsed().as_millis() < 140);
+            let to_inline = lparam.0 != 0 && app.is_inline_child_hwnd(HWND(lparam.0 as *mut c_void));
             if (wparam.0 & 0xFFFF) == 0
                 && !in_grace
+                && !to_inline
                 && !app.inter.in_modal_overlay
                 && unsafe { IsWindowVisible(hwnd).as_bool() }
             {
@@ -173,8 +177,10 @@ pub(super) unsafe extern "system" fn main_wndproc(
         }
         WM_ACTIVATEAPP => {
             let in_grace = app.inter.last_shown_at.is_some_and(|t| t.elapsed().as_millis() < 140);
+            let to_inline = app.is_inline_child_hwnd(unsafe { GetForegroundWindow() });
             if wparam.0 == 0
                 && !in_grace
+                && !to_inline
                 && !app.inter.in_modal_overlay
                 && unsafe { IsWindowVisible(hwnd).as_bool() }
             {
@@ -257,7 +263,7 @@ fn handle_timer(hwnd: HWND, app: &mut AppShell, timer_id: usize) -> LRESULT {
                 if !fg.is_invalid() {
                     unsafe { GetWindowThreadProcessId(fg, Some(&mut fg_pid)); }
                 }
-                if fg != hwnd && fg_pid != std::process::id() {
+                if fg != hwnd && fg_pid != std::process::id() && !app.is_inline_child_hwnd(fg) {
                     if app.inter.last_shown_at.is_some_and(|t| t.elapsed().as_millis() < 420) {
                         super::hotkey_override::force_foreground_window(hwnd);
                         unsafe { let _ = SetFocus(Some(app.edit_hwnd)); }

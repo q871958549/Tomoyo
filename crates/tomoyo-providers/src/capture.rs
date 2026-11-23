@@ -5,7 +5,7 @@
 use std::sync::{Arc, RwLock};
 use tomoyo_core::{score_match, IndexedText, Lang, Provider, TomoyoConfig, PLUGIN_CAPTURE};
 use tomoyo_protocol::{
-    ActionKind, ActionSpec, IconSpec, InternalCommandKind, PreviewSpec, QueryContext,
+    ActionKind, ActionSpec, InternalCommandKind, PreviewSpec, QueryContext,
     ResultCategory, ResultItem, SearchFilter,
 };
 
@@ -195,7 +195,10 @@ impl Provider for CaptureProvider {
                 subtitle: subtitle.clone(),
                 category: ResultCategory::System,
                 score: final_score,
-                icon: IconSpec::Monogram(cmd.badge.into()),
+                icon: tomoyo_core::official_icon_or_monogram(
+                    tomoyo_core::PLUGIN_CAPTURE,
+                    cmd.badge,
+                ),
                 badge: Some(cmd.badge.into()),
                 copy_text: None,
                 actions: vec![ActionSpec {

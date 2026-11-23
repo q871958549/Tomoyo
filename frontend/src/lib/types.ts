@@ -167,6 +167,7 @@ export interface TomoyoConfig {
   plugin_registries?: string[];
   plugin_hotkeys?: Record<string, string>;
   plugin_settings?: Record<string, Record<string, string | number | boolean>>;
+  plugin_display_modes?: Record<string, 'auto' | 'inline' | 'window' | string>;
   web_searches: WebSearchEngine[];
 }
 
@@ -198,6 +199,14 @@ export interface PluginSettingField {
 export interface PluginEntry {
   id: string;
   name: string;
+  version?: string;
+  description?: string;
+  author?: string;
+  license?: string;
+  homepage?: string;
+  category?: string;
+  display_mode?: string;
+  icon_url?: string;
   runtime: string;
   keywords: string[];
   max_memory_mb: number;
@@ -260,6 +269,8 @@ export interface SettingsInitPayload {
   hotkey_health?: HotkeyHealthReport;
   cached_update?: UpdateStatus | null;
   system_fonts?: string[];
+  official_icons?: Record<string, string>;
+  quiet_md_path?: string;
   initial_route?: string;
 }
 

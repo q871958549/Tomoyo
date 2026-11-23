@@ -4,6 +4,9 @@ version = "2.0.0"
 description = "基于系统原生 WinRT OcrEngine 离线识别图片文字（支持自适应 2x 放大、中英文清理与原图对照审校，用完即销毁 0 常驻内存）"
 author = "Tomoyo Contributors"
 license = "MIT OR Apache-2.0"
+icon = "icon.png"
+category = "ai"
+display_mode = "window"
 
 [runtime]
 kind = "stdio_jsonrpc"

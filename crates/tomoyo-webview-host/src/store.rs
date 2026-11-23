@@ -1,68 +1,17 @@
 //! Decentralized SHA-256 verified In-App Plugin Store operations (fetch, install, uninstall).
 
 use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use tomoyo_plugin_host::{default_plugin_dirs, PluginHost};
-use tomoyo_protocol::PluginRegistryIndex;
 
-/// Loads plugin registry entries from local `registry/index.json` or HTTPS URLs and annotates
-/// which ones are already installed (built-in vs user-removable).
+/// Loads plugin registry entries via scalable catalog index (page 1 default).
 pub fn fetch_store_catalog_json(sources: &[String]) -> String {
-    let host = PluginHost::new(default_plugin_dirs());
-    let installed_ids: HashSet<String> = host.list_plugins().into_iter().map(|p| p.id).collect();
-    host.shutdown_all();
-
-    let user_plugins_dir = tomoyo_core::data_dir().join("plugins");
-    let mut seen_ids = HashSet::new();
-    let mut items = Vec::new();
-    let mut loaded_from = Vec::new();
-    let mut errors = Vec::new();
-
-    let effective_sources: Vec<String> = if sources.is_empty() {
-        vec!["registry/index.json".into()]
-    } else {
-        sources.to_vec()
-    };
-
-    for src in &effective_sources {
-        match load_registry_source(src) {
-            Ok((idx, resolved_origin)) => {
-                loaded_from.push(resolved_origin);
-                for p in idx.plugins {
-                    if !seen_ids.insert(p.id.clone()) {
-                        continue;
-                    }
-                    let slug = p.id.replace('.', "-");
-                    let in_user_dir = user_plugins_dir.join(&slug).is_dir();
-                    let is_installed = installed_ids.contains(&p.id) || in_user_dir;
-                    items.push(serde_json::json!({
-                        "id": p.id,
-                        "name": p.name,
-                        "version": p.version,
-                        "description": p.description,
-                        "author": p.author,
-                        "license": p.license,
-                        "runtime_kind": p.runtime_kind,
-                        "keywords": p.keywords,
-                        "source": p.source,
-                        "sha256": p.sha256,
-                        "installed": is_installed,
-                        "removable": in_user_dir,
-                    }));
-                }
-            }
-            Err(e) => errors.push(format!("{src}: {e}")),
-        }
-    }
-
-    serde_json::json!({
-        "event": "store_loaded",
-        "items": items,
-        "sources": loaded_from,
-        "errors": errors,
+    crate::store_index::query_store_page_json(&crate::store_index::StoreQuery {
+        sources: sources.to_vec(),
+        page: 1,
+        page_size: 24,
+        ..Default::default()
     })
-    .to_string()
 }
 
 pub fn install_plugin_from_source(
@@ -112,28 +61,7 @@ pub fn uninstall_user_plugin(plugin_id: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn load_registry_source(source: &str) -> Result<(PluginRegistryIndex, String), String> {
-    if source.starts_with("https://") || source.starts_with("http://") {
-        let resp = tomoyo_core::http::http_get(source, 6000, 2 * 1024 * 1024)?;
-        if resp.status_code != 200 {
-            return Err(format!("HTTP {}", resp.status_code));
-        }
-        let idx: PluginRegistryIndex =
-            serde_json::from_slice(&resp.body).map_err(|e| e.to_string())?;
-        return Ok((idx, source.to_string()));
-    }
-
-    for cand in candidate_local_paths(source) {
-        if cand.is_file() {
-            let raw = std::fs::read_to_string(&cand).map_err(|e| e.to_string())?;
-            let idx: PluginRegistryIndex = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
-            return Ok((idx, cand.to_string_lossy().into_owned()));
-        }
-    }
-    Err("本地索引文件未找到".into())
-}
-
-fn candidate_local_paths(rel: &str) -> Vec<PathBuf> {
+pub(crate) fn candidate_local_paths(rel: &str) -> Vec<PathBuf> {
     let mut out = vec![PathBuf::from(rel), tomoyo_core::data_dir().join(rel)];
     #[cfg(target_os = "linux")]
     {
