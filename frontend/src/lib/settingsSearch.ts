@@ -10,7 +10,7 @@ export interface SettingSearchEntry {
 
 export const SETTINGS_SEARCH_INDEX: SettingSearchEntry[] = [
   { id: 'lang', zh: '界面语言 · 启动 · 休眠与同步', en: 'Language, Startup, Hibernate & Sync', kw: '语言 启动 休眠 同步 backup language autostart sync', tab: 'core', sub: 'general' },
-  { id: 'theme', zh: '主题配色 · 主窗口尺寸与行数', en: 'Theme, Window Width & Preview Size', kw: '主题 浅色 深色 午夜 宽度 行数 预览 theme light dark midnight width', tab: 'core', sub: 'appearance' },
+  { id: 'theme', zh: '主题配色 · 字体排版 · 窗口尺寸', en: 'Theme, Typography & Window Size', kw: '主题 浅色 深色 午夜 字体 字重 粗细 大小 排版 宽度 行数 预览 theme font weight size typography width', tab: 'core', sub: 'appearance' },
   { id: 'apps', zh: '应用目录扫描 · Everything 检索深度', en: 'App Folders, Depth & Everything Rules', kw: '目录 扫描 深度 deskbox everything 排除 app', tab: 'search', sub: 'indexing' },
   { id: 'filters', zh: '自定义搜索分组筛选标签 (@pdf / @code)', en: 'Custom Search Filter Tabs (@pdf / @code)', kw: '筛选 标签 分组 扩展 filter tab custom', tab: 'search', sub: 'indexing' },
   { id: 'web', zh: '快捷网页搜索前缀 (g / gh / bd)', en: 'Quick Web Search Prefixes', kw: '网页 搜索 前缀 url google github baidu web', tab: 'search', sub: 'web' },

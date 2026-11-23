@@ -8,9 +8,7 @@ use crate::linux::{
 };
 use crate::linux::ipc::schedule_on_ui;
 use crate::linux::shell_state::{with_current_core, AppCore};
-use crate::renderer::{
-    compute_filter_hitboxes, FILTER_BAR_HEIGHT_DIP, HEADER_HEIGHT_DIP, ROW_HEIGHT_DIP,
-};
+use crate::renderer::{compute_filter_bar_layout, FilterHit, HEADER_HEIGHT_DIP};
 use std::cell::RefCell;
 use std::ffi::{c_char, c_int, c_void, CStr, CString};
 use std::time::Duration;
@@ -198,9 +196,10 @@ pub unsafe extern "C" fn on_mouse_cb(ctx: *mut c_void, kind: c_int, x: c_int, y:
     let xd = x as f32;
     let yd = y as f32;
     let header_h = HEADER_HEIGHT_DIP as f32;
-    let filter_h = if st.is_filter_bar_visible() { FILTER_BAR_HEIGHT_DIP as f32 } else { 0.0 };
+    let filter_h = st.filter_bar_height_dip() as f32;
     let list_top = header_h + filter_h + 4.0;
-    let row_from_y = (yd >= list_top).then(|| st.scroll_offset + ((yd - list_top) / ROW_HEIGHT_DIP as f32) as usize).filter(|&i| i < st.results.len());
+    let row_h = st.typography.row_height_dip() as f32;
+    let row_from_y = (yd >= list_top).then(|| st.scroll_offset + ((yd - list_top) / row_h) as usize).filter(|&i| i < st.results.len());
 
     match kind {
         6 => {
@@ -210,11 +209,25 @@ pub unsafe extern "C" fn on_mouse_cb(ctx: *mut c_void, kind: c_int, x: c_int, y:
         }
         5 => {
             st.hovered = row_from_y;
-            st.hovered_filter = if st.is_filter_bar_visible() && yd >= header_h && yd < header_h + filter_h {
+            let hit = if st.is_filter_bar_visible() && yd >= header_h && yd < header_h + filter_h {
                 let tabs = st.visible_filter_tabs();
-                compute_filter_hitboxes(st.list_width_dip as f32, header_h, &tabs, st.filter_counts.as_ref())
-                    .into_iter().find(|b| xd >= b.x0 && xd <= b.x1 && yd >= b.y0 && yd <= b.y1).map(|b| b.filter)
-            } else { None };
+                compute_filter_bar_layout(
+                    st.list_width_dip as f32,
+                    header_h,
+                    &tabs,
+                    st.active_filter,
+                    st.filter_counts.as_ref(),
+                    st.filter_bar_wrap,
+                )
+                .hit_test(xd, yd)
+            } else {
+                None
+            };
+            st.hovered_filter = match hit {
+                Some(FilterHit::Tab(f)) => Some(f),
+                _ => None,
+            };
+            st.hovered_overflow = matches!(hit, Some(FilterHit::Overflow));
             st.invalidate();
         }
         1 | 2 => {
@@ -228,10 +241,22 @@ pub unsafe extern "C" fn on_mouse_cb(ctx: *mut c_void, kind: c_int, x: c_int, y:
             }
             if st.is_filter_bar_visible() && yd >= header_h && yd < header_h + filter_h {
                 let tabs = st.visible_filter_tabs();
-                if let Some(b) = compute_filter_hitboxes(st.list_width_dip as f32, header_h, &tabs, st.filter_counts.as_ref())
-                    .into_iter().find(|b| xd >= b.x0 && xd <= b.x1 && yd >= b.y0 && yd <= b.y1)
-                {
-                    st.set_active_filter(b.filter);
+                let fl = compute_filter_bar_layout(
+                    st.list_width_dip as f32,
+                    header_h,
+                    &tabs,
+                    st.active_filter,
+                    st.filter_counts.as_ref(),
+                    st.filter_bar_wrap,
+                );
+                match fl.hit_test(xd, yd) {
+                    Some(FilterHit::Tab(f)) => st.set_active_filter(f),
+                    Some(FilterHit::Overflow) => {
+                        if let Some(first) = fl.overflow_tabs.first() {
+                            st.set_active_filter(first.filter);
+                        }
+                    }
+                    None => {}
                 }
                 return;
             }

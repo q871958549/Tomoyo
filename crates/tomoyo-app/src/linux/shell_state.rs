@@ -24,7 +24,7 @@ use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 use tomoyo_core::{
-    trim_working_set, Lang, QueryRouter, ResolvedPreview, TomoyoConfig, UpdateManager,
+    trim_working_set, Lang, QueryRouter, ResolvedPreview, TomoyoConfig, TypographyConfig, UpdateManager,
 };
 use tomoyo_plugin_host::PluginHost;
 use tomoyo_protocol::{AttachedContext, ResultItem, SearchFilter};
@@ -68,9 +68,12 @@ pub struct AppCore {
     pub(super) cached_all_results: Vec<ResultItem>,
     pub(super) active_filter: SearchFilter,
     pub(super) hovered_filter: Option<SearchFilter>,
+    pub(super) hovered_overflow: bool,
     pub(super) pill_anim: Option<FilterPillAnim>,
     pub(super) anim_source: u32,
     pub(super) show_filter_bar: bool,
+    pub(super) filter_bar_wrap: bool,
+    pub(super) typography: TypographyConfig,
     pub(super) preview_enabled: bool,
     pub(super) preview_width_dip: i32,
     pub(super) list_width_dip: i32,
@@ -137,9 +140,12 @@ impl AppCore {
             cached_all_results: Vec::new(),
             active_filter: SearchFilter::All,
             hovered_filter: None,
+            hovered_overflow: false,
             pill_anim: None,
             anim_source: 0,
             show_filter_bar: cfg.show_filter_bar,
+            filter_bar_wrap: cfg.filter_bar_layout != "single",
+            typography: cfg.typography.clone(),
             preview_enabled: cfg.auto_preview,
             preview_width_dip: cfg.window.preview_width_dip.clamp(220, 620),
             list_width_dip: cfg.window.width_dip.clamp(MIN_WINDOW_WIDTH_DIP, 1400),

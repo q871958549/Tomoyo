@@ -2,6 +2,7 @@
 
 use super::theme::Rgb;
 use std::ffi::c_void;
+use tomoyo_core::TypographyConfig;
 use windows::core::PCWSTR;
 use windows::Win32::Foundation::{RECT, SIZE};
 use windows::Win32::Graphics::Gdi::{
@@ -81,8 +82,29 @@ impl Drop for DibSurface {
     }
 }
 
-pub struct FontPack {
+#[derive(Clone, PartialEq, Eq)]
+pub struct FontKey {
     pub dpi_key: i32,
+    pub font_family: String,
+    pub title_weight: u16,
+    pub subtitle_weight: u16,
+    pub title_size: u8,
+}
+
+impl FontKey {
+    pub fn from_config(dpi_scale: f32, typo: &TypographyConfig) -> Self {
+        Self {
+            dpi_key: (dpi_scale * 100.0).round() as i32,
+            font_family: typo.font_family.clone(),
+            title_weight: typo.title_weight,
+            subtitle_weight: typo.subtitle_weight,
+            title_size: typo.title_size.clamp(14, 18),
+        }
+    }
+}
+
+pub struct FontPack {
+    pub key: FontKey,
     pub title: HFONT,
     pub subtitle: HFONT,
     pub chip: HFONT,
@@ -93,22 +115,53 @@ pub struct FontPack {
     pub preview_mono: HFONT,
 }
 
+pub fn resolve_face_and_weight<'a>(
+    custom_family: &'a str,
+    requested_weight: u16,
+    regular_face: &'a str,
+    medium_face: &'a str,
+) -> (&'a str, i32) {
+    if !custom_family.is_empty() {
+        return (custom_family, requested_weight as i32);
+    }
+    match requested_weight {
+        0..=449 => (regular_face, requested_weight as i32),
+        // Alibaba PuHuiTi 3.0 65 Medium is registered as a standalone face whose natural outline
+        // is already weight 500; passing FW_NORMAL avoids GDI faux-bold horizontal double-striking.
+        450..=549 => (medium_face, FW_NORMAL.0 as i32),
+        _ => (medium_face, requested_weight as i32),
+    }
+}
+
 impl FontPack {
-    pub fn create(dpi_scale: f32, regular_face: &str, medium_face: &str) -> Self {
-        let dpi_key = (dpi_scale * 100.0).round() as i32;
-        // Always pass FW_NORMAL (400) so GDI uses the native outlines of `55 Regular`
-        // and `65 Medium` without algorithmic faux-bold horizontal double-striking.
-        let normal = FW_NORMAL.0 as i32;
+    pub fn create(
+        dpi_scale: f32,
+        regular_face: &str,
+        medium_face: &str,
+        typo: &TypographyConfig,
+    ) -> Self {
+        let key = FontKey::from_config(dpi_scale, typo);
+        let title_px = key.title_size as f32 * dpi_scale;
+        let sub_px = typo.subtitle_size_dip() * dpi_scale;
+        let chip_px = sub_px.clamp(11.5 * dpi_scale, 13.5 * dpi_scale);
+        let (title_face, title_w) =
+            resolve_face_and_weight(&typo.font_family, key.title_weight, regular_face, medium_face);
+        let (sub_face, sub_w) =
+            resolve_face_and_weight(&typo.font_family, key.subtitle_weight, regular_face, medium_face);
+        let (med_face, med_w) =
+            resolve_face_and_weight(&typo.font_family, 500, regular_face, medium_face);
+        let (ui_face, ui_w) =
+            resolve_face_and_weight(&typo.font_family, 400, regular_face, medium_face);
         Self {
-            dpi_key,
-            title: make_gdi_font(15.5 * dpi_scale, normal, medium_face),
-            subtitle: make_gdi_font(12.5 * dpi_scale, normal, regular_face),
-            chip: make_gdi_font(12.5 * dpi_scale, normal, regular_face),
-            chip_active: make_gdi_font(12.5 * dpi_scale, normal, medium_face),
-            badge: make_gdi_font(11.5 * dpi_scale, normal, medium_face),
-            footer: make_gdi_font(12.0 * dpi_scale, normal, regular_face),
-            preview_body: make_gdi_font(12.5 * dpi_scale, normal, regular_face),
-            preview_mono: make_gdi_font(12.0 * dpi_scale, normal, "Consolas"),
+            key,
+            title: make_gdi_font(title_px, title_w, title_face),
+            subtitle: make_gdi_font(sub_px, sub_w, sub_face),
+            chip: make_gdi_font(chip_px, sub_w.min(500), sub_face),
+            chip_active: make_gdi_font(chip_px, med_w, med_face),
+            badge: make_gdi_font(11.5 * dpi_scale, med_w, med_face),
+            footer: make_gdi_font(12.0 * dpi_scale, ui_w, ui_face),
+            preview_body: make_gdi_font(sub_px.max(12.5 * dpi_scale), ui_w, ui_face),
+            preview_mono: make_gdi_font(12.5 * dpi_scale, FW_NORMAL.0 as i32, "Consolas"),
         }
     }
 }

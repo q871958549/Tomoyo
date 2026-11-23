@@ -70,6 +70,13 @@ export interface CustomFilterTab {
   enabled: boolean;
 }
 
+export interface TypographyConfig {
+  font_family: string;
+  title_weight: number;
+  subtitle_weight: number;
+  title_size: number;
+}
+
 export interface CaptureToolHotkeys {
   rect: string;
   ellipse: string;
@@ -97,8 +104,10 @@ export interface TomoyoConfig {
   hibernate_delay_secs: number;
   auto_preview: boolean;
   show_filter_bar: boolean;
+  filter_bar_layout?: 'wrap' | 'single' | string;
   hidden_builtin_filters?: string[];
   custom_filters?: CustomFilterTab[];
+  typography?: TypographyConfig;
   disabled_plugins?: string[];
   window: {
     width_dip: number;
@@ -250,6 +259,7 @@ export interface SettingsInitPayload {
   secrets_status: { deepl: boolean; openai: boolean };
   hotkey_health?: HotkeyHealthReport;
   cached_update?: UpdateStatus | null;
+  system_fonts?: string[];
   initial_route?: string;
 }
 

@@ -4,9 +4,9 @@ use crate::linux::ipc::schedule_on_ui;
 use crate::linux::shell_state::{with_current_core, AppCore};
 use crate::linux::{tomoyo_linux_add_timeout, tomoyo_linux_remove_source};
 use crate::renderer::{
-    compute_filter_counts, compute_filter_hitboxes, item_matches_filter, FilterPillAnim,
-    RenderState, FILTER_BAR_HEIGHT_DIP, FOOTER_HEIGHT_DIP, HEADER_HEIGHT_DIP, MAX_WINDOW_WIDTH_DIP,
-    MIN_WINDOW_WIDTH_DIP, ROW_HEIGHT_DIP,
+    compute_filter_bar_layout, compute_filter_counts, item_matches_filter, FilterPillAnim,
+    RenderState, FOOTER_HEIGHT_DIP, HEADER_HEIGHT_DIP, MAX_WINDOW_WIDTH_DIP,
+    MIN_WINDOW_WIDTH_DIP,
 };
 use std::ffi::{c_int, c_void};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -61,12 +61,15 @@ impl AppCore {
                 return Some((x0, x1));
             }
         }
-        compute_filter_hitboxes(
+        compute_filter_bar_layout(
             self.list_width_dip as f32,
             HEADER_HEIGHT_DIP as f32,
             tabs,
+            self.active_filter,
             self.filter_counts.as_ref(),
+            self.filter_bar_wrap,
         )
+        .visible
         .into_iter()
         .find(|b| b.filter == self.active_filter)
         .map(|b| (b.x0, b.x1))
@@ -77,7 +80,15 @@ impl AppCore {
             return;
         }
         let tabs = self.visible_filter_tabs();
-        let boxes = compute_filter_hitboxes(self.list_width_dip as f32, HEADER_HEIGHT_DIP as f32, &tabs, self.filter_counts.as_ref());
+        let boxes = compute_filter_bar_layout(
+            self.list_width_dip as f32,
+            HEADER_HEIGHT_DIP as f32,
+            &tabs,
+            filter,
+            self.filter_counts.as_ref(),
+            self.filter_bar_wrap,
+        )
+        .visible;
         let from_span = self.current_pill_span(&tabs);
         let to_span = boxes.iter().find(|b| b.filter == filter).map(|b| (b.x0, b.x1));
         if let Some(anim) = FilterPillAnim::from_spans(from_span, to_span) {
@@ -116,10 +127,27 @@ impl AppCore {
         if self.is_preview_visible() { (base + self.preview_width_dip).min(MAX_WINDOW_WIDTH_DIP) } else { base }
     }
 
+    pub(super) fn filter_bar_height_dip(&self) -> i32 {
+        if !self.is_filter_bar_visible() {
+            return 0;
+        }
+        let tabs = self.visible_filter_tabs();
+        compute_filter_bar_layout(
+            self.list_width_dip as f32,
+            HEADER_HEIGHT_DIP as f32,
+            &tabs,
+            self.active_filter,
+            self.filter_counts.as_ref(),
+            self.filter_bar_wrap,
+        )
+        .height_dip
+    }
+
     pub(super) fn desired_height_dip(&self) -> i32 {
         let n = self.results.len().min(self.max_visible_rows);
-        let filter_h = if self.is_filter_bar_visible() { FILTER_BAR_HEIGHT_DIP } else { 0 };
-        let body = if n == 0 { 0 } else { 4 + (n as i32) * ROW_HEIGHT_DIP + 4 };
+        let filter_h = self.filter_bar_height_dip();
+        let row_h = self.typography.row_height_dip();
+        let body = if n == 0 { 0 } else { 4 + (n as i32) * row_h + 4 };
         HEADER_HEIGHT_DIP + filter_h + body + FOOTER_HEIGHT_DIP
     }
 
@@ -293,11 +321,14 @@ impl AppCore {
             attached_capsule: cap.as_deref(),
             update_badge: upd_badge.as_deref(),
             filter_bar_visible: self.is_filter_bar_visible(),
+            filter_bar_wrap: self.filter_bar_wrap,
             filter_tabs: &tabs,
             active_filter: self.active_filter,
             hovered_filter: self.hovered_filter,
+            hovered_overflow: self.hovered_overflow,
             filter_counts: self.filter_counts.as_ref(),
             filter_pill_override: pill_override,
+            typography: &self.typography,
             items: &self.results,
             selected: self.selected,
             hovered: self.hovered,

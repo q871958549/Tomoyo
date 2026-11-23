@@ -26,7 +26,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Instant;
-use tomoyo_core::{Lang, QueryRouter, ResolvedPreview, TomoyoConfig, UpdateManager};
+use tomoyo_core::{Lang, QueryRouter, ResolvedPreview, TomoyoConfig, TypographyConfig, UpdateManager};
 use tomoyo_plugin_host::PluginHost;
 use tomoyo_protocol::{
     build_visible_filter_tabs, AttachedContext, ClipboardSnapshot, ResultItem, SearchFilter,
@@ -97,6 +97,7 @@ pub(super) struct WindowGeometry {
 pub(super) struct InteractionState {
     pub hovered: Option<usize>,
     pub hovered_filter: Option<SearchFilter>,
+    pub hovered_overflow: bool,
     pub hovered_logo: bool,
     pub pressed_logo: bool,
     pub settings_pending: bool,
@@ -139,6 +140,8 @@ pub struct AppShell {
     pub(super) attached: Option<AttachedContext>,
     pub(super) active_filter: SearchFilter,
     pub(super) show_filter_bar: bool,
+    pub(super) filter_bar_wrap: bool,
+    pub(super) typography: TypographyConfig,
     pub(super) last_result_gen: u64,
     pub(super) results: Vec<ResultItem>,
     pub(super) selected: usize,
@@ -178,6 +181,7 @@ impl AppShell {
         self.selected_action = 0;
         self.inter.hovered = None;
         self.inter.hovered_filter = None;
+        self.inter.hovered_overflow = false;
         self.inter.hovered_logo = false;
         self.inter.pressed_logo = false;
         self.inter.settings_pending = false;
@@ -414,9 +418,11 @@ impl AppShell {
             lang: self.lang, theme: self.theme, query: &self.current_query, hovered_logo: self.inter.hovered_logo,
             mode_badge: mode.as_deref(), attached_capsule: attached_label.as_deref(),
             update_badge: update_label.as_deref(), filter_bar_visible: filter_vis,
+            filter_bar_wrap: self.filter_bar_wrap,
             filter_tabs: &filter_tabs, active_filter: self.active_filter,
-            hovered_filter: self.inter.hovered_filter, filter_counts: self.inter.filter_counts.as_ref(),
-            filter_pill_override: None,
+            hovered_filter: self.inter.hovered_filter, hovered_overflow: self.inter.hovered_overflow,
+            filter_counts: self.inter.filter_counts.as_ref(),
+            filter_pill_override: None, typography: &self.typography,
             items: &self.results, selected: self.selected, hovered: self.inter.hovered,
             launching_row,
             scroll_offset: self.scroll_offset, max_visible_rows: self.geom.max_visible_rows,

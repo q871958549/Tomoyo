@@ -149,3 +149,85 @@ fn register_private_font(_path: &std::path::Path) -> bool {
 }
 #[cfg(all(not(windows), not(target_os = "linux")))]
 fn unregister_private_font(_path: &std::path::Path) {}
+
+/// Enumerates clean, non-vertical UI font families installed on the host OS, prioritized for CJK/UI legibility.
+pub fn list_system_font_families() -> Vec<String> {
+    const CURATED: &[&str] = &[
+        "Microsoft YaHei UI",
+        "Segoe UI Variable Text",
+        "Segoe UI Variable Display",
+        "Segoe UI",
+        "PingFang SC",
+        "HarmonyOS Sans SC",
+        "MiSans",
+        "OPPO Sans",
+        "Noto Sans SC",
+        "Noto Sans CJK SC",
+        "Source Han Sans SC",
+        "Sarasa UI SC",
+        "Cascadia Mono",
+        "Consolas",
+    ];
+    #[cfg(windows)]
+    let mut raw: Vec<String> = {
+        use std::collections::HashSet;
+        use windows::Win32::Foundation::LPARAM;
+        use windows::Win32::Graphics::Gdi::{
+            EnumFontFamiliesExW, GetDC, ReleaseDC, DEFAULT_CHARSET, LOGFONTW, TEXTMETRICW,
+        };
+        unsafe extern "system" fn enum_proc(
+            lpelfe: *const LOGFONTW,
+            _lpntme: *const TEXTMETRICW,
+            _font_type: u32,
+            lparam: LPARAM,
+        ) -> i32 {
+            if !lpelfe.is_null() && lparam.0 != 0 {
+                let lf = unsafe { &*lpelfe };
+                let end = lf.lfFaceName.iter().position(|&c| c == 0).unwrap_or(lf.lfFaceName.len());
+                let name = String::from_utf16_lossy(&lf.lfFaceName[..end]);
+                let t = name.trim();
+                if !t.is_empty() && !t.starts_with('@') && !t.starts_with('.') {
+                    let set = unsafe { &mut *(lparam.0 as *mut HashSet<String>) };
+                    set.insert(t.to_string());
+                }
+            }
+            1
+        }
+        let mut set: HashSet<String> = HashSet::new();
+        let hdc = unsafe { GetDC(None) };
+        if !hdc.is_invalid() {
+            let lf = LOGFONTW {
+                lfCharSet: DEFAULT_CHARSET,
+                ..Default::default()
+            };
+            unsafe {
+                EnumFontFamiliesExW(
+                    hdc,
+                    &lf,
+                    Some(enum_proc),
+                    LPARAM(&mut set as *mut HashSet<String> as isize),
+                    0,
+                );
+                let _ = ReleaseDC(None, hdc);
+            }
+        }
+        set.into_iter().collect()
+    };
+    #[cfg(not(windows))]
+    let mut raw: Vec<String> = CURATED.iter().map(|s| (*s).to_string()).collect();
+
+    let mut out = Vec::with_capacity(raw.len().min(120));
+    for pref in CURATED {
+        if let Some(pos) = raw.iter().position(|r| r.eq_ignore_ascii_case(pref)) {
+            out.push(raw.swap_remove(pos));
+        }
+    }
+    raw.sort_by_key(|a| a.to_ascii_lowercase());
+    for name in raw {
+        if out.len() >= 120 {
+            break;
+        }
+        out.push(name);
+    }
+    out
+}

@@ -1,7 +1,7 @@
 //! Hybrid SDF + PangoCairo Linux renderer reusing `paint_sdf_pass` and GTK icon theme cache.
 
 use crate::renderer::{
-    compute_filter_hitboxes, compute_frame_layout, paint_sdf_pass, Canvas, FrameLayout,
+    compute_filter_bar_layout, compute_frame_layout, paint_sdf_pass, Canvas, FrameLayout,
     RenderState, Rgb,
 };
 use lru::LruCache;
@@ -201,11 +201,25 @@ impl LinuxRenderer {
 
     fn paint_pango_pass(&mut self, cr: *mut c_void, scale: f32, lay: &FrameLayout, state: &RenderState<'_>) {
         let pal = state.theme;
-        let f_reg = format!("{} {}px", self.font_family, (13.0 * scale).round() as i32);
-        let f_title = format!("{} Medium {}px", self.font_family, (14.0 * scale).round() as i32);
-        let f_sub = format!("{} {}px", self.font_family, (11.5 * scale).round() as i32);
-        let f_chip = format!("{} {}px", self.font_family, (11.5 * scale).round() as i32);
-        let f_badge = format!("{} Medium {}px", self.font_family, (10.5 * scale).round() as i32);
+        let pango_w = |w: u16| match w {
+            0..=349 => "Light",
+            350..=449 => "Normal",
+            450..=549 => "Medium",
+            550..=649 => "SemiBold",
+            _ => "Bold",
+        };
+        let eff_family = if state.typography.font_family.is_empty() {
+            self.font_family
+        } else {
+            state.typography.font_family.as_str()
+        };
+        let sub_dip = state.typography.subtitle_size_dip();
+        let chip_dip = sub_dip.clamp(11.5, 13.5);
+        let f_reg = format!("{eff_family} {}px", (13.0 * scale).round() as i32);
+        let f_title = format!("{eff_family} {} {}px", pango_w(state.typography.title_weight), (state.typography.title_size as f32 * scale).round() as i32);
+        let f_sub = format!("{eff_family} {} {}px", pango_w(state.typography.subtitle_weight), (sub_dip * scale).round() as i32);
+        let f_chip = format!("{eff_family} {} {}px", pango_w(state.typography.subtitle_weight.min(500)), (chip_dip * scale).round() as i32);
+        let f_badge = format!("{eff_family} Medium {}px", (10.5 * scale).round() as i32);
         let f_mono = format!("monospace {}px", (11.5 * scale).round() as i32);
 
         let mut header_right_x = lay.w_dip - 16.0;
@@ -222,7 +236,15 @@ impl LinuxRenderer {
         }
 
         if state.filter_bar_visible {
-            for hb in compute_filter_hitboxes(lay.list_w_dip, lay.header_h, state.filter_tabs, state.filter_counts) {
+            let fl = compute_filter_bar_layout(
+                lay.list_w_dip,
+                lay.header_h,
+                state.filter_tabs,
+                state.active_filter,
+                state.filter_counts,
+                state.filter_bar_wrap,
+            );
+            for hb in &fl.visible {
                 let col = if hb.filter == state.active_filter {
                     pal.chip_active_text
                 } else if state.hovered_filter == Some(hb.filter) {
@@ -231,6 +253,16 @@ impl LinuxRenderer {
                     pal.chip_text
                 };
                 draw_pango(cr, &f_chip, col, 1, true, &hb.label, hb.x0, hb.y0, hb.x1 - hb.x0, hb.y1 - hb.y0, scale, &[], pal.accent);
+            }
+            if let Some(ov) = &fl.overflow_pill {
+                let col = if fl.active_in_overflow {
+                    pal.chip_active_text
+                } else if state.hovered_overflow {
+                    pal.chip_hover_text
+                } else {
+                    pal.text_secondary
+                };
+                draw_pango(cr, &f_chip, col, 1, true, &ov.label, ov.x0, ov.y0, ov.x1 - ov.x0, ov.y1 - ov.y0, scale, &[], pal.accent);
             }
         }
 

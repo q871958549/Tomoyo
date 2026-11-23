@@ -9,7 +9,7 @@ pub const PLUGIN_TRANSLATE: &str = "dev.tomoyo.translate";
 pub const PLUGIN_CAPTURE: &str = "dev.tomoyo.capture";
 pub const PLUGIN_OCR: &str = "dev.tomoyo.ocr";
 
-pub const MAX_CUSTOM_FILTER_TABS: usize = 12;
+pub const MAX_CUSTOM_FILTER_TABS: usize = 32;
 pub const MAX_DISABLED_PLUGINS: usize = 64;
 
 const BUILTIN_FILTER_IDS: &[&str] = &[
@@ -44,7 +44,10 @@ pub fn sanitize_filters_and_plugins(cfg: &mut TomoyoConfig) {
     }
     cfg.hotkey_excluded_apps = clean_hk_ex;
 
-    // 2. Hidden built-in filter tabs (never allow hiding `all`)
+    // 2. Hidden built-in filter tabs (never allow hiding `all`) & bar layout mode
+    if !matches!(cfg.filter_bar_layout.as_str(), "wrap" | "single") {
+        cfg.filter_bar_layout = "wrap".into();
+    }
     let mut seen_hid = HashSet::new();
     cfg.hidden_builtin_filters = std::mem::take(&mut cfg.hidden_builtin_filters)
         .into_iter()

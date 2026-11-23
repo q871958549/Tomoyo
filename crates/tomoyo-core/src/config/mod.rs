@@ -5,8 +5,12 @@ mod hotkey;
 mod modules;
 mod paths;
 mod sanitize;
+mod typography;
 
 pub use capture::{sanitize_capture_config, CaptureConfig, CaptureToolHotkeys};
+pub use typography::{
+    quantize_font_weight, sanitize_typography, TypographyConfig,
+};
 pub use crate::translate::TranslateConfig;
 pub use hotkey::{
     format_hotkey, is_autostart_enabled, is_standalone_allowed_vk, load_hotkey_health, parse_hotkey,
@@ -60,12 +64,18 @@ pub struct TomoyoConfig {
     /// Show quick category/file-type filter bar below the search input.
     #[serde(default = "default_true")]
     pub show_filter_bar: bool,
+    /// Launcher filter bar layout mode: `"wrap"` (multi-row + overflow) or `"single"` (1-row + overflow).
+    #[serde(default = "typography::default_filter_layout")]
+    pub filter_bar_layout: String,
     /// Built-in filter tab IDs hidden by user (e.g. `["ppt", "word"]`).
     #[serde(default)]
     pub hidden_builtin_filters: Vec<String>,
     /// User-extensible custom filter tabs shown in the search filter bar.
     #[serde(default)]
     pub custom_filters: Vec<CustomFilterTab>,
+    /// Result & input box typography preferences (font family, weights, size).
+    #[serde(default)]
+    pub typography: TypographyConfig,
     /// Disabled official or community plugin IDs (e.g. `["dev.tomoyo.translate"]`).
     #[serde(default)]
     pub disabled_plugins: Vec<String>,
@@ -345,8 +355,10 @@ impl Default for TomoyoConfig {
             hibernate_delay_secs: default_hibernate_secs(),
             auto_preview: true,
             show_filter_bar: true,
+            filter_bar_layout: typography::default_filter_layout(),
             hidden_builtin_filters: Vec::new(),
             custom_filters: Vec::new(),
+            typography: TypographyConfig::default(),
             disabled_plugins: Vec::new(),
             plugin_hotkeys: BTreeMap::new(),
             plugin_settings: BTreeMap::new(),

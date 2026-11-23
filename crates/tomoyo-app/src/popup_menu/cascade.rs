@@ -61,7 +61,12 @@ pub(super) fn run_session(
     let mut pt = POINT::default();
     unsafe { let _ = GetCursorPos(&mut pt); }
 
-    let fonts = FontPack::create(scale, font_regular, font_medium);
+    let fonts = FontPack::create(
+        scale,
+        font_regular,
+        font_medium,
+        &tomoyo_core::TypographyConfig::default(),
+    );
     let mut sess = Box::new(MenuSession {
         pal,
         scale,

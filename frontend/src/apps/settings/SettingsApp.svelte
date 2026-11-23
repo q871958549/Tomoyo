@@ -96,8 +96,10 @@
 
   function jumpToHotkeyConflict() { switchTab('hotkeys'); }
   function onToggleOverride(v: boolean) { cfg.override_conflict_hotkeys = v; scheduleSave(0); setTimeout(runHotkeyAudit, 260); }
-  function onUpdateFilters(hidden: string[], custom: CustomFilterTab[]) {
-    cfg.hidden_builtin_filters = hidden; cfg.custom_filters = custom; scheduleSave(0);
+  function onUpdateFilters(hidden: string[], custom: CustomFilterTab[], layout?: string) {
+    cfg.hidden_builtin_filters = hidden; cfg.custom_filters = custom;
+    if (layout) cfg.filter_bar_layout = layout;
+    scheduleSave(0);
   }
   function onUpdateAvoidance(fullscreen: boolean, excluded: string[]) {
     cfg.suspend_hotkeys_in_fullscreen = fullscreen; cfg.hotkey_excluded_apps = excluded; scheduleSave(0);
@@ -348,7 +350,7 @@
           {#if subCore === 'general'}
             <GeneralTab {cfg} {lang} {autostart} {syncDir} hotkeyStatus={hotkeyHealth.main} {onLanguageChange} {onAutostartChange} onJumpDoctor={() => switchTab('hotkeys')} onSave={scheduleSave} />
           {:else}
-            <AppearanceTab {cfg} {lang} {onThemePick} onSave={scheduleSave} />
+            <AppearanceTab bind:cfg {lang} systemFonts={init.system_fonts || []} {onThemePick} onSave={scheduleSave} />
           {/if}
         {:else if activeTab === 'search'}
           <div class="subbar">

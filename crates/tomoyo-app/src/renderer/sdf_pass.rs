@@ -68,7 +68,9 @@ pub(crate) fn paint_sdf_pass(
             state.filter_tabs,
             state.active_filter,
             state.hovered_filter,
+            state.hovered_overflow,
             state.filter_counts,
+            state.filter_bar_wrap,
             state.filter_pill_override,
         );
     } else if !state.items.is_empty() {
@@ -95,6 +97,9 @@ pub(crate) fn paint_sdf_pass(
         let y0 = lay.list_top + (slot as f32) * lay.row_h;
         let y1 = y0 + lay.row_h - 2.0;
         let is_sel = idx == state.selected;
+        let icon_top = y0 + (lay.row_h - 30.0) * 0.5;
+        let badge_top = y0 + (lay.row_h - 21.0) * 0.5;
+        let key_top = y0 + (lay.row_h - 20.0) * 0.5;
         if is_sel {
             canvas.fill_rounded_rect(10.0, y0 + 2.0, lay.list_w_dip - 12.0, y1 - 2.0, 8.0, pal.card_sel);
             canvas.stroke_rounded_rect(10.0, y0 + 2.0, lay.list_w_dip - 12.0, y1 - 2.0, 8.0, pal.sel_border);
@@ -103,22 +108,28 @@ pub(crate) fn paint_sdf_pass(
             canvas.fill_rounded_rect(10.0, y0 + 2.0, lay.list_w_dip - 12.0, y1 - 2.0, 8.0, pal.card_hover);
         }
         if !matches!(item.icon, IconSpec::ShellPath(_)) {
-            canvas.fill_rounded_rect(22.0, y0 + 11.0, 52.0, y0 + 41.0, 7.0, category_rgb(item.category));
+            canvas.fill_rounded_rect(22.0, icon_top, 52.0, icon_top + 30.0, 7.0, category_rgb(item.category));
         }
         let mut text_right = lay.list_w_dip - 20.0;
         let row_launch = state.launching_row.filter(|(li, _)| *li == idx);
         if let Some((_, done)) = row_launch {
             let pill_col = if done { Rgb(0x10, 0xB9, 0x81) } else { pal.accent };
             let pw = 74.0;
-            canvas.fill_rounded_rect(text_right - pw, y0 + 14.5, text_right, y0 + 37.5, 6.0, pill_col);
+            canvas.fill_rounded_rect(text_right - pw, badge_top - 1.0, text_right, badge_top + 22.0, 6.0, pill_col);
             text_right -= pw + 8.0;
-        } else if is_sel || slot < 8 {
+        } else if is_sel {
+            canvas.fill_rounded_rect(text_right - 44.0, key_top, text_right, key_top + 20.0, 5.0, pal.chip_active_bg);
+            canvas.stroke_rounded_rect(text_right - 44.0, key_top, text_right, key_top + 20.0, 5.0, pal.chip_active_border);
+            text_right -= 50.0;
+        } else if slot < 8 {
+            canvas.fill_rounded_rect(text_right - 42.0, key_top, text_right, key_top + 20.0, 5.0, pal.pill_bg);
+            canvas.stroke_rounded_rect(text_right - 42.0, key_top, text_right, key_top + 20.0, 5.0, pal.divider);
             text_right -= 48.0;
         }
         if let Some(badge) = &item.badge {
             let bw = (badge.chars().count() as f32 * 6.8 + 18.0).clamp(44.0, 120.0);
-            canvas.fill_rounded_rect(text_right - bw, y0 + 15.5, text_right, y0 + 36.5, 6.0, pal.chip_bg);
-            canvas.stroke_rounded_rect(text_right - bw, y0 + 15.5, text_right, y0 + 36.5, 6.0, pal.chip_border);
+            canvas.fill_rounded_rect(text_right - bw, badge_top, text_right, badge_top + 21.0, 6.0, pal.chip_bg);
+            canvas.stroke_rounded_rect(text_right - bw, badge_top, text_right, badge_top + 21.0, 6.0, pal.chip_border);
         }
     }
 

@@ -90,7 +90,7 @@ pub fn build_visible_filter_tabs(
             extensions: f.builtin_extensions().iter().map(|s| (*s).to_string()).collect(),
         });
     }
-    for (idx, tab) in custom_tabs.iter().enumerate().take(16) {
+    for (idx, tab) in custom_tabs.iter().enumerate().take(32) {
         if tab.enabled && !tab.label.trim().is_empty() && tab.effective_everything_expr().is_some() {
             out.push(VisibleFilterTab {
                 filter: SearchFilter::Custom(idx as u8),

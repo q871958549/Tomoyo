@@ -11,12 +11,12 @@ mod theme;
 
 pub use canvas::Canvas;
 pub use filter_bar::{
-    compute_filter_counts, compute_filter_hitboxes, FilterCounts, FILTER_BAR_HEIGHT_DIP,
+    compute_filter_bar_layout, compute_filter_counts, FilterCounts, FilterHit,
 };
 #[cfg(not(windows))]
 pub use filter_bar::{item_matches_filter, FilterPillAnim};
 #[cfg(windows)]
-pub use gdi::{dip_rect, draw_text_gdi, DibSurface, FontPack};
+pub use gdi::{dip_rect, draw_text_gdi, resolve_face_and_weight, DibSurface, FontKey, FontPack};
 pub(crate) use sdf_pass::paint_sdf_pass;
 pub use theme::{Rgb, ThemePalette};
 #[cfg(not(windows))]
@@ -26,7 +26,7 @@ pub use theme::category_rgb;
 use crate::icons::IconCache;
 #[cfg(windows)]
 use gdi_pass::paint_gdi_pass;
-use tomoyo_core::{Lang, ResolvedPreview};
+use tomoyo_core::{Lang, ResolvedPreview, TypographyConfig};
 use tomoyo_protocol::{ResultItem, SearchFilter, VisibleFilterTab};
 #[cfg(windows)]
 use windows::Win32::Graphics::Gdi::HDC;
@@ -36,7 +36,6 @@ pub const DEFAULT_WINDOW_WIDTH_DIP: i32 = 720;
 #[cfg_attr(not(windows), allow(dead_code))]
 pub const DEFAULT_PREVIEW_WIDTH_DIP: i32 = 310;
 pub const HEADER_HEIGHT_DIP: i32 = 62;
-pub const ROW_HEIGHT_DIP: i32 = 54;
 pub const FOOTER_HEIGHT_DIP: i32 = 30;
 pub const MIN_WINDOW_WIDTH_DIP: i32 = 520;
 pub const MAX_WINDOW_WIDTH_DIP: i32 = 1600;
@@ -50,11 +49,14 @@ pub struct RenderState<'a> {
     pub attached_capsule: Option<&'a str>,
     pub update_badge: Option<&'a str>,
     pub filter_bar_visible: bool,
+    pub filter_bar_wrap: bool,
     pub filter_tabs: &'a [VisibleFilterTab],
     pub active_filter: SearchFilter,
     pub hovered_filter: Option<SearchFilter>,
+    pub hovered_overflow: bool,
     pub filter_counts: Option<&'a FilterCounts>,
     pub filter_pill_override: Option<(f32, f32)>,
+    pub typography: &'a TypographyConfig,
     pub items: &'a [ResultItem],
     pub selected: usize,
     pub hovered: Option<usize>,
@@ -131,9 +133,14 @@ impl FluentRenderer {
             return;
         }
         let scale = state.dpi_scale.max(1.0);
-        let dpi_key = (scale * 100.0).round() as i32;
-        if self.fonts.as_ref().map(|f| f.dpi_key) != Some(dpi_key) {
-            self.fonts = Some(FontPack::create(scale, self.font_regular, self.font_medium));
+        let want_key = FontKey::from_config(scale, state.typography);
+        if self.fonts.as_ref().map(|f| &f.key) != Some(&want_key) {
+            self.fonts = Some(FontPack::create(
+                scale,
+                self.font_regular,
+                self.font_medium,
+                state.typography,
+            ));
         }
         if self.surface.as_ref().map(|s| (s.width, s.height)) != Some((width, height)) {
             self.surface = None;
@@ -154,9 +161,20 @@ pub(crate) fn compute_frame_layout(width: i32, height: i32, scale: f32, state: &
     let h_dip = height as f32 / scale;
     let header_h = HEADER_HEIGHT_DIP as f32;
     let footer_h = FOOTER_HEIGHT_DIP as f32;
-    let row_h = ROW_HEIGHT_DIP as f32;
+    let row_h = state.typography.row_height_dip() as f32;
+    let has_preview = state.preview.is_some() && !state.items.is_empty() && w_dip >= 680.0;
+    let preview_w = (state.preview_width_dip as f32).clamp(220.0, (w_dip * 0.48).max(220.0));
+    let list_w_dip = if has_preview { (w_dip - preview_w).max(380.0) } else { w_dip };
     let filter_h = if state.filter_bar_visible {
-        FILTER_BAR_HEIGHT_DIP as f32
+        compute_filter_bar_layout(
+            list_w_dip,
+            header_h,
+            state.filter_tabs,
+            state.active_filter,
+            state.filter_counts,
+            state.filter_bar_wrap,
+        )
+        .height_dip as f32
     } else {
         0.0
     };
@@ -164,9 +182,6 @@ pub(crate) fn compute_frame_layout(width: i32, height: i32, scale: f32, state: &
     let max_rows_by_h = ((h_dip - list_top - footer_h).max(0.0) / row_h).floor() as usize;
     let visible_cap = state.max_visible_rows.max(1).min(max_rows_by_h.max(1));
     let visible_count = state.items.len().min(visible_cap);
-    let has_preview = state.preview.is_some() && !state.items.is_empty() && w_dip >= 680.0;
-    let preview_w = (state.preview_width_dip as f32).clamp(220.0, (w_dip * 0.48).max(220.0));
-    let list_w_dip = if has_preview { (w_dip - preview_w).max(380.0) } else { w_dip };
     FrameLayout {
         w_dip,
         h_dip,

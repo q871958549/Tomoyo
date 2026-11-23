@@ -276,6 +276,7 @@ pub fn sanitize_config(cfg: &mut TomoyoConfig) -> Vec<String> {
     }
     cfg.web_searches = clean_web;
     super::sanitize_filters_and_plugins(cfg);
+    super::sanitize_typography(&mut cfg.typography);
 
     notes
 }

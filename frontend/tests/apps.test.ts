@@ -47,7 +47,7 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
       pin: { spec: 'F3', active: 'F3', ok: true, disabled: false, reason: '' },
     };
     window.__TOMOYO_SETTINGS_INIT__ = {
-      version: '2.4.1',
+      version: '2.5.0',
       autostart: true,
       config: {
         language: 'zh',
@@ -176,6 +176,20 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
     document.querySelector<HTMLButtonElement>('button[data-preset-tab="code"]')?.click();
     flushSync();
     expect(document.body.textContent).toContain('@code');
+
+    // Appearance & Typography controls
+    document.querySelector<HTMLButtonElement>('button[data-tab="core"]')?.click();
+    flushSync();
+    const appSeg = [...document.querySelectorAll<HTMLButtonElement>('.subbar button')].find((b) => b.textContent?.includes('外观与窗口'));
+    appSeg?.click();
+    flushSync();
+    expect(document.body.textContent).toContain('搜索结果字体与现代排版');
+    const boldBtn = [...document.querySelectorAll<HTMLButtonElement>('.t-seg button')].find((b) => b.textContent?.includes('粗体 700'));
+    boldBtn?.click();
+    flushSync();
+
+    document.querySelector<HTMLButtonElement>('button[data-tab="search"]')?.click();
+    flushSync();
     const webSeg = [...document.querySelectorAll<HTMLButtonElement>('.subbar button')].find((b) => b.textContent?.includes('快捷网页搜索'));
     webSeg?.click();
     flushSync();

@@ -55,7 +55,9 @@ pub(super) fn paint_gdi_pass(
                 state.filter_tabs,
                 state.active_filter,
                 state.hovered_filter,
+                state.hovered_overflow,
                 state.filter_counts,
+                state.filter_bar_wrap,
             );
         }
 
@@ -63,24 +65,26 @@ pub(super) fn paint_gdi_pass(
             let idx = state.scroll_offset + slot;
             let Some(item) = state.items.get(idx) else { break };
             let y0 = lay.list_top + (slot as f32) * lay.row_h;
-            let y1 = y0 + lay.row_h - 2.0;
             let is_sel = idx == state.selected;
+            let icon_top = y0 + (lay.row_h - 30.0) * 0.5;
+            let badge_top = y0 + (lay.row_h - 21.0) * 0.5;
+            let key_top = y0 + (lay.row_h - 20.0) * 0.5;
 
             let mut drew_shell_icon = false;
             if let IconSpec::ShellPath(path) = &item.icon
                 && let Some(hicon) = icons.get_or_enqueue(path) {
                     let isize = (30.0 * scale).round() as i32;
-                    let _ = DrawIconEx(dc, (22.0 * scale).round() as i32, ((y0 + 11.0) * scale).round() as i32, hicon, isize, isize, 0, None, DI_NORMAL);
+                    let _ = DrawIconEx(dc, (22.0 * scale).round() as i32, (icon_top * scale).round() as i32, hicon, isize, isize, 0, None, DI_NORMAL);
                     drew_shell_icon = true;
                 }
             if !drew_shell_icon {
                 if matches!(item.icon, IconSpec::ShellPath(_)) {
                     let mut c = Canvas { buf: surface.pixels_mut(), w: width, h: height, scale };
-                    c.fill_rounded_rect(22.0, y0 + 11.0, 52.0, y0 + 41.0, 7.0, category_rgb(item.category));
+                    c.fill_rounded_rect(22.0, icon_top, 52.0, icon_top + 30.0, 7.0, category_rgb(item.category));
                     let _ = GdiFlush();
                 }
                 let label = fallback_badge_label(item);
-                draw_text_gdi(dc, fonts.badge, Rgb(0xFF, 0xFF, 0xFF), label, dip_rect(22.0, y0 + 11.0, 52.0, y0 + 41.0, scale), DT_CENTER);
+                draw_text_gdi(dc, fonts.badge, Rgb(0xFF, 0xFF, 0xFF), label, dip_rect(22.0, icon_top, 52.0, icon_top + 30.0, scale), DT_CENTER);
             }
 
             let mut text_right = lay.list_w_dip - 20.0;
@@ -91,24 +95,20 @@ pub(super) fn paint_gdi_pass(
                     state.lang.pick("启动中…", "Opening…")
                 };
                 let pw = 74.0;
-                draw_text_gdi(dc, fonts.badge, Rgb(0xFF, 0xFF, 0xFF), lbl, dip_rect(text_right - pw, y0 + 14.5, text_right, y0 + 37.5, scale), DT_CENTER);
+                draw_text_gdi(dc, fonts.badge, Rgb(0xFF, 0xFF, 0xFF), lbl, dip_rect(text_right - pw, badge_top - 1.0, text_right, badge_top + 22.0, scale), DT_CENTER);
                 text_right -= pw + 8.0;
-            } else {
-                let shortcut = if is_sel { "Enter".to_string() } else if slot < 8 { format!("Alt+{}", slot + 1) } else { String::new() };
-                if !shortcut.is_empty() {
-                    let (sc_font, sc_col) = if is_sel {
-                        (fonts.badge, pal.chip_active_text)
-                    } else {
-                        (fonts.footer, pal.text_muted)
-                    };
-                    draw_text_gdi(dc, sc_font, sc_col, &shortcut, dip_rect(text_right - 40.0, y0 + 8.0, text_right, y1 - 8.0, scale), DT_RIGHT);
-                    text_right -= 48.0;
-                }
+            } else if is_sel {
+                draw_text_gdi(dc, fonts.badge, pal.chip_active_text, "Enter", dip_rect(text_right - 44.0, key_top, text_right, key_top + 20.0, scale), DT_CENTER);
+                text_right -= 50.0;
+            } else if slot < 8 {
+                let sc = format!("Alt+{}", slot + 1);
+                draw_text_gdi(dc, fonts.footer, pal.text_muted, &sc, dip_rect(text_right - 42.0, key_top, text_right, key_top + 20.0, scale), DT_CENTER);
+                text_right -= 48.0;
             }
             if let Some(badge) = &item.badge {
                 let bw = (badge.chars().count() as f32 * 6.8 + 18.0).clamp(44.0, 120.0);
                 let bx0 = text_right - bw;
-                draw_text_gdi(dc, fonts.badge, pal.text_secondary, badge, dip_rect(bx0, y0 + 15.5, text_right, y0 + 36.5, scale), DT_CENTER);
+                draw_text_gdi(dc, fonts.badge, pal.text_secondary, badge, dip_rect(bx0, badge_top, text_right, badge_top + 21.0, scale), DT_CENTER);
                 text_right = bx0 - 10.0;
             }
             let hl_spans = highlight_title_ranges(state.query, &item.title);
@@ -119,9 +119,9 @@ pub(super) fn paint_gdi_pass(
                 pal.accent,
                 &item.title,
                 &hl_spans,
-                dip_rect(62.0, y0 + 5.0, text_right, y0 + 28.0, scale),
+                dip_rect(62.0, y0 + 5.0, text_right, y0 + lay.row_h * 0.52, scale),
             );
-            draw_text_gdi(dc, fonts.subtitle, pal.text_secondary, &item.subtitle, dip_rect(62.0, y0 + 28.0, text_right, y0 + 47.0, scale), DT_LEFT);
+            draw_text_gdi(dc, fonts.subtitle, pal.text_secondary, &item.subtitle, dip_rect(62.0, y0 + lay.row_h * 0.50, text_right, y0 + lay.row_h - 5.0, scale), DT_LEFT);
         }
 
         if lay.has_preview

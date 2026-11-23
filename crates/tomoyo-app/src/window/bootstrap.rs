@@ -106,7 +106,12 @@ impl AppShell {
 
         let dpi = unsafe { GetDpiForWindow(hwnd) };
         let dpi_scale = if dpi > 0 { dpi as f32 / 96.0 } else { 1.0 };
-        let edit_font = create_edit_font(dpi_scale, font_regular);
+        let edit_face = if cfg_snap.typography.font_family.is_empty() {
+            font_regular
+        } else {
+            cfg_snap.typography.font_family.as_str()
+        };
+        let edit_font = create_edit_font(dpi_scale, edit_face);
         let edit_bg_brush = unsafe { CreateSolidBrush(theme.bg.to_colorref()) };
 
         let edit_hwnd = unsafe {
@@ -187,6 +192,8 @@ impl AppShell {
             attached: None,
             active_filter: SearchFilter::All,
             show_filter_bar: cfg_snap.show_filter_bar,
+            filter_bar_wrap: cfg_snap.filter_bar_layout != "single",
+            typography: cfg_snap.typography,
             last_result_gen: 0,
             results: Vec::new(),
             selected: 0,

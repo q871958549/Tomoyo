@@ -13,7 +13,7 @@
     cfg: TomoyoConfig;
     lang: Lang;
     folderErr: string;
-    onUpdateFilters: (hidden: string[], custom: CustomFilterTab[]) => void;
+    onUpdateFilters: (hidden: string[], custom: CustomFilterTab[], layout?: string) => void;
     onSave: (delayMs?: number) => void;
   }
 

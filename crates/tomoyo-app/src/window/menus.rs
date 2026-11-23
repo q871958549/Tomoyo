@@ -365,4 +365,74 @@ impl AppShell {
             self.execute_selected(action_idx);
         }
     }
+
+    pub(super) fn show_filter_overflow_menu(&mut self) {
+        let tabs = self.visible_filter_tabs();
+        let layout = crate::renderer::compute_filter_bar_layout(
+            self.geom.list_width_dip as f32,
+            crate::renderer::HEADER_HEIGHT_DIP as f32,
+            &tabs,
+            self.active_filter,
+            self.inter.filter_counts.as_ref(),
+            self.filter_bar_wrap,
+        );
+        if layout.overflow_tabs.is_empty() {
+            return;
+        }
+        const CMD_PICK_BASE: u32 = 8100;
+        const CMD_TOGGLE_LAYOUT: u32 = 8200;
+        let counts = self.inter.filter_counts.as_ref();
+        let mut entries: Vec<PopupEntry> = layout
+            .overflow_tabs
+            .iter()
+            .enumerate()
+            .map(|(i, tab)| {
+                let n = counts
+                    .and_then(|c| c.iter().find(|(f, _)| *f == tab.filter).map(|(_, n)| *n))
+                    .unwrap_or(0);
+                let lbl = if n > 0 { format!("{} ({n})", tab.label) } else { tab.label.clone() };
+                PopupEntry::item(
+                    CMD_PICK_BASE + i as u32,
+                    lbl,
+                    None,
+                    tab.filter == self.active_filter,
+                )
+            })
+            .collect();
+        entries.push(PopupEntry::Separator);
+        entries.push(PopupEntry::item(
+            CMD_TOGGLE_LAYOUT,
+            self.lang.pick("多行流式分类栏", "Wrap Filter Rows"),
+            None,
+            self.filter_bar_wrap,
+        ));
+
+        self.inter.in_modal_overlay = true;
+        let chosen = show_themed_popup_menu(
+            self.theme,
+            self.dpi_scale,
+            self.font_regular,
+            self.font_medium,
+            &entries,
+            false,
+        );
+        self.inter.in_modal_overlay = false;
+        unsafe { let _ = SetForegroundWindow(self.hwnd); }
+
+        let Some(cmd) = chosen else { return };
+        if cmd == CMD_TOGGLE_LAYOUT {
+            self.filter_bar_wrap = !self.filter_bar_wrap;
+            if let Ok(mut cfg) = self.config.write() {
+                cfg.filter_bar_layout = if self.filter_bar_wrap { "wrap" } else { "single" }.into();
+                let _ = cfg.save();
+            }
+            self.resize_to_fit_results();
+            self.invalidate();
+            return;
+        }
+        let idx = (cmd - CMD_PICK_BASE) as usize;
+        if let Some(tab) = layout.overflow_tabs.get(idx) {
+            self.set_active_filter(tab.filter);
+        }
+    }
 }

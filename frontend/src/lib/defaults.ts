@@ -95,8 +95,15 @@ export function makeDefaultConfig(): TomoyoConfig {
     hibernate_delay_secs: 15,
     auto_preview: true,
     show_filter_bar: true,
+    filter_bar_layout: 'wrap',
     hidden_builtin_filters: [],
     custom_filters: [],
+    typography: {
+      font_family: '',
+      title_weight: 500,
+      subtitle_weight: 400,
+      title_size: 16,
+    },
     disabled_plugins: [],
     window: { width_dip: 720, max_visible_rows: 8, preview_width_dip: 310, custom_x: null, custom_y: null },
     apps: { extra_dirs: [], auto_detect_desktop_organizers: true, extra_scan_depth: 2 },
@@ -143,7 +150,7 @@ export function hydrateSettingsInit(): SettingsInitPayload {
   const def = makeDefaultConfig();
   const rc = (raw.config ?? {}) as Partial<TomoyoConfig>;
   return {
-    version: raw.version || '2.4.1',
+    version: raw.version || '2.5.0',
     platform: raw.platform || 'linux',
     autostart: !!raw.autostart,
     plugins: Array.isArray(raw.plugins) ? raw.plugins : [],
@@ -157,10 +164,13 @@ export function hydrateSettingsInit(): SettingsInitPayload {
     secrets_status: { deepl: !!raw.secrets_status?.deepl, openai: !!raw.secrets_status?.openai },
     hotkey_health: raw.hotkey_health || {},
     cached_update: raw.cached_update ?? null,
+    system_fonts: Array.isArray(raw.system_fonts) ? raw.system_fonts : [],
     initial_route: typeof raw.initial_route === 'string' ? raw.initial_route : '',
     config: {
       ...def,
       ...rc,
+      filter_bar_layout: rc.filter_bar_layout === 'single' ? 'single' : 'wrap',
+      typography: { ...def.typography!, ...(rc.typography || {}) },
       window: { ...def.window, ...(rc.window || {}) },
       apps: { ...def.apps, ...(rc.apps || {}) },
       everything: { ...def.everything, ...(rc.everything || {}) },

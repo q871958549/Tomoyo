@@ -187,6 +187,9 @@ impl AppShell {
         let new_theme = fresh.theme.clone();
         self.preview_enabled = fresh.auto_preview;
         self.show_filter_bar = fresh.show_filter_bar;
+        self.filter_bar_wrap = fresh.filter_bar_layout != "single";
+        let typo_changed = self.typography != fresh.typography;
+        self.typography = fresh.typography.clone();
         self.geom.list_width_dip = fresh.window.width_dip.clamp(MIN_WINDOW_WIDTH_DIP, 1400);
         self.geom.max_visible_rows = fresh.window.max_visible_rows.clamp(4, 18);
         self.geom.preview_width_dip = fresh.window.preview_width_dip.clamp(220, 620);
@@ -215,6 +218,9 @@ impl AppShell {
         }
         self.lang = new_lang;
         unsafe { apply_cue_banner(self.edit_hwnd, new_lang); }
+        if typo_changed {
+            self.refresh_edit_font();
+        }
         self.apply_theme(&new_theme, false);
         if force_provider_reload || apps_changed || plugins_changed {
             self.router.reload_all();

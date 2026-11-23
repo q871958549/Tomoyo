@@ -221,6 +221,7 @@ pub fn build_settings_init_script_for(initial_route: &str) -> String {
         "hotkey_health": tomoyo_core::load_hotkey_health(),
         "cached_update": cached_update,
         "has_bundled_alibaba_font": locate_fonts_dir().is_some(),
+        "system_fonts": tomoyo_core::list_system_font_families(),
         "initial_route": initial_route,
     });
     format!(

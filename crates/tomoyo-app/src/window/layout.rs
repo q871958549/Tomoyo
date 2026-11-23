@@ -4,9 +4,9 @@ use super::bootstrap::create_edit_font;
 use super::AppShell;
 use crate::actions::shell_open;
 use crate::renderer::{
-    compute_filter_hitboxes, DEFAULT_PREVIEW_WIDTH_DIP, DEFAULT_WINDOW_WIDTH_DIP,
-    FILTER_BAR_HEIGHT_DIP, FOOTER_HEIGHT_DIP, HEADER_HEIGHT_DIP, MAX_WINDOW_WIDTH_DIP,
-    MIN_WINDOW_WIDTH_DIP, ROW_HEIGHT_DIP,
+    compute_filter_bar_layout, resolve_face_and_weight, FilterHit, DEFAULT_PREVIEW_WIDTH_DIP,
+    DEFAULT_WINDOW_WIDTH_DIP, FOOTER_HEIGHT_DIP, HEADER_HEIGHT_DIP, MAX_WINDOW_WIDTH_DIP,
+    MIN_WINDOW_WIDTH_DIP,
 };
 use tomoyo_core::{ExternalPluginBridge, Lang, TomoyoConfig};
 use tomoyo_protocol::{AttachedContext, SearchFilter};
@@ -56,13 +56,14 @@ impl AppShell {
         }
     }
 
-    pub(super) fn sync_dpi_scale(&mut self, new_scale: f32) {
-        let clamped = new_scale.clamp(1.0, 4.0);
-        if (clamped - self.dpi_scale).abs() < 0.01 {
-            return;
-        }
-        self.dpi_scale = clamped;
-        let new_font = create_edit_font(self.dpi_scale, self.font_regular);
+    pub(super) fn refresh_edit_font(&mut self) {
+        let (face, _) = resolve_face_and_weight(
+            &self.typography.font_family,
+            400,
+            self.font_regular,
+            self.font_medium,
+        );
+        let new_font = create_edit_font(self.dpi_scale, face);
         unsafe {
             SendMessageW(
                 self.edit_hwnd,
@@ -75,6 +76,15 @@ impl AppShell {
             }
         }
         self.edit_font = new_font;
+    }
+
+    pub(super) fn sync_dpi_scale(&mut self, new_scale: f32) {
+        let clamped = new_scale.clamp(1.0, 4.0);
+        if (clamped - self.dpi_scale).abs() < 0.01 {
+            return;
+        }
+        self.dpi_scale = clamped;
+        self.refresh_edit_font();
     }
 
     pub(super) fn handle_dpi_changed(&mut self, new_dpi: u32, suggested: Option<&RECT>) {
@@ -234,19 +244,31 @@ impl AppShell {
         }
     }
 
+    pub(super) fn filter_bar_height_dip(&self) -> i32 {
+        if !self.is_filter_bar_visible() {
+            return 0;
+        }
+        let tabs = self.visible_filter_tabs();
+        compute_filter_bar_layout(
+            self.geom.list_width_dip as f32,
+            HEADER_HEIGHT_DIP as f32,
+            &tabs,
+            self.active_filter,
+            self.inter.filter_counts.as_ref(),
+            self.filter_bar_wrap,
+        )
+        .height_dip
+    }
+
     pub(super) fn desired_height_dip(&self) -> i32 {
-        let filter_h = if self.is_filter_bar_visible() {
-            FILTER_BAR_HEIGHT_DIP
-        } else {
-            0
-        };
+        let filter_h = self.filter_bar_height_dip();
         let rows = self.results.len().min(self.geom.max_visible_rows) as i32;
         if rows == 0 {
             HEADER_HEIGHT_DIP + filter_h + FOOTER_HEIGHT_DIP
         } else {
             let min_preview_rows = if self.cached_preview.is_some() { 5 } else { 0 };
             let eff_rows = rows.max(min_preview_rows);
-            HEADER_HEIGHT_DIP + filter_h + 8 + eff_rows * ROW_HEIGHT_DIP + FOOTER_HEIGHT_DIP
+            HEADER_HEIGHT_DIP + filter_h + 8 + eff_rows * self.typography.row_height_dip() + FOOTER_HEIGHT_DIP
         }
     }
 
@@ -319,26 +341,21 @@ impl AppShell {
         (x_px as f32 / scale - div_x_dip).abs() <= 5.0
     }
 
-    pub(super) fn hit_test_filter(&self, x_px: i32, y_px: i32) -> Option<SearchFilter> {
+    pub(super) fn hit_test_filter_target(&self, x_px: i32, y_px: i32) -> Option<FilterHit> {
         if !self.is_filter_bar_visible() {
             return None;
         }
         let scale = self.dpi_scale.max(1.0);
-        let x_dip = x_px as f32 / scale;
-        let y_dip = y_px as f32 / scale;
-        let list_w_dip = self.current_list_width_dip();
         let tabs = self.visible_filter_tabs();
-        for hb in compute_filter_hitboxes(
-            list_w_dip,
+        compute_filter_bar_layout(
+            self.current_list_width_dip(),
             HEADER_HEIGHT_DIP as f32,
             &tabs,
+            self.active_filter,
             self.inter.filter_counts.as_ref(),
-        ) {
-            if x_dip >= hb.x0 && x_dip <= hb.x1 && y_dip >= hb.y0 && y_dip <= hb.y1 {
-                return Some(hb.filter);
-            }
-        }
-        None
+            self.filter_bar_wrap,
+        )
+        .hit_test(x_px as f32 / scale, y_px as f32 / scale)
     }
 
     pub(super) fn hit_test_row(&self, x_px: i32, y_px: i32) -> Option<usize> {
@@ -348,16 +365,11 @@ impl AppShell {
         if x_dip > self.current_list_width_dip() {
             return None;
         }
-        let filter_h = if self.is_filter_bar_visible() {
-            FILTER_BAR_HEIGHT_DIP as f32
-        } else {
-            0.0
-        };
-        let list_top = HEADER_HEIGHT_DIP as f32 + filter_h + 4.0;
+        let list_top = HEADER_HEIGHT_DIP as f32 + self.filter_bar_height_dip() as f32 + 4.0;
         if y_dip < list_top {
             return None;
         }
-        let slot = ((y_dip - list_top) / ROW_HEIGHT_DIP as f32) as usize;
+        let slot = ((y_dip - list_top) / self.typography.row_height_dip() as f32) as usize;
         if slot >= self.geom.max_visible_rows.max(1) {
             return None;
         }
@@ -427,13 +439,8 @@ impl AppShell {
                 w_dip.clamp(MIN_WINDOW_WIDTH_DIP, 1400)
             };
             if !self.results.is_empty() {
-                let filter_h = if self.is_filter_bar_visible() {
-                    FILTER_BAR_HEIGHT_DIP
-                } else {
-                    0
-                };
-                let avail_h = (h_dip - HEADER_HEIGHT_DIP - filter_h - FOOTER_HEIGHT_DIP - 8).max(0);
-                self.geom.max_visible_rows = (avail_h / ROW_HEIGHT_DIP).clamp(4, 18) as usize;
+                let avail_h = (h_dip - HEADER_HEIGHT_DIP - self.filter_bar_height_dip() - FOOTER_HEIGHT_DIP - 8).max(0);
+                self.geom.max_visible_rows = (avail_h / self.typography.row_height_dip()).clamp(4, 18) as usize;
             }
         }
         self.invalidate();

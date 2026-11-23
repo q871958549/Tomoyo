@@ -2,7 +2,7 @@
 
 use super::AppShell;
 use crate::drag::start_file_drag;
-use crate::renderer::{FOOTER_HEIGHT_DIP, HEADER_HEIGHT_DIP, MIN_WINDOW_WIDTH_DIP};
+use crate::renderer::{FilterHit, FOOTER_HEIGHT_DIP, HEADER_HEIGHT_DIP, MIN_WINDOW_WIDTH_DIP};
 use std::time::Instant;
 use tomoyo_protocol::IconSpec;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
@@ -121,8 +121,11 @@ pub(super) fn handle_mouse_down(hwnd: HWND, app: &mut AppShell, lparam: LPARAM) 
         }
         return LRESULT(0);
     }
-    if let Some(f) = app.hit_test_filter(x, y) {
-        app.set_active_filter(f);
+    if let Some(hit) = app.hit_test_filter_target(x, y) {
+        match hit {
+            FilterHit::Tab(f) => app.set_active_filter(f),
+            FilterHit::Overflow => app.show_filter_overflow_menu(),
+        }
         unsafe {
             let _ = SetFocus(Some(app.edit_hwnd));
         }
@@ -213,18 +216,25 @@ pub(super) fn handle_mouse_move(
         return LRESULT(0);
     }
     let new_logo_hover = app.hit_test_logo_icon(x, y);
-    let new_filter_hover = app.hit_test_filter(x, y);
-    let new_hover = if new_filter_hover.is_some() {
+    let filter_hit = app.hit_test_filter_target(x, y);
+    let new_filter_hover = match filter_hit {
+        Some(FilterHit::Tab(f)) => Some(f),
+        _ => None,
+    };
+    let new_overflow_hover = matches!(filter_hit, Some(FilterHit::Overflow));
+    let new_hover = if filter_hit.is_some() {
         None
     } else {
         app.hit_test_row(x, y)
     };
     if new_hover != app.inter.hovered
         || new_filter_hover != app.inter.hovered_filter
+        || new_overflow_hover != app.inter.hovered_overflow
         || new_logo_hover != app.inter.hovered_logo
     {
         app.inter.hovered = new_hover;
         app.inter.hovered_filter = new_filter_hover;
+        app.inter.hovered_overflow = new_overflow_hover;
         app.inter.hovered_logo = new_logo_hover;
         app.invalidate();
     }
@@ -236,6 +246,7 @@ pub(super) fn handle_mouse_leave(app: &mut AppShell) -> LRESULT {
     app.inter.pressed_logo = false;
     let changed = app.inter.hovered.take().is_some()
         | app.inter.hovered_filter.take().is_some()
+        | std::mem::replace(&mut app.inter.hovered_overflow, false)
         | std::mem::replace(&mut app.inter.hovered_logo, false);
     if changed {
         app.invalidate();
