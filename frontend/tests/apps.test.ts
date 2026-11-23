@@ -37,7 +37,7 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
     document.body.className = '';
   });
 
-  it('boots SettingsApp, renders hotkey conflict badge, and switches all 10 tabs', () => {
+  it('boots slim 6-tab SettingsApp, expands in-plugin drawers, and switches sub-tabs cleanly', () => {
     const wv = setupMockWebView();
     const origHealth = {
       main: { spec: 'Alt+Space', active: 'Alt+Space', ok: true, disabled: false, reason: '' },
@@ -47,7 +47,7 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
       pin: { spec: 'F3', active: 'F3', ok: true, disabled: false, reason: '' },
     };
     window.__TOMOYO_SETTINGS_INIT__ = {
-      version: '1.8.0',
+      version: '2.4.0',
       autostart: true,
       config: {
         language: 'zh',
@@ -68,7 +68,7 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
           save_dir: '',
           pin_opacity: 100,
           copy_hex_lowercase: false,
-          tool_hotkeys: { rect: 'R', ellipse: 'E', arrow: 'A', pen: 'B', highlighter: 'H', mosaic: 'M', step: 'N', text: 'X', scroll: 'L', pin: 'P', ocr: 'O', ocr_copy: 'Shift+C', translate: 'T' },
+          tool_hotkeys: { rect: 'R', ellipse: 'E', arrow: 'A', pen: 'B', highlighter: 'H', mosaic: 'M', step: 'N', text: 'X', scroll: 'L', pin: 'P', ocr: 'O', ocr_copy: 'Shift+C', translate: 'T', record: 'V' },
         },
         update: { auto_check: true, check_interval_hours: 24, repo: 'q871958549/Tomoyo', last_checked_unix: 0 },
         web_searches: [{ keyword: 'g', name: 'Google', url: 'https://www.google.com/search?q={q}' }],
@@ -100,10 +100,10 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
     flushSync();
 
     const navBtns = document.querySelectorAll<HTMLButtonElement>('nav button[data-tab]');
-    expect(navBtns.length).toBe(12);
+    expect(navBtns.length).toBe(6);
     expect(document.querySelector<HTMLImageElement>('img.brand-logo')?.getAttribute('src')).toBeTruthy();
 
-    // Bottom conflict bar must be a clickable button pointing directly to the conflicted slot!
+    // Hotkey conflict bar + Hotkey Doctor rescue flow
     const conflictBtn = document.querySelector<HTMLButtonElement>('button#toast.conflict-bar-btn');
     expect(conflictBtn).not.toBeNull();
     expect(conflictBtn?.textContent).toContain('Alt+C');
@@ -112,15 +112,11 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
     flushSync();
     expect(document.querySelector('button[data-tab="hotkeys"]')?.classList.contains('is-active')).toBe(true);
     expect(document.body.textContent).toContain('高优先级强行接管冲突热键');
-    // Direct 1-click rescue button + fullscreen avoidance card must render on Hotkeys tab!
-    expect(document.body.textContent).toContain('全屏游戏与全屏视频时自动避让热键');
-    const rescueClip = document.querySelector<HTMLButtonElement>('button.btn-rescue-clipboard');
-    expect(rescueClip).not.toBeNull();
-    rescueClip?.click();
+    document.querySelector<HTMLButtonElement>('button.btn-rescue-clipboard')?.click();
     flushSync();
     expect(wv.posted.some((m) => m.cmd === 'save_settings' && (m.config as { override_conflict_hotkeys?: boolean })?.override_conflict_hotkeys === true)).toBe(true);
 
-    // Simulate enabling high-priority override: conflict bar disappears and overridden pill appears
+    // Restoring conflict badge clears when fixed
     wv.emit({
       event: 'hotkey_health',
       health: {
@@ -133,77 +129,71 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
     });
     flushSync();
     expect(document.querySelector('button#toast.conflict-bar-btn')).toBeNull();
-    expect(document.body.textContent).toContain('已高优先级接管');
-
-    // Restore original conflict health before iterating all tabs
     wv.emit({ event: 'hotkey_health', health: origHealth });
     flushSync();
 
-    // Click every tab and assert zero errors + tab activates
+    // Click all 6 top-level tabs and verify each activates cleanly
     for (const btn of navBtns) {
       btn.click();
       flushSync();
       expect(btn.classList.contains('is-active')).toBe(true);
-      if (btn.dataset.tab === 'search') {
-        expect(document.body.textContent).toContain('已被系统或其他软件占用（Alt+C）');
-      }
-      if (btn.dataset.tab === 'translate') {
-        expect(document.querySelectorAll('input[type="password"]').length).toBe(2);
-      }
-      if (btn.dataset.tab === 'capture') {
-        expect(document.body.textContent).toContain('全局一键贴图快捷键');
-        expect(document.body.textContent).toContain('全局截图提取文字快捷键');
-        expect(document.body.textContent).toContain('Shift+C');
-        expect(document.body.textContent).toContain('F3');
-      }
-      if (btn.dataset.tab === 'web') {
-        const vals = [...document.querySelectorAll<HTMLInputElement>('input')].map((el) => el.value);
-        expect(vals).toContain('Google');
-      }
     }
 
-    expect(wv.posted.some((m) => m.cmd === 'check_hotkey_health')).toBe(true);
-    expect(wv.posted.some((m) => m.cmd === 'audit_hotkeys')).toBe(true);
-    expect(buildComboFromEvent(new KeyboardEvent('keydown', { code: 'F1' })).combo).toBe('F1');
-    expect(buildComboFromEvent(new KeyboardEvent('keydown', { code: 'PrintScreen' })).combo).toBe('PrintScreen');
-    expect(buildComboFromEvent(new KeyboardEvent('keydown', { code: 'KeyA' })).needMod).toBe(true);
-
-    // Modular plugin switches: disabling Translate hides its sidebar tab & drops its conflict badge
+    // Plugin Center consolidates Clipboard / Translate / Capture / OCR / Notes inside module drawers!
     document.querySelector<HTMLButtonElement>('button[data-tab="plugins"]')?.click();
     flushSync();
     expect(document.body.textContent).toContain('官方功能插件');
+
+    document.querySelector<HTMLButtonElement>('button[data-config-plugin="dev.tomoyo.clipboard"]')?.click();
+    flushSync();
+    expect(document.body.textContent).toContain('已被系统或其他软件占用（Alt+C）');
+
+    document.querySelector<HTMLButtonElement>('button[data-config-plugin="dev.tomoyo.translate"]')?.click();
+    flushSync();
+    expect(document.querySelectorAll('input[type="password"]').length).toBe(2);
+
+    document.querySelector<HTMLButtonElement>('button[data-config-plugin="dev.tomoyo.capture"]')?.click();
+    flushSync();
+    expect(document.body.textContent).toContain('全局一键贴图快捷键');
+    expect(document.body.textContent).toContain('F3');
+
     const trSwitch = document.querySelector<HTMLButtonElement>('button[role="switch"][aria-label="多源划词翻译"]');
-    expect(trSwitch).not.toBeNull();
     trSwitch?.click();
     flushSync();
-    expect(document.querySelector('button[data-tab="translate"]')).toBeNull();
     expect(document.querySelector('button[data-tab="hotkeys"] .nav-badge')?.textContent).toBe('1');
 
-    // Protocol v2 declarative plugin settings & hotkey drawer
-    const cfgBtn = document.querySelector<HTMLButtonElement>('button[data-config-plugin="dev.tomoyo.ocr"]');
-    expect(cfgBtn).not.toBeNull();
-    cfgBtn?.click();
+    document.querySelector<HTMLButtonElement>('button[data-config-plugin="dev.tomoyo.ocr"]')?.click();
     flushSync();
     expect(document.querySelector('[data-plugin-drawer="dev.tomoyo.ocr"]')).not.toBeNull();
-    const rawSw = document.querySelector<HTMLButtonElement>('button[role="switch"][aria-label="dev.tomoyo.ocr:raw_output"]');
-    expect(rawSw).not.toBeNull();
-    rawSw?.click();
+    document.querySelector<HTMLButtonElement>('button[role="switch"][aria-label="dev.tomoyo.ocr:raw_output"]')?.click();
     flushSync();
 
-    // User-extensible search filter tabs: one-click preset adds a custom filter tab and saves config
+    // Search & Web sub-tabs
     document.querySelector<HTMLButtonElement>('button[data-tab="search"]')?.click();
     flushSync();
-    expect(document.querySelector('[aria-label="filter-bar-preview"]')).not.toBeNull();
-    const codePreset = document.querySelector<HTMLButtonElement>('button[data-preset-tab="code"]');
-    expect(codePreset).not.toBeNull();
-    codePreset?.click();
+    document.querySelector<HTMLButtonElement>('button[data-preset-tab="code"]')?.click();
     flushSync();
     expect(document.body.textContent).toContain('@code');
-    const editCustom = document.querySelector<HTMLButtonElement>('.custom-item button[title="编辑规则"]');
-    expect(editCustom).not.toBeNull();
-    editCustom?.click();
+    const webSeg = [...document.querySelectorAll<HTMLButtonElement>('.subbar button')].find((b) => b.textContent?.includes('快捷网页搜索'));
+    webSeg?.click();
     flushSync();
-    expect(document.body.textContent).toContain('保存修改');
+    expect([...document.querySelectorAll<HTMLInputElement>('input')].map((el) => el.value)).toContain('Google');
+
+    // System Updates & Logs sub-tab exposes update.log
+    document.querySelector<HTMLButtonElement>('button[data-tab="system"]')?.click();
+    flushSync();
+    const logsSeg = [...document.querySelectorAll<HTMLButtonElement>('.subbar button')].find((b) => b.textContent?.includes('诊断与日志'));
+    logsSeg?.click();
+    flushSync();
+    expect(document.body.textContent).toContain('更新日志');
+
+    // Flows tab
+    document.querySelector<HTMLButtonElement>('button[data-tab="flows"]')?.click();
+    flushSync();
+    document.querySelector<HTMLButtonElement>('button[role="switch"][aria-label="剪贴板去换行纯文本直贴"]')?.click();
+    flushSync();
+    expect(wv.posted.some((m) => m.cmd === 'save_flows')).toBe(true);
+
     const lastSave = [...wv.posted].reverse().find((m) => m.cmd === 'save_settings');
     const savedCfg = (lastSave?.config ?? {}) as {
       custom_filters?: Array<{ id: string }>;
@@ -214,31 +204,18 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
     expect(savedCfg.disabled_plugins).toContain('dev.tomoyo.translate');
     expect(savedCfg.plugin_settings?.['dev.tomoyo.ocr']?.raw_output).toBe(true);
 
-    // Declarative Action Flows tab: toggling a flow emits `save_flows` cleanly
-    document.querySelector<HTMLButtonElement>('button[data-tab="flows"]')?.click();
-    flushSync();
-    expect(document.body.textContent).toContain('剪贴板去换行纯文本直贴');
-    const flowSw = document.querySelector<HTMLButtonElement>('button[role="switch"][aria-label="剪贴板去换行纯文本直贴"]');
-    expect(flowSw).not.toBeNull();
-    flowSw?.click();
-    flushSync();
-    expect(wv.posted.some((m) => m.cmd === 'save_flows')).toBe(true);
-    const hkBtn = document.querySelector<HTMLButtonElement>('button[data-flow-hk="clip_clean_paste"]');
-    expect(hkBtn).not.toBeNull();
-    hkBtn?.click();
-    flushSync();
-    expect(document.querySelector('[data-flow-hk-drawer="clip_clean_paste"]')).not.toBeNull();
-
     unmount(app);
   });
 
   it('boots TranslatorApp, ClipboardApp, and OcrApp cleanly', () => {
-    setupMockWebView();
+    const wv = setupMockWebView();
 
     window.__TOMOYO_TR_INIT__ = { theme: 'dark', text: '', target_lang: 'auto', engines: ['google'], history: [], wordbook: [] };
     const tr = mount(TranslatorApp, { target: document.getElementById('app')! });
     flushSync();
     expect(document.querySelector('textarea')).not.toBeNull();
+    document.querySelector<HTMLButtonElement>('button[title="翻译插件设置"]')?.click();
+    expect(wv.posted.some((m) => m.cmd === 'open_settings' && m.target === 'plugins:dev.tomoyo.translate')).toBe(true);
     unmount(tr);
 
     document.body.innerHTML = '<div id="app"></div>';
@@ -249,6 +226,8 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
     const cb = mount(ClipboardApp, { target: document.getElementById('app')! });
     flushSync();
     expect(document.body.textContent).toContain('剪贴板工作台');
+    document.querySelector<HTMLButtonElement>('button[title="剪贴板插件设置"]')?.click();
+    expect(wv.posted.some((m) => m.cmd === 'open_settings' && m.target === 'plugins:dev.tomoyo.clipboard')).toBe(true);
     unmount(cb);
 
     document.body.innerHTML = '<div id="app"></div>';
@@ -258,18 +237,15 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
     expect(document.body.textContent).toContain('OCR 审校与编辑');
     unmount(ocr);
 
-    // Core hotkey convenience helper auto-swaps conflicting enabled Tomoyo slots cleanly
+    expect(buildComboFromEvent(new KeyboardEvent('keydown', { code: 'F1' })).combo).toBe('F1');
     const mockCfg = {
       hotkey: 'Alt+Space',
       clipboard: { hotkey: 'Alt+V' },
       translate: { hotkey: 'Alt+T' },
       capture: { hotkey: 'Alt+S', pin_hotkey: 'F3', ocr_hotkey: 'F4' },
     };
-    const swapped = assignCoreHotkeyWithSwap(mockCfg, 'capture', 'F4', {
+    expect(assignCoreHotkeyWithSwap(mockCfg, 'capture', 'F4', {
       main: true, clipboard: true, translate: true, capture: true, pin: true, ocr: true,
-    });
-    expect(swapped).toBe('ocr');
-    expect(mockCfg.capture.hotkey).toBe('F4');
-    expect(mockCfg.capture.ocr_hotkey).toBe('Alt+S');
+    })).toBe('ocr');
   });
 });

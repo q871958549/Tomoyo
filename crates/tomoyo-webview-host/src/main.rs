@@ -170,6 +170,10 @@ fn parse_args() -> LaunchArgs {
 }
 
 pub fn build_settings_init_script() -> String {
+    build_settings_init_script_for("")
+}
+
+pub fn build_settings_init_script_for(initial_route: &str) -> String {
     let cfg = TomoyoConfig::load_or_create();
     let autostart = is_autostart_enabled();
     let host = PluginHost::new(default_plugin_dirs());
@@ -217,6 +221,7 @@ pub fn build_settings_init_script() -> String {
         "hotkey_health": tomoyo_core::load_hotkey_health(),
         "cached_update": cached_update,
         "has_bundled_alibaba_font": locate_fonts_dir().is_some(),
+        "initial_route": initial_route,
     });
     format!(
         "window.__TOMOYO_SETTINGS_INIT__ = {};",

@@ -15,7 +15,7 @@
   <a href="https://github.com/q871958549/Tomoyo/actions/workflows/ci.yml"><img src="https://github.com/q871958549/Tomoyo/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="LICENSE-MIT"><img src="https://img.shields.io/badge/license-MIT%20%2F%20Apache--2.0-blue.svg" alt="License" /></a>
   <img src="https://img.shields.io/badge/platform-Linux%20(KDE%20Wayland%2FX11)%20%7C%20Windows%2010%2F11%20(x64%2FARM64)-1793D1.svg" alt="Linux & Windows" />
-  <img src="https://img.shields.io/badge/version-v2.3.1-7c6af7.svg" alt="Version" />
+  <img src="https://img.shields.io/badge/version-v2.4.0-7c6af7.svg" alt="Version" />
 </p>
 
 ---
@@ -33,7 +33,7 @@
    - Pure-Rust 2×2 supersampled Signed Distance Field (SDF) UI rendering paired with Cairo/Pango (Linux) or 32-bit DIB ClearType GDI (Windows) and bundled Alibaba PuHuiTi 3.0 fonts.
 2. **Aggressive Idle Hibernation & Process Isolation**:
    - **Auto-hibernation**: After a hide timeout, the launcher drops off-screen buffers, icon caches, and image thumbnails, shrinks SQLite page cache (`PRAGMA shrink_memory`), reaps idle plugins, and trims heap/working set (`mimalloc::mi_collect` + `malloc_trim(0)` on Linux / `SetProcessWorkingSetSizeEx` on Windows).
-   - **Zero-idle-RAM heavy panels**: Settings Center (12 tabs), Clipboard Workbench, Multi-Engine Translator, and OCR Review run in an ephemeral short-lived `tomoyo-webview-host` process (WebKitGTK 4.1 / WebView2) that exits completely on close.
+   - **Zero-idle-RAM heavy panels**: Settings Center (6 core tabs + plugin drawers), Clipboard Workbench, Multi-Engine Translator, and OCR Review run in an ephemeral short-lived `tomoyo-webview-host` process (WebKitGTK 4.1 / WebView2) that exits completely on close.
    - **Ephemeral satellite tools**: Native screenshot/annotation/pin (`tomoyo-capture`), offline OCR (`tomoyo-plugin-ocr` using Tesseract 5 / Windows WinRT `OcrEngine`), and local Markdown notes (`tomoyo-plugin-notes`) run on demand and reclaim to **0 MB** resident memory when idle.
 3. **Fast Cross-Platform App & Full-Disk Search**:
    - **Linux**: Incremental `inotify` watching of XDG `.desktop` / Flatpak / Snap entries, KWin `/WindowsRunner` window switching, `fd` + `plocate` file search, and `org.freedesktop.FileManager1` file reveal.

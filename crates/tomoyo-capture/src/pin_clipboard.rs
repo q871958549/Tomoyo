@@ -9,7 +9,11 @@ use crate::pin_card::render_text_or_color_pin_card;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use windows::core::w;
-use windows::Win32::Foundation::{HGLOBAL, POINT};
+use windows::Win32::Foundation::{HGLOBAL, POINT, RECT};
+use windows::Win32::UI::WindowsAndMessaging::{
+    GetSystemMetrics, SM_CXSCREEN, SM_CXVIRTUALSCREEN, SM_CYSCREEN, SM_CYVIRTUALSCREEN,
+    SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN,
+};
 use windows::Win32::Graphics::Gdi::{MonitorFromPoint, MONITOR_DEFAULTTONEAREST};
 use windows::Win32::System::DataExchange::{
     CloseClipboard, GetClipboardData, IsClipboardFormatAvailable, OpenClipboard,
@@ -260,5 +264,85 @@ pub fn handoff_text_to_translator(text: &str) {
                 ])
                 .spawn();
         }
+    }
+}
+
+/// Minimum visible strip (in px) preserved when dragging a pinned window past any screen edge.
+pub(crate) const MIN_PIN_GRAB_MARGIN_PX: i32 = 44;
+
+pub(crate) fn clamp_pin_origin(x: i32, y: i32, win_w: i32, win_h: i32, vrect: RECT) -> (i32, i32) {
+    let keep_x = MIN_PIN_GRAB_MARGIN_PX.min(win_w.max(1));
+    let keep_y = MIN_PIN_GRAB_MARGIN_PX.min(win_h.max(1));
+    let min_x = vrect.left - win_w + keep_x;
+    let max_x = (vrect.right - keep_x).max(min_x);
+    let min_y = vrect.top - win_h + keep_y;
+    let max_y = (vrect.bottom - keep_y).max(min_y);
+    (x.clamp(min_x, max_x), y.clamp(min_y, max_y))
+}
+
+pub(crate) fn virtual_desktop_rect() -> RECT {
+    unsafe {
+        let vx = GetSystemMetrics(SM_XVIRTUALSCREEN);
+        let vy = GetSystemMetrics(SM_YVIRTUALSCREEN);
+        let vw = GetSystemMetrics(SM_CXVIRTUALSCREEN);
+        let vh = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+        if vw > 0 && vh > 0 {
+            RECT { left: vx, top: vy, right: vx + vw, bottom: vy + vh }
+        } else {
+            RECT {
+                left: 0,
+                top: 0,
+                right: GetSystemMetrics(SM_CXSCREEN).max(640),
+                bottom: GetSystemMetrics(SM_CYSCREEN).max(480),
+            }
+        }
+    }
+}
+
+pub(crate) fn compute_pin_zoom_origin(
+    rc: RECT,
+    nw: i32,
+    nh: i32,
+    cursor: Option<POINT>,
+    vrect: RECT,
+) -> (i32, i32) {
+    let ow = (rc.right - rc.left).max(1);
+    let oh = (rc.bottom - rc.top).max(1);
+    let (raw_x, raw_y) = match cursor {
+        Some(pt) if pt.x >= rc.left && pt.x <= rc.right && pt.y >= rc.top && pt.y <= rc.bottom => {
+            let rx = (pt.x - rc.left) as f32 / ow as f32;
+            let ry = (pt.y - rc.top) as f32 / oh as f32;
+            (pt.x - (nw as f32 * rx).round() as i32, pt.y - (nh as f32 * ry).round() as i32)
+        }
+        _ => (rc.left + (ow - nw) / 2, rc.top + (oh - nh) / 2),
+    };
+    clamp_pin_origin(raw_x, raw_y, nw, nh, vrect)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pin_clamp_allows_dragging_beyond_all_four_screen_edges() {
+        let vrect = RECT { left: 0, top: 0, right: 1920, bottom: 1080 };
+        assert_eq!(clamp_pin_origin(-700, -500, 800, 600, vrect), (-700, -500));
+        assert_eq!(
+            clamp_pin_origin(-900, -700, 800, 600, vrect),
+            (-800 + MIN_PIN_GRAB_MARGIN_PX, -600 + MIN_PIN_GRAB_MARGIN_PX)
+        );
+        assert_eq!(
+            clamp_pin_origin(2500, 1500, 800, 600, vrect),
+            (1920 - MIN_PIN_GRAB_MARGIN_PX, 1080 - MIN_PIN_GRAB_MARGIN_PX)
+        );
+    }
+
+    #[test]
+    fn pin_zoom_anchors_under_cursor_and_stays_grabbable() {
+        let vrect = RECT { left: 0, top: 0, right: 1920, bottom: 1080 };
+        let rc = RECT { left: 100, top: 100, right: 500, bottom: 300 };
+        // Zooming 2x while cursor sits at 25% of width/height keeps cursor pixel fixed.
+        let (nx, ny) = compute_pin_zoom_origin(rc, 800, 400, Some(POINT { x: 200, y: 150 }), vrect);
+        assert_eq!((nx, ny), (0, 50));
     }
 }

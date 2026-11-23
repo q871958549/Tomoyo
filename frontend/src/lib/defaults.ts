@@ -143,7 +143,7 @@ export function hydrateSettingsInit(): SettingsInitPayload {
   const def = makeDefaultConfig();
   const rc = (raw.config ?? {}) as Partial<TomoyoConfig>;
   return {
-    version: raw.version || '2.3.1',
+    version: raw.version || '2.4.0',
     platform: raw.platform || 'linux',
     autostart: !!raw.autostart,
     plugins: Array.isArray(raw.plugins) ? raw.plugins : [],
@@ -157,6 +157,7 @@ export function hydrateSettingsInit(): SettingsInitPayload {
     secrets_status: { deepl: !!raw.secrets_status?.deepl, openai: !!raw.secrets_status?.openai },
     hotkey_health: raw.hotkey_health || {},
     cached_update: raw.cached_update ?? null,
+    initial_route: typeof raw.initial_route === 'string' ? raw.initial_route : '',
     config: {
       ...def,
       ...rc,

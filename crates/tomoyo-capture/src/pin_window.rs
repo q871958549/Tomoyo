@@ -7,7 +7,9 @@ use crate::export::{
     copy_bgra_to_clipboard, copy_text_to_clipboard, default_save_path, handoff_to_ocr_or_translate,
     save_bgra_as_png,
 };
-use crate::pin_clipboard::handoff_text_to_translator;
+use crate::pin_clipboard::{
+    clamp_pin_origin, compute_pin_zoom_origin, handoff_text_to_translator, virtual_desktop_rect,
+};
 use tomoyo_core::TomoyoConfig;
 use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
@@ -19,19 +21,20 @@ use windows::Win32::Graphics::Gdi::{
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    GetKeyState, VK_CONTROL, VK_ESCAPE,
+    GetKeyState, ReleaseCapture, SetCapture, VK_CONTROL, VK_ESCAPE,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu, DestroyWindow,
     DispatchMessageW, GetClientRect, GetCursorPos, GetMessageW, GetSystemMetrics,
     GetWindowLongPtrW, GetWindowRect, LoadCursorW, PostQuitMessage, RegisterClassW,
     SetForegroundWindow, SetLayeredWindowAttributes, SetWindowLongPtrW, SetWindowPos, ShowWindow,
-    TrackPopupMenu, TranslateMessage, CS_DBLCLKS, GWLP_USERDATA, HTCAPTION, HWND_NOTOPMOST,
-    HWND_TOPMOST, IDC_SIZEALL, LWA_ALPHA, MF_CHECKED, MF_SEPARATOR, MF_STRING, MF_UNCHECKED, MSG,
-    SM_CXSCREEN, SM_CYSCREEN, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SW_SHOW,
-    TPM_LEFTALIGN, TPM_RETURNCMD, WM_DESTROY, WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDBLCLK,
-    WM_MBUTTONUP, WM_MOUSEWHEEL, WM_NCHITTEST, WM_NCLBUTTONDBLCLK, WM_NCMBUTTONUP, WM_NCRBUTTONUP,
-    WM_PAINT, WM_RBUTTONUP, WNDCLASSW, WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
+    TrackPopupMenu, TranslateMessage, CS_DBLCLKS, GWLP_USERDATA, HWND_NOTOPMOST, HWND_TOPMOST,
+    IDC_SIZEALL, LWA_ALPHA, MF_CHECKED, MF_SEPARATOR, MF_STRING, MF_UNCHECKED, MSG, SM_CXSCREEN,
+    SM_CYSCREEN, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SW_SHOW, TPM_LEFTALIGN,
+    TPM_RETURNCMD, WM_CAPTURECHANGED, WM_DESTROY, WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDBLCLK,
+    WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCLBUTTONDBLCLK,
+    WM_NCMBUTTONUP, WM_NCRBUTTONUP, WM_PAINT, WM_RBUTTONUP, WNDCLASSW, WS_EX_LAYERED,
+    WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
 };
 
 const CMD_COPY: u32 = 1;
@@ -43,6 +46,15 @@ const CMD_TOPMOST: u32 = 5;
 const CMD_RESET: u32 = 6;
 const CMD_CLOSE: u32 = 7;
 
+#[derive(Default)]
+struct DragState {
+    active: bool,
+    moved: bool,
+    start_cursor: POINT,
+    start_x: i32,
+    start_y: i32,
+}
+
 struct PinState {
     img_w: u32,
     img_h: u32,
@@ -52,6 +64,7 @@ struct PinState {
     opacity_pct: u8,
     topmost: bool,
     save_dir: String,
+    drag: DragState,
 }
 
 impl PinState {
@@ -62,23 +75,14 @@ impl PinState {
         }
     }
 
-    fn apply_zoom(&self, hwnd: HWND) {
+    fn apply_zoom(&self, hwnd: HWND, cursor: Option<POINT>) {
         let mut rc = RECT::default();
         unsafe { let _ = GetWindowRect(hwnd, &mut rc); }
-        let cx = (rc.left + rc.right) / 2;
-        let cy = (rc.top + rc.bottom) / 2;
         let nw = ((self.img_w as f32) * self.scale).round().clamp(48.0, 4096.0) as i32;
         let nh = ((self.img_h as f32) * self.scale).round().clamp(48.0, 4096.0) as i32;
+        let (nx, ny) = compute_pin_zoom_origin(rc, nw, nh, cursor, virtual_desktop_rect());
         unsafe {
-            let _ = SetWindowPos(
-                hwnd,
-                None,
-                cx - nw / 2,
-                cy - nh / 2,
-                nw,
-                nh,
-                SWP_NOZORDER | SWP_NOACTIVATE,
-            );
+            let _ = SetWindowPos(hwnd, None, nx, ny, nw, nh, SWP_NOZORDER | SWP_NOACTIVATE);
             let _ = InvalidateRect(Some(hwnd), None, false);
         }
     }
@@ -146,7 +150,7 @@ impl PinState {
                     self.scale = 1.0;
                     self.opacity_pct = 100;
                     self.apply_opacity(hwnd);
-                    self.apply_zoom(hwnd);
+                    self.apply_zoom(hwnd, None);
                 }
                 CMD_CLOSE => { let _ = DestroyWindow(hwnd); }
                 _ => {}
@@ -220,6 +224,7 @@ pub fn run_pin_window_with_text(
             opacity_pct: cfg.capture.pin_opacity.clamp(30, 100),
             topmost: true,
             save_dir: cfg.capture.save_dir,
+            drag: DragState::default(),
         });
 
         let hwnd = CreateWindowExW(
@@ -266,7 +271,52 @@ unsafe extern "system" fn pin_wndproc(
 
     match msg {
         WM_ERASEBKGND => LRESULT(1),
-        WM_NCHITTEST => LRESULT(HTCAPTION as isize),
+        WM_LBUTTONDOWN => {
+            let mut pt = POINT::default();
+            let mut rc = RECT::default();
+            unsafe {
+                let _ = GetCursorPos(&mut pt);
+                let _ = GetWindowRect(hwnd, &mut rc);
+                SetCapture(hwnd);
+            }
+            st.drag = DragState { active: true, moved: false, start_cursor: pt, start_x: rc.left, start_y: rc.top };
+            LRESULT(0)
+        }
+        WM_MOUSEMOVE => {
+            if st.drag.active {
+                let mut pt = POINT::default();
+                let mut rc = RECT::default();
+                unsafe {
+                    let _ = GetCursorPos(&mut pt);
+                    let _ = GetWindowRect(hwnd, &mut rc);
+                }
+                let dx = pt.x - st.drag.start_cursor.x;
+                let dy = pt.y - st.drag.start_cursor.y;
+                if st.drag.moved || dx.abs() >= 2 || dy.abs() >= 2 {
+                    st.drag.moved = true;
+                    let (nx, ny) = clamp_pin_origin(
+                        st.drag.start_x + dx,
+                        st.drag.start_y + dy,
+                        (rc.right - rc.left).max(1),
+                        (rc.bottom - rc.top).max(1),
+                        virtual_desktop_rect(),
+                    );
+                    unsafe {
+                        let _ = SetWindowPos(hwnd, None, nx, ny, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+                    }
+                }
+            }
+            LRESULT(0)
+        }
+        WM_LBUTTONUP | WM_CAPTURECHANGED => {
+            if st.drag.active {
+                st.drag.active = false;
+                if msg == WM_LBUTTONUP {
+                    unsafe { let _ = ReleaseCapture(); }
+                }
+            }
+            LRESULT(0)
+        }
         WM_PAINT => {
             let mut ps = PAINTSTRUCT::default();
             let hdc = unsafe { BeginPaint(hwnd, &mut ps) };
@@ -303,9 +353,15 @@ unsafe extern "system" fn pin_wndproc(
                     DIB_RGB_COLORS,
                     SRCCOPY,
                 );
-                let brush = CreateSolidBrush(COLORREF(0x00F6_823B)); // crisp accent 1px frame
-                let _ = FrameRect(hdc, &rc, brush);
-                let _ = DeleteObject(brush.into());
+                let outer_brush = CreateSolidBrush(COLORREF(0x003B_291E));
+                let _ = FrameRect(hdc, &rc, outer_brush);
+                let _ = DeleteObject(outer_brush.into());
+                if cw > 4 && ch > 4 {
+                    let inner = RECT { left: 1, top: 1, right: cw - 1, bottom: ch - 1 };
+                    let accent_brush = CreateSolidBrush(COLORREF(0x00F6_823B));
+                    let _ = FrameRect(hdc, &inner, accent_brush);
+                    let _ = DeleteObject(accent_brush.into());
+                }
                 let _ = EndPaint(hwnd, &ps);
             }
             LRESULT(0)
@@ -324,9 +380,11 @@ unsafe extern "system" fn pin_wndproc(
                     st.apply_opacity(hwnd);
                 }
             } else {
+                let mut cur = POINT::default();
+                unsafe { let _ = GetCursorPos(&mut cur); }
                 let factor = if delta > 0 { 1.1 } else { 0.9 };
                 st.scale = (st.scale * factor).clamp(0.25, 4.0);
-                st.apply_zoom(hwnd);
+                st.apply_zoom(hwnd, Some(cur));
             }
             LRESULT(0)
         }

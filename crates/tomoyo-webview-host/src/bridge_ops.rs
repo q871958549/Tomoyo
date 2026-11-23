@@ -97,6 +97,8 @@ pub(crate) fn handle_set_plugin_permission(
 pub(crate) fn handle_read_logs(source: String, errors_only: bool) -> HostAction {
     let safe_file = match source.as_str() {
         "webview.log" => "webview.log",
+        "update.log" => "update.log",
+        "inno_setup.log" => "inno_setup.log",
         "last_crash.txt" => "last_crash.txt",
         _ => "tomoyo.log",
     };

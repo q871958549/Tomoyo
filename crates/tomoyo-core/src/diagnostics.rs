@@ -224,6 +224,7 @@ pub fn build_diagnostic_bundle() -> String {
     let main_issues = read_log_tail("tomoyo.log", 45, true);
     let main_recent = read_log_tail("tomoyo.log", 20, false);
     let webview_tail = read_log_tail("webview.log", 25, false);
+    let update_tail = read_log_tail("update.log", 20, false);
     let crash_tail = read_log_tail("last_crash.txt", 35, false);
 
     let mut out = format!(
@@ -258,6 +259,11 @@ pub fn build_diagnostic_bundle() -> String {
     if !webview_tail.is_empty() {
         out.push_str("\n--- webview.log (latest 25 lines) ---\n");
         out.push_str(&webview_tail);
+        out.push('\n');
+    }
+    if !update_tail.is_empty() {
+        out.push_str("\n--- update.log (latest 20 lines) ---\n");
+        out.push_str(&update_tail);
         out.push('\n');
     }
     out

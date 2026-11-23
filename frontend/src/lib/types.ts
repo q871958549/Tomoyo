@@ -250,6 +250,7 @@ export interface SettingsInitPayload {
   secrets_status: { deepl: boolean; openai: boolean };
   hotkey_health?: HotkeyHealthReport;
   cached_update?: UpdateStatus | null;
+  initial_route?: string;
 }
 
 export interface SelectOption {

@@ -138,9 +138,6 @@
 </div>
 
 <style>
-  .tab-head { margin-bottom: 18px; }
-  .tab-head h2 { margin: 0 0 4px; font-size: 18px; font-weight: 600; }
-  .tab-lead { margin: 0; font-size: 12.5px; color: var(--muted); }
   .web-card { padding: 14px 16px; }
   .web-bar {
     display: flex; align-items: center; justify-content: space-between; gap: 12px;

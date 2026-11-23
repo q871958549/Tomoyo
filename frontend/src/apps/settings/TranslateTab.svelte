@@ -13,12 +13,13 @@
     lang: Lang;
     secretsStatus: { deepl: boolean; openai: boolean };
     trHotkeyStatus?: HotkeySlotStatus;
+    embedded?: boolean;
     onJumpDoctor?: () => void;
     onToast: (msg: string, warn?: boolean) => void;
     onSave: (delayMs?: number) => void;
   }
 
-  let { cfg, lang, secretsStatus, trHotkeyStatus, onJumpDoctor, onToast, onSave }: Props = $props();
+  let { cfg, lang, secretsStatus, trHotkeyStatus, embedded = false, onJumpDoctor, onToast, onSave }: Props = $props();
 
   let deeplDraft = $state('');
   let openaiDraft = $state('');
@@ -73,6 +74,7 @@
   }
 </script>
 
+{#if !embedded}
 <div class="tab-head-bar">
   <div>
     <h2>{tr(lang, 'h_translate')}</h2>
@@ -83,6 +85,14 @@
     {tr(lang, 'btn_open_tr')}
   </Button>
 </div>
+{:else}
+<div class="emb-bar">
+  <Button variant="secondary" size="sm" onclick={() => postHost({ cmd: 'open_translator', text: '', target_lang: '' })}>
+    <Languages size={13} />
+    {tr(lang, 'btn_open_tr')}
+  </Button>
+</div>
+{/if}
 
 <div class="t-card">
   <div class="t-row">
@@ -240,20 +250,7 @@
 </div>
 
 <style>
-  .tab-head-bar { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
-  .tab-head-bar h2 { margin: 0 0 4px; font-size: 18px; font-weight: 600; }
-  .tab-lead { margin: 0; font-size: 12.5px; color: var(--muted); }
-  .col-row { flex-direction: column; align-items: stretch; gap: 10px; }
-  .chip-grid { display: flex; flex-wrap: wrap; gap: 6px; }
-  .t-chip {
-    height: 28px; padding: 0 10px; border-radius: 7px; border: 1px solid var(--border);
-    background: var(--canvas); color: var(--text-secondary); font-family: inherit;
-    font-size: 12px; cursor: pointer; white-space: nowrap; transition: all 0.12s ease;
-  }
-  .t-chip:hover { border-color: var(--border-strong); color: var(--text); }
-  .t-chip.is-on {
-    background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 500;
-  }
+  .emb-bar { display: flex; justify-content: flex-end; margin-bottom: 10px; }
   .key-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
   .key-title { display: flex; align-items: center; gap: 7px; color: var(--text-secondary); }
   .sec-badge {

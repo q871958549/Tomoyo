@@ -29,6 +29,8 @@
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │  v3.0.0 · 远期：物理拆包 Core/Suite 双版本 + WASM wasi-p2 + 公益代码签名     │
 ├──────────────────────────────────────────────────────────────────────────────┤
+│  v2.4.0 · [已完成 ✅] 贴图越界自由拖拽 + 长截图动态去黑区 + 设置 12→6 栏插件化  │
+├──────────────────────────────────────────────────────────────────────────────┤
 │  v2.3.1 · [已完成 ✅] Windows 一键校验升级 Job Object 逃逸与架构精准匹配修复 │
 ├──────────────────────────────────────────────────────────────────────────────┤
 │  v2.3.0 · [Linux 主端落地 ✅] CachyOS/Arch KDE Wayland/X11 全套原生支持     │
@@ -309,6 +311,21 @@
    - `reload_config_internal` 引入 `hotkeys_config_changed` 与 `avoidance_config_changed` 脏位比对：修改外观、窗口尺寸、目录等非热键配置完全不触碰现有热键与钩子，修改避让名单时仅原子刷新 `sync_hotkey_avoidance`。
 3. **根治 WebView2 窗口早关引发的 `HRESULT(0x80070578)` 假 ERROR（`win_host.rs`）**：
    - 在 `CreateCoreWebView2Controller` 调用前后及回调入口校验 `IsWindow(Some(hwnd))`；若用户于初始化前提前关窗则静默释放并退出，彻底消除无效窗口句柄 `ERROR`。
+
+### 阶段十四：`v2.3.0 – v2.3.1` — Linux KDE Wayland/X11 主端落地与 Windows 自更新修复（已完成 ✅）
+1. **Linux CachyOS / Arch KDE 原生全栈落地（`v2.3.0`）**：
+   - 主壳、`tomoyo-webview-host`（WebKitGTK 4.1）、`tomoyo-capture`（Spectacle/`grim`/X11）、`tomoyo-plugin-ocr`（Tesseract 5）、`org.kde.kglobalaccel` 热键、`fd` + `plocate` 检索与 Arch `PKGBUILD` 全链路验证通过。
+2. **Windows 一键校验升级修复（`v2.3.1`）**：
+   - `JobGuard::assign_webview_child` 开启 `JOB_OBJECT_LIMIT_BREAKAWAY_OK`，搭配 [installer/win.rs](../crates/tomoyo-core/src/updater/installer/win.rs) `CREATE_BREAKAWAY_FROM_JOB` 与 `CIM Win32_Process.Create` 双重脱离，防止设置窗口关闭回收 Job 时误杀安装脚本；补齐跨架构资产匹配、7 类子进程退出清理与 `%LOCALAPPDATA%\Tomoyo\logs\update.log` 落盘。
+
+### 阶段十五：`v2.4.0` — 贴图/长截图/更新器交互打磨与设置中心微内核收敛（已完成 ✅）
+1. **高频工具交互手感精修（`pin_window.rs` + `scroll_preview.rs` + `UpdatesTab.svelte`）**：
+   - **贴图窗口自管拖拽与光标锚定缩放**：告别系统 `HTCAPTION` 顶部与边缘强制阻挡，改为 `SetCapture` 自管拖拽，支持跨屏幕四边越界自由停靠（全虚拟桌面仅保留 `44 px` 最小抓手边际），滚轮按鼠标所指像素为中心缩放并增加外框对比描边。
+   - **长截图内容自适应预览**：`LivePreviewStrip` 改为预分配最大 `DIB` + 按 `StitchCanvas` 实际比例动态长高，移除初始大片空白黑框，达到屏幕上限后再平滑切换滚动深度追踪。
+   - **检查更新平滑回执与升级日志入面板**：手动检查保持至少 `480 ms` 旋转动画过渡并展示 Toast / 状态脉冲回执；诊断面板新增 `update.log` 与 `inno_setup.log` 查看源。
+2. **设置中心 12 → 6 栏微内核收口与「真·插件内配置」（`SettingsApp.svelte` + `PluginsTab.svelte`）**：
+   - 左侧导航精简为 **常规与外观 / 搜索与网页 / 热键治理 / 轻量工作流 / 插件中心 / 诊断与更新** 共 6 项，并新增顶部设置快捷搜索直达栏。
+   - 剪贴板、多源翻译、截图与贴图全面下沉为「插件中心」模块内原生配置抽屉（与 OCR、备忘录及 Protocol v2 插件体验一致），同时支持从剪贴板工作台、翻译窗与 OCR 审校窗顶部一键直达对应插件设置；后续演进聚焦 PixPin 贴图队列与多选区记忆、CopyQ 顺序粘贴、Pot 流式翻译与统一内置插件清单。
 
 ---
 

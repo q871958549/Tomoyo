@@ -104,7 +104,7 @@ const settingsPosted = await runCompiledHtml(
   },
   async (win, posted) => {
     const tabs = [...win.document.querySelectorAll('nav button[data-tab]')];
-    if (tabs.length !== 12) throw new Error(`settings.html: expected 12 nav tabs, got ${tabs.length}`);
+    if (tabs.length !== 6) throw new Error(`settings.html: expected 6 nav tabs, got ${tabs.length}`);
     if (win.document.querySelectorAll('select').length !== 0) {
       throw new Error('settings.html: raw native <select> detected (must use custom Select primitive)');
     }
@@ -114,8 +114,12 @@ const settingsPosted = await runCompiledHtml(
       if (!btn.classList.contains('is-active')) {
         throw new Error(`settings.html: tab ${btn.dataset.tab} failed to activate`);
       }
-      if (btn.dataset.tab === 'search' && !win.document.body.textContent.includes('Alt+C')) {
-        throw new Error('settings.html: clipboard hotkey conflict badge not rendered');
+      if (btn.dataset.tab === 'plugins') {
+        win.document.querySelector('button[data-config-plugin="dev.tomoyo.clipboard"]')?.click();
+        await new Promise((r) => setTimeout(r, 5));
+        if (!win.document.body.textContent.includes('Alt+C')) {
+          throw new Error('settings.html: clipboard hotkey conflict badge not rendered in plugin drawer');
+        }
       }
     }
     if (!posted.some((m) => m.cmd === 'check_hotkey_health')) {
@@ -158,4 +162,4 @@ await runCompiledHtml(
   }
 );
 
-console.log(`[OK] All 4 compiled Svelte 5 WebView bundles booted in happy-dom (12 Settings tabs + Flows + Hotkey Doctor verified, live hotkey conflict rendered, ${settingsPosted.length} IPC commands, 0 JS errors).`);
+console.log(`[OK] All 4 compiled Svelte 5 WebView bundles booted in happy-dom (6 core tabs + in-plugin settings drawers + Flows + Hotkey Doctor verified, live hotkey conflict rendered, ${settingsPosted.length} IPC commands, 0 JS errors).`);

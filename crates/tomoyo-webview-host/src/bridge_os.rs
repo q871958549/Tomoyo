@@ -137,3 +137,17 @@ pub fn spawn_capture_tool(mode: &str) {
     };
     let _ = std::process::Command::new(cap_exe).arg(flag).spawn();
 }
+
+pub fn spawn_settings_center(target: &str, notify_hwnd: Option<isize>) {
+    let Ok(exe) = std::env::current_exe() else { return };
+    let cfg = tomoyo_core::TomoyoConfig::load_or_create();
+    let mut cmd = std::process::Command::new(exe);
+    cmd.args(["--settings", "--theme", &cfg.theme, "--query", target]);
+    if cfg.theme.eq_ignore_ascii_case("light") {
+        cmd.arg("--light");
+    }
+    if let Some(hwnd) = notify_hwnd {
+        cmd.args(["--notify-hwnd", &hwnd.to_string()]);
+    }
+    let _ = cmd.spawn();
+}

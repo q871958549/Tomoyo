@@ -31,6 +31,8 @@
   let srcOptions = $derived([
     { value: 'tomoyo.log', label: tr(lang, 'log_main') },
     { value: 'webview.log', label: tr(lang, 'log_wv') },
+    { value: 'update.log', label: tr(lang, 'log_upd') },
+    { value: 'inno_setup.log', label: tr(lang, 'log_inno') },
     { value: 'last_crash.txt', label: tr(lang, 'log_crash') },
   ]);
 </script>
@@ -70,9 +72,6 @@
 </div>
 
 <style>
-  .tab-head-bar { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
-  .tab-head-bar h2 { margin: 0 0 4px; font-size: 18px; font-weight: 600; }
-  .tab-lead { margin: 0; font-size: 12.5px; color: var(--muted); }
   .head-acts { display: flex; gap: 8px; }
   .log-card { padding: 14px 16px; }
   .log-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }

@@ -15,6 +15,7 @@
     version: string;
     updateStatus: UpdateStatus | null;
     checking: boolean;
+    pulse?: boolean;
     installProgress: { percent: number; message: string; done?: boolean; ok?: boolean } | null;
     onCheckNow: () => void;
     onInstall: (rel: ReleaseInfo) => void;
@@ -27,6 +28,7 @@
     version,
     updateStatus,
     checking,
+    pulse = false,
     installProgress,
     onCheckNow,
     onInstall,
@@ -118,14 +120,14 @@
         {tr(lang, 'btn_github')}
       </Button>
       <Button variant="primary" disabled={checking} onclick={onCheckNow}>
-        <RefreshCw size={13} />
+        <span class="upd-ico {checking ? 'is-spinning' : ''}"><RefreshCw size={13} /></span>
         {checking ? (lang === 'en' ? 'Checking…' : '检查中…') : tr(lang, 'btn_check_upd')}
       </Button>
     </div>
   </div>
 
   {#if updateStatus}
-    <div class="status-box">
+    <div class="status-box {pulse ? 'is-fresh' : ''}">
       {#if updateStatus.state === 'up_to_date'}
         <div class="st-ok">
           <CheckCircle2 size={15} />
@@ -232,9 +234,6 @@
 </div>
 
 <style>
-  .tab-head { margin-bottom: 18px; }
-  .tab-head h2 { margin: 0 0 4px; font-size: 18px; font-weight: 600; }
-  .tab-lead { margin: 0; font-size: 12.5px; color: var(--muted); }
   .upd-hero { padding: 16px; }
   .hero-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
   .hero-brand { display: flex; align-items: center; gap: 12px; }
@@ -244,7 +243,12 @@
   .status-box {
     margin-top: 14px; padding: 12px 14px; border-radius: 10px;
     background: var(--canvas); border: 1px solid var(--border);
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
   }
+  .status-box.is-fresh { border-color: var(--accent); box-shadow: 0 0 0 3px var(--ring); }
+  .upd-ico { display: inline-flex; align-items: center; }
+  .upd-ico.is-spinning { animation: tomoyo-upd-spin 0.8s linear infinite; }
+  @keyframes tomoyo-upd-spin { to { transform: rotate(360deg); } }
   .st-ok { display: flex; align-items: center; gap: 6px; color: var(--ok); font-weight: 500; font-size: 13px; }
   .st-err { display: flex; align-items: center; gap: 6px; color: var(--danger); font-weight: 500; font-size: 13px; }
   .avail-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }

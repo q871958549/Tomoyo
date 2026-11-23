@@ -10,6 +10,7 @@
     Minimize2,
     Pin,
     Scissors,
+    Settings,
     WrapText,
     X,
   } from '@lucide/svelte';
@@ -110,6 +111,7 @@
       <Button variant="ghost" size="sm" onclick={stripBlankLines}><ListX size={13} />去空行</Button>
       <Button variant="ghost" size="sm" active={showingRaw} onclick={toggleRaw}><FileCode2 size={13} />{showingRaw ? '清洗文本' : '原始输出'}</Button>
       <Button variant="icon" size="sm" title="打开原图" onclick={() => boot.image_path && postHost({ cmd: 'open_path', path: boot.image_path })}><ExternalLink size={14} /></Button>
+      <Button variant="icon" size="sm" title="OCR 插件设置" onclick={() => postHost({ cmd: 'open_settings', target: 'plugins:dev.tomoyo.ocr' })}><Settings size={14} /></Button>
       <Button variant="icon" size="sm" active={pinnedTop} title="置顶" onclick={togglePin}><Pin size={14} /></Button>
       <Button variant="icon" size="sm" title="关闭" onclick={() => postHost({ cmd: 'close' })}><X size={14} /></Button>
     </div>

@@ -1,14 +1,10 @@
 <script lang="ts">
-  import { ClipboardList, FolderOpen, FolderPlus, Package, Trash2 } from '@lucide/svelte';
-  import { isPluginEnabled, PLUGIN_CLIPBOARD } from '../../lib/defaults';
+  import { FolderOpen, FolderPlus, Trash2 } from '@lucide/svelte';
   import { postHost } from '../../lib/ipc';
   import { tr, type Lang } from '../../lib/i18n';
-  import type { CustomFilterTab, HotkeySlotStatus, TomoyoConfig } from '../../lib/types';
+  import type { CustomFilterTab, TomoyoConfig } from '../../lib/types';
   import Button from '../../lib/ui/Button.svelte';
-  import Combobox from '../../lib/ui/Combobox.svelte';
-  import HotkeyRecorder from '../../lib/ui/HotkeyRecorder.svelte';
   import Segmented from '../../lib/ui/Segmented.svelte';
-  import Select from '../../lib/ui/Select.svelte';
   import Slider from '../../lib/ui/Slider.svelte';
   import Switch from '../../lib/ui/Switch.svelte';
   import FilterTabsCard from './FilterTabsCard.svelte';
@@ -16,17 +12,12 @@
   interface Props {
     cfg: TomoyoConfig;
     lang: Lang;
-    runningApps: string[];
     folderErr: string;
-    clipHotkeyStatus?: HotkeySlotStatus;
-    onJumpDoctor?: () => void;
-    onOpenPlugins?: () => void;
     onUpdateFilters: (hidden: string[], custom: CustomFilterTab[]) => void;
     onSave: (delayMs?: number) => void;
   }
 
-  let { cfg, lang, runningApps, folderErr, clipHotkeyStatus, onJumpDoctor, onOpenPlugins, onUpdateFilters, onSave }: Props = $props();
-  let clipEnabled = $derived(isPluginEnabled(cfg, PLUGIN_CLIPBOARD));
+  let { cfg, lang, folderErr, onUpdateFilters, onSave }: Props = $props();
 
   const evPresets = [
     { tok: '!*.tmp', zh: '临时文件 (.tmp)', en: 'Temp (.tmp)' },
@@ -37,21 +28,6 @@
     { tok: '!dist', zh: '构建 dist', en: 'Build dist' },
     { tok: '!*.bak', zh: '备份 (.bak)', en: 'Backups (.bak)' },
   ];
-
-  const clipPresets = [
-    { value: 'Alt+V', label: 'Alt+V' },
-    { value: 'Ctrl+Shift+V', label: 'Ctrl+Shift+V' },
-    { value: 'Alt+`', label: 'Alt+`' },
-    { value: 'Ctrl+Alt+V', label: 'Ctrl+Alt+V' },
-  ];
-
-  let maxItemsOptions = $derived([
-    { value: '100', label: '100' },
-    { value: '200', label: '200' },
-    { value: '500', label: lang === 'en' ? '500 (Recommended)' : '500（推荐）' },
-    { value: '1000', label: '1000' },
-    { value: '2000', label: '2000' },
-  ]);
 
   let activeEvTokens = $derived(
     new Set((cfg.everything.extra_filter || '').split(/\s+/).filter(Boolean))
@@ -68,15 +44,6 @@
   function removeDir(idx: number) {
     cfg.apps.extra_dirs = cfg.apps.extra_dirs.filter((_, i) => i !== idx);
     onSave(0);
-  }
-
-  function normalizeExe(raw: string): string | null {
-    let s = raw.trim().toLowerCase();
-    if (!s || /[\\/]|\.\./.test(s) || s.length > 64) return null;
-    if (!s.endsWith('.exe')) s += '.exe';
-    const stem = s.slice(0, -4);
-    if (!stem || !/^[a-z0-9._ -]+$/.test(stem)) return null;
-    return s;
   }
 
   let depthOptions = $derived(
@@ -202,118 +169,8 @@
 <!-- User-Extensible Search Filter Tabs -->
 <FilterTabsCard {cfg} {lang} {onUpdateFilters} />
 
-<!-- Clipboard (Official Optional Plugin) -->
-{#if clipEnabled}
-<div class="t-card" style="margin-top:14px">
-  <div class="t-row">
-    <div>
-      <div class="t-label">{tr(lang, 'lbl_clip_hk')}</div>
-      <div class="t-desc">{tr(lang, 'desc_clip_hk')}</div>
-    </div>
-    <HotkeyRecorder
-      value={cfg.clipboard.hotkey}
-      presets={clipPresets}
-      allowDisable={true}
-      status={clipHotkeyStatus}
-      presetPlaceholder={tr(lang, 'preset_opt')}
-      disabledLabel={tr(lang, 'hk_off')}
-      okLabel={tr(lang, 'hk_ok')}
-      conflictLabel={tr(lang, 'hk_conflict')}
-      recordPrompt={tr(lang, 'rec_prompt')}
-      needModPrompt={tr(lang, 'rec_need_mod')}
-      {onJumpDoctor}
-      onchange={(v) => { cfg.clipboard.hotkey = v; onSave(0); }}
-    />
-  </div>
-
-  <div class="t-row">
-    <div>
-      <div class="t-label">{tr(lang, 'lbl_clip_cap')}</div>
-      <div class="t-desc">{tr(lang, 'desc_clip_cap')}</div>
-    </div>
-    <div class="row-actions">
-      <Button variant="secondary" size="sm" onclick={() => postHost({ cmd: 'open_clipboard_manager' })}>
-        <ClipboardList size={13} />
-        {tr(lang, 'btn_open_clip_mgr')}
-      </Button>
-      <Switch checked={cfg.clipboard.capture_enabled} onchange={(v) => { cfg.clipboard.capture_enabled = v; onSave(0); }} />
-    </div>
-  </div>
-
-  <div class="t-row">
-    <div>
-      <div class="t-label">{tr(lang, 'lbl_clip_img')}</div>
-      <div class="t-desc">{tr(lang, 'desc_clip_img')}</div>
-    </div>
-    <Switch checked={cfg.clipboard.capture_images} onchange={(v) => { cfg.clipboard.capture_images = v; onSave(0); }} />
-  </div>
-
-  <div class="t-row col-row">
-    <div>
-      <div class="t-label">{tr(lang, 'lbl_clip_excl')}</div>
-      <div class="t-desc">{tr(lang, 'desc_clip_excl')}</div>
-    </div>
-    <Combobox
-      selected={cfg.clipboard.excluded_apps}
-      suggestions={runningApps}
-      placeholder={tr(lang, 'clip_excl_ph')}
-      emptyText={lang === 'en' ? 'No excluded apps configured' : '当前未添加额外屏蔽应用（系统机密标记默认生效）'}
-      normalize={normalizeExe}
-      invalidMessage={lang === 'en' ? 'Enter a valid .exe filename' : '请输入有效的 .exe 进程名（禁止路径与非法字符）'}
-      onchange={(next) => { cfg.clipboard.excluded_apps = next; onSave(0); }}
-    />
-  </div>
-
-  <div class="t-row">
-    <div>
-      <div class="t-label">{tr(lang, 'lbl_clip_persist')}</div>
-      <div class="t-desc">{tr(lang, 'desc_clip_persist')}</div>
-    </div>
-    <Switch checked={cfg.clipboard.persist_sqlite} onchange={(v) => { cfg.clipboard.persist_sqlite = v; onSave(0); }} />
-  </div>
-
-  <div class="t-row">
-    <div>
-      <div class="t-label">{tr(lang, 'lbl_clip_max')}</div>
-      <div class="t-desc">{tr(lang, 'desc_clip_max')}</div>
-    </div>
-    <Select
-      value={String(cfg.clipboard.max_persisted_items)}
-      options={maxItemsOptions}
-      align="right"
-      minWidth="136px"
-      onchange={(v) => { cfg.clipboard.max_persisted_items = Number(v) || 500; onSave(0); }}
-    />
-  </div>
-</div>
-{:else}
-<div class="t-card" style="margin-top:14px">
-  <div class="t-row">
-    <div>
-      <div class="t-label">{lang === 'en' ? 'Clipboard Center Plugin Disabled' : '剪贴板管理插件已停用'}</div>
-      <div class="t-desc">
-        {lang === 'en'
-          ? 'OS clipboard listener, hotkeys & history capture are fully unloaded.'
-          : '已彻底释放系统剪贴板监听、全局热键与历史采集，保持极简零占用。'}
-      </div>
-    </div>
-    {#if onOpenPlugins}
-      <Button variant="secondary" size="sm" onclick={onOpenPlugins}>
-        <Package size={13} />
-        {lang === 'en' ? 'Manage Plugins' : '前往插件管理启用'}
-      </Button>
-    {/if}
-  </div>
-</div>
-{/if}
-
 <style>
-  .tab-head { margin-bottom: 18px; }
-  .tab-head h2 { margin: 0 0 4px; font-size: 18px; font-weight: 600; }
-  .tab-lead { margin: 0; font-size: 12.5px; color: var(--muted); }
-  .col-row { flex-direction: column; align-items: stretch; gap: 10px; }
   .col-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-  .row-actions { display: flex; align-items: center; gap: 10px; }
   .empty-box {
     padding: 10px 12px; border-radius: 8px; border: 1px dashed var(--border-strong);
     color: var(--muted); font-size: 12px;
@@ -328,14 +185,4 @@
     font-family: "Cascadia Mono", Consolas, monospace; font-size: 12px;
   }
   .err-msg { font-size: 12px; color: var(--danger); }
-  .chip-grid { display: flex; flex-wrap: wrap; gap: 6px; }
-  .t-chip {
-    height: 28px; padding: 0 10px; border-radius: 7px; border: 1px solid var(--border);
-    background: var(--canvas); color: var(--text-secondary); font-family: inherit;
-    font-size: 12px; cursor: pointer; white-space: nowrap; transition: all 0.12s ease;
-  }
-  .t-chip:hover { border-color: var(--border-strong); color: var(--text); }
-  .t-chip.is-on {
-    background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 500;
-  }
 </style>

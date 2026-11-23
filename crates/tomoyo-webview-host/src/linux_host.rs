@@ -14,7 +14,7 @@ use crate::shim_js::build_init_script;
 use crate::tr_view::{
     assemble_translator_html, is_translator_entry, load_translator_bootstrap,
 };
-use crate::{assemble_settings_html, build_settings_init_script, LaunchArgs};
+use crate::{assemble_settings_html, build_settings_init_script_for, LaunchArgs};
 use std::cell::RefCell;
 use std::ffi::{c_char, c_int, c_void, CStr, CString};
 use std::path::PathBuf;
@@ -284,7 +284,7 @@ pub fn run_linux_host(opts: LaunchArgs) {
 
     let db = PluginDb::open(&opts.plugin_id);
     let (init_script, ocr_dir, clip_dir) = if opts.settings_mode {
-        (build_settings_init_script(), None, None)
+        (build_settings_init_script_for(&opts.query), None, None)
     } else if ocr_mode {
         let b = load_ocr_viewer_bootstrap(&opts.theme, &opts.query);
         (b.init_script, b.image_dir, None)

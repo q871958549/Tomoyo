@@ -62,6 +62,7 @@ pub enum HostMessage {
     RevealPath { path: String },
     ExportConfigBackup,
     ImportConfigBackup { json: String },
+    OpenSettings { #[serde(default)] target: String },
     Close,
 }
 
@@ -255,6 +256,10 @@ pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isi
                 shell_open(fallback);
             }
             let _ = path;
+            HostAction::default()
+        }
+        HostMessage::OpenSettings { target } => {
+            crate::bridge_os::spawn_settings_center(&target, notify_hwnd);
             HostAction::default()
         }
         HostMessage::ExportConfigBackup => HostAction {

@@ -97,9 +97,6 @@
 </div>
 
 <style>
-  .tab-head-bar { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
-  .tab-head-bar h2 { margin: 0 0 4px; font-size: 18px; font-weight: 600; }
-  .tab-lead { margin: 0; font-size: 12.5px; color: var(--muted); }
   .store-wrap { padding: 14px 16px; }
   .skel-list { display: flex; flex-direction: column; gap: 10px; }
   .store-row {

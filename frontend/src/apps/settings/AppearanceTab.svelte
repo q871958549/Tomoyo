@@ -119,9 +119,6 @@
 </div>
 
 <style>
-  .tab-head { margin-bottom: 18px; }
-  .tab-head h2 { margin: 0 0 4px; font-size: 18px; font-weight: 600; }
-  .tab-lead { margin: 0; font-size: 12.5px; color: var(--muted); }
   .theme-card-wrap { padding: 14px 16px; }
   .theme-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
   .theme-tile {

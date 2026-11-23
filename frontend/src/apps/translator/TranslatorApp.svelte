@@ -6,6 +6,7 @@
     Copy,
     History,
     Pin,
+    Settings,
     Sparkles,
     Star,
     Trash2,
@@ -241,6 +242,9 @@
       </Button>
       <Button variant="ghost" size="sm" active={drawer === 'history'} onclick={() => (drawer = drawer === 'history' ? null : 'history')}>
         <History size={14} />历史
+      </Button>
+      <Button variant="icon" size="sm" title="翻译插件设置" onclick={() => postHost({ cmd: 'open_settings', target: 'plugins:dev.tomoyo.translate' })}>
+        <Settings size={14} />
       </Button>
       <Button variant="icon" size="sm" active={pinnedTop} title="窗口置顶 (Ctrl+Shift+T)" onclick={togglePin}>
         <Pin size={14} />

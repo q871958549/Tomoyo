@@ -15,6 +15,7 @@
     Palette,
     Pin,
     Save,
+    Settings,
     Star,
     Trash2,
     Upload,
@@ -234,6 +235,7 @@
       <Button variant="secondary" size="sm" onclick={() => postHost({ cmd: 'clip_export' })}><Download size={13} />导出 JSON</Button>
       <Button variant="secondary" size="sm" onclick={() => (importOpen = true)}><Upload size={13} />导入</Button>
       <Button variant="danger" size="sm" onclick={clearUnpinned}>{clearArmed ? '确认清空' : '清空非置顶'}</Button>
+      <Button variant="icon" size="sm" title="剪贴板插件设置" onclick={() => postHost({ cmd: 'open_settings', target: 'plugins:dev.tomoyo.clipboard' })}><Settings size={14} /></Button>
       <Button variant="icon" size="sm" title="置顶" onclick={() => postHost({ cmd: 'toggle_pin_topmost' })}><Pin size={14} /></Button>
       <Button variant="icon" size="sm" title="关闭" onclick={() => postHost({ cmd: 'close' })}><X size={14} /></Button>
     </div>

@@ -18,11 +18,12 @@
     pinHotkeyStatus?: HotkeySlotStatus;
     ocrHotkeyStatus?: HotkeySlotStatus;
     showRecord?: boolean;
+    embedded?: boolean;
     onJumpDoctor?: () => void;
     onSave: (delayMs?: number) => void;
   }
 
-  let { cfg, lang, capHotkeyStatus, pinHotkeyStatus, ocrHotkeyStatus, showRecord = true, onJumpDoctor, onSave }: Props = $props();
+  let { cfg, lang, capHotkeyStatus, pinHotkeyStatus, ocrHotkeyStatus, showRecord = true, embedded = false, onJumpDoctor, onSave }: Props = $props();
   let isEn = $derived(lang === 'en');
   let editingToolKey = $state<keyof CaptureToolHotkeys | null>(null);
   let toolKeyHint = $state('');
@@ -125,10 +126,12 @@
   }
 </script>
 
+{#if !embedded}
 <div class="tab-head">
   <h2>{tr(lang, 'h_capture')}</h2>
   <p class="tab-lead">{tr(lang, 'lead_capture')}</p>
 </div>
+{/if}
 
 <div class="quick-bar">
   <Button variant="primary" onclick={() => launch('region')}>
@@ -335,11 +338,7 @@
 </div>
 
 <style>
-  .tab-head { margin-bottom: 14px; }
-  .tab-head h2 { margin: 0 0 4px; font-size: 18px; font-weight: 600; }
-  .tab-lead { margin: 0; font-size: 12.5px; color: var(--muted); }
   .quick-bar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
-  .col-row { flex-direction: column; align-items: stretch; gap: 8px; }
   .hk-card { padding: 14px 16px; }
   .hk-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
   .tool-hk-hint {

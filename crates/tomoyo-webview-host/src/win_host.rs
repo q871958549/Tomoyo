@@ -17,7 +17,7 @@ use crate::tr_view::{
 use crate::hotkey_capture::HotkeyCaptureController;
 use crate::win_theme::{apply_host_window_theme, load_embedded_window_icons, map_vdir, to_file_url};
 use crate::win_workers::dispatch_async_workers;
-use crate::{assemble_settings_html, build_settings_init_script, LaunchArgs};
+use crate::{assemble_settings_html, build_settings_init_script_for, LaunchArgs};
 use std::cell::RefCell;
 use std::ffi::c_void;
 use std::rc::Rc;
@@ -269,7 +269,7 @@ pub fn run_windows_host(opts: LaunchArgs) {
     let ocr_mode = is_ocr_viewer_entry(&opts.entry);
     let notify_hwnd = opts.notify_hwnd;
     let (init_script, ocr_img_dir, clip_img_dir) = if settings_mode {
-        (build_settings_init_script(), None, None)
+        (build_settings_init_script_for(&opts.query), None, None)
     } else if ocr_mode {
         let boot = load_ocr_viewer_bootstrap(&opts.theme, &opts.query);
         (boot.init_script, boot.image_dir, None)
