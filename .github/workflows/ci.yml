@@ -147,10 +147,11 @@ jobs:
           for p in sorted(glob.glob("target/release/tomoyo*.exe")):
               b = open(p, "rb").read()
               pe = struct.unpack_from("<I", b, 0x3C)[0]
-              nsec, _, _, _, _, opt_sz = struct.unpack_from("<HHIIIH", b, pe + 6)[:6]
+              nsec = struct.unpack_from("<H", b, pe + 6)[0]
+              opt_sz = struct.unpack_from("<H", b, pe + 20)[0]
               opt = pe + 24
               imp_rva = struct.unpack_from("<I", b, opt + 112 + 8)[0]
-              secs = [struct.unpack_from("<IIII", b, opt + opt_sz + i*40 + 8) for i in range(nsec)]
+              secs = [struct.unpack_from("<IIII", b, opt + opt_sz + i * 40 + 8) for i in range(nsec)]
               rva2off = lambda r: next((r - va + rp for vs, va, rs, rp in secs if va <= r < va + max(vs, rs)), None)
               off, dlls = rva2off(imp_rva), []
               while off is not None:
@@ -160,7 +161,7 @@ jobs:
                   dlls.append(b[no:b.find(b"\0", no)].decode("ascii", "replace"))
                   off += 20
               bad = [d for d in dlls if "vcruntime" in d.lower() or "msvcp" in d.lower()]
-              print(f"{p}: non-crt-static check bad={bad}")
+              print(f"{p}: non-crt-static check bad={bad} (imports={len(dlls)})")
               assert not bad, f"{p} still dynamically imports VC++ runtime DLLs: {bad}"
           '
 
