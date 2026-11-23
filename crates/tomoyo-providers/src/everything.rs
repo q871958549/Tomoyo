@@ -2,8 +2,12 @@ use crate::everything_items::{build_entry_item, empty_result_item, hint_items, o
 use crate::everything_rank::compute_ev_score;
 #[cfg(not(target_os = "linux"))]
 use crate::everything_rank::{build_prefix_query, merge_unique_entries};
+#[cfg(not(target_os = "linux"))]
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, OnceLock, RwLock};
+#[cfg(not(target_os = "linux"))]
+use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, RwLock};
+#[cfg(not(target_os = "linux"))]
 use std::time::{SystemTime, UNIX_EPOCH};
 use tomoyo_core::{Lang, Provider, TomoyoConfig};
 #[cfg(not(target_os = "linux"))]

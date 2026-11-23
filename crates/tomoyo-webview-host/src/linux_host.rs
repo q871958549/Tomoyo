@@ -107,6 +107,7 @@ unsafe extern "C" fn on_msg_cb(ctx: *mut c_void, json_ptr: *const c_char) {
     let st = unsafe { &*(ctx as *const LinuxHostCtx) };
     let msg = unsafe { CStr::from_ptr(json_ptr) }.to_string_lossy();
     let act = handle_host_message(&msg, &mut st.db.borrow_mut(), st.notify_hwnd);
+    let _ = act.window_ready;
     if let Some(theme) = &act.apply_theme {
         unsafe { tomoyo_wv_apply_theme(st.wv, theme_mode(theme)); }
     }
