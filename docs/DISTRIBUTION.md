@@ -21,7 +21,7 @@ gh attestation verify Tomoyo-v2.2.0-windows-x64-setup.exe -R q871958549/Tomoyo
 
 ## 2. 提交至 Windows Package Manager (`winget-pkgs`)
 
-每个 Release 已自动产出填充好最新 `InstallerSha256` 的 `TomoyoContributors.Tomoyo.installer.yaml`（严格保留 `ManifestVersion: 1.6.0`），配合仓库 `packaging/winget/` 中的 version 与 locale 清单，可使用微软官方 `wingetcreate` 一键提 PR：
+每个 Release 已自动产出升级至最新 `ManifestVersion: 1.28.0` 并填充最新 `PackageVersion`、`ReleaseDate`、`DisplayName` 与 `InstallerSha256` 的 4 件套清单（`TomoyoContributors.Tomoyo*.yaml`）；此外仓库已通过 `.cargo/config.toml` 在 Windows MSVC 目标启用 `+crt-static` 静态链接运行库，自下一版本起桌面版与便携版均无需系统预装 VC++ Redistributable。配合仓库 `packaging/winget/` 中的清单模板，可使用微软官方 `wingetcreate`（或提交 4 件套到 `microsoft/winget-pkgs`）一键更新：
 
 ```powershell
 # 首次提交或版本更新

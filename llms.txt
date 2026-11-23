@@ -27,7 +27,7 @@ Tomoyo Launcher is unrelated to the TOMOYO Linux kernel Mandatory Access Control
 
 - [Distribution & Supply-Chain Trust](https://github.com/q871958549/Tomoyo/blob/main/docs/DISTRIBUTION.md): SLSA build provenance (`gh attestation verify`), Winget, Scoop, and code-signing roadmap.
 - [Arch Linux PKGBUILD](https://github.com/q871958549/Tomoyo/blob/main/packaging/linux/PKGBUILD): Arch / CachyOS package definition.
-- [Windows Winget Manifests](https://github.com/q871958549/Tomoyo/tree/main/packaging/winget): `TomoyoContributors.Tomoyo` manifest suite (`ManifestVersion: 1.6.0`).
+- [Windows Winget Manifests](https://github.com/q871958549/Tomoyo/tree/main/packaging/winget): `TomoyoContributors.Tomoyo` manifest suite (`ManifestVersion: 1.28.0`).
 - [Windows Scoop Manifest](https://github.com/q871958549/Tomoyo/blob/main/packaging/scoop/tomoyo.json): Portable x64 Scoop package manifest.
 
 ## Optional

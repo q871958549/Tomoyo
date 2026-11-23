@@ -203,17 +203,33 @@ jobs:
           $lines | Out-File -Encoding ascii "dist/SHA256SUMS.txt"
           Get-Content "dist/SHA256SUMS.txt"
 
+          $releaseDate = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd")
+
           $scoopOut = (Get-Content "packaging/scoop/tomoyo.json" -Raw) `
             -replace 'PLACEHOLDER_UPDATED_BY_RELEASE_SHA256SUMS', $zipSha `
             -replace '"version":\s*"[^"]+"', "`"version`": `"$ver`"" `
             -replace '/releases/download/v[^/]+/Tomoyo-v[^-]+-', "/releases/download/v$ver/Tomoyo-v$ver-"
           Set-Content -Path "dist/tomoyo.scoop.json" -Value $scoopOut -Encoding UTF8
 
-          $wingetOut = (Get-Content "packaging/winget/TomoyoContributors.Tomoyo.installer.yaml" -Raw) `
-            -replace 'PLACEHOLDER_UPDATED_BY_RELEASE_SHA256SUMS', $setupSha `
-            -replace '(?m)^PackageVersion:\s*.+$', "PackageVersion: $ver" `
-            -replace '/releases/download/v[^/]+/Tomoyo-v[^-]+-', "/releases/download/v$ver/Tomoyo-v$ver-"
-          Set-Content -Path "dist/TomoyoContributors.Tomoyo.installer.yaml" -Value $wingetOut -Encoding UTF8
+          $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+          $distAbs = (Resolve-Path "dist").Path
+          foreach ($mf in @(
+            "TomoyoContributors.Tomoyo.yaml",
+            "TomoyoContributors.Tomoyo.installer.yaml",
+            "TomoyoContributors.Tomoyo.locale.en-US.yaml",
+            "TomoyoContributors.Tomoyo.locale.zh-CN.yaml"
+          )) {
+            $wingetOut = (Get-Content "packaging/winget/$mf" -Raw) `
+              -replace 'PLACEHOLDER_UPDATED_BY_RELEASE_SHA256SUMS', $setupSha `
+              -replace '(?m)^PackageVersion:\s*.+$', "PackageVersion: $ver" `
+              -replace '(?m)^ReleaseDate:\s*.+$', "ReleaseDate: $releaseDate" `
+              -replace '(?m)^(\s*-\s*DisplayName:\s*Tomoyo v).+$', "`${1}$ver" `
+              -replace '/releases/download/v[^/]+/Tomoyo-v[^-]+-', "/releases/download/v$ver/Tomoyo-v$ver-" `
+              -replace '/releases/tag/v[^\s]+', "/releases/tag/v$ver" `
+              -replace '/blob/v[^/]+/LICENSE-MIT', "/blob/v$ver/LICENSE-MIT"
+            $wingetOut = ($wingetOut -replace "`r`n", "`n") -replace "`n", "`r`n"
+            [System.IO.File]::WriteAllText((Join-Path $distAbs $mf), $wingetOut, $utf8NoBom)
+          }
 
       - name: Attest x64 Release Build Provenance (SLSA)
         if: startsWith(github.ref, 'refs/tags/v')
@@ -233,7 +249,10 @@ jobs:
             dist/Tomoyo-*-windows-x64-portable.zip
             dist/SHA256SUMS.txt
             dist/tomoyo.scoop.json
+            dist/TomoyoContributors.Tomoyo.yaml
             dist/TomoyoContributors.Tomoyo.installer.yaml
+            dist/TomoyoContributors.Tomoyo.locale.en-US.yaml
+            dist/TomoyoContributors.Tomoyo.locale.zh-CN.yaml
 
   build-windows-arm64:
     runs-on: windows-11-arm

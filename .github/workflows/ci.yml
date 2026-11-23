@@ -126,20 +126,43 @@ jobs:
 
       - name: Run Clippy lint gate (zero warnings)
         env:
-          RUSTFLAGS: "-D warnings"
+          RUSTFLAGS: "-C target-feature=+crt-static -D warnings"
         run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Run full workspace unit & integration tests (zero warnings)
         env:
-          RUSTFLAGS: "-D warnings"
+          RUSTFLAGS: "-C target-feature=+crt-static -D warnings"
         run: cargo test --workspace
 
       - name: Build release binaries
         run: cargo build --release --workspace
 
-      - name: Enforce release binary size ceilings
+      - name: Enforce release binary size ceilings & zero VCRUNTIME140 DLL dependency
         shell: pwsh
-        run: pwsh -File scripts/check_hygiene.ps1 -CheckBinaries
+        run: |
+          pwsh -File scripts/check_hygiene.ps1 -CheckBinaries
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -c '
+          import glob, struct
+          for p in sorted(glob.glob("target/release/tomoyo*.exe")):
+              b = open(p, "rb").read()
+              pe = struct.unpack_from("<I", b, 0x3C)[0]
+              nsec, _, _, _, _, opt_sz = struct.unpack_from("<HHIIIH", b, pe + 6)[:6]
+              opt = pe + 24
+              imp_rva = struct.unpack_from("<I", b, opt + 112 + 8)[0]
+              secs = [struct.unpack_from("<IIII", b, opt + opt_sz + i*40 + 8) for i in range(nsec)]
+              rva2off = lambda r: next((r - va + rp for vs, va, rs, rp in secs if va <= r < va + max(vs, rs)), None)
+              off, dlls = rva2off(imp_rva), []
+              while off is not None:
+                  _, _, _, nrva, _ = struct.unpack_from("<IIIII", b, off)
+                  if nrva == 0: break
+                  no = rva2off(nrva)
+                  dlls.append(b[no:b.find(b"\0", no)].decode("ascii", "replace"))
+                  off += 20
+              bad = [d for d in dlls if "vcruntime" in d.lower() or "msvcp" in d.lower()]
+              print(f"{p}: non-crt-static check bad={bad}")
+              assert not bad, f"{p} still dynamically imports VC++ runtime DLLs: {bad}"
+          '
 
       - name: Run strict anti-leak resource budget & WebView self-tests
         shell: pwsh

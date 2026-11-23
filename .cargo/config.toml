@@ -1,0 +1,8 @@
+# Statically link the MSVC C runtime (VCRUNTIME140 / UCRT) on Windows so
+# setup installers and portable ZIP binaries run cleanly on fresh Windows
+# 10/11 installations without requiring VC++ Redistributable preinstalled.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
