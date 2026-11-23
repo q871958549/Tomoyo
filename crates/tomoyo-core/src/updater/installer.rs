@@ -98,17 +98,15 @@ pub fn pick_release_assets(assets: &[CandidateAsset]) -> PickedAssets {
 
     #[cfg(target_os = "linux")]
     {
-        for suffix in ["-linux-x86_64.tar.gz", "-linux-x64.tar.gz", ".tar.gz", ".appimage"] {
-            if let Some(hit) = assets
-                .iter()
-                .find(|a| a.name.to_ascii_lowercase().ends_with(suffix))
-            {
-                out.portable_url = Some(hit.url.clone());
-                out.portable_name = Some(hit.name.clone());
-                out.download_url = Some(hit.url.clone());
-                out.asset_name = Some(hit.name.clone());
-                break;
-            }
+        if let Some(hit) = find_asset_matching(
+            assets,
+            &["-linux-x86_64.tar.gz", "-linux-x64.tar.gz", ".tar.gz", ".appimage"],
+            &["arm64", "aarch64"],
+        ) {
+            out.portable_url = Some(hit.url.clone());
+            out.portable_name = Some(hit.name.clone());
+            out.download_url = Some(hit.url.clone());
+            out.asset_name = Some(hit.name.clone());
         }
         out
     }
@@ -369,8 +367,19 @@ mod tests {
                 name: "Tomoyo-v2.3.0-windows-x64-setup.exe".into(),
                 url: "https://example.invalid/setup.exe".into(),
             },
+            CandidateAsset {
+                name: "Tomoyo-v2.3.0-linux-x86_64.tar.gz".into(),
+                url: "https://example.invalid/linux.tar.gz".into(),
+            },
         ];
         let picked = pick_release_assets(&assets);
+        #[cfg(target_os = "linux")]
+        {
+            assert_eq!(
+                picked.asset_name.as_deref(),
+                Some("Tomoyo-v2.3.0-linux-x86_64.tar.gz")
+            );
+        }
         #[cfg(all(not(target_os = "linux"), not(target_arch = "aarch64")))]
         {
             assert_eq!(
