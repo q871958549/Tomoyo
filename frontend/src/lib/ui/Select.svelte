@@ -8,6 +8,7 @@
     placeholder?: string;
     size?: 'sm' | 'md';
     disabled?: boolean;
+    searchable?: boolean;
     align?: 'left' | 'right';
     minWidth?: string;
     class?: string;
@@ -20,6 +21,7 @@
     placeholder = '请选择…',
     size = 'md',
     disabled = false,
+    searchable = false,
     align = 'left',
     minWidth = '128px',
     class: extraClass = '',
@@ -28,7 +30,13 @@
 
   let open = $state(false);
   let activeIdx = $state(-1);
+  let filterQ = $state('');
   let rootEl: HTMLDivElement | undefined = $state();
+
+  let filteredOpts = $derived.by(() => {
+    const q = searchable ? filterQ.trim().toLowerCase() : '';
+    return q ? options.filter((o) => o.label.toLowerCase().includes(q) || (o.hint || '').toLowerCase().includes(q)) : options;
+  });
 
   let selectedLabel = $derived(
     options.find((o) => o.value === value)?.label ?? placeholder
@@ -38,7 +46,8 @@
     if (disabled) return;
     open = !open;
     if (open) {
-      const idx = options.findIndex((o) => o.value === value);
+      filterQ = '';
+      const idx = filteredOpts.findIndex((o) => o.value === value);
       activeIdx = idx >= 0 ? idx : 0;
     }
   }
@@ -46,6 +55,7 @@
   function pick(val: string) {
     value = val;
     open = false;
+    filterQ = '';
     onchange?.(val);
   }
 
@@ -63,13 +73,13 @@
       open = false;
     } else if (e.key === 'ArrowDown') {
       e.preventDefault();
-      activeIdx = (activeIdx + 1) % Math.max(1, options.length);
+      activeIdx = (activeIdx + 1) % Math.max(1, filteredOpts.length);
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
-      activeIdx = activeIdx <= 0 ? options.length - 1 : activeIdx - 1;
-    } else if (e.key === 'Enter' && options[activeIdx]) {
+      activeIdx = activeIdx <= 0 ? filteredOpts.length - 1 : activeIdx - 1;
+    } else if (e.key === 'Enter' && filteredOpts[activeIdx]) {
       e.preventDefault();
-      pick(options[activeIdx].value);
+      pick(filteredOpts[activeIdx].value);
     }
   }
 
@@ -102,10 +112,14 @@
 
   {#if open}
     <div class="t-select-menu {align === 'right' ? 'align-right' : ''}" role="listbox">
-      {#each options as opt, i}
+      {#if searchable}
+        <input class="t-sel-q" type="text" placeholder="搜索…" bind:value={filterQ} onkeydown={handleKeydown} />
+      {/if}
+      {#each filteredOpts as opt, i}
         <button
           type="button"
           role="option"
+          data-opt={opt.value}
           aria-selected={opt.value === value}
           class="t-select-opt {opt.value === value ? 'is-selected' : ''} {i === activeIdx ? 'is-focus' : ''}"
           onmouseenter={() => (activeIdx = i)}
@@ -211,4 +225,10 @@
   .t-opt-text { display: flex; align-items: center; gap: 6px; }
   .t-opt-hint { font-size: 11px; color: var(--muted); font-weight: 400; }
   .t-opt-chk { display: inline-flex; color: var(--accent); flex-shrink: 0; }
+  .t-sel-q {
+    width: 100%; height: 28px; margin-bottom: 3px; padding: 0 8px;
+    border-radius: 6px; border: 1px solid var(--border); background: var(--surface);
+    color: var(--text); font-family: inherit; font-size: 12px; outline: none;
+  }
+  .t-sel-q:focus { border-color: var(--accent); }
 </style>

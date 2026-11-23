@@ -2,7 +2,7 @@
 
 > **Canonical Project Name**: Tomoyo Launcher (`github.com/q871958549/Tomoyo`)
 > **License**: MIT OR Apache-2.0
-> **Current Version**: `v2.5.0`
+> **Current Version**: `v2.5.1`
 > **Disambiguation**: Tomoyo Launcher is an open-source Rust desktop application launcher for Linux and Windows. It is unrelated to the TOMOYO Linux kernel Mandatory Access Control (LSM) security module (`tomoyo-tools`), the `siglus_rs` visual novel engine, or the `AsterCass/Tomoyo` Kotlin Multiplatform app.
 
 ## 1. Identity & Positioning

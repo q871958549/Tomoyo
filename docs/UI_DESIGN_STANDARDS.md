@@ -13,10 +13,14 @@
 - **中性表面优先，单色强调克制**：90% 画面由 4 档中性灰构成（`--canvas` / `--surface` / `--elevated` / `--hover`）；强调色 `--accent` **仅用于唯一主操作按钮、激活态指示线与 Focus Ring**，禁止大面积刺眼纯蓝实心色块（侧边栏选中态采用柔和淡底 + 左侧 `2.5 px` 细指示条 + 加粗深色文字）。
 - **三套主题同步**：浅色（Light）、深色（Dark）、午夜蓝（Midnight）共享完整语义 Token（含 `--border`、`--border-strong`、`--ring`、`--danger`、`--danger-soft`、`--ok`、`--warn`、`--shadow-pop`），并在 DWM 标题栏、滚动条、原生右键菜单与 WebView 内实时同步。
 
-### 1.2 字体与清晰度（ClearType GDI 禁伪粗体铁律）
-- 全栈使用内置私有字体 `Alibaba PuHuiTi 3.0 55 Regular`（400）与 `65 Medium`（500/600），等宽路径/代码/键帽配 `Cascadia Mono` / `Consolas`。
-- **原生 Win32 铁律**：调用 `CreateFontW` 时无论 `regular_face` 还是 `medium_face`，`weight` 参数**固定传 `FW_NORMAL` (`400`)**，杜绝 GDI 算法伪粗体导致 `11–12 px` 中文小字发糊重影。
+### 1.2 字体与清晰度（ClearType GDI 禁伪粗体铁律与可配置排版）
+- **默认基线铁律**：全栈默认采用内置私有字体 `Alibaba PuHuiTi 3.0 55 Regular`（400）与 `65 Medium`（500/600），调用 Win32 `CreateFontW` 时对原生 Medium 字族**固定传 `FW_NORMAL` (`400`)**，杜绝 GDI 算法伪粗体导致 `11–12 px` 中文小字发糊重影；等宽路径/代码/键帽配 `Cascadia Mono` / `Consolas`。
+- **可配置高级排版**：用户可在「外观与窗口」卡片通过可检索 `Select` 切换系统已安装字体（`EnumFontFamiliesExW` 枚举并过滤 `@` 竖排字体）、通过 `Segmented` 独立调节标题字重（`300–700`）、副标题字重（`300–600`）及标题字号（`14–18 px`，`17–18 px` 时自适应增高结果行高至 `58 DIP`），设置页内置双行实时样式对比预览。
 - **三级文字对比度**：`text_primary`（正文/标题）、`text_secondary`（副标题/说明，满足 WCAG AA）、`text_muted`（弱化快捷键、耗时、辅助元数据）。
+
+### 1.3 设计原子强约束（禁止未声明全局类与“框套框”）
+- **严禁臆造全局样式名**：所有设置页卡片必须使用 `tokens.css` 与各组件约定原语（`.tab-head > h2` + `.tab-lead`、`.t-card` 内嵌标准 `.t-row` / `.t-row.col-row`、`.t-label` / `.t-desc` / `.t-pill` / `.t-kbd` / `.t-chip`），严禁使用未定义的 `.t-input` / `.t-card-h` / `.t-subpanel` / `.t-page-h` 导致退化成无样式裸控件。
+- **单一点击体铁律（杜绝嵌套边框/“框套框”）**：严禁在一个药丸/胶囊容器内嵌套多个 `<button>`（例如 `[✓][名称 @词][×]` 的三格嵌套灰框）；胶囊按钮必须本身就是单一 `<button>`，复杂条目（启停、编辑、排序、删除）必须拆分为紧凑结构化行（Row List）。
 
 ---
 
@@ -68,6 +72,12 @@
 ### 2.7 全局热键录制器（Live Hotkey Health）
 - **真实 OS 状态回显**：主进程注册全部热键后将真实 Win32 `RegisterHotKey` 结果写入 `hotkey_status.json`，设置中心实时展示状态微点与徽标：`● 已生效`（绿）/ `⚠ 已被其他软件占用`（红，提醒改键或停用冲突软件）/ `○ 已停用`（灰），严禁在 OS 注册失败时误报绿色成功。
 - **扩展键位支持**：支持 `A–Z`、`0–9`、`F1–F12`、`Space`、`Tab`、常用标点（`` ` - = [ ] \ ; ' , . / ``）及 `Insert / Delete / Home / End / PageUp / PageDown / PrintScreen`；右侧提供一键清空 `×` 与自定义预设下拉。
+
+### 2.8 可扩展分类标签组与结构化规则列表（Tag Groups & Scalable Rules）
+- **信息分层，禁止混杂药丸海**：当同时存在「少量内置分类开关（≤10 项）」与「可扩展自定义标签/规则（最多 32+ 项）」时，禁止将二者和预设按钮、快捷键序号混在同一个多排胶囊容器内，必须拆分为同一 `.t-card` 内清晰的 `.t-row` 分层：
+  1. **排版模式行**：左侧为说明与生效计数 `.t-pill`，右侧用 `Segmented` 切换「多行换行（最多 3 行）」/「单行折叠 +N」。
+  2. **内置分类显隐行（`.t-row.col-row`）**：仅放置静态内置分类切换芯片（单个纯 `<button class="t-chip">`），停用态使用 `--subtle` 低对比灰底淡出、启用态使用克制微勾；避免使用全高饱和亮蓝框涂满全屏。
+  3. **自定义扩展标签结构化列表（`.t-row.col-row`）**：顶栏左标题 + 右侧「`Select` 预设快加 + `Secondary` 新建标签」组合；超过 5 条时开启限高滚动与内置搜索 `<Input size="sm" type="search" />`；每条扩展标签使用 `38 px` 紧凑横行（`[Switch 启用]` · `名称` · `.t-kbd @tag` · `弱化规则摘要` · `↑/↓ / 编辑 / 删除` 独立图标操作），编辑/新建时展开由标准 `<Input />` + `<Button />` 组成的对齐表单面板。
 
 ---
 

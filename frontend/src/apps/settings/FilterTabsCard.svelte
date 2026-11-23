@@ -1,8 +1,11 @@
 <script lang="ts">
   import type { Lang } from '../../lib/i18n';
-  import type { CustomFilterTab, TomoyoConfig } from '../../lib/types';
+  import type { CustomFilterTab, SelectOption, TomoyoConfig } from '../../lib/types';
   import Button from '../../lib/ui/Button.svelte';
+  import Input from '../../lib/ui/Input.svelte';
   import Segmented from '../../lib/ui/Segmented.svelte';
+  import Select from '../../lib/ui/Select.svelte';
+  import Switch from '../../lib/ui/Switch.svelte';
 
   interface Props {
     cfg: TomoyoConfig;
@@ -41,15 +44,12 @@
   let filterKw = $state('');
   let filterErr = $state('');
 
-  let shortcutMap = $derived.by(() => {
-    const m = new Map<string, number>();
-    let slot = 2;
-    for (const b of BUILTINS) if (!hiddenSet.has(b.id) && slot <= 9) m.set(`b:${b.id}`, slot++);
-    customTabs.forEach((c, i) => { if (c.enabled && slot <= 9) m.set(`c:${i}`, slot++); });
-    return m;
-  });
   let totalVisible = $derived(BUILTINS.filter((b) => !hiddenSet.has(b.id)).length + customTabs.filter((c) => c.enabled).length + 1);
-  let availPresets = $derived(PRESETS.filter((p) => !customTabs.some((c) => c.id === p[0] || c.tag.toLowerCase() === p[3])));
+  let presetOptions = $derived<SelectOption[]>(
+    PRESETS
+      .filter((p) => !customTabs.some((c) => c.id === p[0] || c.tag.toLowerCase() === p[3]))
+      .map((p) => ({ value: p[0], label: lang === 'en' ? p[2] : p[1], hint: p[3] }))
+  );
   let visibleCustom = $derived.by(() => {
     const q = filterKw.trim().toLowerCase();
     return customTabs.map((tab, index) => ({ tab, index })).filter(({ tab }) => !q || tab.label.toLowerCase().includes(q) || tab.tag.toLowerCase().includes(q));
@@ -60,8 +60,9 @@
     if (next.has(id)) next.delete(id); else next.add(id);
     onUpdateFilters([...next], customTabs);
   }
-  function addPreset(p: (typeof PRESETS)[number]) {
-    if (customTabs.length >= MAX_CUSTOM) { filterErr = t(`最多 ${MAX_CUSTOM} 个`, `Max ${MAX_CUSTOM}`); return; }
+  function addPresetById(id: string) {
+    const p = PRESETS.find((x) => x[0] === id); if (!p) return;
+    if (customTabs.length >= MAX_CUSTOM) { filterErr = t(`已达 ${MAX_CUSTOM} 个上限`, `Max ${MAX_CUSTOM}`); return; }
     filterErr = '';
     onUpdateFilters([...hiddenSet], [...customTabs, { id: p[0], label: lang === 'en' ? p[2] : p[1], tag: p[3], extensions: p[4] ? p[4].split(';') : [], everything_expr: p[5], enabled: true }]);
   }
@@ -84,113 +85,125 @@
   }
   function saveEditor() {
     const label = draftLabel.trim(), rawTag = draftTag.trim().replace(/^@+/, ''), rule = draftRule.trim();
-    if (!label || !rawTag || !rule) { filterErr = t('请填写完整项', 'Fill all fields'); return; }
+    if (!label || !rawTag || !rule) { filterErr = t('请填写名称、@词 与规则', 'Fill label, @tag and rule'); return; }
     const tag = `@${rawTag.toLowerCase()}`;
     const isExpr = /[: >]/.test(rule);
     const extensions = isExpr ? [] : rule.split(/[;,\s]+/).map((s) => s.trim().replace(/^\.+/, '').toLowerCase()).filter(Boolean).slice(0, 24);
     const expr = isExpr ? rule : '';
-    if (!extensions.length && !expr) { filterErr = t('规则无效', 'Invalid rule'); return; }
+    if (!extensions.length && !expr) { filterErr = t('规则格式无效', 'Invalid rule'); return; }
     if (editIndex !== null && customTabs[editIndex]) {
       onUpdateFilters([...hiddenSet], customTabs.map((x, k) => (k === editIndex ? { ...x, label, tag, extensions, everything_expr: expr } : x)));
       editorOpen = false; filterErr = ''; return;
     }
-    if (customTabs.length >= MAX_CUSTOM) { filterErr = t(`上限 ${MAX_CUSTOM}`, `Max ${MAX_CUSTOM}`); return; }
+    if (customTabs.length >= MAX_CUSTOM) { filterErr = t(`已达 ${MAX_CUSTOM} 个上限`, `Max ${MAX_CUSTOM}`); return; }
     if (customTabs.some((c) => c.tag.toLowerCase() === tag)) { filterErr = `${tag} ${t('已存在', 'exists')}`; return; }
     onUpdateFilters([...hiddenSet], [...customTabs, { id: `c_${Date.now().toString(36)}`, label, tag, extensions, everything_expr: expr, enabled: true }]);
     editorOpen = false; filterErr = '';
   }
+  const ruleText = (tab: CustomFilterTab) => (tab.extensions.length ? tab.extensions.join(' · ') : tab.everything_expr);
 </script>
 
-<div class="t-card">
-  <div class="t-card-h fc-h">
-    <div class="t-row-info">
-      <div class="t-label">{t('搜索分类栏与扩展标签 (Ctrl+Tab / Ctrl+1..9)', 'Filter Tabs & Custom Tags (Ctrl+Tab / 1..9)')}</div>
-      <div class="t-desc">{t('点击内置标签直接显隐；点击自定义标签就地编辑，支持 32 个（@词 直达）', 'Click built-ins to toggle; click custom chips to edit (up to 32 tabs)')}</div>
+<div class="t-card" style="margin-top:14px">
+  <div class="t-row">
+    <div>
+      <div class="t-label">{t('搜索分类栏与排版', 'Filter Bar & Layout')} <span class="t-pill" style="margin-left:6px">{totalVisible} {t('启用', 'on')}</span></div>
+      <div class="t-desc">{t('支持多行换行或单行 +N 折叠；Ctrl+Tab / Ctrl+1..9 切换', 'Wrap up to 3 rows or +N collapse; Ctrl+Tab / 1..9')}</div>
     </div>
-    <div class="fc-r">
-      <Segmented value={layoutMode} options={[{ value: 'wrap', label: t('多行换行', 'Wrap') }, { value: 'single', label: t('单行 +N', '1-Row') }]} onchange={(v) => onUpdateFilters([...hiddenSet], customTabs, v)} />
-      <span class="t-tag">{totalVisible} {t('启用', 'on')} · {customTabs.length}/{MAX_CUSTOM}</span>
-    </div>
+    <Segmented value={layoutMode} options={[{ value: 'wrap', label: t('多行换行', 'Wrap') }, { value: 'single', label: t('单行 +N', '1-Row') }]} onchange={(v) => onUpdateFilters([...hiddenSet], customTabs, v)} />
   </div>
 
-  {#if customTabs.length >= 6}
-    <input class="t-input fc-q" placeholder={t('筛选已有自定义标签…', 'Filter custom tags…')} bind:value={filterKw} />
-  {/if}
-
-  <div class="fc-cloud">
-    <span class="fc-c is-on"><i class="fc-n">1</i>{t('全部', 'All')}</span>
-    {#each BUILTINS as b}
-      {@const on = !hiddenSet.has(b.id)}
-      {@const num = shortcutMap.get(`b:${b.id}`)}
-      <button type="button" class="fc-c {on ? 'is-on' : 'is-off'}" onclick={() => toggleBuiltin(b.id)}>
-        {#if num}<i class="fc-n">{num}</i>{/if}{lang === 'en' ? b.en : b.zh}
-      </button>
-    {/each}
-    {#each visibleCustom as { tab, index }}
-      {@const num = shortcutMap.get(`c:${index}`)}
-      <div class="fc-c fc-x {tab.enabled ? 'is-on' : 'is-off'} {editorOpen && editIndex === index ? 'is-ed' : ''}">
-        <button type="button" onclick={() => onUpdateFilters([...hiddenSet], customTabs.map((x, k) => (k === index ? { ...x, enabled: !x.enabled } : x)))}>
-          {#if num}<i class="fc-n">{num}</i>{:else}{tab.enabled ? '✓' : '○'}{/if}
+  <div class="t-row col-row">
+    <div class="t-label">{t('内置基础分类', 'Built-in Categories')} <span class="t-desc" style="display:inline;margin-left:6px">{t('点击切换显隐 · 「全部」常驻', 'Click to toggle · All pinned')}</span></div>
+    <div class="chip-grid">
+      <span class="fc-lock">{t('✓ 全部（常驻）', '✓ All')}</span>
+      {#each BUILTINS as b}
+        {@const on = !hiddenSet.has(b.id)}
+        <button type="button" class="t-chip {on ? 'fc-on' : 'fc-off'}" onclick={() => toggleBuiltin(b.id)}>
+          {on ? '✓ ' : ''}{lang === 'en' ? b.en : b.zh}
         </button>
-        <button type="button" onclick={() => openEdit(index)}>{tab.label} <small>{tab.tag}</small></button>
-        <button type="button" class="fc-del" onclick={() => removeCustom(index)}>×</button>
-      </div>
-    {/each}
+      {/each}
+    </div>
   </div>
 
-  <div class="fc-bar">
-    <Button size="sm" variant={editorOpen && editIndex === null ? 'primary' : 'secondary'} onclick={() => { if (editorOpen && editIndex === null) editorOpen = false; else { editIndex = null; draftLabel = draftTag = draftRule = filterErr = ''; editorOpen = true; } }}>{t('+ 新建标签', '+ New Tag')}</Button>
-    {#if availPresets.length}
-      <span class="t-desc">{t('预设:', 'Presets:')}</span>
-      {#each availPresets as p}
-        <button type="button" data-preset-tab={p[0]} class="t-chip" onclick={() => addPreset(p)}>+ {lang === 'en' ? p[2] : p[1]}</button>
-      {/each}
+  <div class="t-row col-row">
+    <div class="fc-head">
+      <div>
+        <div class="t-label">{t('自定义扩展标签', 'Custom Filter Tabs')} <span class="t-pill" style="margin-left:6px">{customTabs.length} / {MAX_CUSTOM}</span></div>
+        <div class="t-desc">{t('搜索框打 @词 即刻过滤，支持后缀列表或 Everything 规则', 'Type @tag to filter by extensions or Everything rules')}</div>
+      </div>
+      <div class="row-actions">
+        {#if presetOptions.length}
+          <Select class="fc-preset-sel" value="" size="sm" align="right" minWidth="136px" placeholder={t('+ 添加预设…', '+ Preset…')} options={presetOptions} onchange={addPresetById} />
+        {/if}
+        <Button size="sm" variant={editorOpen && editIndex === null ? 'primary' : 'secondary'} onclick={() => { if (editorOpen && editIndex === null) editorOpen = false; else { editIndex = null; draftLabel = draftTag = draftRule = filterErr = ''; editorOpen = true; } }}>
+          {t('+ 新建标签', '+ New')}
+        </Button>
+      </div>
+    </div>
+
+    {#if customTabs.length >= 6}
+      <Input size="sm" type="search" placeholder={t('筛选标签或 @词…', 'Filter tags…')} bind:value={filterKw} />
+    {/if}
+
+    {#if customTabs.length === 0}
+      <div class="fc-empty">{t('暂无自定义标签，可从右上角预设快加或新建。', 'No custom tabs yet.')}</div>
+    {:else}
+      <div class="fc-list">
+        {#each visibleCustom as { tab, index }}
+          <div class="fc-row {tab.enabled ? '' : 'is-off'}">
+            <Switch checked={tab.enabled} ariaLabel={tab.label} onchange={(v) => onUpdateFilters([...hiddenSet], customTabs.map((x, k) => (k === index ? { ...x, enabled: v } : x)))} />
+            <span class="fc-lbl">{tab.label}</span>
+            <span class="t-kbd">{tab.tag}</span>
+            <span class="fc-rule mono" title={ruleText(tab)}>{ruleText(tab)}</span>
+            <div class="fc-acts">
+              <Button size="sm" variant="ghost" disabled={index === 0} title={t('前移', 'Up')} onclick={() => moveCustom(index, -1)}>↑</Button>
+              <Button size="sm" variant="ghost" disabled={index >= customTabs.length - 1} title={t('后移', 'Down')} onclick={() => moveCustom(index, 1)}>↓</Button>
+              <Button size="sm" variant="ghost" onclick={() => openEdit(index)}>{t('编辑', 'Edit')}</Button>
+              <Button size="sm" variant="danger" onclick={() => removeCustom(index)}>{t('移除', 'Del')}</Button>
+            </div>
+          </div>
+        {/each}
+      </div>
+    {/if}
+
+    {#if editorOpen}
+      <div class="fc-ed">
+        <div class="fc-grid">
+          <Input size="sm" maxlength={16} placeholder={t('名称（如 设计稿）', 'Label (Design)')} bind:value={draftLabel} />
+          <Input size="sm" mono maxlength={16} placeholder="@tag" bind:value={draftTag} />
+          <Input size="sm" mono maxlength={120} placeholder="psd;fig / dm:today / folder:" bind:value={draftRule} />
+        </div>
+        <div class="fc-ed-foot">
+          <div class="chip-grid">
+            {#each [['fig;psd;sketch', '后缀;', 'Ext'], ['folder:', '仅目录', 'Folders'], ['size:>50mb', '50MB+', '50MB+'], ['dm:today', '今日', 'Today']] as tpl}
+              <button type="button" class="t-chip" onclick={() => (draftRule = tpl[0])}>{lang === 'en' ? tpl[2] : tpl[1]}</button>
+            {/each}
+          </div>
+          <div class="row-actions">
+            <Button size="sm" variant="ghost" onclick={() => (editorOpen = false)}>{t('取消', 'Cancel')}</Button>
+            <Button size="sm" variant="primary" onclick={saveEditor}>{editIndex !== null ? t('保存修改', 'Save') : t('确认添加', 'Add')}</Button>
+          </div>
+        </div>
+        {#if filterErr}<div class="fc-err">{filterErr}</div>{/if}
+      </div>
     {/if}
   </div>
-
-  {#if editorOpen}
-    <div class="t-subpanel fc-ed">
-      <div class="fc-g">
-        <input class="t-input" placeholder={t('名称 (设计稿)', 'Name')} bind:value={draftLabel} maxlength={16} />
-        <input class="t-input" placeholder="@tag" bind:value={draftTag} maxlength={16} />
-        <input class="t-input" placeholder="psd;fig / dm:today / folder:" bind:value={draftRule} maxlength={120} />
-      </div>
-      <div class="fc-r">
-        <div class="fc-r">
-          {#each [['fig;psd;sketch', '后缀;', 'Ext'], ['folder:', '仅目录', 'Folders'], ['size:>50mb', '50MB+', '50MB+'], ['dm:today', '今日', 'Today']] as tpl}
-            <button type="button" class="t-chip" onclick={() => (draftRule = tpl[0])}>{lang === 'en' ? tpl[2] : tpl[1]}</button>
-          {/each}
-        </div>
-        <div class="fc-r">
-          {#if editIndex !== null}
-            <Button size="sm" disabled={editIndex === 0} onclick={() => editIndex !== null && moveCustom(editIndex, -1)}>←</Button>
-            <Button size="sm" disabled={editIndex >= customTabs.length - 1} onclick={() => editIndex !== null && moveCustom(editIndex, 1)}>→</Button>
-            <Button size="sm" variant="danger" onclick={() => editIndex !== null && removeCustom(editIndex)}>{t('删除', 'Delete')}</Button>
-          {/if}
-          <Button size="sm" onclick={() => (editorOpen = false)}>{t('取消', 'Cancel')}</Button>
-          <Button size="sm" variant="primary" onclick={saveEditor}>{editIndex !== null ? t('保存', 'Save') : t('添加', 'Add')}</Button>
-        </div>
-      </div>
-      {#if filterErr}<div class="t-err">{filterErr}</div>{/if}
-    </div>
-  {/if}
 </div>
 
 <style>
-  .fc-h, .fc-r, .fc-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-  .fc-h { justify-content: space-between; align-items: flex-start; }
-  .fc-q { width: 210px; margin-bottom: 8px; }
-  .fc-cloud { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px; border-radius: 9px; background: var(--canvas); border: 1px solid var(--border); max-height: 170px; overflow-y: auto; }
-  .fc-c { display: inline-flex; align-items: center; gap: 4px; height: 25px; padding: 0 8px; border-radius: 6px; font-size: 12px; border: 1px solid var(--border); background: var(--surface); color: var(--fg); }
-  .fc-c.is-on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); font-weight: 500; }
-  .fc-c.is-off { border-style: dashed; opacity: .55; color: var(--muted); }
-  .fc-x { padding: 0 4px 0 6px; }
-  .fc-x.is-ed { box-shadow: 0 0 0 2px var(--accent-soft); }
-  .fc-x small { font-family: "Cascadia Mono", Consolas, monospace; font-size: 10.5px; opacity: .78; }
-  .fc-del:hover { color: var(--danger); }
-  .fc-n { font-style: normal; font-size: 10px; opacity: .75; }
-  .fc-bar { margin-top: 9px; }
-  .fc-ed { margin-top: 9px; display: flex; flex-direction: column; gap: 7px; }
-  .fc-g { display: grid; grid-template-columns: 1fr 88px 1.6fr; gap: 7px; }
-  .fc-ed > .fc-r { justify-content: space-between; }
+  .fc-lock, .fc-on { background: var(--subtle); border: 1px solid var(--border); color: var(--text); font-weight: 500; }
+  .fc-lock { display: inline-flex; align-items: center; height: 28px; padding: 0 10px; border-radius: 7px; font-size: 12px; color: var(--text-secondary); }
+  .fc-on { border-color: var(--border-strong); }
+  .fc-off { border-style: dashed; opacity: .55; }
+  .fc-head, .fc-ed-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+  .fc-empty { padding: 10px 12px; border-radius: 8px; border: 1px dashed var(--border-strong); color: var(--muted); font-size: 12px; }
+  .fc-list { display: flex; flex-direction: column; gap: 6px; max-height: 230px; overflow-y: auto; }
+  .fc-row { display: flex; align-items: center; gap: 9px; height: 38px; padding: 0 8px 0 10px; border-radius: 8px; background: var(--canvas); border: 1px solid var(--border); }
+  .fc-row.is-off { opacity: .6; }
+  .fc-lbl { font-size: 13px; font-weight: 500; white-space: nowrap; }
+  .fc-rule { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; color: var(--muted); }
+  .fc-acts { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+  .fc-ed { padding: 12px; border-radius: 9px; background: var(--canvas); border: 1px solid var(--border-strong); display: flex; flex-direction: column; gap: 8px; }
+  .fc-grid { display: grid; grid-template-columns: 1fr 100px 1.6fr; gap: 8px; }
+  .fc-err { font-size: 12px; color: var(--danger); }
 </style>
