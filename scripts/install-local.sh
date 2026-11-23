@@ -38,7 +38,7 @@ if [ ! -x "$RELEASE_DIR/tomoyo" ]; then
 fi
 
 VERSION="$(sed -n 's/^version = "\([^"]*\)"/\1/p' "$REPO_ROOT/Cargo.toml" | head -n1)"
-VERSION="${VERSION:-2.3.0}"
+VERSION="${VERSION:-2.3.1}"
 echo "=== Installing Tomoyo v$VERSION -> $BIN_DIR & $DATA_DIR ==="
 
 # Stop any running Tomoyo instances safely before overwriting binaries

@@ -23,7 +23,7 @@ pub fn spawn_settings_window(parent_hwnd: isize, theme_name: &str) -> Result<(),
     let mut child = cmd
         .spawn()
         .map_err(|e| format!("failed to launch settings host {}: {e}", host_exe.display()))?;
-    let job = JobGuard::assign_child(&child, 512).ok();
+    let job = JobGuard::assign_webview_child(&child, 512).ok();
     let _ = std::thread::Builder::new()
         .name("tomoyo-settings-reaper".into())
         .spawn(move || {
@@ -67,7 +67,7 @@ pub fn spawn_clipboard_manager_window(
     let mut child = cmd
         .spawn()
         .map_err(|e| format!("failed to launch clipboard workbench {}: {e}", host_exe.display()))?;
-    let job = JobGuard::assign_child(&child, 512).ok();
+    let job = JobGuard::assign_webview_child(&child, 512).ok();
     let _ = std::thread::Builder::new()
         .name("tomoyo-clipmgr-reaper".into())
         .spawn(move || {
@@ -117,7 +117,7 @@ pub fn spawn_translator_window(
     let mut child = cmd
         .spawn()
         .map_err(|e| format!("failed to launch translator {}: {e}", host_exe.display()))?;
-    let job = JobGuard::assign_child(&child, 512).ok();
+    let job = JobGuard::assign_webview_child(&child, 512).ok();
     let _ = std::thread::Builder::new()
         .name("tomoyo-tr-reaper".into())
         .spawn(move || {
@@ -213,7 +213,7 @@ pub fn spawn_ephemeral_webview(
     let mut child = cmd
         .spawn()
         .map_err(|e| format!("failed to launch {}: {e}", host_exe.display()))?;
-    let job = JobGuard::assign_child(&child, max_memory_mb.max(512)).ok();
+    let job = JobGuard::assign_webview_child(&child, max_memory_mb.max(512)).ok();
     let _ = std::thread::Builder::new()
         .name("tomoyo-wv-reaper".into())
         .spawn(move || {

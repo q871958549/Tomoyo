@@ -68,7 +68,7 @@ jobs:
       - name: Stage Linux tarball & SHA-256 checksum
         run: |
           tag="${GITHUB_REF_NAME:-}"
-          case "$tag" in v*) ;; *) tag="v2.3.0" ;; esac
+          case "$tag" in v*) ;; *) tag="v2.3.1" ;; esac
           stage="dist/stage-linux"
           rm -rf "$stage"
           mkdir -p "$stage/assets/fonts" "$stage/registry" "$stage/packaging/linux" "$stage/scripts"
@@ -161,7 +161,7 @@ jobs:
       - name: Stage release bundle, build Inno Setup installer & portable ZIP
         shell: pwsh
         run: |
-          $tag = if ($env:GITHUB_REF_NAME -and $env:GITHUB_REF_NAME.StartsWith("v")) { $env:GITHUB_REF_NAME } else { "v2.3.0" }
+          $tag = if ($env:GITHUB_REF_NAME -and $env:GITHUB_REF_NAME.StartsWith("v")) { $env:GITHUB_REF_NAME } else { "v2.3.1" }
           $ver = $tag.TrimStart("v")
           $stage = "dist/stage"
           New-Item -ItemType Directory -Force -Path $stage, "$stage/assets/fonts", "$stage/registry" | Out-Null
@@ -273,7 +273,7 @@ jobs:
       - name: Package Windows ARM64 Portable ZIP & SHA-256
         shell: pwsh
         run: |
-          $tag = if ($env:GITHUB_REF_NAME -and $env:GITHUB_REF_NAME.StartsWith("v")) { $env:GITHUB_REF_NAME } else { "v2.3.0" }
+          $tag = if ($env:GITHUB_REF_NAME -and $env:GITHUB_REF_NAME.StartsWith("v")) { $env:GITHUB_REF_NAME } else { "v2.3.1" }
           $stage = "dist/stage-arm64"
           New-Item -ItemType Directory -Force -Path $stage, "$stage/assets/fonts", "$stage/registry" | Out-Null
           foreach ($bin in @("tomoyo.exe", "tomoyo-webview-host.exe", "tomoyo-capture.exe", "tomoyo-cli.exe", "tomoyo-plugin-hello.exe", "tomoyo-plugin-ocr.exe", "tomoyo-plugin-notes.exe")) {

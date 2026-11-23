@@ -13,14 +13,32 @@ unsafe impl Sync for JobGuard {}
 #[cfg(windows)]
 impl JobGuard {
     /// Creates a Windows Job Object with `KILL_ON_JOB_CLOSE` and a hard per-process memory cap,
-    /// then assigns `child` into the job.
+    /// then assigns `child` into the job (forbidding breakaway by default for untrusted plugins).
     pub fn assign_child(child: &std::process::Child, max_memory_mb: u32) -> Result<Self, String> {
+        Self::assign_child_impl(child, max_memory_mb, false)
+    }
+
+    /// Creates a Job Object for trusted WebView children that still kills the UI process tree
+    /// on close, while permitting detached self-updaters via `CREATE_BREAKAWAY_FROM_JOB`.
+    pub fn assign_webview_child(
+        child: &std::process::Child,
+        max_memory_mb: u32,
+    ) -> Result<Self, String> {
+        Self::assign_child_impl(child, max_memory_mb, true)
+    }
+
+    fn assign_child_impl(
+        child: &std::process::Child,
+        max_memory_mb: u32,
+        allow_breakaway: bool,
+    ) -> Result<Self, String> {
         use std::os::windows::io::AsRawHandle;
         use windows::Win32::Foundation::{CloseHandle, HANDLE};
         use windows::Win32::System::JobObjects::{
             AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
             SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
-            JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOB_OBJECT_LIMIT_PROCESS_MEMORY,
+            JOB_OBJECT_LIMIT_BREAKAWAY_OK, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+            JOB_OBJECT_LIMIT_PROCESS_MEMORY,
         };
 
         unsafe {
@@ -28,8 +46,11 @@ impl JobGuard {
                 .map_err(|e| format!("CreateJobObjectW failed: {e}"))?;
 
             let mut info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
-            info.BasicLimitInformation.LimitFlags =
-                JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_PROCESS_MEMORY;
+            let mut flags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_PROCESS_MEMORY;
+            if allow_breakaway {
+                flags |= JOB_OBJECT_LIMIT_BREAKAWAY_OK;
+            }
+            info.BasicLimitInformation.LimitFlags = flags;
             info.ProcessMemoryLimit = (max_memory_mb as usize).saturating_mul(1024 * 1024);
 
             if let Err(e) = SetInformationJobObject(

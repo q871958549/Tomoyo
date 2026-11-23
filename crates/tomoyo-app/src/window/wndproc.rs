@@ -102,6 +102,13 @@ pub(super) unsafe extern "system" fn main_wndproc(
         WM_COMMAND => dispatch_wm_command(hwnd, app, wparam),
         WM_APP_CONFIG_SAVED => {
             match wparam.0 {
+                5 => {
+                    tracing::info!("Updater requested graceful shutdown; exiting Tomoyo cleanly");
+                    app.shutdown_clean();
+                    unsafe {
+                        let _ = windows::Win32::UI::WindowsAndMessaging::DestroyWindow(hwnd);
+                    }
+                }
                 4 => {
                     let cfg = app.config.read().unwrap().clone();
                     unregister_all_hotkeys(hwnd);

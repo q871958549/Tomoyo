@@ -44,6 +44,7 @@ pub fn spawn_update_worker(
 
 pub fn spawn_install_update_worker(
     rel: ReleaseInfo,
+    parent_hwnd: Option<isize>,
     tx: mpsc::Sender<String>,
     hwnd_raw: usize,
     notify_msg: u32,
@@ -76,6 +77,7 @@ pub fn spawn_install_update_worker(
                 }
             })
             .and_then(|path| launch_verified_update_installer(&path));
+            let launched_installer = matches!(res, Ok(true));
             let evt = match res {
                 Ok(started_exe) => serde_json::json!({
                     "event": "update_install_result",
@@ -104,6 +106,11 @@ pub fn spawn_install_update_worker(
                         LPARAM(0),
                     );
                 }
+            }
+            if launched_installer && let Some(h) = parent_hwnd {
+                // Give WebView a moment to render the final status before tomoyo.exe shuts down cleanly.
+                std::thread::sleep(std::time::Duration::from_millis(250));
+                crate::bridge_os::notify_parent_mode(h, 5);
             }
         });
 }
@@ -265,7 +272,7 @@ pub fn dispatch_async_workers(
         spawn_update_worker(repo, tx.clone(), hwnd_raw, notify_msg);
     }
     if let Some(rel) = act.async_install_update {
-        spawn_install_update_worker(rel, tx.clone(), hwnd_raw, notify_msg);
+        spawn_install_update_worker(rel, parent_hwnd, tx.clone(), hwnd_raw, notify_msg);
     }
     if let Some(sources) = act.async_fetch_store {
         spawn_store_worker(sources, tx.clone(), hwnd_raw, notify_msg);

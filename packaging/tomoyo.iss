@@ -2,7 +2,7 @@
 ; Zero-UAC per-user install to %LOCALAPPDATA%\Programs\Tomoyo with clean uninstaller.
 
 #ifndef AppVersion
-  #define AppVersion "2.3.0"
+  #define AppVersion "2.3.1"
 #endif
 
 #ifndef StageDir
@@ -66,5 +66,9 @@ begin
   Exec('taskkill.exe', '/F /IM tomoyo.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Exec('taskkill.exe', '/F /IM tomoyo-webview-host.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Exec('taskkill.exe', '/F /IM tomoyo-capture.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec('taskkill.exe', '/F /IM tomoyo-plugin-ocr.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec('taskkill.exe', '/F /IM tomoyo-plugin-notes.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec('taskkill.exe', '/F /IM tomoyo-plugin-hello.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec('taskkill.exe', '/F /IM tomoyo-cli.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Result := True;
 end;

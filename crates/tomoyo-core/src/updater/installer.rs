@@ -1,9 +1,10 @@
 //! Install-mode detection, SHA-256 checksum download & zero-gap self-upgrade + auto-relaunch.
 
+#[cfg(windows)]
+mod win;
+
 use super::ReleaseInfo;
 use crate::http::{http_download_to_file_with_progress, http_get};
-#[cfg(windows)]
-use crate::pkg_zip::unpack_zip_to_dir;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::io::Read;
@@ -58,13 +59,43 @@ pub fn detect_install_kind() -> InstallKind {
     }
 }
 
-pub fn pick_release_assets(assets: &[CandidateAsset]) -> PickedAssets {
-    let mut out = PickedAssets::default();
-    for a in assets {
-        if a.name.eq_ignore_ascii_case("SHA256SUMS.txt") {
-            out.sha256_url = Some(a.url.clone());
+fn find_asset_matching<'a>(
+    assets: &'a [CandidateAsset],
+    suffixes: &[&str],
+    excluded_tokens: &[&str],
+) -> Option<&'a CandidateAsset> {
+    for suffix in suffixes {
+        if let Some(hit) = assets.iter().find(|a| {
+            let lower = a.name.to_ascii_lowercase();
+            lower.ends_with(suffix) && !excluded_tokens.iter().any(|tok| lower.contains(tok))
+        }) {
+            return Some(hit);
         }
     }
+    None
+}
+
+pub fn pick_release_assets(assets: &[CandidateAsset]) -> PickedAssets {
+    let mut out = PickedAssets::default();
+    #[cfg(target_arch = "aarch64")]
+    {
+        for name in ["SHA256SUMS-arm64.txt", "SHA256SUMS.txt"] {
+            if let Some(hit) = assets.iter().find(|a| a.name.eq_ignore_ascii_case(name)) {
+                out.sha256_url = Some(hit.url.clone());
+                break;
+            }
+        }
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        if let Some(hit) = assets
+            .iter()
+            .find(|a| a.name.eq_ignore_ascii_case("SHA256SUMS.txt"))
+        {
+            out.sha256_url = Some(hit.url.clone());
+        }
+    }
+
     #[cfg(target_os = "linux")]
     {
         for suffix in ["-linux-x86_64.tar.gz", "-linux-x64.tar.gz", ".tar.gz", ".appimage"] {
@@ -83,25 +114,48 @@ pub fn pick_release_assets(assets: &[CandidateAsset]) -> PickedAssets {
     }
     #[cfg(not(target_os = "linux"))]
     {
-        for suffix in ["-portable.zip", ".zip"] {
-            if let Some(hit) = assets
-                .iter()
-                .find(|a| a.name.to_ascii_lowercase().ends_with(suffix))
-            {
-                out.portable_url = Some(hit.url.clone());
-                out.portable_name = Some(hit.name.clone());
-                break;
-            }
+        #[cfg(target_arch = "aarch64")]
+        let (excluded, portable_suffixes, setup_suffixes): (&[&str], &[&str], &[&str]) = (
+            &["x64", "x86_64", "amd64"],
+            &[
+                "-windows-arm64-portable.zip",
+                "-arm64-portable.zip",
+                "-arm64.zip",
+                "-portable.zip",
+                ".zip",
+            ],
+            &[
+                "-windows-arm64-setup.exe",
+                "-arm64-setup.exe",
+                "-setup.exe",
+                ".exe",
+                ".msi",
+                ".zip",
+            ],
+        );
+        #[cfg(not(target_arch = "aarch64"))]
+        let (excluded, portable_suffixes, setup_suffixes): (&[&str], &[&str], &[&str]) = (
+            &["arm64", "aarch64"],
+            &[
+                "-windows-x64-portable.zip",
+                "-x64-portable.zip",
+                "-portable.zip",
+                ".zip",
+            ],
+            &["-windows-x64-setup.exe", "-setup.exe", ".exe", ".msi", ".zip"],
+        );
+
+        if let Some(hit) = find_asset_matching(assets, portable_suffixes, excluded)
+            .or_else(|| find_asset_matching(assets, portable_suffixes, &[]))
+        {
+            out.portable_url = Some(hit.url.clone());
+            out.portable_name = Some(hit.name.clone());
         }
-        for suffix in ["-setup.exe", ".exe", ".msi", ".zip"] {
-            if let Some(hit) = assets
-                .iter()
-                .find(|a| a.name.to_ascii_lowercase().ends_with(suffix))
-            {
-                out.download_url = Some(hit.url.clone());
-                out.asset_name = Some(hit.name.clone());
-                break;
-            }
+        if let Some(hit) = find_asset_matching(assets, setup_suffixes, excluded)
+            .or_else(|| find_asset_matching(assets, setup_suffixes, &[]))
+        {
+            out.download_url = Some(hit.url.clone());
+            out.asset_name = Some(hit.name.clone());
         }
         if detect_install_kind() == InstallKind::Portable && out.portable_url.is_some() {
             out.download_url = out.portable_url.clone();
@@ -274,156 +328,8 @@ where
 }
 
 #[cfg(windows)]
-fn write_update_helper_ps1(is_portable: bool, is_msi: bool) -> Result<PathBuf, String> {
-    let dir = std::env::temp_dir().join("tomoyo-update");
-    let _ = std::fs::create_dir_all(&dir);
-    let script_path = dir.join(if is_portable {
-        "apply_portable_update.ps1"
-    } else {
-        "apply_setup_update.ps1"
-    });
-    let body = if is_portable {
-        r#"param([string]$StageDir,[string]$InstallDir,[string]$TargetExe,[string]$ArchivePath)
-Start-Sleep -Milliseconds 350
-foreach ($name in @('tomoyo-webview-host','tomoyo')) {
-  $deadline = (Get-Date).AddSeconds(6)
-  while ((Get-Process -Name $name -ErrorAction SilentlyContinue) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 150 }
-  Get-Process -Name $name -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-}
-try {
-  Copy-Item -Path (Join-Path $StageDir '*') -Destination $InstallDir -Recurse -Force
-  Remove-Item -Path $StageDir -Recurse -Force -ErrorAction SilentlyContinue
-  Remove-Item -Path $ArchivePath -Force -ErrorAction SilentlyContinue
-  if (Test-Path $TargetExe) { Start-Process -FilePath $TargetExe -ArgumentList '--updated' }
-} catch {
-  if (Test-Path $TargetExe) { Start-Process -FilePath $TargetExe -ArgumentList '--update-failed' }
-}
-"#
-    } else if is_msi {
-        r#"param([string]$Installer,[string]$TargetExe,[string]$FallbackExe)
-Start-Sleep -Milliseconds 350
-$p = Start-Process -FilePath 'msiexec.exe' -ArgumentList @('/i', "`"$Installer`"", '/qn', '/norestart') -Wait -PassThru
-Remove-Item -Path $Installer -Force -ErrorAction SilentlyContinue
-$launch = if ($p.ExitCode -eq 0 -and (Test-Path $TargetExe)) { $TargetExe } else { $FallbackExe }
-$arg = if ($p.ExitCode -eq 0) { '--updated' } else { '--update-failed' }
-if ($launch -and (Test-Path $launch) -and -not (Get-Process -Name 'tomoyo' -ErrorAction SilentlyContinue)) {
-  Start-Process -FilePath $launch -ArgumentList $arg
-}
-"#
-    } else {
-        r#"param([string]$Installer,[string]$TargetExe,[string]$FallbackExe)
-Start-Sleep -Milliseconds 350
-foreach ($name in @('tomoyo-webview-host','tomoyo')) {
-  $deadline = (Get-Date).AddSeconds(5)
-  while ((Get-Process -Name $name -ErrorAction SilentlyContinue) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 150 }
-  Get-Process -Name $name -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-}
-$p = Start-Process -FilePath $Installer -ArgumentList @('/SP-','/VERYSILENT','/NORESTART','/CLOSEAPPLICATIONS') -Wait -PassThru
-Remove-Item -Path $Installer -Force -ErrorAction SilentlyContinue
-$launch = if ($p.ExitCode -eq 0 -and (Test-Path $TargetExe)) { $TargetExe } elseif (Test-Path $FallbackExe) { $FallbackExe } else { $TargetExe }
-$arg = if ($p.ExitCode -eq 0) { '--updated' } else { '--update-failed' }
-if ($launch -and (Test-Path $launch) -and -not (Get-Process -Name 'tomoyo' -ErrorAction SilentlyContinue)) {
-  Start-Process -FilePath $launch -ArgumentList $arg
-}
-"#
-    };
-    std::fs::write(&script_path, body).map_err(|e| format!("write update helper failed: {e}"))?;
-    Ok(script_path)
-}
-
-#[cfg(windows)]
 pub fn launch_verified_update_installer(installer_path: &Path) -> Result<bool, String> {
-    use std::os::windows::process::CommandExt;
-    const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-
-    let ext = installer_path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_ascii_lowercase();
-
-    let current_exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("tomoyo.exe"));
-    let exe_dir = current_exe
-        .parent()
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| PathBuf::from("."));
-    let fallback_exe = if current_exe
-        .file_name()
-        .and_then(|n| n.to_str())
-        .is_some_and(|n| n.eq_ignore_ascii_case("tomoyo.exe"))
-    {
-        current_exe.clone()
-    } else {
-        exe_dir.join("tomoyo.exe")
-    };
-    let default_setup_exe = crate::data_dir()
-        .parent()
-        .map(|l| l.join("Programs").join("Tomoyo").join("tomoyo.exe"))
-        .unwrap_or_else(|| fallback_exe.clone());
-
-    if ext == "zip" {
-        let stage_dir = std::env::temp_dir().join("tomoyo-update").join("portable_stage");
-        let _ = std::fs::remove_dir_all(&stage_dir);
-        unpack_zip_to_dir(installer_path, &stage_dir)?;
-        if !stage_dir.join("tomoyo.exe").is_file() {
-            return Err("便携压缩包中未包含 tomoyo.exe，已取消覆盖".into());
-        }
-        let script = write_update_helper_ps1(true, false)?;
-        std::process::Command::new("powershell.exe")
-            .args([
-                "-NoProfile",
-                "-NonInteractive",
-                "-WindowStyle",
-                "Hidden",
-                "-ExecutionPolicy",
-                "Bypass",
-                "-File",
-                &script.to_string_lossy(),
-                "-StageDir",
-                &stage_dir.to_string_lossy(),
-                "-InstallDir",
-                &exe_dir.to_string_lossy(),
-                "-TargetExe",
-                &fallback_exe.to_string_lossy(),
-                "-ArchivePath",
-                &installer_path.to_string_lossy(),
-            ])
-            .creation_flags(CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW)
-            .spawn()
-            .map_err(|e| format!("拉起便携更新器失败: {e}"))?;
-        return Ok(true);
-    }
-
-    if ext == "exe" || ext == "msi" {
-        let script = write_update_helper_ps1(false, ext == "msi")?;
-        std::process::Command::new("powershell.exe")
-            .args([
-                "-NoProfile",
-                "-NonInteractive",
-                "-WindowStyle",
-                "Hidden",
-                "-ExecutionPolicy",
-                "Bypass",
-                "-File",
-                &script.to_string_lossy(),
-                "-Installer",
-                &installer_path.to_string_lossy(),
-                "-TargetExe",
-                &default_setup_exe.to_string_lossy(),
-                "-FallbackExe",
-                &fallback_exe.to_string_lossy(),
-            ])
-            .creation_flags(CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW)
-            .spawn()
-            .map_err(|e| format!("拉起安装更新器失败: {e}"))?;
-        return Ok(true);
-    }
-
-    let _ = std::process::Command::new("explorer.exe")
-        .arg(format!("/select,{}", installer_path.display()))
-        .spawn();
-    Ok(false)
+    win::launch_windows_update(installer_path)
 }
 
 #[cfg(target_os = "linux")]
@@ -434,4 +340,62 @@ pub fn launch_verified_update_installer(installer_path: &Path) -> Result<bool, S
 #[cfg(all(not(windows), not(target_os = "linux")))]
 pub fn launch_verified_update_installer(_installer_path: &Path) -> Result<bool, String> {
     Err("Self-update installer is only supported on Windows and Linux".into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pick_release_assets_prefers_current_arch_portable_and_setup() {
+        let assets = vec![
+            CandidateAsset {
+                name: "SHA256SUMS-arm64.txt".into(),
+                url: "https://example.invalid/SHA256SUMS-arm64.txt".into(),
+            },
+            CandidateAsset {
+                name: "SHA256SUMS.txt".into(),
+                url: "https://example.invalid/SHA256SUMS.txt".into(),
+            },
+            CandidateAsset {
+                name: "Tomoyo-v2.3.0-windows-arm64-portable.zip".into(),
+                url: "https://example.invalid/arm64.zip".into(),
+            },
+            CandidateAsset {
+                name: "Tomoyo-v2.3.0-windows-x64-portable.zip".into(),
+                url: "https://example.invalid/x64.zip".into(),
+            },
+            CandidateAsset {
+                name: "Tomoyo-v2.3.0-windows-x64-setup.exe".into(),
+                url: "https://example.invalid/setup.exe".into(),
+            },
+        ];
+        let picked = pick_release_assets(&assets);
+        #[cfg(all(not(target_os = "linux"), not(target_arch = "aarch64")))]
+        {
+            assert_eq!(
+                picked.portable_name.as_deref(),
+                Some("Tomoyo-v2.3.0-windows-x64-portable.zip")
+            );
+            assert_eq!(
+                picked.sha256_url.as_deref(),
+                Some("https://example.invalid/SHA256SUMS.txt")
+            );
+            assert_eq!(
+                picked.asset_name.as_deref(),
+                Some("Tomoyo-v2.3.0-windows-x64-setup.exe")
+            );
+        }
+        #[cfg(all(not(target_os = "linux"), target_arch = "aarch64"))]
+        {
+            assert_eq!(
+                picked.portable_name.as_deref(),
+                Some("Tomoyo-v2.3.0-windows-arm64-portable.zip")
+            );
+            assert_eq!(
+                picked.sha256_url.as_deref(),
+                Some("https://example.invalid/SHA256SUMS-arm64.txt")
+            );
+        }
+    }
 }
