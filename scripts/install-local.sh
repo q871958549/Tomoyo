@@ -12,15 +12,17 @@ DATA_DIR="${TOMOYO_DATA_DIR:-$XDG_DATA/tomoyo}"
 NO_LAUNCH=0
 ENABLE_AUTOSTART=0
 BUILD_FIRST=0
+PROFILE="suite"
 for arg in "$@"; do
   case "$arg" in
     --no-launch) NO_LAUNCH=1 ;;
     --enable-autostart) ENABLE_AUTOSTART=1 ;;
     --build) BUILD_FIRST=1 ;;
+    --profile=*) PROFILE="${arg#*=}" ;;
     --bin-dir=*) BIN_DIR="${arg#*=}" ;;
     --data-dir=*) DATA_DIR="${arg#*=}" ;;
     -h|--help)
-      echo "Usage: $0 [--build] [--no-launch] [--enable-autostart] [--bin-dir=PATH] [--data-dir=PATH]"
+      echo "Usage: $0 [--profile=suite|core] [--build] [--no-launch] [--enable-autostart] [--bin-dir=PATH] [--data-dir=PATH]"
       exit 0
       ;;
     *) echo "Unknown option: $arg" >&2; exit 2 ;;
@@ -38,8 +40,8 @@ if [ ! -x "$RELEASE_DIR/tomoyo" ]; then
 fi
 
 VERSION="$(sed -n 's/^version = "\([^"]*\)"/\1/p' "$REPO_ROOT/Cargo.toml" | head -n1)"
-VERSION="${VERSION:-2.6.1}"
-echo "=== Installing Tomoyo v$VERSION -> $BIN_DIR & $DATA_DIR ==="
+VERSION="${VERSION:-3.0.0}"
+echo "=== Installing Tomoyo v$VERSION ($PROFILE profile) -> $BIN_DIR & $DATA_DIR ==="
 
 # Stop any running Tomoyo instances safely before overwriting binaries
 if command -v systemctl >/dev/null 2>&1; then
@@ -74,16 +76,10 @@ mkdir -p "$BIN_DIR" "$DATA_DIR/fonts" "$DATA_DIR/plugin-icons" "$DATA_DIR/assets
   "$XDG_DATA/icons/hicolor/256x256/apps" \
   "$XDG_DATA/icons/hicolor/scalable/apps"
 
-BINS=(
-  tomoyo
-  tomoyo-webview-host
-  tomoyo-capture
-  tomoyo-cli
-  tomoyo-plugin-hello
-  tomoyo-plugin-ocr
-  tomoyo-plugin-notes
-  tomoyo-plugin-md-editor
-)
+BINS=(tomoyo tomoyo-webview-host tomoyo-cli)
+if [ "$PROFILE" != "core" ]; then
+  BINS+=(tomoyo-capture tomoyo-plugin-hello tomoyo-plugin-ocr tomoyo-plugin-notes tomoyo-plugin-md-editor)
+fi
 for b in "${BINS[@]}"; do
   install -Dm755 "$RELEASE_DIR/$b" "$BIN_DIR/$b"
 done
@@ -101,12 +97,14 @@ if [ -d "$REPO_ROOT/registry/shards" ]; then
 fi
 install -Dm755 "$REPO_ROOT/scripts/uninstall-local.sh" "$DATA_DIR/uninstall.sh"
 
-for p in example-hello example-python example-wasm example-webview-json builtin-ocr official-notes official-md-editor; do
-  rm -rf "$DATA_DIR/plugins/$p"
-  mkdir -p "$DATA_DIR/plugins/$p"
-  cp -a "$REPO_ROOT/plugins/$p/." "$DATA_DIR/plugins/$p/"
-  rm -rf "$DATA_DIR/plugins/$p/target" "$DATA_DIR/plugins/$p/__pycache__"
-done
+if [ "$PROFILE" != "core" ]; then
+  for p in example-hello example-python example-wasm example-webview-json builtin-ocr official-notes official-md-editor; do
+    rm -rf "$DATA_DIR/plugins/$p"
+    mkdir -p "$DATA_DIR/plugins/$p"
+    cp -a "$REPO_ROOT/plugins/$p/." "$DATA_DIR/plugins/$p/"
+    rm -rf "$DATA_DIR/plugins/$p/target" "$DATA_DIR/plugins/$p/__pycache__"
+  done
+fi
 
 install -Dm644 "$REPO_ROOT/assets/tomoyo-icon-transparent.png" "$XDG_DATA/icons/hicolor/512x512/apps/tomoyo.png"
 install -Dm644 "$REPO_ROOT/assets/tomoyo-icon-transparent.png" "$XDG_DATA/icons/hicolor/256x256/apps/tomoyo.png"

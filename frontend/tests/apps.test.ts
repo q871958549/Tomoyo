@@ -47,7 +47,7 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
       pin: { spec: 'F3', active: 'F3', ok: true, disabled: false, reason: '' },
     };
     window.__TOMOYO_SETTINGS_INIT__ = {
-      version: '2.6.1',
+      version: '3.0.0',
       platform: 'windows',
       autostart: true,
       config: {

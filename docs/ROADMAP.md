@@ -27,11 +27,15 @@
 
 ```text
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│  v3.0.0 · 远期：物理拆包 Core/Suite 双版本 + WASM wasi-p2 + 公益代码签名     │
+│  v3.0.0 · [已完成 ✅] Core/Suite 物理拆包 · WASM ABI v2 · 签名/溯源 · macOS  │
 ├──────────────────────────────────────────────────────────────────────────────┤
-│  v2.8.0 · 规划：社区脚本一键打包发布流水线 + WASM 声明式富卡片扩展           │
+│  v2.8.0 · [已完成 ✅] 社区 CLI 打包/分片/体检 · WASM RichCard · 清单同步流水线│
 ├──────────────────────────────────────────────────────────────────────────────┤
-│  v2.7.0 · 规划：万级插件中心 2.0（分片索引 / Rust 侧检索分类分页 / 详情抽屉） │
+│  v2.7.5 · [已完成 ✅] 录屏 2.0（独立热键/双音混音/点击波纹）· Inline Esc 精修 │
+├──────────────────────────────────────────────────────────────────────────────┤
+│  v2.7.0 · [已完成 ✅] 万级插件中心 2.0（分片索引 / ETag 缓存 / 详情抽屉/升级）│
+├──────────────────────────────────────────────────────────────────────────────┤
+│  v2.6.2 · [已完成 ✅] Windows Clippy 修复 · 450 行热点拆解 · settings 瘦身   │
 ├──────────────────────────────────────────────────────────────────────────────┤
 │  v2.6.1 · [已完成 ✅] Windows 原生录屏 · 卸载防重 · Everything UIPI/截图修复 │
 ├──────────────────────────────────────────────────────────────────────────────┤
@@ -385,18 +389,34 @@
    - 在 `tomoyo-everything` 接收窗显式调用 `ChangeWindowMessageFilterEx(hwnd, WM_COPYDATA, MSGFLT_ALLOW, None)`，彻底解除高权限 `tomoyo.exe` 无法接收非提权 `Everything.exe` 回复导致的 UIPI 静默丢包（修复 `.md` 等全盘文件搜不到问题并提升 `.md`/`.txt` 相关性权重）。
    - 全局截图/OCR 热键改为不预先隐藏搜索框并在 `enumerate_snap_windows` 中放行 `TomoyoLauncherWindowClass`，直接支持一键吸附截取 Tomoyo 搜索框界面。
 
-### 阶段二十：`v2.7.0` — 面向成千上万款插件的「插件中心 2.0」可扩展架构（架构奠基 → 深化）
-1. **分片注册清单协议（Registry Schema v2）**：
-   - 支持 `schema_version: 2` 轻量主清单 + 按分类分片（`shards` + ETag 304 + `%LOCALAPPDATA%\Tomoyo\cache\store\` 本地缓存），向下兼容全部 v1 清单；内置分类（`efficiency / docs / dev / ai / media / system`）、评分/下载量元信息、校验徽章与按需图标。
-2. **Rust 侧检索引擎与分页 IPC 协议（防前端 DOM / 内存膨胀）**：
-   - 严禁在设置初始化 `__TOMOYO_SETTINGS_INIT__` 中全量注入市场列表；改为由 `tomoyo-webview-host` 在 Rust 侧构建常驻内存检索引擎（关键词 / 分类 / 运行时 / 排序 / 装机状态过滤），通过 `QueryStore` / `StorePage` 分页协议每次仅向 Svelte 交付一页（如 `24` 条）与按页按需的轻量缩略图标，`10,000+` 插件下 DOM 节点始终 `< 100` 且检索耗时 `< 5 ms`，`settings.html` 仍严守 `≤ 320 KB`。
-3. **设置中心双栏检索与插件详情交互（`PluginsTab` + `StoreTab`）**：
-   - 已安装插件列表与插件市场均支持即时关键字搜索、分类芯片筛选、呈现模式快捷切换，以及惰性拉取的插件详情抽屉（权限透明列表、支持触发词、作者与主页）。
+### 阶段二十：`v2.6.2 – v2.7.5` — 工程稳态加固、万级插件中心 2.0 与录屏 2.0（已完成 ✅）
+1. **Windows Clippy 修复与热点减压（`v2.6.2`）**：
+   - 收敛 `popup_menu` 签名至 `PopupMenuStyle`；拆解 `main.rs`、`window/mod.rs`、`win_host.rs`、`config/mod.rs` 全部 450 行边缘热点；移除前端未使用的 Tailwind v4 全局生成器并启用 `es2022` / `legalComments: 'none'`，一次性释放 `14.6 KB` `settings.html` 体积裕量。
+2. **面向成千上万款插件的「插件中心 2.0」（`v2.7.0`）**：
+   - 落地 `schema_version: 2` 分片注册清单（`registry/index.json` + `registry/shards/{official,examples}.json`）、HTTP `ETag` / `If-None-Match` 304 与 `%LOCALAPPDATA%\Tomoyo\cache\store\` 本地磁盘分片缓存，并行拉取多片元数据。
+   - `tomoyo-webview-host` 在 Rust 侧实现毫秒级过滤/分类/排序/分页与惰性 `FetchPluginDetail` 详情抽屉，内置 SemVer 升级徽章与原子暂存更新（`StoreTab` + `PluginsTab`），`settings.html` 始终控制在 `≤ 320 KB`。
+3. **录屏 2.0 与 `inline` 贴靠交互精修（`v2.7.5`）**：
+   - 全链路新增独立一级全局录屏热键槽位（`CaptureConfig.record_hotkey`，含 Windows/Linux 热键注册、热键治理中心与设置中心）；
+   - 新增 `RecAudio::Both`（「双音」：Windows 双 WASAPI 实时软削波混音 + Linux PulseAudio `amix=inputs=2`）、Windows 鼠标点击波纹高亮与录屏保存后自动复制文件（`CF_HDROP`）至剪贴板；
+   - `inline` 贴靠模式下按 `Esc` 优先平滑关闭内嵌面板并将焦点归还搜索输入框。
 
-### 阶段二十一：`v2.8.0` — 社区生态拓展与打包分发流水线
-1. **`tomoyo-cli pack` 标准化社区插件包生成器**：校验 `icon.png`、`display_mode`、Protocol v2 Schema 与确定性 `SHA-256` 清单生成；
-2. **WASM 声明式卡片输出原语**：允许零权限 WASM 沙箱插件输出结构化 Markdown/表格/快捷动作卡片在搜索结果右侧直接内嵌呈现；
-3. **插件一键体检与多源仓库镜像健康检测**：自动检测过期清单、不可达镜像与插件版本升级提示。
+### 阶段二十一：`v2.8.0` — 社区生态拓展、WASM 富卡片与自动化清单流水线（已完成 ✅）
+1. **WASM 声明式富卡片原语（`PreviewSpec::RichCard`）**：
+   - 协议层与 Windows SDF/GDI、Linux Pango 原生预览管线支持结构化富卡片（标题/副标题/彩色徽章/键值对表格/页脚），参考插件 `plugins/example-wasm` 率先升级 `RichCard` 输出（JWT 解码与字节换算）。
+2. **`tomoyo-cli` 社区打包、分片构建与离线体检工具链**：
+   - `tomoyo-cli verify` / `pack` 强制校验 PNG 魔数与 `≤ 64 KB` 图标红线并生成 Protocol v2 条目；新增 `tomoyo-cli registry build-shards` 自动汇总重建分片 SHA-256 与 `tomoyo-cli doctor` 离线/镜像体检；设置中心插件页同步接入「一键体检（`CheckPluginHealth`）」。
+3. **发布清单自动化同步流水线（`scripts/sync-release-manifests.mjs`）**：
+   - 接入 `.github/workflows/release.yml`，发布构建自动产出版本号与 `SHA-256` 严格对齐的 Scoop、Winget 与 Arch `PKGBUILD` 清单。
+
+### 阶段二十二：`v3.0.0` — Core/Suite 物理拆包、WASM ABI v2、签名溯源与 macOS 能力对齐（已完成 ✅）
+1. **WASM Runtime ABI v2（`wasm.rs` + `wasm_kv.rs` + `tomoyo-wasm-sdk`）**：
+   - 新增受限主机原语 `host_now_ms` 与按插件 ID 严格目录隔离的有界持久化键值存储 `host_kv_get` / `host_kv_set`（`<data_dir>/plugin-kv/<plugin_id>.json`，单值与总容量硬限），配套跨插件隔离单元测试。
+2. **Core vs Suite 物理拆包与多渠道可选组件安装**：
+   - `install-local.ps1 -Profile Core|Suite`、`install-local.sh --profile=core|suite` 与 Inno Setup `tomoyo.iss` `[Types]`/`[Components]` 正式支持极简 Core 微内核与完整 Suite 双分发形态；Release 工作流同步产出 `*-core-portable.zip` 与 `*-core.tar.gz`。
+3. **可验证供应链与可选 Windows Authenticode 签名钩子（[`docs/RELEASE_SIGNING.md`](RELEASE_SIGNING.md)）**：
+   - 全平台发布包接入 `SHA256SUMS` 与 GitHub `actions/attest-build-provenance@v4` SLSA 溯源证明，并在 Windows x64 Release 流水线预置基于仓库密钥（`WINDOWS_CERT_PFX_BASE64` / `WINDOWS_CERT_PASSWORD`）的条件式 `signtool.exe` SHA-256 + RFC 3161 时间戳自动签名。
+4. **`tomoyo-ui-macos` 平台能力对齐**：
+   - 补齐 Spotlight `mdfind` 参数构建与输出解析、系统剪贴板读取、Finder 定位与 `LaunchAgent` plist 生成器及跨平台单元测试，为 macOS 原生外壳落地夯实接口底座。
 
 ---
 

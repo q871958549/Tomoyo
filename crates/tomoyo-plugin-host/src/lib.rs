@@ -13,6 +13,7 @@ pub mod process;
 mod runtime;
 pub mod v2_support;
 pub mod wasm;
+mod wasm_kv;
 
 pub use discovery::default_plugin_dirs;
 pub use host::{PluginHost, PluginRuntimeInfo};

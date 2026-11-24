@@ -65,28 +65,35 @@ jobs:
           ./target/release/tomoyo-capture --self-test
           ./target/release/tomoyo-plugin-ocr --self-test
 
-      - name: Stage Linux tarball & SHA-256 checksum
+      - name: Stage Linux Suite & Core tarballs & SHA-256 checksums
         run: |
           tag="${GITHUB_REF_NAME:-}"
-          case "$tag" in v*) ;; *) tag="v2.6.1" ;; esac
+          case "$tag" in v*) ;; *) tag="v3.0.0" ;; esac
           stage="dist/stage-linux"
-          rm -rf "$stage"
+          core_stage="dist/stage-linux-core"
+          rm -rf "$stage" "$core_stage"
           mkdir -p "$stage/assets/fonts" "$stage/assets/plugin-icons" "$stage/registry" "$stage/packaging/linux" "$stage/scripts"
+          mkdir -p "$core_stage/assets/fonts" "$core_stage/assets/plugin-icons" "$core_stage/registry" "$core_stage/packaging/linux" "$core_stage/scripts"
 
           for bin in tomoyo tomoyo-webview-host tomoyo-capture tomoyo-cli tomoyo-plugin-hello tomoyo-plugin-ocr tomoyo-plugin-notes tomoyo-plugin-md-editor; do
             install -Dm755 "target/release/$bin" "$stage/$bin"
           done
-          install -Dm644 LICENSE-MIT LICENSE-APACHE README.md "$stage/"
-          install -Dm644 assets/fonts/*.ttf "$stage/assets/fonts/"
-          install -Dm644 assets/plugin-icons/*.png "$stage/assets/plugin-icons/"
-          install -Dm644 assets/tomoyo-icon.png assets/tomoyo-icon.svg "$stage/assets/"
-          install -Dm644 registry/index.json "$stage/registry/index.json"
-          if [ -d registry/shards ]; then
-            mkdir -p "$stage/registry/shards"
-            install -Dm644 registry/shards/*.json "$stage/registry/shards/"
-          fi
-          install -Dm644 packaging/linux/tomoyo.desktop packaging/linux/PKGBUILD "$stage/packaging/linux/"
-          install -Dm755 scripts/install-local.sh scripts/uninstall-local.sh "$stage/scripts/"
+          for bin in tomoyo tomoyo-webview-host tomoyo-cli; do
+            install -Dm755 "target/release/$bin" "$core_stage/$bin"
+          done
+          for target_dir in "$stage" "$core_stage"; do
+            install -Dm644 LICENSE-MIT LICENSE-APACHE README.md "$target_dir/"
+            install -Dm644 assets/fonts/*.ttf "$target_dir/assets/fonts/"
+            install -Dm644 assets/plugin-icons/*.png "$target_dir/assets/plugin-icons/"
+            install -Dm644 assets/tomoyo-icon.png assets/tomoyo-icon.svg "$target_dir/assets/"
+            install -Dm644 registry/index.json "$target_dir/registry/index.json"
+            if [ -d registry/shards ]; then
+              mkdir -p "$target_dir/registry/shards"
+              install -Dm644 registry/shards/*.json "$target_dir/registry/shards/"
+            fi
+            install -Dm644 packaging/linux/tomoyo.desktop packaging/linux/PKGBUILD "$target_dir/packaging/linux/"
+            install -Dm755 scripts/install-local.sh scripts/uninstall-local.sh "$target_dir/scripts/"
+          done
 
           for p in example-hello example-python example-wasm example-webview-json builtin-ocr official-notes official-md-editor; do
             mkdir -p "$stage/plugins/$p"
@@ -95,8 +102,10 @@ jobs:
           done
 
           tgz="dist/Tomoyo-${tag}-linux-x86_64.tar.gz"
+          core_tgz="dist/Tomoyo-${tag}-linux-x86_64-core.tar.gz"
           tar -C "$stage" -czf "$tgz" .
-          (cd dist && sha256sum "$(basename "$tgz")" > SHA256SUMS-linux.txt)
+          tar -C "$core_stage" -czf "$core_tgz" .
+          (cd dist && sha256sum "$(basename "$tgz")" "$(basename "$core_tgz")" > SHA256SUMS-linux.txt)
           cat dist/SHA256SUMS-linux.txt
 
       - name: Attest Linux Release Build Provenance (SLSA)
@@ -105,6 +114,7 @@ jobs:
         with:
           subject-path: |
             dist/Tomoyo-*-linux-x86_64.tar.gz
+            dist/Tomoyo-*-linux-x86_64-core.tar.gz
             dist/SHA256SUMS-linux.txt
 
       - name: Publish GitHub Release (Linux x86_64)
@@ -115,6 +125,7 @@ jobs:
           generate_release_notes: true
           files: |
             dist/Tomoyo-*-linux-x86_64.tar.gz
+            dist/Tomoyo-*-linux-x86_64-core.tar.gz
             dist/SHA256SUMS-linux.txt
             packaging/linux/PKGBUILD
 
@@ -163,47 +174,92 @@ jobs:
           cargo test --workspace
           cargo build --release --workspace
 
-      - name: Stage release bundle, build Inno Setup installer & portable ZIP
+      - name: Stage Windows x64 Suite & Core bundles, sign (optional) & build Inno Setup
         shell: pwsh
+        env:
+          WINDOWS_CERT_PFX_BASE64: ${{ secrets.WINDOWS_CERT_PFX_BASE64 }}
+          WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
         run: |
-          $tag = if ($env:GITHUB_REF_NAME -and $env:GITHUB_REF_NAME.StartsWith("v")) { $env:GITHUB_REF_NAME } else { "v2.6.1" }
+          $tag = if ($env:GITHUB_REF_NAME -and $env:GITHUB_REF_NAME.StartsWith("v")) { $env:GITHUB_REF_NAME } else { "v3.0.0" }
           $ver = $tag.TrimStart("v")
           $stage = "dist/stage"
+          $coreStage = "dist/stage-core"
+          Remove-Item -Recurse -Force $stage, $coreStage -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Force -Path $stage, "$stage/assets/fonts", "$stage/assets/plugin-icons", "$stage/registry" | Out-Null
+          New-Item -ItemType Directory -Force -Path $coreStage, "$coreStage/assets/fonts", "$coreStage/assets/plugin-icons", "$coreStage/registry" | Out-Null
 
           foreach ($bin in @("tomoyo.exe", "tomoyo-webview-host.exe", "tomoyo-capture.exe", "tomoyo-cli.exe", "tomoyo-plugin-hello.exe", "tomoyo-plugin-ocr.exe", "tomoyo-plugin-notes.exe", "tomoyo-plugin-md-editor.exe")) {
             Copy-Item "target/release/$bin" "$stage/"
           }
-          Copy-Item LICENSE-MIT, LICENSE-APACHE, README.md "$stage/"
-          Copy-Item assets/fonts/*.ttf "$stage/assets/fonts/"
-          Copy-Item assets/plugin-icons/*.png "$stage/assets/plugin-icons/"
-          Copy-Item assets/tomoyo.ico "$stage/assets/"
-          Copy-Item registry/index.json "$stage/registry/"
-          if (Test-Path registry/shards) {
-            New-Item -ItemType Directory -Force -Path "$stage/registry/shards" | Out-Null
-            Copy-Item registry/shards/*.json "$stage/registry/shards/" -Force
+
+          $pfxPath = $null
+          $signtool = $null
+          if ($env:WINDOWS_CERT_PFX_BASE64 -and $env:WINDOWS_CERT_PASSWORD) {
+            $signtool = (Get-Command signtool.exe -ErrorAction SilentlyContinue)?.Source
+            if (-not $signtool) {
+              $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" -ErrorAction SilentlyContinue |
+                Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
+            }
+            if (-not $signtool) { throw "Authenticode secrets configured but signtool.exe was not found." }
+            $pfxPath = Join-Path ([System.IO.Path]::GetTempPath()) "tomoyo-signing-$PID.pfx"
+            [System.IO.File]::WriteAllBytes($pfxPath, [System.Convert]::FromBase64String($env:WINDOWS_CERT_PFX_BASE64))
+          } else {
+            Write-Host "[INFO] WINDOWS_CERT_PFX_BASE64/PASSWORD not set; skipping Authenticode signing (SHA256 + SLSA remain active)."
           }
 
-          foreach ($p in @("example-hello", "example-python", "example-wasm", "example-webview-json", "builtin-ocr", "official-notes", "official-md-editor")) {
-            New-Item -ItemType Directory -Force -Path "$stage/plugins/$p" | Out-Null
-            Get-ChildItem "plugins/$p" -Exclude "target","__pycache__" | Copy-Item -Destination "$stage/plugins/$p" -Recurse -Force
+          try {
+            if ($pfxPath) {
+              Get-ChildItem "$stage/*.exe" | ForEach-Object {
+                & $signtool sign /f $pfxPath /p $env:WINDOWS_CERT_PASSWORD /fd SHA256 /tr "http://timestamp.digicert.com" /td SHA256 $_.FullName
+                if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+              }
+            }
+
+            foreach ($bin in @("tomoyo.exe", "tomoyo-webview-host.exe", "tomoyo-cli.exe")) {
+              Copy-Item "$stage/$bin" "$coreStage/"
+            }
+            foreach ($dir in @($stage, $coreStage)) {
+              Copy-Item LICENSE-MIT, LICENSE-APACHE, README.md "$dir/"
+              Copy-Item assets/fonts/*.ttf "$dir/assets/fonts/"
+              Copy-Item assets/plugin-icons/*.png "$dir/assets/plugin-icons/"
+              Copy-Item assets/tomoyo.ico "$dir/assets/"
+              Copy-Item registry/index.json "$dir/registry/"
+              if (Test-Path registry/shards) {
+                New-Item -ItemType Directory -Force -Path "$dir/registry/shards" | Out-Null
+                Copy-Item registry/shards/*.json "$dir/registry/shards/" -Force
+              }
+            }
+
+            foreach ($p in @("example-hello", "example-python", "example-wasm", "example-webview-json", "builtin-ocr", "official-notes", "official-md-editor")) {
+              New-Item -ItemType Directory -Force -Path "$stage/plugins/$p" | Out-Null
+              Get-ChildItem "plugins/$p" -Exclude "target","__pycache__" | Copy-Item -Destination "$stage/plugins/$p" -Recurse -Force
+            }
+
+            $zipPath = "dist/Tomoyo-$tag-windows-x64-portable.zip"
+            $coreZipPath = "dist/Tomoyo-$tag-windows-x64-core-portable.zip"
+            Compress-Archive -Path "$stage/*" -DestinationPath $zipPath -Force
+            Compress-Archive -Path "$coreStage/*" -DestinationPath $coreZipPath -Force
+
+            $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+            if (-not (Test-Path $iscc)) {
+              choco install innosetup -y --no-progress
+            }
+            & $iscc "/DAppVersion=$ver" "/DStageDir=..\dist\stage" "packaging\tomoyo.iss"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+            $setupPath = "dist/Tomoyo-$tag-windows-x64-setup.exe"
+            if ($pfxPath) {
+              & $signtool sign /f $pfxPath /p $env:WINDOWS_CERT_PASSWORD /fd SHA256 /tr "http://timestamp.digicert.com" /td SHA256 $setupPath
+              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            }
+          } finally {
+            if ($pfxPath -and (Test-Path $pfxPath)) { Remove-Item -Force $pfxPath -ErrorAction SilentlyContinue }
           }
 
-          $zipPath = "dist/Tomoyo-$tag-windows-x64-portable.zip"
-          Compress-Archive -Path "$stage/*" -DestinationPath $zipPath -Force
-
-          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
-          if (-not (Test-Path $iscc)) {
-            choco install innosetup -y --no-progress
-          }
-          & $iscc "/DAppVersion=$ver" "/DStageDir=..\dist\stage" "packaging\tomoyo.iss"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-          $setupPath = "dist/Tomoyo-$tag-windows-x64-setup.exe"
           $lines = @()
           $setupSha = ""
           $zipSha = ""
-          foreach ($art in @($setupPath, $zipPath)) {
+          foreach ($art in @($setupPath, $zipPath, $coreZipPath)) {
             $h = (Get-FileHash $art -Algorithm SHA256).Hash.ToLower()
             $name = Split-Path -Leaf $art
             $lines += "$h  $name"
@@ -224,6 +280,7 @@ jobs:
           subject-path: |
             dist/Tomoyo-*-windows-x64-setup.exe
             dist/Tomoyo-*-windows-x64-portable.zip
+            dist/Tomoyo-*-windows-x64-core-portable.zip
             dist/SHA256SUMS.txt
 
       - name: Attach Windows x64 Assets to GitHub Release
@@ -233,6 +290,7 @@ jobs:
           files: |
             dist/Tomoyo-*-windows-x64-setup.exe
             dist/Tomoyo-*-windows-x64-portable.zip
+            dist/Tomoyo-*-windows-x64-core-portable.zip
             dist/SHA256SUMS.txt
             dist/tomoyo.scoop.json
             dist/TomoyoContributors.Tomoyo.yaml
@@ -259,7 +317,7 @@ jobs:
       - name: Package Windows ARM64 Portable ZIP & SHA-256
         shell: pwsh
         run: |
-          $tag = if ($env:GITHUB_REF_NAME -and $env:GITHUB_REF_NAME.StartsWith("v")) { $env:GITHUB_REF_NAME } else { "v2.6.1" }
+          $tag = if ($env:GITHUB_REF_NAME -and $env:GITHUB_REF_NAME.StartsWith("v")) { $env:GITHUB_REF_NAME } else { "v3.0.0" }
           $stage = "dist/stage-arm64"
           New-Item -ItemType Directory -Force -Path $stage, "$stage/assets/fonts", "$stage/assets/plugin-icons", "$stage/registry" | Out-Null
           foreach ($bin in @("tomoyo.exe", "tomoyo-webview-host.exe", "tomoyo-capture.exe", "tomoyo-cli.exe", "tomoyo-plugin-hello.exe", "tomoyo-plugin-ocr.exe", "tomoyo-plugin-notes.exe", "tomoyo-plugin-md-editor.exe")) {

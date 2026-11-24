@@ -2,7 +2,7 @@
 ; Zero-UAC per-user install to %LOCALAPPDATA%\Programs\Tomoyo with clean uninstaller.
 
 #ifndef AppVersion
-  #define AppVersion "2.6.1"
+  #define AppVersion "3.0.0"
 #endif
 
 #ifndef StageDir
@@ -39,12 +39,32 @@ RestartApplications=no
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
+[Types]
+Name: "suite"; Description: "Full Suite (完整套件：核心启动器 + 截图录屏 + 全部官方插件)"
+Name: "core"; Description: "Minimal Core (极简内核：仅主启动器 + 设置中心 + CLI，按需自选插件)"
+Name: "custom"; Description: "Custom installation (自定义组件)"; Flags: iscustom
+
+[Components]
+Name: "core"; Description: "Tomoyo Core Launcher, Settings Center & CLI (必选内核)"; Types: suite core custom; Flags: fixed
+Name: "suite"; Description: "Official Productivity Suite (官方效率套件)"; Types: suite
+Name: "suite\capture"; Description: "Native Screenshot, Pin & Screen Recording (原生截图/贴图/录屏)"; Types: suite
+Name: "suite\plugins"; Description: "Official & Reference Plugins (备忘录 / Quiet.md / 离线 OCR / 示例插件)"; Types: suite
+
 [Tasks]
 Name: "desktopicon"; Description: "Create a Desktop shortcut (创建桌面快捷方式)"; GroupDescription: "Additional tasks (附加选项):"
 Name: "autostart"; Description: "Launch Tomoyo silently at Windows login (开机静默自启驻留托盘)"; GroupDescription: "Additional tasks (附加选项):"; Flags: unchecked
 
 [Files]
-Source: "{#StageDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#StageDir}\tomoyo.exe"; DestDir: "{app}"; Components: core; Flags: ignoreversion
+Source: "{#StageDir}\tomoyo-webview-host.exe"; DestDir: "{app}"; Components: core; Flags: ignoreversion
+Source: "{#StageDir}\tomoyo-cli.exe"; DestDir: "{app}"; Components: core; Flags: ignoreversion
+Source: "{#StageDir}\LICENSE-*"; DestDir: "{app}"; Components: core; Flags: ignoreversion
+Source: "{#StageDir}\README.md"; DestDir: "{app}"; Components: core; Flags: ignoreversion
+Source: "{#StageDir}\assets\*"; DestDir: "{app}\assets"; Components: core; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#StageDir}\registry\*"; DestDir: "{app}\registry"; Components: core; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#StageDir}\tomoyo-capture.exe"; DestDir: "{app}"; Components: suite\capture; Flags: ignoreversion
+Source: "{#StageDir}\tomoyo-plugin-*.exe"; DestDir: "{app}"; Components: suite\plugins; Flags: ignoreversion
+Source: "{#StageDir}\plugins\*"; DestDir: "{app}\plugins"; Components: suite\plugins; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [InstallDelete]
 Type: files; Name: "{app}\uninstall.ps1"

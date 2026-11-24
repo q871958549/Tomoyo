@@ -211,6 +211,57 @@ fn register_host_imports(linker: &mut Linker<WasmHostState>) -> Result<(), WasmE
         .map_err(|e| WasmError::Compile(e.to_string()))?;
 
     linker
+        .func_wrap("tomoyo_host", "host_now_ms", || -> i64 {
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_millis() as i64)
+                .unwrap_or(0)
+        })
+        .map_err(|e| WasmError::Compile(e.to_string()))?;
+
+    linker
+        .func_wrap(
+            "tomoyo_host",
+            "host_kv_get",
+            |mut caller: Caller<'_, WasmHostState>, kptr: i32, klen: i32, vptr: i32, vmax: i32| -> i32 {
+                let Some(mem) = caller.get_export("memory").and_then(|e| e.into_memory()) else { return -2; };
+                let kl = (klen.max(0) as usize).min(128);
+                let mut kbuf = vec![0u8; kl];
+                if mem.read(&mut caller, kptr as usize, &mut kbuf).is_err() { return -2; }
+                let Ok(key) = std::str::from_utf8(&kbuf) else { return -2; };
+                let pid = caller.data().plugin_id.clone();
+                let Some(val) = crate::wasm_kv::kv_get(&pid, key) else { return -1; };
+                let bytes = val.as_bytes();
+                let n = bytes.len().min(vmax.max(0) as usize);
+                if mem.write(&mut caller, vptr as usize, &bytes[..n]).is_err() { return -2; }
+                n as i32
+            },
+        )
+        .map_err(|e| WasmError::Compile(e.to_string()))?;
+
+    linker
+        .func_wrap(
+            "tomoyo_host",
+            "host_kv_set",
+            |mut caller: Caller<'_, WasmHostState>, kptr: i32, klen: i32, vptr: i32, vlen: i32| -> i32 {
+                let Some(mem) = caller.get_export("memory").and_then(|e| e.into_memory()) else { return -2; };
+                let kl = (klen.max(0) as usize).min(128);
+                let vl = (vlen.max(0) as usize).min(16 * 1024);
+                let mut kbuf = vec![0u8; kl];
+                let mut vbuf = vec![0u8; vl];
+                if mem.read(&mut caller, kptr as usize, &mut kbuf).is_err()
+                    || mem.read(&mut caller, vptr as usize, &mut vbuf).is_err()
+                {
+                    return -2;
+                }
+                let (Ok(key), Ok(val)) = (std::str::from_utf8(&kbuf), std::str::from_utf8(&vbuf)) else { return -2; };
+                let pid = caller.data().plugin_id.clone();
+                if crate::wasm_kv::kv_set(&pid, key, val).is_ok() { 0 } else { -1 }
+            },
+        )
+        .map_err(|e| WasmError::Compile(e.to_string()))?;
+
+    linker
         .func_wrap(
             "tomoyo_host",
             "host_log",
@@ -327,5 +378,56 @@ mod tests {
             .query(&QueryContext::new("cap", 1, 5))
             .expect("permission denial must return -1 safely");
         assert!(resp.items.is_empty());
+    }
+
+    #[test]
+    fn wasm_abi_v2_kv_is_scoped_and_persisted_per_plugin() {
+        let id_a = format!("test.kv.a.{}", std::process::id());
+        let id_b = format!("test.kv.b.{}", std::process::id());
+        crate::wasm_kv::kv_clear_for_test(&id_a);
+        crate::wasm_kv::kv_clear_for_test(&id_b);
+
+        let wat_write_read = r#"
+        (module
+            (import "tomoyo_host" "host_kv_set" (func $set (param i32 i32 i32 i32) (result i32)))
+            (import "tomoyo_host" "host_kv_get" (func $get (param i32 i32 i32 i32) (result i32)))
+            (import "tomoyo_host" "host_now_ms" (func $now_ms (result i64)))
+            (memory (export "memory") 1)
+            (data (i32.const 0) "{\"items\":[]}")
+            (data (i32.const 64) "count")
+            (data (i32.const 80) "42")
+            (func (export "tomoyo_alloc") (param i32) (result i32) (i32.const 512))
+            (func (export "tomoyo_query") (param i32 i32) (result i64)
+                (if (i64.le_s (call $now_ms) (i64.const 0)) (then (unreachable)))
+                (if (i32.ne (call $set (i32.const 64) (i32.const 5) (i32.const 80) (i32.const 2)) (i32.const 0))
+                    (then (unreachable)))
+                (if (i32.ne (call $get (i32.const 64) (i32.const 5) (i32.const 128) (i32.const 32)) (i32.const 2))
+                    (then (unreachable)))
+                (i64.const 12)
+            )
+        )
+        "#;
+        let mut plug_a = LiveWasmPlugin::from_bytes(&id_a, wat_write_read.as_bytes(), vec![], 4, 200_000).unwrap();
+        assert!(plug_a.query(&QueryContext::new("kv", 1, 5)).unwrap().items.is_empty());
+
+        let wat_read_isolated = r#"
+        (module
+            (import "tomoyo_host" "host_kv_get" (func $get (param i32 i32 i32 i32) (result i32)))
+            (memory (export "memory") 1)
+            (data (i32.const 0) "{\"items\":[]}")
+            (data (i32.const 64) "count")
+            (func (export "tomoyo_alloc") (param i32) (result i32) (i32.const 512))
+            (func (export "tomoyo_query") (param i32 i32) (result i64)
+                (if (i32.ne (call $get (i32.const 64) (i32.const 5) (i32.const 128) (i32.const 32)) (i32.const -1))
+                    (then (unreachable)))
+                (i64.const 12)
+            )
+        )
+        "#;
+        let mut plug_b = LiveWasmPlugin::from_bytes(&id_b, wat_read_isolated.as_bytes(), vec![], 4, 200_000).unwrap();
+        assert!(plug_b.query(&QueryContext::new("kv", 1, 5)).unwrap().items.is_empty());
+
+        crate::wasm_kv::kv_clear_for_test(&id_a);
+        crate::wasm_kv::kv_clear_for_test(&id_b);
     }
 }

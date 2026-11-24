@@ -82,21 +82,59 @@ fn pack_guest_vec(mut bytes: Vec<u8>) -> i64 {
     ((ptr << 32) | (len & 0xFFFF_FFFF)) as i64
 }
 
-/// Safe wrapper around Tomoyo's capability-gated host imports.
+/// Supported Tomoyo WASM Host ABI version (`v2`: `now_unix`, `now_ms`, `log`, scoped `kv_get`/`kv_set`, `RichCard`).
+pub const WASM_ABI_VERSION: u32 = 2;
+
+/// Safe wrapper around Tomoyo's capability-gated host imports (ABI v2).
 #[cfg(target_arch = "wasm32")]
 pub mod host {
     #[link(wasm_import_module = "tomoyo_host")]
     unsafe extern "C" {
         fn host_now_unix() -> i64;
+        fn host_now_ms() -> i64;
         fn host_log(ptr: i32, len: i32);
+        fn host_kv_get(kptr: i32, klen: i32, vptr: i32, vmax: i32) -> i32;
+        fn host_kv_set(kptr: i32, klen: i32, vptr: i32, vlen: i32) -> i32;
     }
 
     pub fn now_unix() -> i64 {
         unsafe { host_now_unix() }
     }
 
+    pub fn now_ms() -> i64 {
+        unsafe { host_now_ms() }
+    }
+
     pub fn log(msg: &str) {
         unsafe { host_log(msg.as_ptr() as i32, msg.len() as i32) };
+    }
+
+    pub fn kv_get(key: &str) -> Option<String> {
+        let mut buf = vec![0u8; 16 * 1024];
+        let n = unsafe {
+            host_kv_get(
+                key.as_ptr() as i32,
+                key.len() as i32,
+                buf.as_mut_ptr() as i32,
+                buf.len() as i32,
+            )
+        };
+        if n < 0 {
+            return None;
+        }
+        buf.truncate(n as usize);
+        String::from_utf8(buf).ok()
+    }
+
+    pub fn kv_set(key: &str, val: &str) -> bool {
+        unsafe {
+            host_kv_set(
+                key.as_ptr() as i32,
+                key.len() as i32,
+                val.as_ptr() as i32,
+                val.len() as i32,
+            ) == 0
+        }
     }
 }
 
@@ -105,7 +143,16 @@ pub mod host {
     pub fn now_unix() -> i64 {
         0
     }
+    pub fn now_ms() -> i64 {
+        0
+    }
     pub fn log(_msg: &str) {}
+    pub fn kv_get(_key: &str) -> Option<String> {
+        None
+    }
+    pub fn kv_set(_key: &str, _val: &str) -> bool {
+        false
+    }
 }
 
 /// Exports the Tomoyo WASM ABI entrypoints for a `TomoyoWasmPlugin` implementation.

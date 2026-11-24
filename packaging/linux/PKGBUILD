@@ -1,6 +1,6 @@
 # Maintainer: Tomoyo Open Source Contributors
 pkgname=tomoyo
-pkgver=2.6.1
+pkgver=3.0.0
 pkgrel=1
 pkgdesc="Tomoyo Launcher — ultra-low-memory native Rust desktop launcher, clipboard manager, screenshot, OCR & translator"
 arch=('x86_64' 'aarch64')
