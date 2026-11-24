@@ -82,6 +82,7 @@
       { label: lang === 'en' ? 'Capture' : '截图', st: hotkeyHealth.capture, on: capOn },
       { label: lang === 'en' ? 'Pin' : '全局贴图', st: hotkeyHealth.pin, on: capOn },
       { label: lang === 'en' ? 'Screenshot OCR' : '截图识字', st: hotkeyHealth.ocr, on: capOn },
+      { label: lang === 'en' ? 'Screen Record' : '区域录屏', st: hotkeyHealth.record, on: capOn },
     ];
     return entries.filter((e) => e.on && e.st && !e.st.disabled && !e.st.ok && e.st.spec);
   });
@@ -127,7 +128,7 @@
     const capOn = isPluginEnabled(cfg, PLUGIN_CAPTURE);
     const swapped = assignCoreHotkeyWithSwap(cfg, slot, key, {
       main: true, clipboard: isPluginEnabled(cfg, PLUGIN_CLIPBOARD),
-      translate: isPluginEnabled(cfg, PLUGIN_TRANSLATE), capture: capOn, pin: capOn, ocr: capOn,
+      translate: isPluginEnabled(cfg, PLUGIN_TRANSLATE), capture: capOn, pin: capOn, ocr: capOn, record: capOn,
     });
     scheduleSave(0);
     if (swapped) setToast(lang === 'en' ? '✓ Updated & swapped duplicate key cleanly' : '✓ 已生效（检测到重复绑定，已自动与原槽位互换）');
@@ -204,7 +205,7 @@
   function onLanguageChange(code: Lang) { cfg.language = code; document.documentElement.lang = code === 'en' ? 'en' : 'zh-CN'; scheduleSave(0); }
   function onAutostartChange(v: boolean) { autostart = v; scheduleSave(0); }
   function checkHotkeyConflictsToast(h: HotkeyHealthReport) {
-    const bad = [h.main, h.clipboard, h.translate, h.capture, h.pin, h.ocr].filter((s) => s && !s.disabled && !s.ok && s.spec);
+    const bad = [h.main, h.clipboard, h.translate, h.capture, h.pin, h.ocr, h.record].filter((s) => s && !s.disabled && !s.ok && s.spec);
     if (bad.length === 0 && toastWarn) setToast(lang === 'en' ? '✓ All global hotkeys active' : '✓ 所有快捷键已实时生效', false);
   }
 

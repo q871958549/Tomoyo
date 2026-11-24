@@ -145,6 +145,7 @@ export function makeDefaultConfig(): TomoyoConfig {
       hotkey: 'Alt+S',
       pin_hotkey: 'F3',
       ocr_hotkey: '',
+      record_hotkey: '',
       save_dir: '',
       pin_opacity: 100,
       copy_hex_lowercase: false,

@@ -17,13 +17,14 @@
     capHotkeyStatus?: HotkeySlotStatus;
     pinHotkeyStatus?: HotkeySlotStatus;
     ocrHotkeyStatus?: HotkeySlotStatus;
+    recordHotkeyStatus?: HotkeySlotStatus;
     showRecord?: boolean;
     embedded?: boolean;
     onJumpDoctor?: () => void;
     onSave: (delayMs?: number) => void;
   }
 
-  let { cfg, lang, capHotkeyStatus, pinHotkeyStatus, ocrHotkeyStatus, showRecord = true, embedded = false, onJumpDoctor, onSave }: Props = $props();
+  let { cfg, lang, capHotkeyStatus, pinHotkeyStatus, ocrHotkeyStatus, recordHotkeyStatus, showRecord = true, embedded = false, onJumpDoctor, onSave }: Props = $props();
   let isEn = $derived(lang === 'en');
   let editingToolKey = $state<keyof CaptureToolHotkeys | null>(null);
   let toolKeyHint = $state('');
@@ -52,6 +53,13 @@
     { value: 'Alt+O', label: 'Alt+O' },
     { value: 'F4', label: 'F4' },
     { value: 'Alt+2', label: 'Alt+2' },
+  ];
+
+  const recordPresets = [
+    { value: 'Alt+Shift+R', label: 'Alt+Shift+R（推荐）' },
+    { value: 'Ctrl+Shift+R', label: 'Ctrl+Shift+R' },
+    { value: 'Alt+R', label: 'Alt+R' },
+    { value: 'F9', label: 'F9' },
   ];
 
   let toolKeyItems = $derived<Array<{ key: keyof CaptureToolHotkeys; zh: string; en: string }>>([
@@ -222,6 +230,29 @@
     />
   </div>
 
+  {#if showRecord}
+  <div class="t-row">
+    <div>
+      <div class="t-label">{isEn ? 'Global Screen Recording Hotkey' : '全局区域录屏快捷键'}</div>
+      <div class="t-desc">{isEn ? 'Direct region MP4/GIF recording (press again to stop & save)' : '一键进入区域录屏模式（录制中再次按下即可结束并自动复制文件）'}</div>
+    </div>
+    <HotkeyRecorder
+      value={cfg.capture.record_hotkey || ''}
+      presets={recordPresets}
+      allowDisable={true}
+      status={recordHotkeyStatus}
+      presetPlaceholder={tr(lang, 'preset_opt')}
+      disabledLabel={tr(lang, 'hk_off')}
+      okLabel={tr(lang, 'hk_ok')}
+      conflictLabel={tr(lang, 'hk_conflict')}
+      recordPrompt={tr(lang, 'rec_prompt')}
+      needModPrompt={tr(lang, 'rec_need_mod')}
+      {onJumpDoctor}
+      onchange={(v) => { cfg.capture.record_hotkey = v; onSave(0); }}
+    />
+  </div>
+  {/if}
+
   <div class="t-row">
     <div>
       <div class="t-label">{tr(lang, 'lbl_cap_opacity')}</div>
@@ -288,6 +319,7 @@
           { value: 'none', label: isEn ? 'Muted' : '静音' },
           { value: 'system', label: isEn ? 'System' : '系统声' },
           { value: 'mic', label: isEn ? 'Mic' : '麦克风' },
+          { value: 'both', label: isEn ? 'Both' : '双音混录' },
         ]}
         onchange={(v) => { cfg.capture.record_audio = v; onSave(0); }}
       />

@@ -210,7 +210,7 @@
           {:else if item.id === PLUGIN_TRANSLATE}
             <TranslateTab embedded {cfg} {lang} {secretsStatus} trHotkeyStatus={hotkeyHealth.translate} {onJumpDoctor} {onToast} {onSave} />
           {:else if item.id === PLUGIN_CAPTURE}
-            <CaptureTab embedded {cfg} {lang} capHotkeyStatus={hotkeyHealth.capture} pinHotkeyStatus={hotkeyHealth.pin} ocrHotkeyStatus={hotkeyHealth.ocr} {showRecord} {onJumpDoctor} {onSave} />
+            <CaptureTab embedded {cfg} {lang} capHotkeyStatus={hotkeyHealth.capture} pinHotkeyStatus={hotkeyHealth.pin} ocrHotkeyStatus={hotkeyHealth.ocr} recordHotkeyStatus={hotkeyHealth.record} {showRecord} {onJumpDoctor} {onSave} />
           {:else if entry}
             {#if (entry.declared_permissions || []).length > 0}
               <div class="perm-strip">

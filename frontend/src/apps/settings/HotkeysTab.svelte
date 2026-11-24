@@ -28,7 +28,7 @@
     probeResult: LiveProbeResult | null;
     onRunAudit: () => void;
     onProbe: (spec: string) => void;
-    onApplyFreeKey: (slot: 'main' | 'clipboard' | 'translate' | 'capture' | 'pin' | 'ocr', key: string) => void;
+    onApplyFreeKey: (slot: 'main' | 'clipboard' | 'translate' | 'capture' | 'pin' | 'ocr' | 'record', key: string) => void;
     onToggleOverride: (v: boolean) => void;
     onUpdateAvoidance: (fullscreen: boolean, excluded: string[]) => void;
   }
@@ -58,6 +58,7 @@
     capture: [{ value: 'F1', label: 'F1' }, { value: 'Alt+S', label: 'Alt+S' }, { value: 'Alt+A', label: 'Alt+A' }, { value: 'Ctrl+Shift+A', label: 'Ctrl+Shift+A' }, { value: 'PrintScreen', label: 'PrintScreen' }],
     pin: [{ value: 'F3', label: 'F3' }, { value: 'Alt+3', label: 'Alt+3' }, { value: 'Alt+P', label: 'Alt+P' }, { value: 'Ctrl+Shift+P', label: 'Ctrl+Shift+P' }],
     ocr: [{ value: 'Alt+Shift+C', label: 'Alt+Shift+C' }, { value: 'Ctrl+Shift+O', label: 'Ctrl+Shift+O' }, { value: 'F4', label: 'F4' }, { value: 'Alt+O', label: 'Alt+O' }],
+    record: [{ value: 'Alt+Shift+R', label: 'Alt+Shift+R' }, { value: 'Ctrl+Shift+R', label: 'Ctrl+Shift+R' }, { value: 'Alt+R', label: 'Alt+R' }, { value: 'F9', label: 'F9' }],
   };
 
   let slots = $derived([
@@ -67,6 +68,7 @@
     { id: 'capture' as const, label: isEn ? 'Region Screenshot' : '全局区域截图', spec: cfg.capture.hotkey, st: health.capture, on: isPluginEnabled(cfg, PLUGIN_CAPTURE), presets: slotPresets.capture },
     { id: 'pin' as const, label: isEn ? 'Pin Latest Clipboard' : '全局一键贴图', spec: cfg.capture.pin_hotkey, st: health.pin, on: isPluginEnabled(cfg, PLUGIN_CAPTURE), presets: slotPresets.pin },
     { id: 'ocr' as const, label: isEn ? 'Screenshot OCR' : '全局截图识字', spec: cfg.capture.ocr_hotkey, st: health.ocr, on: isPluginEnabled(cfg, PLUGIN_CAPTURE), presets: slotPresets.ocr },
+    { id: 'record' as const, label: isEn ? 'Region Screen Record' : '全局区域录屏', spec: cfg.capture.record_hotkey || '', st: health.record, on: isPluginEnabled(cfg, PLUGIN_CAPTURE), presets: slotPresets.record },
   ].filter((s) => s.on));
 
   let filteredMatrix = $derived.by(() => {

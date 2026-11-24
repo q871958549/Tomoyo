@@ -36,7 +36,7 @@ unsafe extern "C" {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum RecFormat { Mp4, Gif }
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub enum RecAudio { None, System, Mic }
+pub enum RecAudio { None, System, Mic, Both }
 
 pub struct RecordRequest {
     pub rect: ScreenRect,
@@ -129,16 +129,26 @@ pub(crate) fn resolve_portal_crop(
     (full, None, false)
 }
 
-fn pulse_source_for(audio: RecAudio) -> Option<String> {
-    let arg = match audio {
-        RecAudio::None => return None,
-        RecAudio::System => "get-default-sink",
-        RecAudio::Mic => "get-default-source",
-    };
+fn pulse_single_source(arg: &str, monitor: bool) -> Option<String> {
     let out = Command::new("pactl").arg(arg).output().ok()?;
     let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
     if s.is_empty() { return None; }
-    Some(if audio == RecAudio::System { format!("{s}.monitor") } else { s })
+    Some(if monitor { format!("{s}.monitor") } else { s })
+}
+
+fn pulse_sources_for(audio: RecAudio) -> Vec<String> {
+    match audio {
+        RecAudio::None => Vec::new(),
+        RecAudio::System => pulse_single_source("get-default-sink", true).into_iter().collect(),
+        RecAudio::Mic => pulse_single_source("get-default-source", false).into_iter().collect(),
+        RecAudio::Both => [
+            pulse_single_source("get-default-sink", true),
+            pulse_single_source("get-default-source", false),
+        ]
+        .into_iter()
+        .flatten()
+        .collect(),
+    }
 }
 
 pub fn run_screen_recording(mut req: RecordRequest) -> Result<(), String> {
@@ -186,7 +196,7 @@ pub fn run_screen_recording(mut req: RecordRequest) -> Result<(), String> {
     }
     req.rect = border_rect.unwrap_or(crop);
 
-    let audio_src = if req.format == RecFormat::Mp4 { pulse_source_for(req.audio) } else { None };
+    let audio_srcs = if req.format == RecFormat::Mp4 { pulse_sources_for(req.audio) } else { Vec::new() };
     let shared = Arc::new(SharedRecState {
         mode: AtomicU8::new(0),
         frames: AtomicU64::new(0),
@@ -214,11 +224,11 @@ pub fn run_screen_recording(mut req: RecordRequest) -> Result<(), String> {
     let (fps, cur) = (req.fps, req.include_cursor);
     let pump = std::thread::Builder::new().name("tomoyo-rec-pump".into()).spawn(move || {
         if has_wayland {
-            run_wayland_pump(pw_fd, node_id, crop, fps, audio_src.as_deref(), &dir_bg, &sh_bg, &seg_bg);
+            run_wayland_pump(pw_fd, node_id, crop, fps, &audio_srcs, &dir_bg, &sh_bg, &seg_bg);
         } else {
             let scfg = SegmentCfg {
                 w: crop.w, h: crop.h, fps, pixel_fmt: "bgr0",
-                audio_src: audio_src.as_deref(), x11_origin: Some((crop.x, crop.y)), cursor: cur,
+                audio_srcs: &audio_srcs, x11_origin: Some((crop.x, crop.y)), cursor: cur,
             };
             run_x11_pump(&scfg, &dir_bg, &sh_bg, &seg_bg);
         }
@@ -237,7 +247,7 @@ pub fn run_screen_recording(mut req: RecordRequest) -> Result<(), String> {
 
 #[allow(clippy::too_many_arguments)]
 fn run_wayland_pump(
-    pw_fd: c_int, node_id: u32, crop: ScreenRect, fps: u8, audio_src: Option<&str>,
+    pw_fd: c_int, node_id: u32, crop: ScreenRect, fps: u8, audio_srcs: &[String],
     tmp_dir: &Path, shared: &Arc<SharedRecState>, segments: &Arc<Mutex<Vec<PathBuf>>>,
 ) {
     let pw = unsafe { tomoyo_pw_rec_start(pw_fd, node_id, crop.x, crop.y, crop.w, crop.h, i32::from(fps)) };
@@ -259,7 +269,7 @@ fn run_wayland_pump(
 
     let cfg = SegmentCfg {
         w: aw, h: ah, fps, pixel_fmt: if is_rgb0 != 0 { "rgb0" } else { "bgr0" },
-        audio_src, x11_origin: None, cursor: false,
+        audio_srcs, x11_origin: None, cursor: false,
     };
     let mut frame = vec![0u8; (aw as usize) * (ah as usize) * 4];
     let mut enc: Option<Child> = None;

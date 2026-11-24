@@ -162,7 +162,7 @@ pub fn run_capture_overlay(mode: CaptureMode) -> Result<CaptureOutcome, String> 
         let (ox, oy, w, h) = (snap.origin_x, snap.origin_y, snap.width, snap.height);
         let rec_is_gif = cfg.capture.record_format.eq_ignore_ascii_case("gif");
         let rec_fps = cfg.capture.record_fps;
-        let rec_audio = match cfg.capture.record_audio.as_str() { "system" => 1, "mic" => 2, _ => 0 };
+        let rec_audio = match cfg.capture.record_audio.as_str() { "system" => 1, "mic" => 2, "both" => 3, _ => 0 };
         let rec_cursor = cfg.capture.record_cursor;
         let mut st = Box::new(OverlayState {
             snap, dimmed, snap_ctx, mode, save_dir: cfg.capture.save_dir,

@@ -12,7 +12,7 @@
   import HotkeyRecorder from '../../lib/ui/HotkeyRecorder.svelte';
   import Switch from '../../lib/ui/Switch.svelte';
 
-  type SlotId = 'main' | 'clipboard' | 'translate' | 'capture' | 'pin' | 'ocr';
+  type SlotId = 'main' | 'clipboard' | 'translate' | 'capture' | 'pin' | 'ocr' | 'record';
   interface SlotEntry {
     id: SlotId;
     label: string;

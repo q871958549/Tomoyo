@@ -279,6 +279,7 @@ fn hotkeys_config_changed(old: &TomoyoConfig, fresh: &TomoyoConfig) -> bool {
         || old.capture.hotkey != fresh.capture.hotkey
         || old.capture.pin_hotkey != fresh.capture.pin_hotkey
         || old.capture.ocr_hotkey != fresh.capture.ocr_hotkey
+        || old.capture.record_hotkey != fresh.capture.record_hotkey
         || old.disabled_plugins != fresh.disabled_plugins
         || old.plugin_hotkeys != fresh.plugin_hotkeys
 }

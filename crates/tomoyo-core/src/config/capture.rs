@@ -163,6 +163,9 @@ pub struct CaptureConfig {
     /// Optional global shortcut to start region capture and extract text via offline OCR directly (empty disables).
     #[serde(default)]
     pub ocr_hotkey: String,
+    /// Optional global shortcut to start region screen recording directly (empty disables).
+    #[serde(default)]
+    pub record_hotkey: String,
     /// Optional custom save folder for PNG exports (empty = `%USERPROFILE%\Pictures\Tomoyo`).
     #[serde(default)]
     pub save_dir: String,
@@ -178,7 +181,7 @@ pub struct CaptureConfig {
     /// Preferred recording frame rate (`15`, `30`, or `60`).
     #[serde(default = "default_record_fps")]
     pub record_fps: u8,
-    /// Preferred recording audio source (`"none"`, `"system"`, or `"mic"`).
+    /// Preferred recording audio source (`"none"`, `"system"`, `"mic"`, or `"both"`).
     #[serde(default = "default_record_audio")]
     pub record_audio: String,
     /// Include mouse cursor in screen recordings (default `true`).
@@ -223,6 +226,7 @@ impl Default for CaptureConfig {
             hotkey: default_capture_hotkey(),
             pin_hotkey: default_pin_hotkey(),
             ocr_hotkey: String::new(),
+            record_hotkey: String::new(),
             save_dir: String::new(),
             pin_opacity: default_pin_opacity(),
             copy_hex_lowercase: false,
@@ -295,6 +299,23 @@ pub fn sanitize_capture_config(
         cap.ocr_hotkey = ohk;
     }
 
+    let rhk = cap.record_hotkey.trim().to_string();
+    if rhk.is_empty() {
+        cap.record_hotkey.clear();
+    } else if parse_hotkey(&rhk).is_none()
+        || rhk.eq_ignore_ascii_case(main_hk)
+        || (!clip_hk.is_empty() && rhk.eq_ignore_ascii_case(clip_hk))
+        || (!tr_hk.is_empty() && rhk.eq_ignore_ascii_case(tr_hk))
+        || (!cap.hotkey.is_empty() && rhk.eq_ignore_ascii_case(&cap.hotkey))
+        || (!cap.pin_hotkey.is_empty() && rhk.eq_ignore_ascii_case(&cap.pin_hotkey))
+        || (!cap.ocr_hotkey.is_empty() && rhk.eq_ignore_ascii_case(&cap.ocr_hotkey))
+    {
+        notes.push(format!("全局录屏快捷键 `{rhk}` 无效或与已有快捷键冲突，已停用"));
+        cap.record_hotkey.clear();
+    } else {
+        cap.record_hotkey = rhk;
+    }
+
     let op = cap.pin_opacity.clamp(30, 100);
     if op != cap.pin_opacity {
         cap.pin_opacity = op;
@@ -320,7 +341,7 @@ pub fn sanitize_capture_config(
     if !matches!(cap.record_fps, 15 | 30 | 60) {
         cap.record_fps = default_record_fps();
     }
-    if !matches!(cap.record_audio.as_str(), "none" | "system" | "mic") {
+    if !matches!(cap.record_audio.as_str(), "none" | "system" | "mic" | "both") {
         cap.record_audio = default_record_audio();
     }
     cap.tool_hotkeys.sanitize(notes);

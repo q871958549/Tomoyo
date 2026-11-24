@@ -209,6 +209,7 @@ impl AppCore {
                         HotkeyAction::Capture => st.trigger_capture_ex("region", false),
                         HotkeyAction::Pin => st.trigger_capture("pin_clipboard"),
                         HotkeyAction::Ocr => st.trigger_capture_ex("ocr", false),
+                        HotkeyAction::Record => st.trigger_capture_ex("record", false),
                         HotkeyAction::Plugin(hk) => st.handle_plugin_hotkey(hk),
                         HotkeyAction::Flow(id) => st.execute_workflow(&id, ""),
                     });

@@ -204,9 +204,10 @@ fn build_record_sub_bar(
         &[]
     } else {
         &[
-            (ToolbarCmd::RecAudio(0), "静音", 38, st.rec_audio == 0, false),
-            (ToolbarCmd::RecAudio(1), "系统声", 46, st.rec_audio == 1, false),
-            (ToolbarCmd::RecAudio(2), "麦", 28, st.rec_audio == 2, false),
+            (ToolbarCmd::RecAudio(0), "静音", 36, st.rec_audio == 0, false),
+            (ToolbarCmd::RecAudio(1), "系统声", 44, st.rec_audio == 1, false),
+            (ToolbarCmd::RecAudio(2), "麦", 26, st.rec_audio == 2, false),
+            (ToolbarCmd::RecAudio(3), "双音", 36, st.rec_audio == 3, false),
         ]
     };
     let tail_items = [

@@ -32,6 +32,7 @@ pub enum HotkeyAction {
     Capture,
     Pin,
     Ocr,
+    Record,
     Plugin(ActivePluginHotkey),
     Flow(String),
 }
@@ -158,6 +159,11 @@ impl HotkeyManager {
         };
         health.ocr = if cap_on {
             self.try_slot("ocr", "截图文字识别 (OCR)", &cfg.capture.ocr_hotkey, ov, HotkeyAction::Ocr)
+        } else {
+            HotkeySlotStatus { disabled: true, ..Default::default() }
+        };
+        health.record = if cap_on {
+            self.try_slot("record", "区域录屏 (MP4/GIF)", &cfg.capture.record_hotkey, ov, HotkeyAction::Record)
         } else {
             HotkeySlotStatus { disabled: true, ..Default::default() }
         };

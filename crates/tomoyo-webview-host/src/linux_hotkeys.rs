@@ -133,6 +133,7 @@ pub fn audit_system_hotkeys() -> HotkeyAuditReport {
         ("capture", if cap_on { cfg.capture.hotkey.trim().to_string() } else { String::new() }),
         ("pin", if cap_on { cfg.capture.pin_hotkey.trim().to_string() } else { String::new() }),
         ("ocr", if cap_on { cfg.capture.ocr_hotkey.trim().to_string() } else { String::new() }),
+        ("record", if cap_on { cfg.capture.record_hotkey.trim().to_string() } else { String::new() }),
     ];
 
     let mut ordered = Vec::new();
@@ -190,6 +191,7 @@ pub fn audit_system_hotkeys() -> HotkeyAuditReport {
     recommended_free.insert("capture".into(), pick_free(&["F1", "PrintScreen", "Alt+1", "Alt+S", "Ctrl+Shift+S", "Ctrl+Shift+A"]));
     recommended_free.insert("pin".into(), pick_free(&["F3", "F4", "Alt+3", "Alt+P", "Ctrl+Shift+P"]));
     recommended_free.insert("ocr".into(), pick_free(&["Alt+Shift+C", "Ctrl+Shift+O", "Alt+O", "F4", "Alt+2"]));
+    recommended_free.insert("record".into(), pick_free(&["Alt+Shift+R", "Ctrl+Shift+R", "Alt+R", "F9", "F10"]));
 
     HotkeyAuditReport { total_probed: items.len(), external_occupied, conflicts, overridden, items, recommended_free }
 }

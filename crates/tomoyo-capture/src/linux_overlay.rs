@@ -153,7 +153,7 @@ impl OverlayState {
         let mut cfg = TomoyoConfig::load_or_create();
         cfg.capture.record_format = if self.rec_is_gif { "gif" } else { "mp4" }.into();
         cfg.capture.record_fps = self.rec_fps;
-        cfg.capture.record_audio = match self.rec_audio { 1 => "system", 2 => "mic", _ => "none" }.into();
+        cfg.capture.record_audio = match self.rec_audio { 1 => "system", 2 => "mic", 3 => "both", _ => "none" }.into();
         cfg.capture.record_cursor = self.rec_cursor;
         let _ = cfg.save();
     }
@@ -209,7 +209,7 @@ impl OverlayState {
                         monitors: self.snap_ctx.monitors.clone(),
                         format: if self.rec_is_gif { RecFormat::Gif } else { RecFormat::Mp4 },
                         fps: self.rec_fps,
-                        audio: match self.rec_audio { 1 => RecAudio::System, 2 => RecAudio::Mic, _ => RecAudio::None },
+                        audio: match self.rec_audio { 1 => RecAudio::System, 2 => RecAudio::Mic, 3 => RecAudio::Both, _ => RecAudio::None },
                         include_cursor: self.rec_cursor,
                         save_dir: self.save_dir.clone(),
                     });
@@ -361,7 +361,7 @@ pub fn run_capture_overlay(mode: CaptureMode) -> Result<CaptureOutcome, String> 
         record_open: mode == CaptureMode::Record,
         rec_is_gif: cfg.capture.record_format.eq_ignore_ascii_case("gif"),
         rec_fps: cfg.capture.record_fps,
-        rec_audio: match cfg.capture.record_audio.as_str() { "system" => 1, "mic" => 2, _ => 0 },
+        rec_audio: match cfg.capture.record_audio.as_str() { "system" => 1, "mic" => 2, "both" => 3, _ => 0 },
         rec_cursor: cfg.capture.record_cursor,
         has_monitor_token: has_valid_monitor_token(),
         ann_stack: AnnotationStack::default(),

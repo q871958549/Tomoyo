@@ -13,7 +13,7 @@ pub(crate) struct SegmentCfg<'a> {
     pub h: i32,
     pub fps: u8,
     pub pixel_fmt: &'a str,
-    pub audio_src: Option<&'a str>,
+    pub audio_srcs: &'a [String],
     pub x11_origin: Option<(i32, i32)>,
     pub cursor: bool,
 }
@@ -37,14 +37,20 @@ pub(crate) fn spawn_ffmpeg_segment(cfg: &SegmentCfg<'_>, out_path: &Path) -> Opt
             "-i", "pipe:0",
         ]);
     }
-    if let Some(asrc) = cfg.audio_src {
+    for asrc in cfg.audio_srcs {
         cmd.args(["-thread_queue_size", "1024", "-f", "pulse", "-i", asrc]);
+    }
+    if cfg.audio_srcs.len() >= 2 {
+        cmd.args([
+            "-filter_complex", "[1:a][2:a]amix=inputs=2:duration=longest:dropout_transition=0[aout]",
+            "-map", "0:v", "-map", "[aout]",
+        ]);
     }
     cmd.args([
         "-c:v", "libx264", "-preset", "veryfast", "-tune", "zerolatency",
         "-crf", "20", "-pix_fmt", "yuv420p", "-g", &cfg.fps.max(1).to_string(),
     ]);
-    if cfg.audio_src.is_some() {
+    if !cfg.audio_srcs.is_empty() {
         cmd.args(["-c:a", "aac", "-b:a", "128k", "-shortest"]);
     }
     if out_path.extension().and_then(|e| e.to_str()) == Some("mkv") {
@@ -129,7 +135,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let cfg = SegmentCfg {
-            w: 32, h: 24, fps: 15, pixel_fmt: "bgr0", audio_src: None, x11_origin: None, cursor: false,
+            w: 32, h: 24, fps: 15, pixel_fmt: "bgr0", audio_srcs: &[], x11_origin: None, cursor: false,
         };
         let frame = vec![0x7Fu8; 32 * 24 * 4];
         let mut segs = Vec::new();

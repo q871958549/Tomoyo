@@ -301,10 +301,10 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
       hotkey: 'Alt+Space',
       clipboard: { hotkey: 'Alt+V' },
       translate: { hotkey: 'Alt+T' },
-      capture: { hotkey: 'Alt+S', pin_hotkey: 'F3', ocr_hotkey: 'F4' },
+      capture: { hotkey: 'Alt+S', pin_hotkey: 'F3', ocr_hotkey: 'F4', record_hotkey: '' },
     };
     expect(assignCoreHotkeyWithSwap(mockCfg, 'capture', 'F4', {
-      main: true, clipboard: true, translate: true, capture: true, pin: true, ocr: true,
+      main: true, clipboard: true, translate: true, capture: true, pin: true, ocr: true, record: true,
     })).toBe('ocr');
   });
 });

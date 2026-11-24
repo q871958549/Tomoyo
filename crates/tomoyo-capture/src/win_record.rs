@@ -8,9 +8,10 @@
 
 use crate::export::default_save_dir;
 use crate::screen::ScreenRect;
-use crate::win_record_audio::WinAudioCapture;
+use crate::win_record_audio::WinAudioMixer;
 use crate::win_record_gif::GifEncoder;
 use crate::win_record_hud::run_recording_hud_loop;
+use crate::win_record_hud_draw::copy_file_to_clipboard;
 use crate::win_record_mf::MfMp4Writer;
 use std::ffi::c_void;
 use std::path::Path;
@@ -28,8 +29,10 @@ use windows::Win32::Graphics::Gdi::{
 use windows::Win32::System::Threading::{
     CreateEventW, OpenEventW, SetEvent, EVENT_MODIFY_STATE,
 };
+use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON, VK_RBUTTON};
 use windows::Win32::UI::WindowsAndMessaging::{
-    DrawIconEx, GetCursorInfo, GetIconInfo, CURSORINFO, CURSOR_SHOWING, DI_NORMAL, ICONINFO,
+    DrawIconEx, GetCursorInfo, GetCursorPos, GetIconInfo, CURSORINFO, CURSOR_SHOWING, DI_NORMAL,
+    ICONINFO,
 };
 
 const STOP_EVENT_NAME: windows::core::PCWSTR = w!("Local\\TomoyoCaptureStopRec");
@@ -45,6 +48,7 @@ pub enum RecAudio {
     None,
     System,
     Mic,
+    Both,
 }
 
 pub struct RecordRequest {
@@ -94,6 +98,9 @@ struct ScreenGrabber {
     y: i32,
     w: i32,
     h: i32,
+    prev_lbtn: bool,
+    prev_rbtn: bool,
+    ripples: Vec<(i32, i32, Instant, bool)>,
 }
 
 impl ScreenGrabber {
@@ -140,6 +147,9 @@ impl ScreenGrabber {
                 y,
                 w,
                 h,
+                prev_lbtn: false,
+                prev_rbtn: false,
+                ripples: Vec::with_capacity(4),
             })
         }
     }
@@ -157,10 +167,55 @@ impl ScreenGrabber {
                 self.y,
                 SRCCOPY | CAPTUREBLT,
             );
+            let slice =
+                std::slice::from_raw_parts_mut(self.dib_bits, (self.w as usize) * (self.h as usize) * 4);
             if include_cursor {
+                self.sample_and_draw_click_ripples(slice);
                 draw_cursor_onto_dc(self.mem_dc, self.x, self.y);
             }
-            std::slice::from_raw_parts(self.dib_bits, (self.w as usize) * (self.h as usize) * 4)
+            slice
+        }
+    }
+
+    fn sample_and_draw_click_ripples(&mut self, bgra: &mut [u8]) {
+        let now = Instant::now();
+        let ldown = unsafe { (GetAsyncKeyState(i32::from(VK_LBUTTON.0)) as u16 & 0x8000) != 0 };
+        let rdown = unsafe { (GetAsyncKeyState(i32::from(VK_RBUTTON.0)) as u16 & 0x8000) != 0 };
+        if (ldown && !self.prev_lbtn) || (rdown && !self.prev_rbtn) {
+            let mut pt = windows::Win32::Foundation::POINT::default();
+            if unsafe { GetCursorPos(&mut pt) }.is_ok() {
+                let (lx, ly) = (pt.x - self.x, pt.y - self.y);
+                if lx >= -24 && lx < self.w + 24 && ly >= -24 && ly < self.h + 24 {
+                    self.ripples.push((lx, ly, now, rdown && !self.prev_rbtn));
+                }
+            }
+        }
+        self.prev_lbtn = ldown;
+        self.prev_rbtn = rdown;
+        self.ripples.retain(|&(_, _, t, _)| now.saturating_duration_since(t).as_millis() < 320);
+        for &(cx, cy, t, is_right) in &self.ripples {
+            let prog = (now.saturating_duration_since(t).as_millis() as f32 / 320.0).clamp(0.0, 1.0);
+            let radius = 6.0 + prog * 18.0;
+            let alpha = (1.0 - prog) * 0.78;
+            let (cr, cg, cb) = if is_right { (245.0, 158.0, 11.0) } else { (37.0, 99.0, 235.0) };
+            let r_i = radius.ceil() as i32 + 2;
+            let (y0, y1) = ((cy - r_i).max(0), (cy + r_i).min(self.h - 1));
+            let (x0, x1) = ((cx - r_i).max(0), (cx + r_i).min(self.w - 1));
+            for py in y0..=y1 {
+                let dy = (py - cy) as f32;
+                for px in x0..=x1 {
+                    let dist = ((px - cx) as f32).hypot(dy);
+                    let ring = (1.0 - (dist - radius).abs() / 2.2).clamp(0.0, 1.0);
+                    let a = ring * alpha;
+                    if a > 0.02 {
+                        let off = ((py as usize) * (self.w as usize) + (px as usize)) * 4;
+                        let inv = 1.0 - a;
+                        bgra[off] = (bgra[off] as f32 * inv + cb * a) as u8;
+                        bgra[off + 1] = (bgra[off + 1] as f32 * inv + cg * a) as u8;
+                        bgra[off + 2] = (bgra[off + 2] as f32 * inv + cr * a) as u8;
+                    }
+                }
+            }
         }
     }
 }
@@ -253,6 +308,9 @@ pub fn run_screen_recording(mut req: RecordRequest) {
             match res {
                 Ok(sz) => {
                     sh_bg.bytes.store(sz, Ordering::Relaxed);
+                    if copy_file_to_clipboard(&path_bg).is_ok() {
+                        sh_bg.copied_flash.store(true, Ordering::Relaxed);
+                    }
                     if let Ok(mut fp) = sh_bg.final_path.lock() {
                         *fp = Some(path_bg);
                     }
@@ -287,10 +345,11 @@ fn record_mp4_loop(
     let mut grabber = ScreenGrabber::new(rect.x, rect.y, rect.w, rect.h)?;
     let mut audio_cap = match audio_mode {
         RecAudio::None => None,
-        RecAudio::System => WinAudioCapture::start(true).ok(),
-        RecAudio::Mic => WinAudioCapture::start(false).ok(),
+        RecAudio::System => WinAudioMixer::start(true, false),
+        RecAudio::Mic => WinAudioMixer::start(false, true),
+        RecAudio::Both => WinAudioMixer::start(true, true),
     };
-    let audio_rate = audio_cap.as_ref().map(WinAudioCapture::sample_rate);
+    let audio_rate = audio_cap.as_ref().map(WinAudioMixer::sample_rate);
     let mut writer = MfMp4Writer::create(out_path, rect.w as u32, rect.h as u32, fps, audio_rate)?;
     if !writer.has_audio() {
         audio_cap = None;
@@ -308,7 +367,7 @@ fn record_mp4_loop(
         let paused = shared.mode.load(Ordering::Acquire) == 1;
         if let Some(ac) = audio_cap.as_mut() {
             pcm_buf.clear();
-            ac.drain_pcm16(&mut pcm_buf, paused);
+            ac.drain_mixed_pcm16(&mut pcm_buf, paused);
             if !paused && !pcm_buf.is_empty() {
                 let rate = ac.sample_rate();
                 let ts_hns = (audio_written_frames * 10_000_000) / (rate as i64);

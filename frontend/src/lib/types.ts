@@ -14,6 +14,7 @@ export interface HotkeyHealthReport {
   capture?: HotkeySlotStatus;
   pin?: HotkeySlotStatus;
   ocr?: HotkeySlotStatus;
+  record?: HotkeySlotStatus;
   updated_at_unix?: number;
 }
 
@@ -148,6 +149,7 @@ export interface TomoyoConfig {
     hotkey: string;
     pin_hotkey: string;
     ocr_hotkey: string;
+    record_hotkey?: string;
     save_dir: string;
     pin_opacity: number;
     copy_hex_lowercase: boolean;

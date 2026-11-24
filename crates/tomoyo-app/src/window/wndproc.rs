@@ -3,6 +3,7 @@
 use super::commands::{dispatch_menu_id, dispatch_wm_command};
 use super::input::{
     register_all_hotkeys, unregister_all_hotkeys, HOTKEY_CAPTURE_ID, HOTKEY_OCR_ID, HOTKEY_PIN_ID,
+    HOTKEY_RECORD_ID,
 };
 use super::updater_ctrl::WM_APP_UPDATE_PROGRESS;
 use super::wndproc_mouse::{
@@ -148,6 +149,7 @@ pub(super) unsafe extern "system" fn main_wndproc(
                 HOTKEY_CAPTURE_ID => app.trigger_capture_ex("region", false),
                 HOTKEY_PIN_ID => app.trigger_capture("pin_clipboard"),
                 HOTKEY_OCR_ID => app.trigger_capture_ex("ocr", false),
+                HOTKEY_RECORD_ID => app.trigger_capture_ex("record", false),
                 id if id >= super::plugin_hotkeys::FLOW_HOTKEY_BASE => {
                     super::plugin_hotkeys::handle_flow_hotkey(app, id);
                 }
