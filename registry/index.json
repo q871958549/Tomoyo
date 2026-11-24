@@ -9,14 +9,14 @@
       "category": "dev",
       "source": "registry/shards/examples.json",
       "count": 4,
-      "sha256": "0ae853b656d7afe96ede1d88657cdb69db8568ab9b6c98356f54d2506fdcc59a"
+      "sha256": "2115656f6d5cf329677ad4c66c7df931bdaa949fb7de01b3e599784cb2c3840e"
     },
     {
       "id": "official",
       "category": "ai",
       "source": "registry/shards/official.json",
       "count": 3,
-      "sha256": "524e4f2363a0c71d72751844db1dd244a5406d27c47d6df6381f02cee8c8b543"
+      "sha256": "2af5f4a53c6ce06cb1c34f6f8eb965e9296c7aae23a7d4266aebc7cd0adc73e7"
     }
   ],
   "plugins": []

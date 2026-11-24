@@ -22,7 +22,9 @@
       ],
       "permissions": [],
       "source": "plugins/builtin-ocr",
-      "sha256": "24bef848835b600ee99d1c397d9657afd22650b480cc9ca265460e5e7b19ad64",
+      "sha256": "bc16397867dc4efbec45f1b786e79b246027aefd538c1b9274f4c25d46113b2b",
+      "platforms": {},
+      "min_tomoyo_version": null,
       "homepage": null,
       "updated_at": "",
       "downloads": 0
@@ -53,7 +55,9 @@
       ],
       "permissions": [],
       "source": "plugins/official-md-editor",
-      "sha256": "0b227a2fcd6758267263c78e3bed33c5fe6e2572ad4bf100e98f3d99e729b815",
+      "sha256": "b8943fbfb2ba5db5052c40fbfac23d2590f3fea44f3b1cfd3670f7d87ef1f371",
+      "platforms": {},
+      "min_tomoyo_version": null,
       "homepage": "https://github.com/s1dashu/quiet-md",
       "updated_at": "",
       "downloads": 0
@@ -77,7 +81,9 @@
       ],
       "permissions": [],
       "source": "plugins/official-notes",
-      "sha256": "599b24cf3cb74a0a9ab1b8966ce7c73203890a2ab15e0071add318314d1eb1a4",
+      "sha256": "596bac85a36ab74ed40275bc8bea38e82ac743538f98e104ca4d696501be1b93",
+      "platforms": {},
+      "min_tomoyo_version": null,
       "homepage": null,
       "updated_at": "",
       "downloads": 0

@@ -75,15 +75,6 @@ impl AppCore {
             InternalCommandKind::CopyFileContents { path } => { match crate::actions::copy_file_contents_bounded(&path) { Ok(n) => self.show_toast(&format!("已复制文件文本 ({n} B)")), Err(e) => self.show_toast(&e) } }
             InternalCommandKind::ComputeFileSha256 { path } => { match crate::actions::compute_file_sha256_bounded(&path) { Ok(h) => { let _ = set_clipboard_text(&h); self.show_toast(&format!("SHA-256 已复制: {h}")); } Err(e) => self.show_toast(&e) } }
             InternalCommandKind::RunFlow { flow_id, input } => self.execute_workflow(&flow_id, &input),
-            InternalCommandKind::InstallQuietMd => {
-                self.show_toast("正在后台下载并校验 Quiet.md 官方包…");
-                let _ = std::thread::Builder::new().name("tomoyo-quietmd-setup".into()).spawn(|| {
-                    match tomoyo_core::install_quiet_md_verified() {
-                        Ok(m) => tracing::info!("{m}"),
-                        Err(e) => tracing::warn!("Quiet.md install failed: {e}"),
-                    }
-                });
-            }
         }
     }
 

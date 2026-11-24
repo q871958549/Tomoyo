@@ -46,33 +46,6 @@ export const OFFICIAL_PLUGINS: OfficialPluginMeta[] = [
     enDesc: 'Region capture, smooth annotations, live long-capture & pins (ephemeral process)',
     triggers: 'cap / pin',
   },
-  {
-    id: PLUGIN_OCR,
-    category: 'ai',
-    zhName: '离线识图 OCR',
-    enName: 'Offline WinRT OCR',
-    zhDesc: '本地 WinRT 离线识字与审校面板（独立 STDIO 沙箱插件，零云端上传）',
-    enDesc: 'Local Windows WinRT OCR & proofreading panel (isolated STDIO plugin)',
-    triggers: 'ocr',
-  },
-  {
-    id: PLUGIN_NOTES,
-    category: 'docs',
-    zhName: '本地快速备忘录',
-    enName: 'Quick Local Notes',
-    zhDesc: '专注秒级记录与 #标签检索的快速备忘插件（与 Markdown 编辑器解耦，0 常驻内存）',
-    enDesc: 'Fast capture & #tag search standalone notes plugin (decoupled from rich MD editor)',
-    triggers: 'note / memo',
-  },
-  {
-    id: PLUGIN_MD_EDITOR,
-    category: 'docs',
-    zhName: 'Quiet.md Markdown 编辑器',
-    enName: 'Quiet.md Markdown Editor',
-    zhDesc: '专业所见即所得桌面 Markdown 编辑器集成（s1dashu/quiet-md MIT）：与备忘录分离，零核心膨胀',
-    enDesc: 'Dedicated rich Markdown editor integration powered by s1dashu/quiet-md (MIT, GPUI)',
-    triggers: 'md / quiet',
-  },
 ];
 
 export function isPluginEnabled(cfg: Pick<TomoyoConfig, 'disabled_plugins'>, id: string): boolean {
@@ -183,7 +156,6 @@ export function hydrateSettingsInit(): SettingsInitPayload {
     hotkey_health: raw.hotkey_health || {},
     cached_update: raw.cached_update ?? null,
     official_icons: typeof raw.official_icons === 'object' && raw.official_icons ? raw.official_icons : {},
-    quiet_md_path: typeof raw.quiet_md_path === 'string' ? raw.quiet_md_path : '',
     system_fonts: Array.isArray(raw.system_fonts) ? raw.system_fonts : [],
     initial_route: typeof raw.initial_route === 'string' ? raw.initial_route : '',
     config: {

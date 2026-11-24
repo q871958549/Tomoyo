@@ -57,8 +57,6 @@
   let storeDetailLoading = $state(false);
   let pluginHealth = $state<Record<string, unknown> | null>(null);
   let checkingPluginHealth = $state(false);
-  let quietMdPath = $state(init.quiet_md_path || '');
-  let installingQuietMd = $state(false);
   let logSource = $state('tomoyo.log');
   let logErrorsOnly = $state(false);
   let logContent = $state('');
@@ -108,7 +106,6 @@
     if (displayModes !== undefined) { cfg.plugin_display_modes = displayModes; scheduleSave(0); }
     else scheduleSave(120);
   }
-  function onInstallQuietMd() { installingQuietMd = true; postHost({ cmd: 'install_quiet_md' }); setToast(lang === 'en' ? 'Downloading & verifying Quiet.md…' : '正在从 GitHub 校验下载并安装 Quiet.md…'); }
   function onSaveFlows(next: WorkflowDef[]) {
     flows = next;
     postHost({ cmd: 'save_flows', flows: $state.snapshot(next) });
@@ -264,7 +261,6 @@
           totalPages: Number(data.total_pages ?? 1),
           categoryCounts: (data.category_counts as Record<string, number>) || {},
         };
-        if (typeof data.quiet_md_path === 'string' && data.quiet_md_path) quietMdPath = data.quiet_md_path;
         const srcs = Array.isArray(data.sources) ? (data.sources as string[]).join(' · ') : 'Registry';
         const errs = Array.isArray(data.errors) && data.errors.length ? ` (${(data.errors as string[]).join('; ')})` : '';
         storeStatus = srcs + errs;
@@ -277,10 +273,6 @@
         pluginHealth = data;
         const sm = (data.summary || {}) as { healthy?: number; total?: number; mirrors_ok?: number; mirrors_total?: number };
         setToast(lang === 'en' ? `✓ Plugin health: ${sm.healthy ?? 0}/${sm.total ?? 0} healthy` : `✓ 插件体检完成：${sm.healthy ?? 0}/${sm.total ?? 0} 健康 · 镜像 ${sm.mirrors_ok ?? 0}/${sm.mirrors_total ?? 0} 可达`);
-      } else if (ev === 'quiet_md_status') {
-        installingQuietMd = false;
-        if (data.ok && typeof data.path === 'string' && data.path) quietMdPath = data.path;
-        setToast(`${data.ok ? '✓ ' : '✗ '}${data.message || ''}`, !data.ok);
       } else if (ev === 'store_action_result' || ev === 'perm_action_result') {
         setToast(`${data.ok ? '✓ ' : '✗ '}${data.message || ''}`, !data.ok);
         if (ev === 'store_action_result' && data.ok) fetchStore();
@@ -377,7 +369,7 @@
             <Segmented value={subPlugins} options={[{ value: 'installed', label: lang === 'en' ? 'Modules & Plugins' : '已安装与插件设置' }, { value: 'store', label: tr(lang, 'nav_store') }]} onchange={(v) => { subPlugins = v; if (v === 'store' && !storeLoaded) { storeLoaded = true; fetchStore(); } }} />
           </div>
           {#if subPlugins === 'installed'}
-            <PluginsTab {cfg} {lang} {plugins} officialIcons={init.official_icons || {}} {quietMdPath} {installingQuietMd} {configPath} pluginsDir={init.plugins_dir} runningApps={init.running_apps} {secretsStatus} {hotkeyHealth} showRecord={true} expandedId={expandedPlugin} healthReport={pluginHealth} checkingHealth={checkingPluginHealth} onCheckHealth={checkPluginHealth} onToggleExpand={(id) => (expandedPlugin = id)} {onTogglePlugin} {onInstallQuietMd} {onUpdatePluginConfig} onJumpDoctor={() => switchTab('hotkeys')} onToast={setToast} onSave={scheduleSave} />
+            <PluginsTab {cfg} {lang} {plugins} officialIcons={init.official_icons || {}} {configPath} pluginsDir={init.plugins_dir} runningApps={init.running_apps} {secretsStatus} {hotkeyHealth} showRecord={true} expandedId={expandedPlugin} healthReport={pluginHealth} checkingHealth={checkingPluginHealth} onCheckHealth={checkPluginHealth} onToggleExpand={(id) => (expandedPlugin = id)} {onTogglePlugin} {onUpdatePluginConfig} onJumpDoctor={() => switchTab('hotkeys')} onToast={setToast} onSave={scheduleSave} />
           {:else}
             <StoreTab {lang} items={storeItems} meta={storeMeta} statusText={storeStatus} loading={storeLoading} detail={storeDetail} detailLoading={storeDetailLoading} onQuery={fetchStore} onInspectDetail={inspectStoreDetail} onCloseDetail={() => (storeDetail = null)} />
           {/if}

@@ -8,7 +8,9 @@ param(
     [ValidateSet("Suite", "Core")]
     [string]$Profile = "Suite",
     [switch]$NoLaunch,
-    [switch]$EnableAutostart
+    [switch]$EnableAutostart,
+    [switch]$CoreOnly,
+    [switch]$WithExamples
 )
 
 $ErrorActionPreference = "Stop"
@@ -35,12 +37,18 @@ New-Item -ItemType Directory -Force -Path (Join-Path $InstallDir "assets\fonts")
 New-Item -ItemType Directory -Force -Path (Join-Path $InstallDir "assets\plugin-icons") | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $InstallDir "registry") | Out-Null
 
-# Copy executables & license/docs (Core = minimal launcher+settings+cli; Suite = full desktop toolkit)
-$coreBins = @("tomoyo.exe", "tomoyo-webview-host.exe", "tomoyo-cli.exe")
-$suiteBins = @("tomoyo-capture.exe", "tomoyo-plugin-hello.exe", "tomoyo-plugin-ocr.exe", "tomoyo-plugin-notes.exe", "tomoyo-plugin-md-editor.exe")
-$binsToCopy = if ($Profile -eq "Core") { $coreBins } else { $coreBins + $suiteBins }
-foreach ($bin in $binsToCopy) {
-    Copy-Item (Join-Path $releaseDir $bin) $InstallDir -Force
+# Copy executables & license/docs (Core/-CoreOnly = minimal microkernel; Suite = official toolkit; -WithExamples = dev examples)
+$isCore = $CoreOnly -or ($Profile -eq "Core")
+$bins = @("tomoyo.exe", "tomoyo-webview-host.exe", "tomoyo-cli.exe")
+if (-not $isCore) {
+    $bins += @("tomoyo-capture.exe", "tomoyo-plugin-ocr.exe", "tomoyo-plugin-notes.exe", "tomoyo-plugin-md-editor.exe")
+}
+if ($WithExamples) {
+    $bins += @("tomoyo-plugin-hello.exe")
+}
+foreach ($bin in $bins) {
+    $srcBin = Join-Path $releaseDir $bin
+    if (Test-Path $srcBin) { Copy-Item $srcBin $InstallDir -Force }
 }
 Copy-Item (Join-Path $repoRoot "LICENSE-MIT"), (Join-Path $repoRoot "LICENSE-APACHE"), (Join-Path $repoRoot "README.md") $InstallDir -Force
 Copy-Item (Join-Path $repoRoot "assets\fonts\*.ttf") (Join-Path $InstallDir "assets\fonts") -Force
@@ -53,14 +61,23 @@ if (Test-Path (Join-Path $repoRoot "registry\shards")) {
 }
 Copy-Item (Join-Path $PSScriptRoot "uninstall-local.ps1") (Join-Path $InstallDir "uninstall.ps1") -Force
 
-# Copy bundled reference plugins for Suite profile (Core installs plugins on demand from Plugin Center)
-if ($Profile -eq "Suite") {
-    foreach ($p in @("example-hello", "example-python", "example-wasm", "example-webview-json", "builtin-ocr", "official-notes", "official-md-editor")) {
-        $dstP = Join-Path $InstallDir "plugins\$p"
-        New-Item -ItemType Directory -Force -Path $dstP | Out-Null
-        Get-ChildItem (Join-Path $repoRoot "plugins\$p") -Exclude "target","__pycache__" |
-            Copy-Item -Destination $dstP -Recurse -Force
+# Copy optional bundled plugins (opt-out with -Profile Core / -CoreOnly; developer examples opt-in via -WithExamples)
+$pluginsToCopy = @()
+if (-not $isCore) {
+    $pluginsToCopy += @("builtin-ocr", "official-notes", "official-md-editor")
+}
+if ($WithExamples) {
+    $pluginsToCopy += @("example-hello", "example-python", "example-wasm", "example-webview-json")
+} else {
+    foreach ($ex in @("example-hello", "example-python", "example-wasm", "example-webview-json")) {
+        Remove-Item (Join-Path $InstallDir "plugins\$ex") -Recurse -Force -ErrorAction SilentlyContinue
     }
+}
+foreach ($p in $pluginsToCopy) {
+    $dstP = Join-Path $InstallDir "plugins\$p"
+    New-Item -ItemType Directory -Force -Path $dstP | Out-Null
+    Get-ChildItem (Join-Path $repoRoot "plugins\$p") -Exclude "target","__pycache__" |
+        Copy-Item -Destination $dstP -Recurse -Force
 }
 
 # Create Start Menu & Desktop shortcuts

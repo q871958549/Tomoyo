@@ -17,30 +17,6 @@ pub(crate) fn append_contextual_file_actions(
         .unwrap_or("")
         .to_ascii_lowercase();
 
-    if matches!(ext.as_str(), "md" | "markdown" | "mdown") {
-        if let Some(qm) = tomoyo_core::detect_quiet_md_binary(None) {
-            actions.push(ActionSpec {
-                id: "open_quiet_md".into(),
-                label: lang.pick("用 Quiet.md 编辑 Markdown", "Edit with Quiet.md").into(),
-                shortcut: None,
-                kind: ActionKind::LaunchPath {
-                    path: qm.to_string_lossy().into_owned(),
-                    args: Some(format!("\"{full_path}\"")),
-                    working_dir: Some(parent_dir.to_string()),
-                },
-            });
-        } else {
-            actions.push(ActionSpec {
-                id: "open_quiet_md_plug".into(),
-                label: lang.pick("转入 Quiet.md Markdown 编辑器", "Open in Markdown Editor (md)").into(),
-                shortcut: None,
-                kind: ActionKind::FillQuery {
-                    query: format!("md \"{full_path}\""),
-                },
-            });
-        }
-    }
-
     if matches!(ext.as_str(), "exe" | "lnk" | "bat" | "cmd" | "msi" | "msc" | "ps1") {
         actions.push(ActionSpec {
             id: "run_admin".into(),

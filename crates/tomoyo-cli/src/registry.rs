@@ -175,20 +175,37 @@ pub(crate) fn cmd_registry_check(args: &[String]) -> i32 {
             errors += 1;
             continue;
         }
-        if entry.sha256.len() != 64 || !entry.sha256.chars().all(|c| c.is_ascii_hexdigit()) {
-            eprintln!("  [FAIL] `{}` has invalid SHA-256 format: `{}`", entry.id, entry.sha256);
+        if !entry.platforms.is_empty()
+            && entry.platforms.values().any(|p| {
+                p.source.trim().is_empty()
+                    || p.sha256.len() != 64
+                    || !p.sha256.chars().all(|c| c.is_ascii_hexdigit())
+            })
+        {
+            eprintln!("  [FAIL] `{}` has invalid source or SHA-256 in `platforms`", entry.id);
             errors += 1;
             continue;
         }
-        if entry.source.starts_with("https://") || entry.source.starts_with("http://") {
+        let Some((src_str, expected_sha)) =
+            entry.resolve_for_platform(tomoyo_protocol::current_platform_key())
+        else {
+            println!("  [OK]   {:<28} v{} (targets={:?}, skipped local verify)", entry.id, entry.version, entry.supported_platforms());
+            continue;
+        };
+        if expected_sha.len() != 64 || !expected_sha.chars().all(|c| c.is_ascii_hexdigit()) {
+            eprintln!("  [FAIL] `{}` has invalid SHA-256 format: `{}`", entry.id, expected_sha);
+            errors += 1;
+            continue;
+        }
+        if src_str.starts_with("https://") || src_str.starts_with("http://") {
             println!("  [OK]   {:<28} v{} (remote URL, SHA-256 format valid)", entry.id, entry.version);
             continue;
         }
 
-        let src_dir = if Path::new(&entry.source).is_absolute() || Path::new(&entry.source).exists() {
-            PathBuf::from(&entry.source)
+        let src_dir = if Path::new(src_str).is_absolute() || Path::new(src_str).exists() {
+            PathBuf::from(src_str)
         } else {
-            base_dir.join(&entry.source)
+            base_dir.join(src_str)
         };
         let manifest = match validate_plugin_dir(&src_dir) {
             Ok((_, m, _)) => m,
@@ -211,20 +228,11 @@ pub(crate) fn cmd_registry_check(args: &[String]) -> i32 {
             continue;
         }
         match compute_plugin_sha256(&src_dir) {
-            Ok(actual) if actual.eq_ignore_ascii_case(&entry.sha256) => {
-                println!(
-                    "  [OK]   {:<28} v{} [{}] sha256={}…",
-                    entry.id,
-                    entry.version,
-                    manifest.runtime.kind_badge(),
-                    &actual[..16]
-                );
+            Ok(actual) if actual.eq_ignore_ascii_case(expected_sha) => {
+                println!("  [OK]   {:<28} v{} [{}] sha256={}…", entry.id, entry.version, manifest.runtime.kind_badge(), &actual[..16]);
             }
             Ok(actual) => {
-                eprintln!(
-                    "  [FAIL] `{}` SHA-256 drift!\n         registry: {}\n         actual:   {}",
-                    entry.id, entry.sha256, actual
-                );
+                eprintln!("  [FAIL] `{}` SHA-256 drift!\n         registry: {}\n         actual:   {}", entry.id, expected_sha, actual);
                 errors += 1;
             }
             Err(e) => {
@@ -318,6 +326,8 @@ pub(crate) fn build_registry_shards(src_root: &Path, out_root: &Path) -> Result<
             permissions: perms,
             source: format!("{src_prefix}/{folder}"),
             sha256: sha,
+            platforms: std::collections::BTreeMap::new(),
+            min_tomoyo_version: None,
             homepage: m.homepage,
             updated_at: String::new(),
             downloads: 0,

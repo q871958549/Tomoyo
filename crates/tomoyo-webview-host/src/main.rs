@@ -219,15 +219,18 @@ pub fn build_settings_init_script_for(initial_route: &str) -> String {
                         .and_then(|ip| tomoyo_core::read_icon_data_url(&ip))
                 });
             let cat_entry = catalog_map.get(&p.id.to_ascii_lowercase());
-            let upd_avail = cat_entry.is_some_and(|e| store_cache::is_newer_semver(&e.version, &p.version));
+            let resolved_upd =
+                cat_entry.and_then(|e| e.resolve_for_platform(tomoyo_protocol::current_platform_key()));
+            let upd_avail = resolved_upd.is_some()
+                && cat_entry.is_some_and(|e| store_cache::is_newer_semver(&e.version, &p.version));
             serde_json::json!({
                 "id": p.id,
                 "name": p.name,
                 "version": p.version,
                 "latest_version": cat_entry.map(|e| e.version.as_str()),
                 "update_available": upd_avail,
-                "update_source": cat_entry.map(|e| e.source.as_str()),
-                "update_sha256": cat_entry.map(|e| e.sha256.as_str()),
+                "update_source": resolved_upd.map(|(s, _)| s),
+                "update_sha256": resolved_upd.map(|(_, h)| h),
                 "description": p.description,
                 "author": p.author,
                 "license": p.license,
@@ -254,9 +257,6 @@ pub fn build_settings_init_script_for(initial_route: &str) -> String {
         tomoyo_core::PLUGIN_CLIPBOARD,
         tomoyo_core::PLUGIN_TRANSLATE,
         tomoyo_core::PLUGIN_CAPTURE,
-        tomoyo_core::PLUGIN_OCR,
-        tomoyo_core::PLUGIN_NOTES,
-        tomoyo_core::PLUGIN_MD_EDITOR,
     ] {
         if let Some(url) = tomoyo_core::resolve_bundled_module_icon(mid)
             .and_then(|ip| tomoyo_core::read_icon_data_url(&ip))
@@ -264,9 +264,6 @@ pub fn build_settings_init_script_for(initial_route: &str) -> String {
             official_icons.insert(mid.to_string(), serde_json::Value::String(url));
         }
     }
-    let quiet_md_path = tomoyo_core::detect_quiet_md_binary(None)
-        .map(|p| p.to_string_lossy().into_owned())
-        .unwrap_or_default();
 
     let plugins_dir = tomoyo_core::data_dir().join("plugins");
     let _ = std::fs::create_dir_all(&plugins_dir);
@@ -293,7 +290,6 @@ pub fn build_settings_init_script_for(initial_route: &str) -> String {
         "has_bundled_alibaba_font": locate_fonts_dir().is_some(),
         "system_fonts": tomoyo_core::list_system_font_families(),
         "official_icons": official_icons,
-        "quiet_md_path": quiet_md_path,
         "initial_route": initial_route,
     });
     format!(

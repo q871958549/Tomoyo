@@ -10,7 +10,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::{Mutex, OnceLock};
 use tomoyo_core::{read_icon_data_url, resolve_bundled_module_icon};
 use tomoyo_plugin_host::{default_plugin_dirs, PluginHost};
-use tomoyo_protocol::{PluginRegistryIndex, RegistryPluginEntry};
+use tomoyo_protocol::{current_platform_key, PluginRegistryIndex, RegistryPluginEntry};
 
 #[derive(Debug, Clone, Default)]
 pub struct StoreQuery {
@@ -187,21 +187,22 @@ pub fn normalize_category(raw: &str, keywords: &[String], runtime: &str) -> Stri
     "productivity".into()
 }
 
-fn resolve_store_item_icon_url(p: &RegistryPluginEntry) -> Option<String> {
-    if let Some(local) = resolve_bundled_module_icon(&p.id)
-        && let Some(url) = read_icon_data_url(&local)
-    {
-        return Some(url);
-    }
+fn resolve_store_item_icon_url(p: &RegistryPluginEntry, resolved_source: &str) -> Option<String> {
     let rel_icon = p.icon.as_deref().unwrap_or("icon.png");
-    if !p.source.starts_with("http") && !rel_icon.contains("..") {
-        for cand in candidate_local_paths(&format!("{}/{rel_icon}", p.source.trim_end_matches('/'))) {
+    let src = if !resolved_source.is_empty() { resolved_source } else { p.source.as_str() };
+    if !src.is_empty() && !src.starts_with("http") && !rel_icon.contains("..") {
+        for cand in candidate_local_paths(&format!("{}/{rel_icon}", src.trim_end_matches('/'))) {
             if cand.is_file()
                 && let Some(url) = read_icon_data_url(&cand)
             {
                 return Some(url);
             }
         }
+    }
+    if let Some(local) = resolve_bundled_module_icon(&p.id)
+        && let Some(url) = read_icon_data_url(&local)
+    {
+        return Some(url);
     }
     None
 }
@@ -268,6 +269,7 @@ pub fn query_store_page_json(req: &StoreQuery) -> String {
     let page = req.page.clamp(1, total_pages);
     let skip = (page - 1) * page_size;
 
+    let plat = current_platform_key();
     let items: Vec<serde_json::Value> = matched
         .into_iter()
         .skip(skip)
@@ -277,28 +279,34 @@ pub fn query_store_page_json(req: &StoreQuery) -> String {
             let in_user_dir = user_plugins_dir.join(&slug).is_dir();
             let inst_ver = installed_versions.get(&p.id.to_ascii_lowercase()).cloned();
             let is_installed = inst_ver.is_some() || in_user_dir;
-            let update_available = inst_ver.as_deref().is_some_and(|v| is_newer_semver(&p.version, v));
+            let (eff_source, eff_sha, platform_ok) = match p.resolve_for_platform(plat) {
+                Some((src, sha)) => (src, sha, true),
+                None => ("", "", false),
+            };
+            let update_available = platform_ok
+                && inst_ver.as_deref().is_some_and(|v| is_newer_semver(&p.version, v));
             serde_json::json!({
                 "id": p.id, "name": p.name, "version": p.version,
                 "description": p.description, "author": p.author, "license": p.license,
                 "runtime_kind": p.runtime_kind, "category": cat,
                 "display_mode": p.display_mode.as_str(),
-                "icon_url": resolve_store_item_icon_url(p),
+                "icon_url": resolve_store_item_icon_url(p, eff_source),
                 "tags": p.tags, "keywords": p.keywords, "permissions": p.permissions,
                 "homepage": p.homepage, "downloads": p.downloads, "updated_at": p.updated_at,
-                "source": p.source, "sha256": p.sha256,
+                "source": eff_source, "sha256": eff_sha,
+                "platform_compatible": platform_ok,
+                "supported_platforms": p.supported_platforms(),
+                "min_tomoyo_version": p.min_tomoyo_version,
                 "installed": is_installed, "removable": in_user_dir,
                 "installed_version": inst_ver, "update_available": update_available,
             })
         })
         .collect();
 
-    let quiet_md_ready = tomoyo_core::detect_quiet_md_binary(None).map(|p| p.to_string_lossy().into_owned());
     serde_json::json!({
         "event": "store_loaded", "items": items, "page": page, "page_size": page_size,
         "total": total, "catalog_total": catalog.entries.len(), "total_pages": total_pages,
         "category_counts": cat_counts, "sources": catalog.loaded_from, "errors": catalog.errors,
-        "quiet_md_path": quiet_md_ready,
     })
     .to_string()
 }
@@ -320,7 +328,12 @@ pub fn query_plugin_detail_json(plugin_id: &str, sources: &[String]) -> String {
     let slug = p.id.replace('.', "-");
     let in_user_dir = tomoyo_core::data_dir().join("plugins").join(&slug).is_dir();
     let inst_ver = installed_entry.as_ref().map(|i| i.version.clone());
-    let update_available = inst_ver.as_deref().is_some_and(|v| is_newer_semver(&p.version, v));
+    let (eff_source, eff_sha, platform_ok) = match p.resolve_for_platform(current_platform_key()) {
+        Some((src, sha)) => (src, sha, true),
+        None => ("", "", false),
+    };
+    let update_available =
+        platform_ok && inst_ver.as_deref().is_some_and(|v| is_newer_semver(&p.version, v));
     let perms = if !p.permissions.is_empty() {
         p.permissions.clone()
     } else if let Some(inst) = &installed_entry {
@@ -330,16 +343,18 @@ pub fn query_plugin_detail_json(plugin_id: &str, sources: &[String]) -> String {
     };
     let cat = normalize_category(&p.category, &p.keywords, &p.runtime_kind);
     serde_json::json!({
-        "event": "plugin_detail",
-        "ok": true,
+        "event": "plugin_detail", "ok": true,
         "detail": {
             "id": p.id, "name": p.name, "version": p.version,
             "description": p.description, "author": p.author, "license": p.license,
             "homepage": p.homepage, "runtime_kind": p.runtime_kind, "category": cat,
             "display_mode": p.display_mode.as_str(),
-            "icon_url": resolve_store_item_icon_url(p),
+            "icon_url": resolve_store_item_icon_url(p, eff_source),
             "tags": p.tags, "keywords": p.keywords, "permissions": perms,
-            "source": p.source, "sha256": p.sha256,
+            "source": eff_source, "sha256": eff_sha,
+            "platform_compatible": platform_ok,
+            "supported_platforms": p.supported_platforms(),
+            "min_tomoyo_version": p.min_tomoyo_version,
             "downloads": p.downloads, "updated_at": p.updated_at,
             "installed": inst_ver.is_some() || in_user_dir,
             "removable": in_user_dir,
@@ -348,18 +363,6 @@ pub fn query_plugin_detail_json(plugin_id: &str, sources: &[String]) -> String {
         }
     })
     .to_string()
-}
-
-pub fn make_install_quiet_md_event() -> String {
-    match tomoyo_core::install_quiet_md_verified() {
-        Ok(msg) => {
-            let path = tomoyo_core::detect_quiet_md_binary(None)
-                .map(|p| p.to_string_lossy().into_owned())
-                .unwrap_or_default();
-            serde_json::json!({ "event": "quiet_md_status", "ok": true, "path": path, "message": msg }).to_string()
-        }
-        Err(e) => serde_json::json!({ "event": "quiet_md_status", "ok": false, "path": "", "message": e }).to_string(),
-    }
 }
 
 #[cfg(test)]
@@ -414,13 +417,31 @@ mod tests {
         assert_eq!(v["total_pages"].as_u64(), Some(3));
         assert_eq!(v["page"].as_u64(), Some(2));
         assert_eq!(v["items"].as_array().unwrap().len(), 24);
-
+        assert_eq!(v["items"][0]["platform_compatible"].as_bool(), Some(true));
         let detail_raw = query_plugin_detail_json("community.plugin.200", &[index_path.to_string_lossy().into_owned()]);
         let dv: serde_json::Value = serde_json::from_str(&detail_raw).unwrap();
         assert_eq!(dv["event"], "plugin_detail");
         assert_eq!(dv["ok"], true);
         assert_eq!(dv["detail"]["id"], "community.plugin.200");
         assert_eq!(dv["detail"]["permissions"][0], "clipboard");
+
+        let plat_index = dir.join("plat.json");
+        std::fs::write(&plat_index, serde_json::json!({
+            "schema_version": 2, "name": "Platform Matrix",
+            "plugins": [{
+                "id": "dev.tomoyo.only-other", "name": "Other OS Tool", "version": "1.0.0",
+                "description": "Not for current OS", "author": "Community", "license": "MIT",
+                "runtime_kind": "stdio_jsonrpc",
+                "platforms": { "plan9-riscv64": { "source": "https://example.com/p9.zip", "sha256": "a".repeat(64) } }
+            }]
+        }).to_string()).unwrap();
+        let plat_raw = query_store_page_json(&StoreQuery {
+            sources: vec![plat_index.to_string_lossy().into_owned()], page: 1, page_size: 12, force_refresh: true,
+            ..Default::default()
+        });
+        let pv: serde_json::Value = serde_json::from_str(&plat_raw).unwrap();
+        assert_eq!(pv["items"][0]["platform_compatible"].as_bool(), Some(false));
+        assert_eq!(pv["items"][0]["source"].as_str(), Some(""));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

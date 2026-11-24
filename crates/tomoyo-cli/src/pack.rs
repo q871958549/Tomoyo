@@ -57,6 +57,21 @@ pub(crate) fn cmd_pack(args: &[String]) -> i32 {
                 .iter()
                 .filter_map(|p| serde_json::to_value(p).ok()?.as_str().map(ToString::to_string))
                 .collect();
+            let archive_url = format!(
+                "https://github.com/YOUR_ORG/YOUR_REPO/releases/download/v{}/{}",
+                manifest.version,
+                res.out_path.file_name().unwrap_or_default().to_string_lossy()
+            );
+            let plat_key = match &manifest.runtime {
+                tomoyo_protocol::RuntimeConfig::Wasm { .. }
+                | tomoyo_protocol::RuntimeConfig::Webview { .. } => "any",
+                tomoyo_protocol::RuntimeConfig::StdioJsonrpc { command, .. }
+                    if matches!(command.as_str(), "python" | "python3" | "node" | "pwsh" | "bash") =>
+                {
+                    "any"
+                }
+                _ => tomoyo_protocol::current_platform_key(),
+            };
             let entry_json = serde_json::json!({
                 "id": manifest.id,
                 "name": manifest.name,
@@ -76,7 +91,13 @@ pub(crate) fn cmd_pack(args: &[String]) -> i32 {
                 "keywords": manifest.triggers.keywords,
                 "permissions": perms,
                 "homepage": manifest.homepage,
-                "source": format!("https://github.com/YOUR_ORG/YOUR_REPO/releases/download/v{}/{}", manifest.version, res.out_path.file_name().unwrap_or_default().to_string_lossy()),
+                "platforms": {
+                    plat_key: {
+                        "source": archive_url,
+                        "sha256": res.zip_sha256,
+                    }
+                },
+                "source": archive_url,
                 "sha256": res.zip_sha256,
             });
             println!(

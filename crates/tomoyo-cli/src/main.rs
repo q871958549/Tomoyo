@@ -204,17 +204,26 @@ fn cmd_install(args: &[String]) -> i32 {
         return 1;
     };
 
+    let plat = tomoyo_protocol::current_platform_key();
+    let Some((src_str, expected_sha)) = entry.resolve_for_platform(plat) else {
+        eprintln!(
+            "Plugin `{target}` does not publish a package for `{plat}` (supported: {:?}).",
+            entry.supported_platforms()
+        );
+        return 1;
+    };
+
     let target_dir = dest_root.join(entry.id.replace('.', "-"));
-    if entry.source.starts_with("https://") || entry.source.starts_with("http://") {
+    if src_str.starts_with("https://") || src_str.starts_with("http://") {
         match tomoyo_core::download_and_install_remote_zip(
-            &entry.source,
-            &entry.sha256,
+            src_str,
+            expected_sha,
             true,
             &target_dir,
         ) {
             Ok(actual_sha) => {
                 println!(
-                    "[VERIFIED] Remote ZIP SHA-256 matched ({})\n[INSTALLED] `{}` v{} -> {}",
+                    "[VERIFIED] Remote ZIP SHA-256 matched ({})\n[INSTALLED] `{}` v{} ({plat}) -> {}",
                     &actual_sha[..16],
                     entry.name,
                     entry.version,
@@ -234,10 +243,10 @@ fn cmd_install(args: &[String]) -> i32 {
         .parent()
         .and_then(|p| p.parent())
         .unwrap_or_else(|| Path::new("."));
-    let src_dir = if Path::new(&entry.source).is_absolute() || Path::new(&entry.source).exists() {
-        PathBuf::from(&entry.source)
+    let src_dir = if Path::new(src_str).is_absolute() || Path::new(src_str).exists() {
+        PathBuf::from(src_str)
     } else {
-        base_dir.join(&entry.source)
+        base_dir.join(src_str)
     };
     if !src_dir.is_dir() {
         eprintln!("Source directory not found: {}", src_dir.display());
@@ -251,10 +260,10 @@ fn cmd_install(args: &[String]) -> i32 {
             return 1;
         }
     };
-    if !entry.sha256.eq_ignore_ascii_case(&actual_sha) {
+    if !expected_sha.eq_ignore_ascii_case(&actual_sha) {
         eprintln!(
             "SECURITY ERROR: SHA-256 mismatch for `{target}`!\n  Expected: {}\n  Actual:   {}",
-            entry.sha256, actual_sha
+            expected_sha, actual_sha
         );
         return 2;
     }

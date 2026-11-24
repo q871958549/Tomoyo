@@ -91,6 +91,7 @@ pwsh -File scripts\check_hygiene.ps1 -CheckBinaries
 - Website & Docs: https://q871958549.github.io/Tomoyo/
 - GitHub Repository: https://github.com/q871958549/Tomoyo
 - Releases: https://github.com/q871958549/Tomoyo/releases
+- AlternativeTo Listing: https://alternativeto.net/software/tomoyo-launcher/about/
 - Crates.io SDKs (`v2.6.0`): https://crates.io/crates/tomoyo-sdk , https://crates.io/crates/tomoyo-protocol , https://crates.io/crates/tomoyo-everything , https://crates.io/crates/tomoyo-wasm-sdk
 - Plugin Protocol v2 Spec: https://github.com/q871958549/Tomoyo/blob/main/docs/PLUGIN_PROTOCOL.md
 - Architecture Docs: https://github.com/q871958549/Tomoyo/blob/main/docs/ARCHITECTURE.md

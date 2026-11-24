@@ -55,3 +55,43 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+  indexnow:
+    if: github.event_name == 'push'
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sitemap & IndexNow key
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            site/sitemap.xml
+            site/582e907707adcae4a6fa748e991feda6.txt
+          sparse-checkout-cone-mode: false
+
+      - name: Ping IndexNow endpoints
+        run: |
+          python3 - <<'PY'
+          import json, time, urllib.request, xml.etree.ElementTree as ET
+          time.sleep(3)
+          key = open("site/582e907707adcae4a6fa748e991feda6.txt", encoding="utf-8").read().strip()
+          ns = {"sm": "http://www.sitemaps.org/schemas/sitemap/0.9"}
+          urls = [el.text.strip() for el in ET.parse("site/sitemap.xml").findall(".//sm:loc", ns) if el.text]
+          payload = json.dumps({
+              "host": "q871958549.github.io",
+              "key": key,
+              "keyLocation": f"https://q871958549.github.io/Tomoyo/{key}.txt",
+              "urlList": urls,
+          }).encode("utf-8")
+          req = urllib.request.Request(
+              "https://api.indexnow.org/indexnow",
+              data=payload,
+              headers={"Content-Type": "application/json; charset=utf-8"},
+              method="POST",
+          )
+          try:
+              with urllib.request.urlopen(req, timeout=20) as resp:
+                  print(f"IndexNow HTTP {resp.status} for {len(urls)} URLs")
+          except Exception as exc:
+              print(f"IndexNow warning (non-fatal): {exc}")
+          PY

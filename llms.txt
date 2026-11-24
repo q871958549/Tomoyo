@@ -35,3 +35,5 @@ Tomoyo Launcher is unrelated to the TOMOYO Linux kernel Mandatory Access Control
 - [Coding Standards & Anti-Bloat Contract](https://github.com/q871958549/Tomoyo/blob/main/docs/CODING_STANDARDS.md): 7-gate hygiene rules, <= 450 lines/file limit, banned crates/npm packages, and strict resource budgets.
 - [Roadmap](https://github.com/q871958549/Tomoyo/blob/main/docs/ROADMAP.md): Version history and upcoming milestones.
 - [GitHub Releases](https://github.com/q871958549/Tomoyo/releases): Official Linux tarballs, Windows x64 installer/portable, and Windows ARM64 portable archives with SHA256SUMS.
+- [AlternativeTo Listing](https://alternativeto.net/software/tomoyo-launcher/about/): Verified community software directory entry and launcher comparisons.
+- [crates.io SDKs (`v2.6.0`)](https://crates.io/crates/tomoyo-sdk): Published Rust crates (`tomoyo-sdk`, `tomoyo-protocol`, `tomoyo-everything`, `tomoyo-wasm-sdk`).

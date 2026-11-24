@@ -24,6 +24,9 @@
     permissions?: string[];
     source: string;
     sha256: string;
+    platform_compatible?: boolean;
+    supported_platforms?: string[];
+    min_tomoyo_version?: string;
     downloads?: number;
     updated_at?: string;
     installed?: boolean;
@@ -193,6 +196,8 @@
           <Button variant="primary" size="sm" onclick={() => detail && installOrUpgrade(detail)}>
             <Download size={13} />{isEn ? `Upgrade to v${detail.version}` : `升级至 v${detail.version}`}
           </Button>
+        {:else if !detail.installed && detail.platform_compatible === false}
+          <span class="t-pill">{isEn ? 'Unsupported OS' : '暂不支持当前系统'}</span>
         {:else if !detail.installed}
           <Button variant="primary" size="sm" onclick={() => detail && installOrUpgrade(detail)}>
             <Download size={13} />{isEn ? 'Install' : '安装'}
@@ -240,7 +245,7 @@
           <div class="store-meta">
             <span>{p.id}</span>
             {#if p.keywords?.length}<span>· {(p.keywords || []).join(', ')}</span>{/if}
-            <span>· SHA-256 {(p.sha256 || '').slice(0, 12)}…</span>
+            {#if p.sha256}<span>· SHA-256 {(p.sha256 || '').slice(0, 12)}…</span>{/if}
           </div>
         </div>
         <div class="store-act">
@@ -257,6 +262,8 @@
             </Button>
           {:else if p.installed}
             <span class="t-pill">{isEn ? 'Installed' : '已安装'}</span>
+          {:else if p.platform_compatible === false}
+            <span class="t-pill">{isEn ? 'Unsupported OS' : '暂不支持当前系统'}</span>
           {:else}
             <Button variant="primary" size="sm" onclick={() => installOrUpgrade(p)}>
               <Download size={13} />{isEn ? 'Install' : '安装'}
