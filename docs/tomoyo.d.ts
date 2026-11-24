@@ -47,6 +47,11 @@ export interface TomoyoPluginApi {
   togglePinTopmost(): void;
   close(): void;
   onEnter(cb: (action: TomoyoEnterPayload) => void): void;
+  /**
+   * Protocol v3 Hybrid RPC: invokes `tomoyo/call` on this plugin's own STDIO/WASM backend.
+   * Rejects if the plugin declares no executable backend runtime or times out (15s).
+   */
+  callPlugin<T = unknown>(method: string, params?: unknown): Promise<T>;
   readonly db: TomoyoDb;
   readonly dbStorage: TomoyoDbStorage;
 }

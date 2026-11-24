@@ -53,6 +53,7 @@ unsafe extern "C" {
     fn tomoyo_wv_show_and_run(h: *mut c_void);
     fn tomoyo_wv_close(h: *mut c_void);
     fn tomoyo_wv_toggle_topmost(h: *mut c_void) -> c_int;
+    fn tomoyo_wv_enable_devtools(h: *mut c_void);
     fn tomoyo_wv_destroy(h: *mut c_void);
 }
 
@@ -116,6 +117,9 @@ unsafe extern "C" fn on_msg_cb(ctx: *mut c_void, json_ptr: *const c_char) {
     }
     if act.pick_folder_mode != 0 {
         st.channel.schedule_folder_picker(act.pick_folder_mode);
+    }
+    if let Some((pid, key, is_file)) = act.pick_plugin_path.clone() {
+        st.channel.schedule_plugin_path_picker(pid, key, is_file);
     }
     if let Some(reply) = &act.reply_json {
         eval_dispatch_json(st.wv, reply);
@@ -252,13 +256,14 @@ unsafe extern "C" fn on_close_cb(ctx: *mut c_void) {
     }
     st.channel.alive.store(false, Ordering::SeqCst);
     st.channel.wv_ptr.store(0, Ordering::SeqCst);
+    crate::plugin_rpc::shutdown_rpc_host();
 }
 
 pub fn run_linux_host(opts: LaunchArgs) {
     let clip_mode = is_clip_manager_entry(&opts.entry);
     let tr_mode = is_translator_entry(&opts.entry);
     let ocr_mode = is_ocr_viewer_entry(&opts.entry);
-    let channel = HostChannel::new(opts.notify_hwnd);
+    let channel = HostChannel::new(opts.notify_hwnd, opts.plugin_id.clone());
 
     let plugin_tag;
     let mode_tag = if opts.settings_mode {
@@ -338,6 +343,9 @@ pub fn run_linux_host(opts: LaunchArgs) {
     }
     ctx.wv = wv;
     channel.wv_ptr.store(wv as usize, Ordering::SeqCst);
+    if opts.devtools {
+        unsafe { tomoyo_wv_enable_devtools(wv); }
+    }
 
     if opts.settings_mode || ocr_mode || clip_mode || tr_mode {
         let html = if opts.settings_mode {

@@ -1,14 +1,21 @@
 //! Protocol v2 declarative plugin & workflow global hotkeys + non-blocking event dispatch.
 
 use super::input::register_optional_hotkey;
-use super::AppShell;
+use super::translate_ctrl::{clipboard_seq_num, send_ctrl_c_cleanly};
+use super::{AppShell, WM_APP_PLUGIN_EVENT_DONE};
+use crate::actions::{execute_action, read_clipboard_text, set_clipboard_text, shell_open};
+use std::ffi::c_void;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use tomoyo_core::{load_or_init_flows, parse_hotkey, TomoyoConfig};
+use std::time::Duration;
+use tomoyo_core::{is_safe_http_url, load_or_init_flows, parse_hotkey, TomoyoConfig};
 use tomoyo_plugin_host::{ActivePluginHotkey, PluginHost};
-use tomoyo_protocol::{PluginEventKind, PluginEventPayload};
-use windows::Win32::Foundation::HWND;
+use tomoyo_protocol::{
+    ActionKind, ExecuteResponse, Permission, PluginEventKind, PluginEventPayload,
+};
+use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 use windows::Win32::UI::Input::KeyboardAndMouse::UnregisterHotKey;
-use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, IsWindowVisible};
+use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, IsWindowVisible, PostMessageW};
 
 pub(super) const PLUGIN_HOTKEY_BASE: i32 = 100;
 const MAX_PLUGIN_HOTKEYS: usize = 16;
@@ -94,7 +101,63 @@ pub(super) fn handle_flow_hotkey(app: &mut AppShell, id: i32) {
     app.execute_workflow(&flow_id, "");
 }
 
-/// Handles a triggered Protocol v2 plugin hotkey (`id >= PLUGIN_HOTKEY_BASE`).
+fn apply_plugin_exec_response(app: &mut AppShell, plugin_id: &str, resp: ExecuteResponse) {
+    if let Some(txt) = resp.copy_text.as_deref() {
+        let _ = set_clipboard_text(txt);
+    }
+    if let Some(url) = resp.open_url.as_deref() && is_safe_http_url(url) {
+        let _ = shell_open(url, None, None);
+    }
+    if let Some(wv_req) = &resp.open_webview
+        && let Some(wv_act) = app.plugin_host.resolve_webview_open(plugin_id, wv_req)
+    {
+        let out = execute_action(&wv_act, plugin_id, &app.plugin_host, app.theme.is_dark);
+        if let Some(t) = out.toast { app.show_toast(&t); }
+        if out.hide_window { app.hide_launcher(); }
+        return;
+    }
+    if let Some(q) = resp.fill_query {
+        app.show_launcher_with_query(Some(&q));
+    }
+    if let Some(toast) = resp.toast {
+        app.show_toast(&toast);
+    }
+}
+
+pub(super) fn on_async_plugin_event_done(app: &mut AppShell) {
+    let taken = app.pending_plugin_event.lock().ok().and_then(|mut g| g.take());
+    if let Some((plugin_id, resp)) = taken {
+        apply_plugin_exec_response(app, &plugin_id, resp);
+    }
+}
+
+pub(super) fn execute_plugin_tray_action(app: &mut AppShell, idx: usize) {
+    let Some(act) = app.tray_plugin_actions.get(idx).cloned() else {
+        return;
+    };
+    if !act.trigger_query.trim().is_empty() {
+        app.show_launcher_with_query(Some(&act.trigger_query));
+        return;
+    }
+    let kind = if let Some(ui_act) = act.ui_action {
+        ui_act
+    } else {
+        ActionKind::PluginExecute {
+            plugin_id: act.plugin_id.clone(),
+            action_id: act.action_id,
+            payload: serde_json::json!({ "source": "tray", "tray_action_id": act.id }),
+        }
+    };
+    let out = execute_action(&kind, &format!("tray:{}", act.id), &app.plugin_host, app.theme.is_dark);
+    if let Some(q) = out.fill_query {
+        app.show_launcher_with_query(Some(&q));
+    }
+    if let Some(toast) = out.toast {
+        app.show_toast(&toast);
+    }
+}
+
+/// Handles a triggered Protocol v2/v3 plugin hotkey (`id >= PLUGIN_HOTKEY_BASE`).
 pub(super) fn handle_plugin_hotkey(app: &mut AppShell, id: i32) {
     let idx = (id - PLUGIN_HOTKEY_BASE) as usize;
     let Some(hk) = app.plugin_hotkeys.get(idx).cloned() else {
@@ -102,6 +165,63 @@ pub(super) fn handle_plugin_hotkey(app: &mut AppShell, id: i32) {
     };
     if !hk.trigger_query.trim().is_empty() {
         app.show_launcher_with_query(Some(&hk.trigger_query));
+        return;
+    }
+    if hk.capture_selection {
+        if !app.plugin_host.plugin_has_permission(&hk.plugin_id, Permission::SelectionRead) {
+            app.show_toast(&format!("插件 {} 未获授「划词读取 (SelectionRead)」权限", hk.plugin_id));
+            return;
+        }
+        let suppress_flag = Arc::clone(&app.suppress_clipboard_capture);
+        let host = Arc::clone(&app.plugin_host);
+        let slot = Arc::clone(&app.pending_plugin_event);
+        let hwnd_raw = app.hwnd.0 as usize;
+        let _ = std::thread::Builder::new()
+            .name("tomoyo-sel-plugin".into())
+            .spawn(move || {
+                suppress_flag.store(true, Ordering::Release);
+                let prev_text = read_clipboard_text();
+                let seq_before = clipboard_seq_num();
+                send_ctrl_c_cleanly();
+                let mut captured = String::new();
+                let mut changed = false;
+                for _ in 0..11 {
+                    std::thread::sleep(Duration::from_millis(16));
+                    if clipboard_seq_num() != seq_before {
+                        changed = true;
+                        if let Some(txt) = read_clipboard_text() {
+                            captured = txt;
+                        }
+                        break;
+                    }
+                }
+                if changed && let Some(old) = prev_text {
+                    let _ = set_clipboard_text(&old);
+                }
+                std::thread::sleep(Duration::from_millis(60));
+                suppress_flag.store(false, Ordering::Release);
+                let payload = PluginEventPayload {
+                    event: PluginEventKind::HotkeyTriggered,
+                    data: serde_json::json!({
+                        "hotkey_id": hk.hotkey_id,
+                        "spec": hk.spec,
+                        "selected_text": captured.trim(),
+                    }),
+                };
+                if let Some(resp) = host.dispatch_event(Some(&hk.plugin_id), &payload).into_iter().next() {
+                    if let Ok(mut g) = slot.lock() {
+                        *g = Some((hk.plugin_id.clone(), resp));
+                    }
+                    unsafe {
+                        let _ = PostMessageW(
+                            Some(HWND(hwnd_raw as *mut c_void)),
+                            WM_APP_PLUGIN_EVENT_DONE,
+                            WPARAM(0),
+                            LPARAM(0),
+                        );
+                    }
+                }
+            });
         return;
     }
     let payload = PluginEventPayload {
@@ -113,12 +233,7 @@ pub(super) fn handle_plugin_hotkey(app: &mut AppShell, id: i32) {
     };
     let resps = app.plugin_host.dispatch_event(Some(&hk.plugin_id), &payload);
     if let Some(resp) = resps.into_iter().next() {
-        if let Some(q) = resp.fill_query {
-            app.show_launcher_with_query(Some(&q));
-        }
-        if let Some(toast) = resp.toast {
-            app.show_toast(&toast);
-        }
+        apply_plugin_exec_response(app, &hk.plugin_id, resp);
     }
 }
 

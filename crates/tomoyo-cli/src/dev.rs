@@ -1,4 +1,4 @@
-//! Developer hot-reload watcher (`tomoyo-cli dev`) & automated registry integrity verifier (`tomoyo-cli registry check`).
+//! Developer hot-reload watcher (`tomoyo-cli dev`) with Protocol v3 Hybrid RPC & DevTools support.
 
 use crate::flag_val;
 use crate::hash::compute_plugin_sha256;
@@ -13,11 +13,11 @@ use tomoyo_protocol::{
     ExecuteRequest, PluginEventKind, PluginEventPayload, PluginManifest, QueryContext, RuntimeConfig,
 };
 
-/// `tomoyo-cli dev <plugin-dir> [--query "<args>"] [--build] [--exec <id>] [--event <kind>] [--once]`
+/// `tomoyo-cli dev <plugin-dir> [--query "<args>"] [--build] [--exec <id>] [--call <method>] [--event <kind>] [--devtools] [--once]`
 pub(crate) fn cmd_dev(args: &[String]) -> i32 {
     let Some(dir_str) = args.first().filter(|s| !s.starts_with('-')) else {
         eprintln!(
-            "Usage: tomoyo-cli dev <plugin-dir> [--query \"<args>\"] [--build] [--exec <action_id>] [--event <hotkey_triggered|clipboard_text|clipboard_image>] [--data <text>] [--once]"
+            "Usage: tomoyo-cli dev <plugin-dir> [--query \"<args>\"] [--build] [--exec <action_id>] [--call <rpc_method>] [--event <kind>] [--data <text>] [--devtools] [--once]"
         );
         return 1;
     };
@@ -29,15 +29,19 @@ pub(crate) fn cmd_dev(args: &[String]) -> i32 {
     let sample_args = flag_val(args, "--query").unwrap_or("hello");
     let once = args.iter().any(|a| a == "--once");
     let build_first = args.iter().any(|a| a == "--build");
+    let open_devtools = args.iter().any(|a| a == "--devtools");
     let exec_action = flag_val(args, "--exec");
+    let call_method = flag_val(args, "--call");
     let event_kind = flag_val(args, "--event");
     let event_data = flag_val(args, "--data").unwrap_or(sample_args);
 
-    println!("=== Tomoyo Plugin Dev Mode (Protocol v2) ===");
+    println!("=== Tomoyo Plugin Dev Mode (Protocol v3) ===");
     println!("Watching: {} (Ctrl+C to exit)", canon.display());
 
     let mut last_snap = snapshot_mtimes(&canon);
-    let first_code = run_dev_cycle(&canon, sample_args, build_first, exec_action, event_kind, event_data);
+    let first_code = run_dev_cycle(
+        &canon, sample_args, build_first, exec_action, call_method, event_kind, event_data, open_devtools,
+    );
     if once {
         return first_code;
     }
@@ -49,7 +53,9 @@ pub(crate) fn cmd_dev(args: &[String]) -> i32 {
             last_snap = cur;
             println!("\n[CHANGE DETECTED] Rebuilding & hot-reloading Tomoyo...");
             let auto_build = build_first || canon.join("Cargo.toml").is_file();
-            let _ = run_dev_cycle(&canon, sample_args, auto_build, exec_action, event_kind, event_data);
+            let _ = run_dev_cycle(
+                &canon, sample_args, auto_build, exec_action, call_method, event_kind, event_data, false,
+            );
         }
     }
 }
@@ -103,13 +109,16 @@ fn try_build_plugin_cargo(dir: &Path, manifest: Option<&PluginManifest>) -> Resu
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_dev_cycle(
     canon: &Path,
     sample_args: &str,
     build: bool,
     exec_action: Option<&str>,
+    call_method: Option<&str>,
     event_kind: Option<&str>,
     event_data: &str,
+    open_devtools: bool,
 ) -> i32 {
     let manifest_raw = match std::fs::read_to_string(canon.join("tomoyo-plugin.toml")) {
         Ok(s) => s,
@@ -171,15 +180,26 @@ fn run_dev_cycle(
         }
 
         if let Some(act_id) = exec_action {
-            let req = ExecuteRequest {
-                action_id: act_id.to_string(),
-                item_id: format!("{}:dev", manifest.id),
-                payload: serde_json::json!({ "text": event_data }),
-            };
+            let req = ExecuteRequest::new(
+                act_id,
+                format!("{}:dev", manifest.id),
+                serde_json::json!({ "text": event_data }),
+            );
             match host.execute_action(&manifest.id, req) {
                 Ok(resp) => println!("[OK] Execute `{act_id}` -> hide={}, toast={:?}, copy={:?}", resp.hide_window, resp.toast, resp.copy_text),
                 Err(e) => {
                     eprintln!("[ERROR] Execute `{act_id}` failed: {e}");
+                    host.shutdown_all();
+                    return 1;
+                }
+            }
+        }
+
+        if let Some(method) = call_method {
+            match host.call_plugin(&manifest.id, method, serde_json::json!({ "text": event_data })) {
+                Ok(val) => println!("[OK] Call `{method}` -> {val}"),
+                Err(e) => {
+                    eprintln!("[ERROR] Call `{method}` failed: {e}");
                     host.shutdown_all();
                     return 1;
                 }
@@ -202,10 +222,55 @@ fn run_dev_cycle(
         host.shutdown_all();
     }
 
+    if open_devtools {
+        launch_webview_devtools(canon, &manifest, sample_args);
+    }
+
     if notify_running_tomoyo_reload() {
         println!("[HOT-RELOAD] Signaled running Tomoyo instance to reload plugins.");
     }
     0
+}
+
+fn launch_webview_devtools(dir: &Path, manifest: &PluginManifest, query: &str) {
+    let ui_entry = manifest
+        .ui
+        .as_ref()
+        .map(|u| (u.entry.as_str(), u.utools_compat, u.width, u.height))
+        .or(match &manifest.runtime {
+            RuntimeConfig::Webview { entry, utools_compat, width, height } => {
+                Some((entry.as_str(), *utools_compat, *width, *height))
+            }
+            _ => None,
+        });
+    let Some((entry, utools, w, h)) = ui_entry else {
+        println!("[INFO] `--devtools` skipped: plugin has neither `[ui]` nor `webview` runtime.");
+        return;
+    };
+    let host_name = format!("tomoyo-webview-host{}", std::env::consts::EXE_SUFFIX);
+    let host_bin = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.join(&host_name)))
+        .filter(|p| p.is_file())
+        .unwrap_or_else(|| PathBuf::from(&host_name));
+    let entry_abs = dir.join(entry);
+    let mut cmd = Command::new(&host_bin);
+    cmd.args([
+        "--plugin-id", &manifest.id,
+        "--title", &format!("{} [DevTools]", manifest.name),
+        "--entry", &entry_abs.to_string_lossy(),
+        "--query", query,
+        "--width", &w.to_string(),
+        "--height", &h.to_string(),
+        "--devtools",
+    ]);
+    if utools {
+        cmd.arg("--utools-compat");
+    }
+    match cmd.spawn() {
+        Ok(c) => println!("[DEVTOOLS] Launched {} (PID {})", host_bin.display(), c.id()),
+        Err(e) => eprintln!("[WARN] Failed to launch {}: {e}", host_bin.display()),
+    }
 }
 
 fn parse_event_kind(raw: &str) -> Option<PluginEventKind> {

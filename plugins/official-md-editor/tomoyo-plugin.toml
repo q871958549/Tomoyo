@@ -31,19 +31,32 @@ label = "快速呼出 Markdown 编辑器"
 default_hotkey = ""
 trigger_query = "md "
 
+[[tray_actions]]
+id = "quick_md"
+label = "Markdown 编辑器 (md)"
+trigger_query = "md "
+
+[[file_actions]]
+id = "open_md_file"
+label = "使用 Quiet.md 打开编辑"
+extensions = ["md", "markdown", "mdx"]
+
 [[settings]]
 key = "docs_dir"
 label = "Markdown 文档库目录"
 description = "留空默认使用 %USERPROFILE%\\Documents\\Markdown 或同步目录\\markdown（与快速备忘录 notes\\ 严格分离）"
-type = "text"
+section = "目录与可执行文件"
+type = "dir"
 placeholder = "例如 D:\\Writing\\Markdown"
 default = ""
 
 [[settings]]
 key = "custom_bin_path"
 label = "自定义 Quiet.md 可执行文件路径"
-description = "如安装在非标准路径，可在此指定 quiet-md.exe；留空则自动探测或引导官方安装"
-type = "text"
+description = "如安装在非标准路径，可在此指定 quiet-md 可执行文件；留空则自动探测或引导官方安装"
+section = "目录与可执行文件"
+type = "file"
+extensions = ["exe", "AppImage"]
 placeholder = "例如 D:\\Tools\\Quiet.md\\quiet-md.exe"
 default = ""
 
@@ -51,5 +64,6 @@ default = ""
 key = "open_new_in_quiet"
 label = "新建 .md 文档后立即用 Quiet.md 打开"
 description = "通过 `md + 标题` 新建文档后自动拉起 Quiet.md 窗口编辑"
+section = "编辑行为"
 type = "bool"
 default = true

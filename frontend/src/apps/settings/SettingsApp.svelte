@@ -248,8 +248,23 @@
       } else if (ev === 'capture_dir_picked') {
         if (!data.cancelled && data.ok && typeof data.path === 'string') { cfg.capture.save_dir = data.path; scheduleSave(0); }
         else if (data.error) setToast(`✗ ${data.error}`, true);
+      } else if (ev === 'plugin_path_picked') {
+        if (!data.cancelled && data.ok && typeof data.path === 'string' && typeof data.plugin_id === 'string' && typeof data.key === 'string') {
+          const pid = data.plugin_id.toLowerCase();
+          const next = { ...(cfg.plugin_settings || {}) };
+          next[pid] = { ...(next[pid] || {}), [data.key]: data.path };
+          cfg.plugin_settings = next;
+          scheduleSave(0);
+        }
       } else if (ev === 'secrets_status') {
-        if (data.status) secretsStatus = { ...secretsStatus, ...(data.status as { deepl: boolean; openai: boolean }) };
+        if (data.status) {
+          const st = data.status as { deepl?: boolean; openai?: boolean; plugins?: Record<string, boolean> };
+          secretsStatus = {
+            deepl: st.deepl ?? secretsStatus.deepl,
+            openai: st.openai ?? secretsStatus.openai,
+            plugins: { ...(secretsStatus.plugins || {}), ...(st.plugins || {}) },
+          };
+        }
         if (data.message) setToast(`${data.ok ? '✓ ' : '✗ '}${data.message}`, !data.ok);
       } else if (ev === 'store_loaded') {
         storeLoading = false;

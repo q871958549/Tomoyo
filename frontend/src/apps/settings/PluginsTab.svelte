@@ -29,7 +29,7 @@
     configPath: string;
     pluginsDir: string;
     runningApps: string[];
-    secretsStatus: { deepl: boolean; openai: boolean };
+    secretsStatus: { deepl: boolean; openai: boolean; plugins?: Record<string, boolean> };
     hotkeyHealth: HotkeyHealthReport;
     showRecord: boolean;
     expandedId: string | null;
@@ -237,7 +237,7 @@
                 {/each}
               </div>
             {/if}
-            <PluginConfigDrawer plugin={entry} {cfg} {lang} {onChangeDisplayMode} {onChangeHotkey} {onChangeSetting} />
+            <PluginConfigDrawer plugin={entry} {cfg} {lang} pluginSecrets={secretsStatus.plugins || {}} {onChangeDisplayMode} {onChangeHotkey} {onChangeSetting} />
           {/if}
         </div>
       {/if}
@@ -314,7 +314,7 @@
           </div>
         </div>
         {#if configurable && isOpen}
-          <PluginConfigDrawer plugin={p} {cfg} {lang} {onChangeDisplayMode} {onChangeHotkey} {onChangeSetting} />
+          <PluginConfigDrawer plugin={p} {cfg} {lang} pluginSecrets={secretsStatus.plugins || {}} {onChangeDisplayMode} {onChangeHotkey} {onChangeSetting} />
         {/if}
       </div>
     {/each}

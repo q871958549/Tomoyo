@@ -51,7 +51,7 @@ pub(crate) struct RegisteredPlugin {
     pub live: Option<LiveRuntime>,
 }
 
-pub(crate) fn ensure_live(
+pub(crate) fn ensure_live_stdio(
     plug: &mut RegisteredPlugin,
     perms: &mut PermissionStore,
     interactive: bool,
@@ -59,7 +59,7 @@ pub(crate) fn ensure_live(
     if plug.live.is_some() {
         return Ok(false);
     }
-    let granted_perms: Vec<Permission> =
+    let _granted_perms: Vec<Permission> =
         authorize_plugin_runtime(perms, &plug.manifest, &plug.dir, interactive)
             .map_err(ProcessError::Spawn)?;
     match &plug.manifest.runtime {
@@ -76,6 +76,25 @@ pub(crate) fn ensure_live(
             plug.live = Some(LiveRuntime::Stdio(proc));
             Ok(true)
         }
+        _ => Ok(false),
+    }
+}
+
+pub(crate) fn ensure_live(
+    plug: &mut RegisteredPlugin,
+    perms: &mut PermissionStore,
+    interactive: bool,
+) -> Result<bool, ProcessError> {
+    if plug.live.is_some() {
+        return Ok(false);
+    }
+    if matches!(plug.manifest.runtime, RuntimeConfig::StdioJsonrpc { .. }) {
+        return ensure_live_stdio(plug, perms, interactive);
+    }
+    let granted_perms: Vec<Permission> =
+        authorize_plugin_runtime(perms, &plug.manifest, &plug.dir, interactive)
+            .map_err(ProcessError::Spawn)?;
+    match &plug.manifest.runtime {
         RuntimeConfig::Wasm { module, max_fuel } => {
             let mod_path = plug.dir.join(module);
             let wasm = LiveWasmPlugin::load(
@@ -89,7 +108,7 @@ pub(crate) fn ensure_live(
             plug.live = Some(LiveRuntime::Wasm(Box::new(wasm)));
             Ok(true)
         }
-        RuntimeConfig::Webview { .. } => Ok(false),
+        RuntimeConfig::StdioJsonrpc { .. } | RuntimeConfig::Webview { .. } => Ok(false),
     }
 }
 

@@ -19,6 +19,7 @@ unsafe extern "C" {
     pub fn tomoyo_wv_apply_theme(h: *mut c_void, mode: c_int);
     pub fn tomoyo_wv_present(h: *mut c_void);
     pub fn tomoyo_wv_pick_folder(h: *mut c_void, title: *const c_char) -> *mut c_char;
+    pub fn tomoyo_wv_pick_file(h: *mut c_void, title: *const c_char) -> *mut c_char;
     pub fn tomoyo_wv_free_str(s: *mut c_char);
     pub fn tomoyo_wv_schedule_idle(cb: unsafe extern "C" fn(*mut c_void), data: *mut c_void);
 }
@@ -28,18 +29,20 @@ pub struct HostChannel {
     pub wv_ptr: AtomicUsize,
     pub alive: AtomicBool,
     pub notify_hwnd: Option<isize>,
+    pub plugin_id: String,
     pub desired_theme: AtomicI32,
     tx: mpsc::Sender<String>,
     rx: Mutex<mpsc::Receiver<String>>,
 }
 
 impl HostChannel {
-    pub fn new(notify_hwnd: Option<isize>) -> Arc<Self> {
+    pub fn new(notify_hwnd: Option<isize>, plugin_id: String) -> Arc<Self> {
         let (tx, rx) = mpsc::channel();
         Arc::new(Self {
             wv_ptr: AtomicUsize::new(0),
             alive: AtomicBool::new(true),
             notify_hwnd,
+            plugin_id,
             desired_theme: AtomicI32::new(-1),
             tx,
             rx: Mutex::new(rx),
@@ -70,6 +73,14 @@ impl HostChannel {
         }
         let job = Box::new((Arc::clone(self), mode));
         unsafe { tomoyo_wv_schedule_idle(pick_folder_idle_cb, Box::into_raw(job) as *mut c_void); }
+    }
+
+    pub fn schedule_plugin_path_picker(self: &Arc<Self>, plugin_id: String, key: String, is_file: bool) {
+        if !self.alive.load(Ordering::SeqCst) {
+            return;
+        }
+        let job = Box::new((Arc::clone(self), plugin_id, key, is_file));
+        unsafe { tomoyo_wv_schedule_idle(pick_plugin_path_idle_cb, Box::into_raw(job) as *mut c_void); }
     }
 }
 
@@ -194,6 +205,41 @@ unsafe extern "C" fn pick_folder_idle_cb(ud: *mut c_void) {
     eval_dispatch_json(wv, &reply);
 }
 
+unsafe extern "C" fn pick_plugin_path_idle_cb(ud: *mut c_void) {
+    let boxed = unsafe { Box::from_raw(ud as *mut (Arc<HostChannel>, String, String, bool)) };
+    let (ch, plugin_id, key, is_file) = *boxed;
+    if !ch.alive.load(Ordering::SeqCst) {
+        return;
+    }
+    let wv = ch.wv_ptr.load(Ordering::SeqCst) as *mut c_void;
+    if wv.is_null() {
+        return;
+    }
+    let title = if is_file { "选择插件所需文件" } else { "选择插件所需目录" };
+    let c_title = CString::new(title).unwrap();
+    let raw = unsafe {
+        if is_file {
+            tomoyo_wv_pick_file(wv, c_title.as_ptr())
+        } else {
+            tomoyo_wv_pick_folder(wv, c_title.as_ptr())
+        }
+    };
+    let reply = if raw.is_null() {
+        serde_json::json!({
+            "event": "plugin_path_picked", "plugin_id": plugin_id, "key": key,
+            "ok": false, "cancelled": true
+        }).to_string()
+    } else {
+        let p = unsafe { CStr::from_ptr(raw) }.to_string_lossy().into_owned();
+        unsafe { tomoyo_wv_free_str(raw); }
+        serde_json::json!({
+            "event": "plugin_path_picked", "plugin_id": plugin_id, "key": key,
+            "ok": true, "cancelled": false, "path": p
+        }).to_string()
+    };
+    eval_dispatch_json(wv, &reply);
+}
+
 pub fn spawn_hotkey_health_worker(ch: Arc<HostChannel>) {
     let _ = std::thread::Builder::new().name("tomoyo-hk-health".into()).spawn(move || {
         std::thread::sleep(std::time::Duration::from_millis(180));
@@ -299,6 +345,13 @@ pub fn dispatch_async_workers(act: HostAction, ch: &Arc<HostChannel>) {
             c.push(serde_json::json!({ "event": "hotkey_probe_result", "result": result }).to_string());
             std::thread::sleep(std::time::Duration::from_millis(160));
             c.push(serde_json::json!({ "event": "hotkey_health", "health": tomoyo_core::load_hotkey_health() }).to_string());
+        });
+    }
+    if let Some((req_id, method, params)) = act.async_plugin_rpc {
+        let c = Arc::clone(ch);
+        let pid = ch.plugin_id.clone();
+        let _ = std::thread::Builder::new().name("tomoyo-plugin-rpc".into()).spawn(move || {
+            c.push(crate::plugin_rpc::execute_plugin_rpc(&pid, &req_id, &method, params));
         });
     }
 }

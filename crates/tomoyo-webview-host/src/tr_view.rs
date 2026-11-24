@@ -162,6 +162,7 @@ pub fn secrets_status_json() -> Value {
     json!({
         "deepl": has_secret("deepl_api_key"),
         "openai": has_secret("openai_api_key"),
+        "plugins": crate::plugin_rpc::collect_plugin_secrets_status(),
     })
 }
 

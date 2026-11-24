@@ -9,16 +9,62 @@ use base64::Engine;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-const ALLOWED_SECRET_KEYS: &[&str] = &["deepl_api_key", "openai_api_key"];
+const LEGACY_SECRET_KEYS: &[&str] = &["deepl_api_key", "openai_api_key"];
+
+/// Builds the canonical namespaced credential key for a Protocol v3 plugin `secret` field.
+pub fn plugin_secret_key(plugin_id: &str, field_key: &str) -> String {
+    format!(
+        "plugin:{}:{}",
+        plugin_id.trim().to_ascii_lowercase(),
+        field_key.trim()
+    )
+}
+
+/// Validates built-in keys and namespaced `plugin:<plugin_id>:<field_key>` secret keys.
+pub fn is_valid_secret_key(key: &str) -> bool {
+    if LEGACY_SECRET_KEYS.contains(&key) {
+        return true;
+    }
+    let Some(rest) = key.strip_prefix("plugin:") else {
+        return false;
+    };
+    let Some((pid, fk)) = rest.split_once(':') else {
+        return false;
+    };
+    let pid_ok = !pid.is_empty()
+        && pid.len() <= 96
+        && !pid.contains("..")
+        && pid
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'.' | b'-' | b'_'));
+    let fk_ok = !fk.is_empty()
+        && fk.len() <= 64
+        && fk
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'));
+    pid_ok && fk_ok
+}
 
 pub fn secrets_file_path() -> PathBuf {
     data_dir().join("secrets.json")
 }
 
+/// Loads all configured secrets belonging strictly to `plugin_id`'s declared `secret` fields.
+pub fn load_plugin_secrets(plugin_id: &str, field_keys: &[String]) -> BTreeMap<String, String> {
+    let mut out = BTreeMap::new();
+    for fk in field_keys {
+        let full_key = plugin_secret_key(plugin_id, fk);
+        if let Some(val) = get_secret(&full_key) {
+            out.insert(fk.clone(), val);
+        }
+    }
+    out
+}
+
 pub fn set_secret(key: &str, plaintext: &str) -> Result<(), String> {
     #[cfg(target_os = "linux")]
     {
-        if !ALLOWED_SECRET_KEYS.contains(&key) {
+        if !is_valid_secret_key(key) {
             return Err("不支持的密钥字段".into());
         }
         let clean = plaintext.trim();
@@ -38,7 +84,7 @@ pub fn set_secret(key: &str, plaintext: &str) -> Result<(), String> {
 
 pub fn get_secret(key: &str) -> Option<String> {
     #[cfg(target_os = "linux")]
-    if ALLOWED_SECRET_KEYS.contains(&key)
+    if is_valid_secret_key(key)
         && let Some(val) = crate::linux_sys::secret_lookup(key)
     {
         return Some(val);
@@ -48,7 +94,7 @@ pub fn get_secret(key: &str) -> Option<String> {
 
 pub fn has_secret(key: &str) -> bool {
     #[cfg(target_os = "linux")]
-    if ALLOWED_SECRET_KEYS.contains(&key) && crate::linux_sys::secret_lookup(key).is_some() {
+    if is_valid_secret_key(key) && crate::linux_sys::secret_lookup(key).is_some() {
         return true;
     }
     has_secret_at(&secrets_file_path(), key)
@@ -56,14 +102,14 @@ pub fn has_secret(key: &str) -> bool {
 
 pub fn delete_secret(key: &str) -> Result<(), String> {
     #[cfg(target_os = "linux")]
-    if ALLOWED_SECRET_KEYS.contains(&key) {
+    if is_valid_secret_key(key) {
         let _ = crate::linux_sys::secret_clear(key);
     }
     delete_secret_at(&secrets_file_path(), key)
 }
 
 pub fn set_secret_at(path: &Path, key: &str, plaintext: &str) -> Result<(), String> {
-    if !ALLOWED_SECRET_KEYS.contains(&key) {
+    if !is_valid_secret_key(key) {
         return Err("不支持的密钥字段".into());
     }
     let clean = plaintext.trim();
@@ -81,7 +127,7 @@ pub fn set_secret_at(path: &Path, key: &str, plaintext: &str) -> Result<(), Stri
 }
 
 pub fn get_secret_at(path: &Path, key: &str) -> Option<String> {
-    if !ALLOWED_SECRET_KEYS.contains(&key) {
+    if !is_valid_secret_key(key) {
         return None;
     }
     let map = load_map(path);
@@ -92,7 +138,7 @@ pub fn get_secret_at(path: &Path, key: &str) -> Option<String> {
 }
 
 pub fn has_secret_at(path: &Path, key: &str) -> bool {
-    ALLOWED_SECRET_KEYS.contains(&key) && load_map(path).contains_key(key)
+    is_valid_secret_key(key) && load_map(path).contains_key(key)
 }
 
 pub fn delete_secret_at(path: &Path, key: &str) -> Result<(), String> {
@@ -238,6 +284,16 @@ mod tests {
         assert_eq!(get_secret_at(&tmp, "deepl_api_key").as_deref(), Some("sk-secret-demo-key-98765:fx"));
         delete_secret_at(&tmp, "deepl_api_key").unwrap();
         assert!(!has_secret_at(&tmp, "deepl_api_key"));
+
+        let pk = plugin_secret_key("dev.tomoyo.demo", "api_token");
+        assert_eq!(pk, "plugin:dev.tomoyo.demo:api_token");
+        assert!(is_valid_secret_key(&pk));
+        assert!(!is_valid_secret_key("plugin:../evil:key"));
+        assert!(!is_valid_secret_key("arbitrary_key"));
+        set_secret_at(&tmp, &pk, "tok-v3-secret").unwrap();
+        assert_eq!(get_secret_at(&tmp, &pk).as_deref(), Some("tok-v3-secret"));
+        delete_secret_at(&tmp, &pk).unwrap();
+        assert!(!has_secret_at(&tmp, &pk));
         let _ = std::fs::remove_file(&tmp);
     }
 }

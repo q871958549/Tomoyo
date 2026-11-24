@@ -2,6 +2,7 @@
 //!
 //! 100% backward-compatible with v1 manifests (`#[serde(default)]` everywhere).
 
+use crate::v3::SettingVisibleIf;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -19,6 +20,10 @@ pub struct PluginHotkeyDecl {
     /// When empty, dispatches `tomoyo/event` (`hotkey_triggered`) directly to the plugin.
     #[serde(default)]
     pub trigger_query: String,
+    /// Protocol v3: if true (and `selection_read` permission is granted), captures the current
+    /// foreground selection losslessly into `event.data.selected_text` before dispatching.
+    #[serde(default)]
+    pub capture_selection: bool,
 }
 
 /// Event kinds a plugin may subscribe to via `events = [...]` in `tomoyo-plugin.toml`.
@@ -66,6 +71,28 @@ pub enum SettingFieldKind {
         #[serde(default)]
         options: Vec<SettingOption>,
     },
+    /// Protocol v3: encrypted OS credential store (Win32 DPAPI / Linux Secret Service; never plaintext).
+    Secret {
+        #[serde(default)]
+        placeholder: String,
+    },
+    /// Protocol v3: interactive hotkey recorder widget stored in plugin settings.
+    Hotkey {
+        #[serde(default)]
+        presets: Vec<String>,
+    },
+    /// Protocol v3: directory path input with native OS folder picker.
+    Dir {
+        #[serde(default)]
+        placeholder: String,
+    },
+    /// Protocol v3: file path input with native OS file picker.
+    File {
+        #[serde(default)]
+        placeholder: String,
+        #[serde(default)]
+        extensions: Vec<String>,
+    },
 }
 
 fn default_num_max() -> i64 {
@@ -82,6 +109,12 @@ pub struct PluginSettingField {
     pub label: String,
     #[serde(default)]
     pub description: String,
+    /// Optional grouping header rendered inside Settings Center's plugin drawer.
+    #[serde(default)]
+    pub section: String,
+    /// Optional conditional visibility predicate referencing another field's value.
+    #[serde(default)]
+    pub visible_if: Option<SettingVisibleIf>,
     #[serde(flatten)]
     pub kind: SettingFieldKind,
     #[serde(default)]

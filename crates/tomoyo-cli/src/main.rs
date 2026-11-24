@@ -58,7 +58,7 @@ fn print_usage() {
          \n\
          USAGE:\n\
          \t tomoyo-cli new <name> [--lang rust|wasm|python|webview] [--dir <path>] [--sdk-dir <crates-dir>]\n\
-         \t tomoyo-cli dev <plugin-dir> [--query \"<args>\"] [--build] [--exec <id>] [--event <kind>] [--once]\n\
+         \t tomoyo-cli dev <plugin-dir> [--query \"<args>\"] [--build] [--exec <id>] [--call <method>] [--event <kind>] [--devtools] [--once]\n\
          \t tomoyo-cli verify <plugin-dir>\n\
          \t tomoyo-cli pack <plugin-dir> [--out <bundle.zip>]\n\
          \t tomoyo-cli hash <plugin-dir>\n\

@@ -6,9 +6,10 @@ use crate::actions::{
     read_clipboard_text, send_ctrl_c_cleanly, set_clipboard_text, shell_open, spawn_capture_tool,
     spawn_clipboard_manager_window, spawn_settings_window, spawn_translator_window,
 };
-use crate::linux::tomoyo_linux_ui_quit;
+use crate::linux::{tomoyo_linux_tray_set_menu, tomoyo_linux_ui_quit, LinuxTrayMenuItem};
 use crate::linux::ipc::schedule_on_ui;
 use crate::linux::shell_state::{with_current_core, AppCore};
+use std::ffi::CString;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
@@ -19,7 +20,10 @@ use tomoyo_core::{
     UpdateStatus,
 };
 use tomoyo_plugin_host::ActivePluginHotkey;
-use tomoyo_protocol::{InternalCommandKind, PluginEventKind, PluginEventPayload};
+use tomoyo_protocol::{
+    ActionKind, ExecuteResponse, InternalCommandKind, Permission, PluginEventKind,
+    PluginEventPayload,
+};
 
 impl AppCore {
     pub(super) fn execute_selected(&mut self, action_idx: usize) {
@@ -151,13 +155,111 @@ impl AppCore {
         });
     }
 
+    pub(super) fn apply_plugin_exec_response(&mut self, plugin_id: &str, r: ExecuteResponse) {
+        if let Some(txt) = r.copy_text.as_deref() {
+            let _ = set_clipboard_text(txt);
+        }
+        if let Some(url) = r.open_url.as_deref() && is_safe_http_url(url) {
+            let _ = shell_open(url, None, None);
+        }
+        if let Some(wv_req) = &r.open_webview
+            && let Some(wv_act) = self.plugin_host.resolve_webview_open(plugin_id, wv_req)
+        {
+            let out = execute_action(&wv_act, plugin_id, &self.plugin_host, self.theme.is_dark);
+            if let Some(t) = out.toast { self.show_toast(&t); }
+            if out.hide_window { self.hide_launcher(); }
+            return;
+        }
+        if let Some(q) = r.fill_query { self.show_launcher_with_query(Some(&q)); }
+        if let Some(t) = r.toast { self.show_toast(&t); }
+    }
+
     pub(super) fn handle_plugin_hotkey(&mut self, hk: ActivePluginHotkey) {
         if !hk.trigger_query.trim().is_empty() { self.show_launcher_with_query(Some(&hk.trigger_query)); return; }
+        if hk.capture_selection {
+            if !self.plugin_host.plugin_has_permission(&hk.plugin_id, Permission::SelectionRead) {
+                self.show_toast(&format!("插件 {} 未获授「划词读取 (SelectionRead)」权限", hk.plugin_id));
+                return;
+            }
+            let sup = Arc::clone(&self.suppress_clipboard);
+            let host = Arc::clone(&self.plugin_host);
+            let _ = std::thread::Builder::new().name("tomoyo-sel-plug".into()).spawn(move || {
+                sup.store(true, Ordering::Release);
+                let prev = read_clipboard_text();
+                send_ctrl_c_cleanly();
+                std::thread::sleep(Duration::from_millis(120));
+                let cap = read_clipboard_text().unwrap_or_default();
+                if let Some(old) = prev.as_deref().filter(|o| *o != cap) { let _ = set_clipboard_text(old); }
+                sup.store(false, Ordering::Release);
+                let payload = PluginEventPayload {
+                    event: PluginEventKind::HotkeyTriggered,
+                    data: serde_json::json!({ "hotkey_id": hk.hotkey_id, "spec": hk.spec, "selected_text": cap.trim() }),
+                };
+                if let Some(r) = host.dispatch_event(Some(&hk.plugin_id), &payload).into_iter().next() {
+                    let pid = hk.plugin_id.clone();
+                    schedule_on_ui(move || with_current_core(|st| st.apply_plugin_exec_response(&pid, r)));
+                }
+            });
+            return;
+        }
         let payload = PluginEventPayload { event: PluginEventKind::HotkeyTriggered, data: serde_json::json!({ "hotkey_id": hk.hotkey_id, "spec": hk.spec }) };
         if let Some(r) = self.plugin_host.dispatch_event(Some(&hk.plugin_id), &payload).into_iter().next() {
-            if let Some(q) = r.fill_query { self.show_launcher_with_query(Some(&q)); }
-            if let Some(t) = r.toast { self.show_toast(&t); }
+            self.apply_plugin_exec_response(&hk.plugin_id, r);
         }
+    }
+
+    pub(super) fn rebuild_tray_menu(&mut self) {
+        if self.ui.is_null() { return; }
+        let (clip_on, tr_on, cap_on) = self.config.read().map(|c| (
+            c.is_plugin_enabled(tomoyo_core::PLUGIN_CLIPBOARD),
+            c.is_plugin_enabled(tomoyo_core::PLUGIN_TRANSLATE),
+            c.is_plugin_enabled(tomoyo_core::PLUGIN_CAPTURE),
+        )).unwrap_or((true, true, true));
+        self.tray_plugin_actions = self.plugin_host.active_tray_actions();
+        let l = self.lang;
+        let mut raw: Vec<(String, u32)> = vec![
+            (l.pick("显示 Tomoyo", "Show Tomoyo").into(), 1),
+            (l.pick("设置中心...", "Settings...").into(), 2),
+        ];
+        if clip_on { raw.push((l.pick("剪贴板历史", "Clipboard History").into(), 3)); }
+        if tr_on { raw.push((l.pick("多源翻译", "Translator").into(), 4)); }
+        if cap_on {
+            raw.push((l.pick("区域截图", "Region Capture").into(), 5));
+            raw.push((l.pick("区域录屏", "Screen Record").into(), 6));
+        }
+        if !self.tray_plugin_actions.is_empty() {
+            raw.push(("---".into(), 0));
+            for (idx, act) in self.tray_plugin_actions.iter().enumerate() {
+                raw.push((act.label.clone(), 100 + idx as u32));
+            }
+        }
+        raw.push(("---".into(), 0));
+        raw.push((l.pick("退出 Tomoyo", "Exit Tomoyo").into(), 9));
+        let cstrs: Vec<CString> = raw.iter().map(|(s, _)| CString::new(s.as_str()).unwrap_or_default()).collect();
+        let items: Vec<LinuxTrayMenuItem> = cstrs.iter().zip(raw.iter()).map(|(cs, (_, cmd))| LinuxTrayMenuItem {
+            label: cs.as_ptr(), cmd: *cmd, parent_idx: -1, checked: 0, disabled: i32::from(*cmd == 0),
+        }).collect();
+        unsafe { tomoyo_linux_tray_set_menu(self.ui, items.as_ptr(), items.len()); }
+    }
+
+    pub(super) fn execute_plugin_tray_action(&mut self, idx: usize) {
+        let Some(act) = self.tray_plugin_actions.get(idx).cloned() else { return; };
+        if !act.trigger_query.trim().is_empty() {
+            self.show_launcher_with_query(Some(&act.trigger_query));
+            return;
+        }
+        let kind = if let Some(ui_act) = act.ui_action {
+            ui_act
+        } else {
+            ActionKind::PluginExecute {
+                plugin_id: act.plugin_id.clone(),
+                action_id: act.action_id,
+                payload: serde_json::json!({ "source": "tray", "tray_action_id": act.id }),
+            }
+        };
+        let out = execute_action(&kind, &format!("tray:{}", act.id), &self.plugin_host, self.theme.is_dark);
+        if let Some(q) = out.fill_query { self.show_launcher_with_query(Some(&q)); }
+        if let Some(t) = out.toast { self.show_toast(&t); }
     }
 
     pub(super) fn execute_workflow(&mut self, flow_id: &str, input: &str) {
@@ -267,6 +369,7 @@ impl AppCore {
         if let Ok(mut w) = self.config.write() { *w = fresh; }
         if force_providers { self.router.reload_all(); }
         self.hotkeys.register_all(&cfg_clone, &self.plugin_host);
+        self.rebuild_tray_menu();
         if self.is_visible() { self.dispatch_query(); }
     }
 }

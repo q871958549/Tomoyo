@@ -55,7 +55,7 @@
       ],
       "permissions": [],
       "source": "plugins/official-md-editor",
-      "sha256": "b8943fbfb2ba5db5052c40fbfac23d2590f3fea44f3b1cfd3670f7d87ef1f371",
+      "sha256": "ae9add7d7f715c1b7df86a93b6c46fa0aa4cc99afec1a28d23edc205f04a5e54",
       "platforms": {},
       "min_tomoyo_version": null,
       "homepage": "https://github.com/s1dashu/quiet-md",

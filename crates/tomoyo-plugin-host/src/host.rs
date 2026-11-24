@@ -7,6 +7,7 @@ use crate::v2_support::{
     build_runtime_info, collect_active_plugin_hotkeys, decorate_plugin_items,
     dispatch_plugin_event, effective_plugin_settings, ActivePluginHotkey,
 };
+use crate::v3_support::{collect_file_actions_for, load_declared_plugin_secrets};
 pub use crate::v2_support::PluginRuntimeInfo;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -17,24 +18,24 @@ use tomoyo_core::{
     next_trace_id, ExternalPluginBridge, PermissionStore, PluginSummary, TomoyoConfig,
 };
 use tomoyo_protocol::{
-    ExecuteRequest, ExecuteResponse, PluginEventKind, PluginEventPayload, QueryContext,
+    ActionSpec, ExecuteRequest, ExecuteResponse, PluginEventKind, PluginEventPayload, QueryContext,
     QueryResponse, ResultItem, RuntimeConfig, METHOD_EXECUTE, METHOD_QUERY,
 };
 
-struct HostState {
-    search_dirs: Vec<PathBuf>,
-    plugins: HashMap<String, RegisteredPlugin>,
-    keyword_index: HashMap<String, Vec<String>>,
-    disabled_ids: HashSet<String>,
-    plugin_settings: BTreeMap<String, BTreeMap<String, serde_json::Value>>,
-    perms: PermissionStore,
-    shutting_down: bool,
+pub(crate) struct HostState {
+    pub(crate) search_dirs: Vec<PathBuf>,
+    pub(crate) plugins: HashMap<String, RegisteredPlugin>,
+    pub(crate) keyword_index: HashMap<String, Vec<String>>,
+    pub(crate) disabled_ids: HashSet<String>,
+    pub(crate) plugin_settings: BTreeMap<String, BTreeMap<String, serde_json::Value>>,
+    pub(crate) perms: PermissionStore,
+    pub(crate) shutting_down: bool,
 }
 
 /// Unified Plugin Host managing STDIO JSON-RPC, WASM Sandbox, and On-Demand WebView plugins.
 pub struct PluginHost {
-    state: Arc<(Mutex<HostState>, Condvar)>,
-    interactive_prompts: AtomicBool,
+    pub(crate) state: Arc<(Mutex<HostState>, Condvar)>,
+    pub(crate) interactive_prompts: AtomicBool,
 }
 
 impl PluginHost {
@@ -131,15 +132,21 @@ impl PluginHost {
     pub fn execute_action(
         &self,
         plugin_id: &str,
-        req: ExecuteRequest,
+        mut req: ExecuteRequest,
     ) -> Result<ExecuteResponse, ProcessError> {
         let interactive = self.interactive_prompts.load(Ordering::Acquire);
         let (lock, cvar) = &*self.state;
         let mut st = lock.lock().unwrap();
-        let HostState { plugins, perms, .. } = &mut *st;
+        let HostState { plugins, perms, plugin_settings, .. } = &mut *st;
         let Some(plug) = plugins.get_mut(plugin_id) else {
             return Err(ProcessError::Spawn(format!("plugin `{plugin_id}` not found")));
         };
+        if req.plugin_settings.is_empty() {
+            req.plugin_settings = effective_plugin_settings(&plug.manifest, plugin_settings);
+        }
+        if req.plugin_secrets.is_empty() {
+            req.plugin_secrets = load_declared_plugin_secrets(&plug.manifest);
+        }
         let trace_id = next_trace_id("EXE");
         let started = Instant::now();
         let timeout = Duration::from_millis(plug.manifest.resources.query_timeout_ms.max(2000));
@@ -219,6 +226,7 @@ impl PluginHost {
             let Some(plug) = plugins.get_mut(id) else { continue };
             let mut plug_ctx = ctx.clone();
             plug_ctx.plugin_settings = effective_plugin_settings(&plug.manifest, plugin_settings);
+            plug_ctx.plugin_secrets = load_declared_plugin_secrets(&plug.manifest);
             if let RuntimeConfig::Webview { entry, utools_compat, width, height } = &plug.manifest.runtime {
                 items.push(build_webview_trigger_item(&plug.manifest, &plug.dir, entry, *utools_compat, *width, *height, &plug_ctx));
                 continue;
@@ -403,6 +411,12 @@ impl ExternalPluginBridge for PluginHost {
                 max_memory_mb: p.max_memory_mb,
             })
             .collect()
+    }
+
+    fn file_actions_for(&self, full_path: &str, ext_lower: &str) -> Vec<ActionSpec> {
+        let (lock, _) = &*self.state;
+        let st = lock.lock().unwrap();
+        collect_file_actions_for(&st.plugins, &st.disabled_ids, full_path, ext_lower)
     }
 }
 

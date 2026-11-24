@@ -329,6 +329,27 @@ impl TomoyoPlugin for MarkdownEditorPlugin {
                 ..Default::default()
             };
         }
+        if req.action_id == "open_md_file" {
+            let path_str = req.payload.get("path").and_then(|v| v.as_str()).unwrap_or("").trim();
+            if path_str.is_empty() || !Path::new(path_str).is_file() {
+                return ExecuteResponse { hide_window: false, toast: Some("未找到目标 Markdown 文件".into()), ..Default::default() };
+            }
+            let custom_bin = req
+                .plugin_settings
+                .get("custom_bin_path")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if let Some(qm) = find_quiet_md(custom_bin) {
+                let _ = Command::new(&qm).arg(path_str).spawn();
+                return ExecuteResponse { hide_window: true, ..Default::default() };
+            }
+            return ExecuteResponse {
+                hide_window: false,
+                toast: Some("未检测到 Quiet.md，已打开插件安装入口".into()),
+                fill_query: Some(format!("md \"{path_str}\"")),
+                ..Default::default()
+            };
+        }
         if req.action_id != "create_and_open" {
             return ExecuteResponse::default();
         }

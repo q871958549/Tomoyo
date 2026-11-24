@@ -64,11 +64,11 @@
   - `PluginsTab.svelte` 仅把尚未外迁的 3 个内置模块（剪贴板/翻译/截图）列为内置可开关模块；`OCR` / `Quick Notes` / `Quiet.md` 与所有第三方插件一样仅在实际安装后显示，彻底消除未装先占位的“幽灵条目”；
   - `scripts/install-local.sh` 与 `scripts/install-local.ps1` 支持 `--core-only` 纯微内核安装，且默认不再向终端用户目录复制 `example-*` 示例插件（开发者可通过 `--with-examples` 显式安装）。
 
-### Phase 2（`v2.8`）：Protocol v3 通用底座与开放 DX
-- 实现 Hybrid `WebView ↔ STDIO/WASM` 双向 RPC（`window.tomoyo.callPlugin`）；
-- 扩展 `[[settings]]`（`secret` / `hotkey` / `dir` / `file` / `section`）与通用 Secret API；
-- 实现 `[[tray_actions]]`、`triggers.file_extensions` 动态文件动作与 `Permission::SelectionRead`；
-- `tomoyo-cli dev --devtools` 支持 WebView 插件前端审查调试；发布 `tomoyo-protocol` / `tomoyo-sdk` / `tomoyo-wasm-sdk` 至 `crates.io`。
+### Phase 2（`v2.8` · 已落地 ✅）：Protocol v3 通用底座与开放 DX
+- [x] **Hybrid `WebView ↔ STDIO/WASM` 双向 RPC**：`tomoyo-plugin.toml` 支持 `[ui]` + `runtime` 混合形态；`shim_js.rs` 与 `docs/tomoyo.d.ts` 暴露 `window.tomoyo.callPlugin(method, params)`，经 `tomoyo-webview-host/src/plugin_rpc.rs` 严格按当前 `plugin_id` 沙箱转发至后端 `tomoyo/call`（`TomoyoPlugin::call`），窗闭即回收子进程；
+- [x] **声明式 `[[settings]]` v3 与通用加密密钥库**：新增 `secret` / `hotkey` / `dir` / `file`、`section` 分组与 `visible_if` 条件显隐；`tomoyo-core` 加密密钥库放开 `plugin:<plugin_id>:<key>` 命名空间（Windows DPAPI / Linux Secret Service），`PluginHost` 仅向对应插件自身上下文注入其声明的密钥，绝不落明文配置；
+- [x] **开放宿主扩展钩子**：实现 `[[tray_actions]]`（Windows / Linux 系统托盘动态注册）、`[[file_actions]]`（`QueryRouter` 零 I/O 扩展名二级菜单，并率先在 `plugins/official-md-editor` 落地 `.md` 关联）、`Permission::SelectionRead`（热键 `capture_selection = true` 无痕划词权限控制）与 `ExecuteResponse.open_webview` 直接拉起插件窗；
+- [x] **开发者工具链增强**：`tomoyo-cli dev --devtools --call <method>` 支持直接拉起带 Inspector/DevTools 的 WebView 与 Hybrid RPC 命令行冒烟测试；`tomoyo-protocol` / `tomoyo-sdk` / `tomoyo-wasm-sdk` 升级至 Protocol v3（待维护者凭 `CARGO_REGISTRY_TOKEN` 推送 `crates.io` 新版）。
 
 ### Phase 3（`v2.9` → `v3.0`）：重型官方功能全量外迁
 - **3a**：离线 OCR（`ocr_view.rs` + `frontend/src/apps/ocr`）迁出 `tomoyo-webview-host`；

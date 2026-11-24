@@ -167,6 +167,39 @@ fn url_encode(s: &str) -> String {
     out
 }
 
+/// Appends Protocol v3 extension-aware plugin actions to `ResultCategory::File` results (deduped).
+pub(crate) fn attach_plugin_file_actions(
+    bridge: Option<&dyn crate::ExternalPluginBridge>,
+    items: &mut [ResultItem],
+) {
+    let Some(bridge) = bridge else { return };
+    for item in items.iter_mut() {
+        if item.category != ResultCategory::File {
+            continue;
+        }
+        let path_opt = item.actions.iter().find_map(|a| match &a.kind {
+            ActionKind::LaunchPath { path, .. } => Some(path.as_str()),
+            _ => None,
+        });
+        let Some(full_path) = path_opt.or(item.copy_text.as_deref()) else {
+            continue;
+        };
+        let Some(ext) = std::path::Path::new(full_path)
+            .extension()
+            .and_then(|e| e.to_str())
+            .filter(|s| !s.is_empty())
+        else {
+            continue;
+        };
+        let extra = bridge.file_actions_for(full_path, &ext.to_ascii_lowercase());
+        for act in extra {
+            if !item.actions.iter().any(|existing| existing.id == act.id) {
+                item.actions.push(act);
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

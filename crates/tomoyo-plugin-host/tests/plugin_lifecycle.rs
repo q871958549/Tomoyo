@@ -67,11 +67,11 @@ fn all_three_plugin_runtimes_lazy_spawn_query_and_reap() {
             let exec = host
                 .execute_action(
                     "dev.tomoyo.example-hello",
-                    ExecuteRequest {
-                        action_id: "upper".into(),
-                        item_id: "hello:upper".into(),
-                        payload: serde_json::json!({ "text": "TOMOYO" }),
-                    },
+                    ExecuteRequest::new(
+                        "upper",
+                        "hello:upper",
+                        serde_json::json!({ "text": "TOMOYO" }),
+                    ),
                 )
                 .expect("execute_action should succeed");
             assert_eq!(exec.copy_text.as_deref(), Some("TOMOYO"));

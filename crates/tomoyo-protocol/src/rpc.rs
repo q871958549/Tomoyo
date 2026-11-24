@@ -1,11 +1,13 @@
 use crate::types::{ExecuteResponse, QueryContext, ResultItem};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::BTreeMap;
 
 pub const METHOD_HANDSHAKE: &str = "tomoyo/handshake";
 pub const METHOD_QUERY: &str = "tomoyo/query";
 pub const METHOD_EXECUTE: &str = "tomoyo/execute";
 pub const METHOD_EVENT: &str = "tomoyo/event";
+pub const METHOD_CALL: &str = "tomoyo/call";
 pub const METHOD_SHUTDOWN: &str = "tomoyo/shutdown";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -88,13 +90,31 @@ pub struct QueryResponse {
     pub items: Vec<ResultItem>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ExecuteRequest {
     pub action_id: String,
     #[serde(default)]
     pub item_id: String,
     #[serde(default)]
     pub payload: Value,
+    /// Protocol v3: merged plugin settings injected by `PluginHost`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub plugin_settings: BTreeMap<String, Value>,
+    /// Protocol v3: decrypted secrets declared by this plugin (OS Keychain / DPAPI).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub plugin_secrets: BTreeMap<String, String>,
+}
+
+impl ExecuteRequest {
+    pub fn new(action_id: impl Into<String>, item_id: impl Into<String>, payload: Value) -> Self {
+        Self {
+            action_id: action_id.into(),
+            item_id: item_id.into(),
+            payload,
+            plugin_settings: BTreeMap::new(),
+            plugin_secrets: BTreeMap::new(),
+        }
+    }
 }
 
 pub type QueryRequest = QueryContext;

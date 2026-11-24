@@ -76,11 +76,15 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
       },
       plugins: [{
         id: 'dev.tomoyo.ocr', name: 'OCR', runtime: 'STDIO', keywords: ['ocr'], max_memory_mb: 128,
-        declared_permissions: [], granted_permissions: [],
+        declared_permissions: ['selection_read'], granted_permissions: ['selection_read'],
+        has_ui: true, tray_actions_count: 1, file_actions_count: 1,
         declared_hotkeys: [{ id: 'quick_ocr', label: '快速识别截图', default_hotkey: '', trigger_query: 'ocr ' }],
         settings_schema: [
-          { key: 'default_lang', label: '默认语言', type: 'select', default: 'auto', options: [{ value: 'auto', label: '自动' }, { value: 'en', label: '英文' }] },
-          { key: 'raw_output', label: '保留原始空格', type: 'bool', default: false },
+          { key: 'default_lang', label: '默认语言', section: '基础识别', type: 'select', default: 'auto', options: [{ value: 'auto', label: '自动' }, { value: 'en', label: '英文' }] },
+          { key: 'raw_output', label: '保留原始空格', section: '基础识别', type: 'bool', default: false },
+          { key: 'cloud_api_key', label: '云端增强密钥', section: '凭据与路径', type: 'secret', placeholder: 'sk-ocr-...' },
+          { key: 'export_dir', label: '导出目录', section: '凭据与路径', type: 'dir', placeholder: '/tmp' },
+          { key: 'extra_hotkey', label: '二次识别热键', type: 'hotkey', visible_if: { key: 'raw_output', equals: true } },
         ],
       }],
       flows: [{
@@ -90,7 +94,7 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
       }],
       flows_path: 'C:\\Tomoyo\\flows.toml',
       running_apps: ['code.exe', 'notepad.exe'],
-      secrets_status: { deepl: false, openai: true },
+      secrets_status: { deepl: false, openai: true, plugins: { 'plugin:dev.tomoyo.ocr:cloud_api_key': true } },
       hotkey_health: origHealth,
       config_path: 'C:\\Tomoyo\\config.toml',
       plugins_dir: 'C:\\Tomoyo\\plugins',
@@ -171,12 +175,21 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
     expect(document.querySelector('[data-plugin-drawer="dev.tomoyo.ocr"]')).not.toBeNull();
     // Uninstalled optional plugins (e.g. Quiet.md) must NOT render ghost cards in Installed Plugins!
     expect(document.body.textContent).not.toContain('Quiet.md Markdown 编辑器');
+    // Protocol v3 drawer renders section headers, encrypted secret status, conditional fields & path picker!
+    expect(document.body.textContent).toContain('凭据与路径');
+    expect(document.body.textContent).toContain('已加密保存');
+    expect(document.body.textContent).toContain('Hybrid UI');
+    expect(document.body.textContent).not.toContain('二次识别热键');
     document.querySelector<HTMLButtonElement>('button[role="switch"][aria-label="dev.tomoyo.ocr:raw_output"]')?.click();
+    flushSync();
+    expect(document.body.textContent).toContain('二次识别热键');
+    wv.emit({ event: 'plugin_path_picked', plugin_id: 'dev.tomoyo.ocr', key: 'export_dir', ok: true, cancelled: false, path: '/tmp/ocr-out' });
     flushSync();
     const inlineBtn = [...document.querySelectorAll<HTMLButtonElement>('[data-plugin-drawer="dev.tomoyo.ocr"] .t-seg button')].find((b) => b.textContent?.includes('搜索结果内嵌'));
     inlineBtn?.click();
     flushSync();
     expect(wv.posted.some((m) => m.cmd === 'save_settings' && (m.config as { plugin_display_modes?: Record<string, string> })?.plugin_display_modes?.['dev.tomoyo.ocr'] === 'inline')).toBe(true);
+    expect(wv.posted.some((m) => m.cmd === 'save_settings' && (m.config as { plugin_settings?: Record<string, Record<string, unknown>> })?.plugin_settings?.['dev.tomoyo.ocr']?.export_dir === '/tmp/ocr-out')).toBe(true);
 
     // Scalable StoreTab search + pagination + multi-platform compatibility guard
     const storeSeg = [...document.querySelectorAll<HTMLButtonElement>('.subbar button')].find((b) => b.textContent?.includes('插件市场'));

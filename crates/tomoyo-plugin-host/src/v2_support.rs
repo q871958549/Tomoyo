@@ -36,6 +36,9 @@ pub struct PluginRuntimeInfo {
     pub declared_hotkeys: Vec<PluginHotkeyDecl>,
     pub declared_events: Vec<PluginEventKind>,
     pub settings_schema: Vec<PluginSettingField>,
+    pub has_ui: bool,
+    pub tray_actions_count: usize,
+    pub file_actions_count: usize,
 }
 
 /// Decorates plugin result items with resolved plugin logo & default presentation mode.
@@ -111,10 +114,13 @@ pub(crate) fn build_runtime_info(p: &RegisteredPlugin, perms: &PermissionStore) 
         declared_hotkeys: p.manifest.hotkeys.clone(),
         declared_events: p.manifest.events.clone(),
         settings_schema: p.manifest.settings.clone(),
+        has_ui: p.manifest.has_ui(),
+        tray_actions_count: p.manifest.tray_actions.len(),
+        file_actions_count: p.manifest.file_actions.len(),
     }
 }
 
-/// Resolved active hotkey binding declared by an enabled Protocol v2 plugin.
+/// Resolved active hotkey binding declared by an enabled Protocol v2/v3 plugin.
 #[derive(Debug, Clone)]
 pub struct ActivePluginHotkey {
     pub plugin_id: String,
@@ -122,6 +128,7 @@ pub struct ActivePluginHotkey {
     pub label: String,
     pub spec: String,
     pub trigger_query: String,
+    pub capture_selection: bool,
 }
 
 /// Merges manifest `[[settings]]` default values with user overrides in `config.toml`.
@@ -174,6 +181,7 @@ pub(crate) fn collect_active_plugin_hotkeys(
                 label: decl.label.clone(),
                 spec,
                 trigger_query: decl.trigger_query.clone(),
+                capture_selection: decl.capture_selection,
             });
             if out.len() >= 16 {
                 return out;

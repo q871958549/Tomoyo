@@ -8,8 +8,9 @@ use crate::actions::{
     spawn_capture_tool, spawn_pin_image_file,
 };
 use crate::tray::{
-    MENU_ID_CAPTURE, MENU_ID_CLIPBOARD, MENU_ID_CONFIG, MENU_ID_GC, MENU_ID_QUIT, MENU_ID_RELOAD,
-    MENU_ID_SETTINGS, MENU_ID_SHOW, MENU_ID_STATS, MENU_ID_TRANSLATE, MENU_ID_UPDATE,
+    MENU_ID_CAPTURE, MENU_ID_CLIPBOARD, MENU_ID_CONFIG, MENU_ID_GC, MENU_ID_PLUGIN_TRAY_BASE,
+    MENU_ID_QUIT, MENU_ID_RELOAD, MENU_ID_SETTINGS, MENU_ID_SHOW, MENU_ID_STATS,
+    MENU_ID_TRANSLATE, MENU_ID_UPDATE,
 };
 use tomoyo_core::{is_autostart_enabled, set_autostart_enabled, Lang};
 use tomoyo_protocol::{ActionKind, AttachedContext, InternalCommandKind};
@@ -55,6 +56,12 @@ pub(super) fn dispatch_menu_id(hwnd: HWND, app: &mut AppShell, id: u32) {
         MENU_ID_QUIT => {
             app.shutdown_clean();
             unsafe { let _ = DestroyWindow(hwnd); }
+        }
+        id if id >= MENU_ID_PLUGIN_TRAY_BASE => {
+            super::plugin_hotkeys::execute_plugin_tray_action(
+                app,
+                (id - MENU_ID_PLUGIN_TRAY_BASE) as usize,
+            );
         }
         _ => {}
     }

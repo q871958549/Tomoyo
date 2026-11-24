@@ -24,6 +24,8 @@ pub enum HostMessage {
     PickFolder,
     PickCaptureDir,
     PickSyncDir,
+    PickPluginPath { plugin_id: String, key: String, #[serde(default)] kind: String },
+    PluginRpc { req_id: String, method: String, #[serde(default)] params: Value },
     ClearSyncDir,
     StartCapture { #[serde(default)] mode: String },
     SyncTheme { theme: String },
@@ -81,6 +83,10 @@ pub struct HostAction {
     pub toggle_topmost: bool,
     /// `0` = none, `1` = app scan folder, `2` = capture save folder, `3` = sync folder.
     pub pick_folder_mode: u8,
+    /// Protocol v3: `(plugin_id, field_key, is_file)` picker request for plugin `dir` / `file` settings.
+    pub pick_plugin_path: Option<(String, String, bool)>,
+    /// Protocol v3: `(req_id, method, params)` Hybrid WebView → Plugin backend RPC call.
+    pub async_plugin_rpc: Option<(String, String, Value)>,
     pub reply_json: Option<String>,
     pub async_check_updates: Option<String>,
     pub async_install_update: Option<tomoyo_core::ReleaseInfo>,
@@ -147,6 +153,14 @@ pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isi
         HostMessage::PickFolder => HostAction { pick_folder_mode: 1, ..Default::default() },
         HostMessage::PickCaptureDir => HostAction { pick_folder_mode: 2, ..Default::default() },
         HostMessage::PickSyncDir => HostAction { pick_folder_mode: 3, ..Default::default() },
+        HostMessage::PickPluginPath { plugin_id, key, kind } => HostAction {
+            pick_plugin_path: Some((plugin_id, key, kind.eq_ignore_ascii_case("file"))),
+            ..Default::default()
+        },
+        HostMessage::PluginRpc { req_id, method, params } => HostAction {
+            async_plugin_rpc: Some((req_id, method, params)),
+            ..Default::default()
+        },
         HostMessage::ClearSyncDir => {
             let (reply, ok) = crate::backup::clear_sync_dir_reply();
             if ok && (notify_hwnd.is_some() || cfg!(target_os = "linux")) {
@@ -317,6 +331,7 @@ mod tests {
     fn generates_tomoyo_and_utools_bridge() {
         let script = build_init_script("dev.test.json", "{\"a\":1}", true, true, "{}");
         assert!(script.contains("window.tomoyo ="));
+        assert!(script.contains("callPlugin:"));
         assert!(script.contains("window.utools ="));
         assert!(script.contains("onPluginEnter"));
         assert!(script.contains("setSubInput"));

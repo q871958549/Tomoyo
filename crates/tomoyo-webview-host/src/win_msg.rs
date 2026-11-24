@@ -83,6 +83,11 @@ pub(crate) unsafe fn dispatch_webview_message(
         let _ = unsafe {
             PostMessageW(Some(hwnd), WM_APP_PICK_FOLDER, WPARAM(act.pick_folder_mode as usize), LPARAM(0))
         };
+    } else if let Some(req) = act.pick_plugin_path.clone() {
+        st.pending_plugin_path = Some(req);
+        let _ = unsafe {
+            PostMessageW(Some(hwnd), WM_APP_PICK_FOLDER, WPARAM(4), LPARAM(0))
+        };
     }
     if let Some(reply) = &act.reply_json
         && let Some(wv) = wv_sender
@@ -97,7 +102,8 @@ pub(crate) unsafe fn dispatch_webview_message(
         st.hk_capture.stop();
     }
     let should_close = act.should_close;
-    dispatch_async_workers(act, notify_hwnd, tx_cb, hwnd_raw, WM_APP_WEBVIEW_EVENT);
+    let plugin_id = st.plugin_id.clone();
+    dispatch_async_workers(act, &plugin_id, notify_hwnd, tx_cb, hwnd_raw, WM_APP_WEBVIEW_EVENT);
     if should_close {
         let _ = unsafe { PostMessageW(Some(hwnd), WM_CLOSE, WPARAM(0), LPARAM(0)) };
     }

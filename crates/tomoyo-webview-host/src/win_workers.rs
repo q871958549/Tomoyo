@@ -263,6 +263,7 @@ pub fn spawn_hotkey_probe_worker(
 
 pub fn dispatch_async_workers(
     act: crate::bridge::HostAction,
+    plugin_id: &str,
     parent_hwnd: Option<isize>,
     tx: &mpsc::Sender<String>,
     hwnd_raw: usize,
@@ -300,6 +301,14 @@ pub fn dispatch_async_workers(
     }
     if let Some(spec) = act.async_probe_hotkey {
         spawn_hotkey_probe_worker(spec, parent_hwnd, tx.clone(), hwnd_raw, notify_msg);
+    }
+    if let Some((req_id, method, params)) = act.async_plugin_rpc {
+        let pid = plugin_id.to_string();
+        let tx_c = tx.clone();
+        let _ = std::thread::Builder::new().name("tomoyo-plugin-rpc".into()).spawn(move || {
+            let reply = crate::plugin_rpc::execute_plugin_rpc(&pid, &req_id, &method, params);
+            push_evt(&tx_c, hwnd_raw, notify_msg, reply);
+        });
     }
 }
 

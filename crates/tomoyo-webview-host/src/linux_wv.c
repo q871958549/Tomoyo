@@ -372,6 +372,27 @@ char *tomoyo_wv_pick_folder(tomoyo_wv_t *h, const char *title) {
     return res;
 }
 
+char *tomoyo_wv_pick_file(tomoyo_wv_t *h, const char *title) {
+    GtkWindow *parent = (h && h->window) ? GTK_WINDOW(h->window) : NULL;
+    GtkFileChooserNative *dlg = gtk_file_chooser_native_new(
+        title ? title : "选择文件", parent, GTK_FILE_CHOOSER_ACTION_OPEN, "选择", "取消"
+    );
+    char *res = NULL;
+    if (gtk_native_dialog_run(GTK_NATIVE_DIALOG(dlg)) == GTK_RESPONSE_ACCEPT) {
+        res = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(dlg));
+    }
+    g_object_unref(dlg);
+    return res;
+}
+
+void tomoyo_wv_enable_devtools(tomoyo_wv_t *h) {
+    if (!h || !h->webview) return;
+    WebKitSettings *ws = webkit_web_view_get_settings(h->webview);
+    if (ws) webkit_settings_set_enable_developer_extras(ws, TRUE);
+    WebKitWebInspector *insp = webkit_web_view_get_inspector(h->webview);
+    if (insp) webkit_web_inspector_show(insp);
+}
+
 void tomoyo_wv_free_str(char *s) {
     if (s) g_free(s);
 }

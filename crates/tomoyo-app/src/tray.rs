@@ -30,6 +30,7 @@ pub const MENU_ID_CONFIG: u32 = 2004;
 pub const MENU_ID_RELOAD: u32 = 2005;
 pub const MENU_ID_GC: u32 = 2006;
 pub const MENU_ID_QUIT: u32 = 2007;
+pub const MENU_ID_PLUGIN_TRAY_BASE: u32 = 2200;
 
 pub struct TrayIcon {
     hwnd: HWND,
@@ -104,6 +105,7 @@ impl TrayIcon {
         clip_on: bool,
         tr_hk: Option<&str>,
         cap_hk: Option<&str>,
+        plugin_actions: &[tomoyo_plugin_host::ActivePluginTrayAction],
     ) -> Option<u32> {
         let mut entries = vec![
             PopupEntry::item(MENU_ID_SHOW, lang.pick("显示 Tomoyo", "Show Tomoyo"), None, false),
@@ -137,6 +139,17 @@ impl TrayIcon {
                 (!hk.is_empty()).then_some(hk),
                 false,
             ));
+        }
+        if !plugin_actions.is_empty() {
+            entries.push(PopupEntry::Separator);
+            for (idx, act) in plugin_actions.iter().enumerate() {
+                entries.push(PopupEntry::item(
+                    MENU_ID_PLUGIN_TRAY_BASE + idx as u32,
+                    &act.label,
+                    None,
+                    false,
+                ));
+            }
         }
         entries.extend([
             PopupEntry::Separator,

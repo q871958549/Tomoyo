@@ -57,12 +57,14 @@ pub(crate) struct HostWindowState {
     pub event_tx: mpsc::Sender<String>,
     pub event_rx: mpsc::Receiver<String>,
     pub base_title: String,
+    pub plugin_id: String,
     pub theme: String,
     pub pref_w: i32,
     pub pref_h: i32,
     pub icons: (Option<windows::Win32::UI::WindowsAndMessaging::HICON>, Option<windows::Win32::UI::WindowsAndMessaging::HICON>, bool),
     pub is_topmost: bool,
     pub picking_folder: bool,
+    pub pending_plugin_path: Option<(String, String, bool)>,
     pub settings_mode: bool,
     pub window_revealed: bool,
     pub notify_hwnd: Option<isize>,
@@ -102,7 +104,13 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 let st = unsafe { &mut *ptr };
                 if !st.picking_folder {
                     st.picking_folder = true;
-                    let reply = if wparam.0 == 3 {
+                    let reply = if wparam.0 == 4 {
+                        if let Some((pid, key, is_file)) = st.pending_plugin_path.take() {
+                            crate::folder_picker::pick_plugin_path(hwnd, &pid, &key, is_file)
+                        } else {
+                            serde_json::json!({ "event": "plugin_path_picked", "ok": false, "cancelled": true }).to_string()
+                        }
+                    } else if wparam.0 == 3 {
                         let (r, changed) = crate::folder_picker::pick_sync_folder(hwnd);
                         if changed
                             && let Some(t) = st.notify_hwnd { crate::bridge_os::notify_parent_mode(t, 1); }
@@ -172,6 +180,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             LRESULT(0)
         }
         WM_CLOSE => {
+            crate::plugin_rpc::shutdown_rpc_host();
             if !ptr.is_null() {
                 let st = unsafe { &mut *ptr };
                 st.hk_capture.stop();
@@ -245,12 +254,14 @@ pub fn run_windows_host(opts: LaunchArgs) {
         event_tx: event_tx.clone(),
         event_rx,
         base_title: opts.title.clone(),
+        plugin_id: opts.plugin_id.clone(),
         theme: opts.theme.clone(),
         pref_w: opts.width,
         pref_h: opts.height,
         icons,
         is_topmost: false,
         picking_folder: false,
+        pending_plugin_path: None,
         settings_mode: opts.settings_mode,
         window_revealed: !opts.settings_mode,
         notify_hwnd: opts.notify_hwnd,
@@ -286,6 +297,7 @@ pub fn run_windows_host(opts: LaunchArgs) {
     let fonts_dir_opt = locate_fonts_dir();
     let db_for_msg = Rc::clone(&plugin_db);
     let theme_clone = opts.theme.clone();
+    let devtools_on = opts.devtools;
 
     let env_handler = CreateCoreWebView2EnvironmentCompletedHandler::create(Box::new(
         move |res, env| {
@@ -301,6 +313,7 @@ pub fn run_windows_host(opts: LaunchArgs) {
             let db_inner = Rc::clone(&db_for_msg);
             let tx_inner = event_tx.clone();
             let theme_inner = theme_clone.clone();
+            let devtools_inner = devtools_on;
 
             let ctrl_handler = CreateCoreWebView2ControllerCompletedHandler::create(Box::new(
                 move |res, controller| {
@@ -360,6 +373,12 @@ pub fn run_windows_host(opts: LaunchArgs) {
                             } else {
                                 let url_w = HSTRING::from(&entry_url_inner);
                                 let _ = webview.Navigate(PCWSTR(url_w.as_ptr()));
+                            }
+                            if devtools_inner {
+                                if let Ok(s) = webview.Settings() {
+                                    let _ = s.SetAreDevToolsEnabled(true);
+                                }
+                                let _ = webview.OpenDevToolsWindow();
                             }
                             (*state_ptr).webview = Some(webview);
                         }

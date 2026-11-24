@@ -31,6 +31,7 @@ mod linux_hotkeys;
 #[cfg(target_os = "linux")]
 mod linux_workers;
 mod ocr_view;
+mod plugin_rpc;
 mod shim_js;
 #[cfg(windows)]
 mod single_instance;
@@ -131,6 +132,7 @@ pub struct LaunchArgs {
     pub notify_hwnd: Option<isize>,
     pub inline_hwnd: Option<isize>,
     pub dock_rect: Option<(i32, i32, i32, i32)>,
+    pub devtools: bool,
     pub self_test: bool,
 }
 
@@ -193,6 +195,7 @@ fn parse_args() -> LaunchArgs {
         notify_hwnd: val("--notify-hwnd").and_then(|s| s.parse().ok()),
         inline_hwnd: val("--inline-hwnd").and_then(|s| s.parse().ok()),
         dock_rect: parse_dock_rect(val("--dock-rect")),
+        devtools: args.iter().any(|a| a == "--devtools"),
         self_test: args.iter().any(|a| a == "--self-test"),
     }
 }
@@ -247,6 +250,9 @@ pub fn build_settings_init_script_for(initial_route: &str) -> String {
                 "declared_hotkeys": p.declared_hotkeys,
                 "declared_events": p.declared_events,
                 "settings_schema": p.settings_schema,
+                "has_ui": p.has_ui,
+                "tray_actions_count": p.tray_actions_count,
+                "file_actions_count": p.file_actions_count,
             })
         })
         .collect();

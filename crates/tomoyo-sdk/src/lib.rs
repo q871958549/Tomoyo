@@ -46,6 +46,10 @@ pub trait TomoyoPlugin {
     fn on_event(&self, _ev: &PluginEventPayload) -> ExecuteResponse {
         ExecuteResponse::default()
     }
+    /// Protocol v3 optional Hybrid RPC handler (`tomoyo/call` invoked by `window.tomoyo.callPlugin`).
+    fn call(&self, req: &PluginCallRequest) -> Result<serde_json::Value, String> {
+        Err(format!("unsupported plugin RPC method `{}`", req.method))
+    }
 }
 
 /// Runs the newline-delimited JSON-RPC 2.0 stdio event loop for a Tomoyo plugin.
@@ -105,6 +109,13 @@ pub fn run<P: TomoyoPlugin>(plugin: P) {
                     JsonRpcResponse::ok(req.id, serde_json::to_value(res).unwrap())
                 }
                 Err(e) => JsonRpcResponse::err(req.id, -32602, format!("invalid event params: {e}")),
+            },
+            METHOD_CALL => match serde_json::from_value::<PluginCallRequest>(req.params) {
+                Ok(call_req) => match plugin.call(&call_req) {
+                    Ok(val) => JsonRpcResponse::ok(req.id, val),
+                    Err(msg) => JsonRpcResponse::err(req.id, -32000, msg),
+                },
+                Err(e) => JsonRpcResponse::err(req.id, -32602, format!("invalid call params: {e}")),
             },
             METHOD_SHUTDOWN => {
                 should_exit = true;

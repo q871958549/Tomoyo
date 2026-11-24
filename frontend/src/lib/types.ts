@@ -178,6 +178,7 @@ export interface PluginHotkeyDecl {
   label: string;
   default_hotkey?: string;
   trigger_query?: string;
+  capture_selection?: boolean;
 }
 
 export interface PluginSettingOption {
@@ -185,16 +186,25 @@ export interface PluginSettingOption {
   label: string;
 }
 
+export interface PluginSettingVisibleIf {
+  key: string;
+  equals: string | number | boolean;
+}
+
 export interface PluginSettingField {
   key: string;
   label: string;
   description?: string;
-  type: 'text' | 'bool' | 'number' | 'select';
+  section?: string;
+  visible_if?: PluginSettingVisibleIf;
+  type: 'text' | 'bool' | 'number' | 'select' | 'secret' | 'hotkey' | 'dir' | 'file';
   placeholder?: string;
   min?: number;
   max?: number;
   step?: number;
   options?: PluginSettingOption[];
+  presets?: string[];
+  extensions?: string[];
   default?: string | number | boolean;
 }
 
@@ -222,6 +232,9 @@ export interface PluginEntry {
   declared_hotkeys?: PluginHotkeyDecl[];
   declared_events?: string[];
   settings_schema?: PluginSettingField[];
+  has_ui?: boolean;
+  tray_actions_count?: number;
+  file_actions_count?: number;
 }
 
 export interface ReleaseInfo {
@@ -271,7 +284,7 @@ export interface SettingsInitPayload {
   plugins_dir: string;
   logs_dir: string;
   running_apps: string[];
-  secrets_status: { deepl: boolean; openai: boolean };
+  secrets_status: { deepl: boolean; openai: boolean; plugins?: Record<string, boolean> };
   hotkey_health?: HotkeyHealthReport;
   cached_update?: UpdateStatus | null;
   system_fonts?: string[];

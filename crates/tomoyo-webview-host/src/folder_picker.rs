@@ -110,14 +110,47 @@ pub fn pick_sync_folder(owner: HWND) -> (String, bool) {
     }
 }
 
+pub fn pick_plugin_path(owner: HWND, plugin_id: &str, key: &str, is_file: bool) -> String {
+    let title = if is_file {
+        w!("选择插件所需文件")
+    } else {
+        w!("选择插件所需目录")
+    };
+    match show_path_dialog(owner, title, !is_file) {
+        Some(raw_path) => serde_json::json!({
+            "event": "plugin_path_picked",
+            "plugin_id": plugin_id,
+            "key": key,
+            "ok": true,
+            "cancelled": false,
+            "path": raw_path
+        })
+        .to_string(),
+        None => serde_json::json!({
+            "event": "plugin_path_picked",
+            "plugin_id": plugin_id,
+            "key": key,
+            "ok": false,
+            "cancelled": true
+        })
+        .to_string(),
+    }
+}
+
 fn show_folder_dialog(owner: HWND, title: windows::core::PCWSTR) -> Option<String> {
+    show_path_dialog(owner, title, true)
+}
+
+fn show_path_dialog(owner: HWND, title: windows::core::PCWSTR, folders_only: bool) -> Option<String> {
     unsafe {
         let dialog: IFileOpenDialog =
             CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER).ok()?;
         let cur_opts = dialog.GetOptions().unwrap_or_default();
-        let _ = dialog.SetOptions(
-            cur_opts | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST | FOS_NOCHANGEDIR,
-        );
+        let mut opts = cur_opts | FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST | FOS_NOCHANGEDIR;
+        if folders_only {
+            opts |= FOS_PICKFOLDERS;
+        }
+        let _ = dialog.SetOptions(opts);
         let _ = dialog.SetTitle(title);
         if dialog.Show(Some(owner)).is_err() {
             return None;

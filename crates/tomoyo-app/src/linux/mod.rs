@@ -26,6 +26,15 @@ use tomoyo_plugin_host::PluginHost;
 use tomoyo_protocol::AttachedContext;
 use tomoyo_providers::ClipboardProvider;
 
+#[repr(C)]
+pub struct LinuxTrayMenuItem {
+    pub label: *const c_char,
+    pub cmd: u32,
+    pub parent_idx: i32,
+    pub checked: i32,
+    pub disabled: i32,
+}
+
 unsafe extern "C" {
     pub fn mi_collect(force: bool);
     pub fn tomoyo_linux_ui_create(
@@ -54,6 +63,7 @@ unsafe extern "C" {
     pub fn tomoyo_linux_ui_queue_draw(a: *mut c_void);
     pub fn tomoyo_linux_ui_screen_info(a: *mut c_void, ox: *mut c_int, oy: *mut c_int, ow: *mut c_int, oh: *mut c_int, oscale: *mut c_int);
     pub fn tomoyo_linux_tray_setup(a: *mut c_void, icon_path: *const c_char, hotkey_lbl: *const c_char);
+    pub fn tomoyo_linux_tray_set_menu(a: *mut c_void, items: *const LinuxTrayMenuItem, n: usize);
     pub fn tomoyo_linux_ui_focus_entry(a: *mut c_void);
     pub fn tomoyo_linux_ui_is_active(a: *mut c_void) -> c_int;
     pub fn tomoyo_linux_entry_has_selection(a: *mut c_void) -> c_int;

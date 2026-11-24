@@ -15,8 +15,8 @@ use super::{
     AppShell, HOTKEY_CLIPBOARD_ID, HOTKEY_ID, HOTKEY_TRANSLATE_ID, TIMER_CLEAR_TOAST,
     TIMER_FADE_HIDE, TIMER_FOCUS_GUARD, TIMER_HIBERNATE, TIMER_LAUNCH_HIDE, TIMER_SETTINGS_HIDE,
     WM_APP_CONFIG_SAVED, WM_APP_EDIT_KEY, WM_APP_FLOW_DONE, WM_APP_LAUNCH_DONE,
-    WM_APP_PASTE_INTERCEPT, WM_APP_RESULTS_READY, WM_APP_SHOW_CONTEXT_MENU,
-    WM_APP_UPDATE_INSTALLED, WM_APP_UPDATE_READY, WM_APP_WAKE_EXISTING,
+    WM_APP_PASTE_INTERCEPT, WM_APP_PLUGIN_EVENT_DONE, WM_APP_RESULTS_READY,
+    WM_APP_SHOW_CONTEXT_MENU, WM_APP_UPDATE_INSTALLED, WM_APP_UPDATE_READY, WM_APP_WAKE_EXISTING,
 };
 use crate::icons::WM_APP_ICON_READY;
 use crate::preview_loader::WM_APP_PREVIEW_READY;
@@ -206,6 +206,7 @@ pub(super) unsafe extern "system" fn main_wndproc(
         WM_APP_FLOW_DONE => { app.on_async_flow_done(); LRESULT(0) }
         WM_APP_LAUNCH_DONE => { app.on_async_launch_done(); LRESULT(0) }
         WM_APP_SHOW_CONTEXT_MENU => { app.show_launcher_context_menu(wparam.0 != 0); LRESULT(0) }
+        WM_APP_PLUGIN_EVENT_DONE => { super::plugin_hotkeys::on_async_plugin_event_done(app); LRESULT(0) }
         WM_DPICHANGED => {
             let new_dpi = (wparam.0 & 0xFFFF) as u32;
             let suggested = (lparam.0 != 0).then(|| unsafe { &*(lparam.0 as *const RECT) });
@@ -317,10 +318,11 @@ fn handle_tray_callback(hwnd: HWND, app: &mut AppShell, lparam: LPARAM) -> LRESU
                 )
             })
             .unwrap_or_else(|_| (true, Some("Alt+T".into()), Some("Alt+S".into())));
+        app.tray_plugin_actions = app.plugin_host.active_tray_actions();
         let chosen = app.tray.as_ref().and_then(|tray| {
             tray.show_context_menu(
                 app.lang, app.theme, app.dpi_scale, app.font_regular, app.font_medium, clip_on,
-                tr_hk.as_deref(), cap_hk.as_deref(),
+                tr_hk.as_deref(), cap_hk.as_deref(), &app.tray_plugin_actions,
             )
         });
         if let Some(id) = chosen {

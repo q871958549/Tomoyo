@@ -40,6 +40,8 @@ pub fn build_init_script(
   const _enterHandlers = [];
   const _readyHandlers = [];
   const _outHandlers = [];
+  const _rpcPending = new Map();
+  let _rpcSeq = 1;
   let _subInputBar = null;
 
   function post(msg) {{
@@ -48,6 +50,23 @@ pub fn build_init_script(
         window.chrome.webview.postMessage(JSON.stringify(msg));
       }}
     }} catch (_) {{}}
+  }}
+
+  function handlePluginRpc(msg) {{
+    if (!msg || !msg.req_id) return;
+    const pending = _rpcPending.get(msg.req_id);
+    if (!pending) return;
+    _rpcPending.delete(msg.req_id);
+    clearTimeout(pending.timer);
+    if (msg.ok) pending.resolve(msg.result);
+    else pending.reject(new Error(String(msg.error || 'Plugin RPC failed')));
+  }}
+
+  if (window.chrome && window.chrome.webview && window.chrome.webview.addEventListener) {{
+    window.chrome.webview.addEventListener('message', (ev) => {{
+      const d = ev && ev.data;
+      if (d && d.__tomoyo_plugin_rpc__) handlePluginRpc(d);
+    }});
   }}
 
   window.addEventListener('error', (e) => {{
@@ -141,6 +160,20 @@ pub fn build_init_script(
     togglePinTopmost: () => post({{ cmd: 'toggle_pin_topmost' }}),
     close: () => post({{ cmd: 'close' }}),
     onEnter: (cb) => {{ if (typeof cb === 'function') _enterHandlers.push(cb); }},
+    callPlugin: (method, params) => new Promise((resolve, reject) => {{
+      const m = String(method || '').trim();
+      if (!m) {{ reject(new Error('method is required')); return; }}
+      const req_id = 'rpc_' + (_rpcSeq++);
+      const timer = setTimeout(() => {{
+        if (_rpcPending.has(req_id)) {{
+          _rpcPending.delete(req_id);
+          reject(new Error('Plugin RPC timeout: ' + m));
+        }}
+      }}, 15000);
+      _rpcPending.set(req_id, {{ resolve, reject, timer }});
+      post({{ cmd: 'plugin_rpc', req_id, method: m, params: params === undefined ? null : params }});
+    }}),
+    __onPluginRpc: handlePluginRpc,
     db,
     dbStorage
   }};

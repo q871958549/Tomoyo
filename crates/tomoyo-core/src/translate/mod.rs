@@ -6,7 +6,10 @@ pub mod secrets;
 
 pub use config::{sanitize_translate_config, TranslateConfig, ALL_TRANSLATE_ENGINES, ALLOWED_TARGET_LANGS};
 pub use engines::{resolve_target_lang, url_encode_component, EngineTranslation};
-pub use secrets::{delete_secret, get_secret, has_secret, set_secret};
+pub use secrets::{
+    delete_secret, get_secret, has_secret, is_valid_secret_key, load_plugin_secrets,
+    plugin_secret_key, set_secret,
+};
 
 use crate::{data_dir, next_trace_id};
 use chrono::Utc;

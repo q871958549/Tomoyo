@@ -31,6 +31,7 @@ pub fn permission_requires_approval(p: Permission) -> bool {
             | Permission::Network
             | Permission::Clipboard
             | Permission::ShellExec
+            | Permission::SelectionRead
     )
 }
 
@@ -42,6 +43,7 @@ pub fn permission_key(p: Permission) -> &'static str {
         Permission::Clipboard => "clipboard",
         Permission::ShellExec => "shell_exec",
         Permission::SystemInfo => "system_info",
+        Permission::SelectionRead => "selection_read",
     }
 }
 
@@ -53,6 +55,7 @@ pub fn permission_from_key(k: &str) -> Option<Permission> {
         "clipboard" => Some(Permission::Clipboard),
         "shell_exec" => Some(Permission::ShellExec),
         "system_info" => Some(Permission::SystemInfo),
+        "selection_read" => Some(Permission::SelectionRead),
         _ => None,
     }
 }
@@ -65,6 +68,7 @@ pub fn permission_label_zh(p: Permission) -> &'static str {
         Permission::Clipboard => "读写系统剪贴板 (Clipboard)",
         Permission::ShellExec => "执行系统命令/子进程 (ShellExec)",
         Permission::SystemInfo => "读取系统基础信息 (SystemInfo)",
+        Permission::SelectionRead => "无痕读取当前选中文本 (SelectionRead)",
     }
 }
 

@@ -175,11 +175,7 @@ pub fn execute_action(
             action_id,
             payload,
         } => {
-            let req = ExecuteRequest {
-                action_id: action_id.clone(),
-                item_id: item_id.to_string(),
-                payload: payload.clone(),
-            };
+            let req = ExecuteRequest::new(action_id.clone(), item_id.to_string(), payload.clone());
             match plugin_host.execute_action(plugin_id, req) {
                 Ok(resp) => {
                     if let Some(txt) = &resp.copy_text {
@@ -187,6 +183,11 @@ pub fn execute_action(
                     }
                     if let Some(url) = &resp.open_url {
                         let _ = shell_open(url, None, None);
+                    }
+                    if let Some(wv_req) = &resp.open_webview
+                        && let Some(wv_act) = plugin_host.resolve_webview_open(plugin_id, wv_req)
+                    {
+                        return execute_action(&wv_act, item_id, plugin_host, is_dark_theme);
                     }
                     ActionOutcome {
                         hide_window: resp.hide_window && resp.fill_query.is_none(),

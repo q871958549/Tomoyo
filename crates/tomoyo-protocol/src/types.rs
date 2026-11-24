@@ -1,4 +1,4 @@
-use crate::SearchFilter;
+use crate::{OpenWebViewRequest, SearchFilter};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -106,6 +106,9 @@ pub struct QueryContext {
     /// Protocol v2: user-configured setting values for the target plugin (populated by `PluginHost`).
     #[serde(default)]
     pub plugin_settings: BTreeMap<String, Value>,
+    /// Protocol v3: decrypted secrets declared by this plugin (OS Keychain / DPAPI).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub plugin_secrets: BTreeMap<String, String>,
 }
 
 fn default_limit() -> usize {
@@ -127,7 +130,12 @@ impl QueryContext {
             attached: None,
             filter: SearchFilter::All,
             plugin_settings: BTreeMap::new(),
+            plugin_secrets: BTreeMap::new(),
         }
+    }
+
+    pub fn secret(&self, key: &str) -> Option<&str> {
+        self.plugin_secrets.get(key).map(String::as_str)
     }
 
     pub fn with_keyword(mut self, keyword: impl Into<String>, args: impl Into<String>) -> Self {
@@ -369,6 +377,9 @@ pub struct ExecuteResponse {
     /// Optional replacement query to fill into the search bar (keeps launcher open).
     #[serde(default)]
     pub fill_query: Option<String>,
+    /// Protocol v3: directly open this plugin's WebView / Hybrid UI without opening the search box.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub open_webview: Option<OpenWebViewRequest>,
     /// Optional replacement declarative view (SDUI v1).
     #[serde(default)]
     pub view: Option<ViewModel>,

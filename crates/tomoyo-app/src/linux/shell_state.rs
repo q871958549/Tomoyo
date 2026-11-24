@@ -26,7 +26,7 @@ use std::time::{Duration, Instant};
 use tomoyo_core::{
     trim_working_set, Lang, QueryRouter, ResolvedPreview, TomoyoConfig, TypographyConfig, UpdateManager,
 };
-use tomoyo_plugin_host::PluginHost;
+use tomoyo_plugin_host::{ActivePluginTrayAction, PluginHost};
 use tomoyo_protocol::{AttachedContext, ResultItem, SearchFilter};
 use tomoyo_providers::{everything_linux::is_linux_file_search_available, ClipboardProvider};
 
@@ -99,6 +99,7 @@ pub struct AppCore {
     pub(super) shown_at: Instant,
     hibernate_source: u32,
     pub(super) everything_ok: bool,
+    pub(super) tray_plugin_actions: Vec<ActivePluginTrayAction>,
 }
 
 impl AppCore {
@@ -173,6 +174,7 @@ impl AppCore {
             shown_at: Instant::now(),
             hibernate_source: 0,
             everything_ok: is_linux_file_search_available(),
+            tray_plugin_actions: Vec::new(),
         }));
 
         CURRENT_CORE.with(|c| *c.borrow_mut() = Some(Rc::downgrade(&core)));
@@ -219,6 +221,7 @@ impl AppCore {
                     && let Ok(hl) = CString::new(format!("Tomoyo ({})", c.hotkeys.active_label))
                 {
                     unsafe { tomoyo_linux_tray_setup(ui, ip.as_ptr(), hl.as_ptr()); }
+                    c.rebuild_tray_menu();
                 }
                 c.preview_loader.set_notify_callback(|| {
                     schedule_on_ui(|| with_current_core(|st| {

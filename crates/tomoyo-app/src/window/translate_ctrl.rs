@@ -62,12 +62,12 @@ impl AppShell {
 }
 
 #[cfg(windows)]
-fn clipboard_seq_num() -> u32 {
+pub(super) fn clipboard_seq_num() -> u32 {
     unsafe { windows::Win32::System::DataExchange::GetClipboardSequenceNumber() }
 }
 
 #[cfg(windows)]
-fn send_ctrl_c_cleanly() {
+pub(super) fn send_ctrl_c_cleanly() {
     use windows::Win32::UI::Input::KeyboardAndMouse::{
         SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, VIRTUAL_KEY,
         VK_CONTROL, VK_MENU, VK_SHIFT,

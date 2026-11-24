@@ -1,4 +1,4 @@
-use crate::engine_rank::{build_zero_result_fallbacks, rank_and_dedup};
+use crate::engine_rank::{attach_plugin_file_actions, build_zero_result_fallbacks, rank_and_dedup};
 use crate::{record_hibernation_cycle, trim_working_set, FrecencyStore, TomoyoConfig};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
@@ -49,6 +49,10 @@ pub trait ExternalPluginBridge: Send + Sync {
     fn reload(&self);
     fn reap_idle(&self);
     fn summary_lines(&self) -> Vec<PluginSummary>;
+    /// Protocol v3: zero-I/O extension-aware file actions contributed by enabled plugins.
+    fn file_actions_for(&self, _full_path: &str, _ext_lower: &str) -> Vec<tomoyo_protocol::ActionSpec> {
+        Vec::new()
+    }
 }
 
 /// Result of Phase-1 instant in-memory provider execution before slow IPC merge.
@@ -368,7 +372,9 @@ impl QueryRouter {
         items: Vec<ResultItem>,
         limit: usize,
     ) -> Vec<ResultItem> {
-        rank_and_dedup(&self.frecency, raw_query, items, limit)
+        let mut ranked = rank_and_dedup(&self.frecency, raw_query, items, limit);
+        attach_plugin_file_actions(self.plugin_bridge.as_deref(), &mut ranked);
+        ranked
     }
 }
 

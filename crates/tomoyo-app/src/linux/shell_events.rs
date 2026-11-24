@@ -86,6 +86,7 @@ pub unsafe extern "C" fn on_tray_cmd_cb(ctx: *mut c_void, cmd: u32) {
                 st.shutdown_clean();
                 unsafe { tomoyo_linux_ui_quit(); }
             }
+            id if id >= 100 => st.execute_plugin_tray_action((id - 100) as usize),
             _ => {}
         }
     }
