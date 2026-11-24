@@ -201,3 +201,48 @@ pub(crate) fn disable_transparent_hugepages() {
         let _ = prctl(PR_SET_THP_DISABLE, 1, 0, 0, 0);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::ffi::{c_char, c_int, c_void, CString};
+
+    unsafe extern "C" {
+        fn tomoyo_linux_load_icon_bgra(
+            icon_name_or_path: *const c_char,
+            sz: c_int,
+            out: *mut u8,
+            out_len: usize,
+        ) -> c_int;
+        fn dlopen(filename: *const c_char, flags: c_int) -> *mut c_void;
+        fn dlclose(handle: *mut c_void) -> c_int;
+    }
+
+    #[test]
+    fn renders_svg_icon_via_librsvg_without_spawning_glycin_threads() {
+        let svg = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../assets/tomoyo-icon.svg");
+        assert!(svg.is_file(), "missing test SVG: {}", svg.display());
+        let cs = CString::new(svg.to_string_lossy().as_bytes()).unwrap();
+        let mut buf = vec![0u8; 32 * 32 * 4];
+        let ok = unsafe { tomoyo_linux_load_icon_bgra(cs.as_ptr(), 32, buf.as_mut_ptr(), buf.len()) };
+        const RTLD_LAZY: c_int = 1;
+        const RTLD_NOLOAD: c_int = 4;
+        let rsvg_handle = unsafe { dlopen(c"librsvg-2.so.2".as_ptr(), RTLD_LAZY | RTLD_NOLOAD) };
+        let has_rsvg = !rsvg_handle.is_null();
+        if has_rsvg {
+            unsafe { let _ = dlclose(rsvg_handle); }
+            assert_eq!(ok, 1, "librsvg loaded but SVG icon render failed");
+            assert!(buf.as_chunks::<4>().0.iter().any(|p| p[3] > 0), "rendered SVG buffer is empty");
+            if let Ok(tasks) = std::fs::read_dir("/proc/self/task") {
+                for ent in tasks.flatten() {
+                    let comm = std::fs::read_to_string(ent.path().join("comm")).unwrap_or_default();
+                    let name = comm.trim();
+                    assert!(
+                        name != "gly-global-exec" && name != "async-io",
+                        "unexpected glycin thread `{name}` spawned during SVG render"
+                    );
+                }
+            }
+        }
+    }
+}
