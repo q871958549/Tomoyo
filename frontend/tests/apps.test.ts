@@ -226,6 +226,11 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
     expect(document.body.textContent).toContain('417');
     expect(document.body.textContent).toContain('Quiet.md Markdown 编辑器');
     expect(document.body.textContent).toContain('暂不支持当前系统');
+    expect(document.querySelector('[data-starter-packs]')).not.toBeNull();
+    expect(document.body.textContent).toContain('按需装机套件');
+    document.querySelector<HTMLButtonElement>('[data-pack="writing-ocr"] button')?.click();
+    flushSync();
+    expect(wv.posted.some((m) => m.cmd === 'install_plugin' && m.plugin_id === 'dev.tomoyo.markdown-editor')).toBe(true);
 
     // Search & Web sub-tabs
     document.querySelector<HTMLButtonElement>('button[data-tab="search"]')?.click();

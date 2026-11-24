@@ -375,7 +375,7 @@
           {#if subPlugins === 'installed'}
             <PluginsTab {cfg} {lang} {plugins} officialIcons={init.official_icons || {}} {configPath} pluginsDir={init.plugins_dir} {secretsStatus} expandedId={expandedPlugin} healthReport={pluginHealth} checkingHealth={checkingPluginHealth} onCheckHealth={checkPluginHealth} onToggleExpand={(id) => (expandedPlugin = id)} {onTogglePlugin} {onUpdatePluginConfig} />
           {:else}
-            <StoreTab {lang} items={storeItems} meta={storeMeta} statusText={storeStatus} loading={storeLoading} detail={storeDetail} detailLoading={storeDetailLoading} onQuery={fetchStore} onInspectDetail={inspectStoreDetail} onCloseDetail={() => (storeDetail = null)} />
+            <StoreTab {lang} items={storeItems} installedIds={plugins.map((p) => p.id)} meta={storeMeta} statusText={storeStatus} loading={storeLoading} detail={storeDetail} detailLoading={storeDetailLoading} onQuery={fetchStore} onInspectDetail={inspectStoreDetail} onCloseDetail={() => (storeDetail = null)} />
           {/if}
         {:else if activeTab === 'system'}
           <div class="subbar">

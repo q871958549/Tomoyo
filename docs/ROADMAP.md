@@ -421,10 +421,11 @@
 4. **`tomoyo-ui-macos` 平台能力对齐**：
    - 补齐 Spotlight `mdfind` 参数构建与输出解析、系统剪贴板读取、Finder 定位与 `LaunchAgent` plist 生成器及跨平台单元测试，为 macOS 原生外壳落地夯实接口底座。
 
-### 阶段二十三：`v3.1+`（远期演进）— Protocol v3 通用底座与重型模块全量外迁（规划中）
-> 详见 [`docs/DECOUPLING_BLUEPRINT.md`](DECOUPLING_BLUEPRINT.md) Phase 2–4：
-1. **Hybrid 混合运行时（`window.tomoyo.callPlugin`）与 Protocol v3**：允许 WebView 插件直接与自身 STDIO/WASM 后端双向 RPC，扩充 `[[settings]]`（`secret` / `hotkey` / `dir` / `file` / `section`）、`[[tray_actions]]`、`triggers.file_extensions` 与 `Permission::SelectionRead`；
-2. **按序外迁重型工具 & Starter Packs**：将离线 OCR → 多源划词翻译 → 原生截图与录屏 → 剪贴板历史工作台全部迁出为独立按需安装插件与首次引导按需勾选包。
+### 阶段二十三：`v3.0.x` — Protocol v3 通用底座、重型官方模块全量外迁与 Starter Packs（已完成 ✅）
+> 完整蓝图与验收记录见 [`docs/DECOUPLING_BLUEPRINT.md`](DECOUPLING_BLUEPRINT.md) Phase 1–4：
+1. **Protocol v3 通用插件底座（Phase 2）**：落地 Hybrid 混合运行时（`window.tomoyo.callPlugin` ↔ `tomoyo/call`）、声明式 `[[settings]]` v3（`secret` / `hotkey` / `dir` / `file` / `section` / `visible_if`）与通用加密密钥库（`plugin:<id>:<key>`）、`[[tray_actions]]`、`[[file_actions]]`、`Permission::SelectionRead` 与 `tomoyo-cli dev --devtools`；
+2. **四大重型官方模块 100% 零特权外迁（Phase 3a–3d）**：离线 OCR（`dev.tomoyo.ocr`）、多源划词翻译（`dev.tomoyo.translate`）、原生截图贴图录屏（`dev.tomoyo.capture`）与剪贴板历史工作台（`dev.tomoyo.clipboard`）全部迁出主内核与 `tomoyo-webview-host`，移除核心 `rusqlite`、内置业务 Provider/Tab/HTML 及静态剪贴板监听（按订阅动态启停），`tomoyo` 减重至 `5.86 MB`、`tomoyo-webview-host` 减重 `-35%` 至 `3.40 MB`（仅内嵌 `settings.html`）；
+3. **Starter Packs 与多平台独立插件分发（Phase 4）**：插件市场新增四组按需装机套件（纯净微内核 / 高频效率 / 写作识字 / 官方全家桶），CI/Release/Inno Setup/Arch `PKGBUILD` 全量同步 6 款官方插件及每款插件独立的 Linux/Windows ZIP 产物与 `SHA256SUMS`。
 
 ---
 

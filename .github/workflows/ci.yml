@@ -79,10 +79,16 @@ jobs:
           ./target/release/tomoyo-webview-host --self-test
           ./target/release/tomoyo-capture --self-test
           ./target/release/tomoyo-plugin-ocr --self-test
+          ./target/release/tomoyo-plugin-translate --self-test
+          ./target/release/tomoyo-plugin-capture --self-test
+          ./target/release/tomoyo-plugin-clipboard --self-test
           ./target/release/tomoyo-cli registry list
           ./target/release/tomoyo-cli registry check --manifest-only
           ./target/release/tomoyo-cli dev plugins/official-notes --query "hello" --once
           ./target/release/tomoyo-cli dev plugins/official-md-editor --query "" --once
+          ./target/release/tomoyo-cli dev plugins/official-translate --query "hello" --once
+          ./target/release/tomoyo-cli dev plugins/official-capture --query "" --once
+          ./target/release/tomoyo-cli dev plugins/official-clipboard --query ":manage" --once
 
   windows-test:
     runs-on: windows-latest
@@ -182,10 +188,16 @@ jobs:
           Get-Content $out3
           if ($p3.ExitCode -ne 0) { exit $p3.ExitCode }
           .\target\release\tomoyo-plugin-ocr.exe --self-test
+          .\target\release\tomoyo-plugin-translate.exe --self-test
+          .\target\release\tomoyo-plugin-capture.exe --self-test
+          .\target\release\tomoyo-plugin-clipboard.exe --self-test
           .\target\release\tomoyo-cli.exe registry list
           .\target\release\tomoyo-cli.exe registry check --manifest-only
           .\target\release\tomoyo-cli.exe dev plugins/official-notes --query "hello" --once
           .\target\release\tomoyo-cli.exe dev plugins/official-md-editor --query "" --once
+          .\target\release\tomoyo-cli.exe dev plugins/official-translate --query "hello" --once
+          .\target\release\tomoyo-cli.exe dev plugins/official-capture --query "" --once
+          .\target\release\tomoyo-cli.exe dev plugins/official-clipboard --query ":manage" --once
 
   macos-core-check:
     runs-on: macos-latest

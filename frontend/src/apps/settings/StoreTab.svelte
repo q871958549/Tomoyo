@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { ChevronLeft, ChevronRight, Download, ExternalLink, Info, RefreshCw, ShieldAlert, Trash2, X } from '@lucide/svelte';
   import { localizePermission, localizeRuntime } from '../../lib/defaults';
   import { postHost } from '../../lib/ipc';
@@ -6,6 +7,7 @@
   import Button from '../../lib/ui/Button.svelte';
   import Input from '../../lib/ui/Input.svelte';
   import Select from '../../lib/ui/Select.svelte';
+  import StarterPacksCard from './StarterPacksCard.svelte';
 
   export interface StoreItem {
     id: string;
@@ -55,6 +57,7 @@
   interface Props {
     lang: Lang;
     items: StoreItem[];
+    installedIds?: string[];
     meta: StorePageMeta;
     statusText: string;
     loading: boolean;
@@ -65,8 +68,16 @@
     onCloseDetail?: () => void;
   }
 
-  let { lang, items, meta, statusText, loading, detail = null, detailLoading = false, onQuery, onInspectDetail, onCloseDetail }: Props = $props();
+  let { lang, items, installedIds = [], meta, statusText, loading, detail = null, detailLoading = false, onQuery, onInspectDetail, onCloseDetail }: Props = $props();
   let isEn = $derived(lang === 'en');
+  let catalogById = $state<Record<string, StoreItem>>({});
+
+  $effect(() => {
+    if (items.length === 0) return;
+    const next: Record<string, StoreItem> = { ...untrack(() => catalogById) };
+    for (const it of items) next[it.id.toLowerCase()] = it;
+    catalogById = next;
+  });
 
   let query = $state('');
   let category = $state('all');
@@ -106,6 +117,8 @@
     {tr(lang, 'btn_refresh_store')}
   </Button>
 </div>
+
+<StarterPacksCard {lang} {catalogById} {installedIds} />
 
 <div class="t-card store-toolbar">
   <div class="toolbar-row">

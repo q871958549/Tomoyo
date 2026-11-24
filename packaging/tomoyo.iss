@@ -48,7 +48,7 @@ Name: "custom"; Description: "Custom installation (自定义组件)"; Flags: isc
 Name: "core"; Description: "Tomoyo Core Launcher, Settings Center & CLI (必选内核)"; Types: suite core custom; Flags: fixed
 Name: "suite"; Description: "Official Productivity Suite (官方效率套件)"; Types: suite
 Name: "suite\capture"; Description: "Native Screenshot, Pin & Screen Recording (原生截图/贴图/录屏)"; Types: suite
-Name: "suite\plugins"; Description: "Official & Reference Plugins (备忘录 / Quiet.md / 离线 OCR / 示例插件)"; Types: suite
+Name: "suite\plugins"; Description: "Official & Reference Plugins (剪贴板 / 翻译 / 截图 / 备忘录 / Quiet.md / 离线 OCR)"; Types: suite
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a Desktop shortcut (创建桌面快捷方式)"; GroupDescription: "Additional tasks (附加选项):"
@@ -92,6 +92,9 @@ begin
   Exec('taskkill.exe', '/F /IM tomoyo-plugin-ocr.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Exec('taskkill.exe', '/F /IM tomoyo-plugin-notes.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Exec('taskkill.exe', '/F /IM tomoyo-plugin-md-editor.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec('taskkill.exe', '/F /IM tomoyo-plugin-translate.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec('taskkill.exe', '/F /IM tomoyo-plugin-capture.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec('taskkill.exe', '/F /IM tomoyo-plugin-clipboard.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Exec('taskkill.exe', '/F /IM tomoyo-plugin-hello.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Exec('taskkill.exe', '/F /IM tomoyo-cli.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   // Remove legacy scripts/install-local.ps1 uninstall entry so Add/Remove Programs only shows one Tomoyo

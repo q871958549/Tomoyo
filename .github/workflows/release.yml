@@ -22,7 +22,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            build-essential pkg-config \
+            build-essential pkg-config zip \
             libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
             libcurl4-openssl-dev libsecret-1-dev libx11-dev libxext-dev libxtst-dev libdbus-1-dev libwayland-dev libpipewire-0.3-dev \
             tesseract-ocr tesseract-ocr-eng
@@ -64,18 +64,21 @@ jobs:
           ./target/release/tomoyo-webview-host --self-test
           ./target/release/tomoyo-capture --self-test
           ./target/release/tomoyo-plugin-ocr --self-test
+          ./target/release/tomoyo-plugin-translate --self-test
+          ./target/release/tomoyo-plugin-capture --self-test
+          ./target/release/tomoyo-plugin-clipboard --self-test
 
-      - name: Stage Linux Suite & Core tarballs & SHA-256 checksums
+      - name: Stage Linux Suite, Core & standalone plugin bundles + SHA-256
         run: |
           tag="${GITHUB_REF_NAME:-}"
           case "$tag" in v*) ;; *) tag="v3.0.0" ;; esac
           stage="dist/stage-linux"
           core_stage="dist/stage-linux-core"
-          rm -rf "$stage" "$core_stage"
-          mkdir -p "$stage/assets/fonts" "$stage/assets/plugin-icons" "$stage/registry" "$stage/packaging/linux" "$stage/scripts"
+          rm -rf "$stage" "$core_stage" dist/plugins
+          mkdir -p "$stage/assets/fonts" "$stage/assets/plugin-icons" "$stage/registry" "$stage/packaging/linux" "$stage/scripts" dist/plugins
           mkdir -p "$core_stage/assets/fonts" "$core_stage/assets/plugin-icons" "$core_stage/registry" "$core_stage/packaging/linux" "$core_stage/scripts"
 
-          for bin in tomoyo tomoyo-webview-host tomoyo-capture tomoyo-cli tomoyo-plugin-hello tomoyo-plugin-ocr tomoyo-plugin-notes tomoyo-plugin-md-editor; do
+          for bin in tomoyo tomoyo-webview-host tomoyo-capture tomoyo-cli tomoyo-plugin-hello tomoyo-plugin-ocr tomoyo-plugin-notes tomoyo-plugin-md-editor tomoyo-plugin-translate tomoyo-plugin-capture tomoyo-plugin-clipboard; do
             install -Dm755 "target/release/$bin" "$stage/$bin"
           done
           for bin in tomoyo tomoyo-webview-host tomoyo-cli; do
@@ -95,18 +98,39 @@ jobs:
             install -Dm755 scripts/install-local.sh scripts/uninstall-local.sh "$target_dir/scripts/"
           done
 
-          for p in example-hello example-python example-wasm example-webview-json builtin-ocr official-notes official-md-editor; do
+          for p in example-hello example-python example-wasm example-webview-json builtin-ocr official-notes official-md-editor official-translate official-capture official-clipboard; do
             mkdir -p "$stage/plugins/$p"
             cp -a "plugins/$p/." "$stage/plugins/$p/"
             rm -rf "$stage/plugins/$p/target" "$stage/plugins/$p/__pycache__"
           done
+
+          pack_plugin() {
+            local slug="$1" dir="$2" bin="$3" extra="${4:-}"
+            local ps="dist/stage-plugin-$slug"
+            local out="$PWD/dist/plugins/tomoyo-plugin-${slug}-${tag}-linux-x86_64.zip"
+            rm -rf "$ps" "$out" && mkdir -p "$ps"
+            install -Dm644 "plugins/$dir/tomoyo-plugin.toml" "$ps/tomoyo-plugin.toml"
+            [ -f "plugins/$dir/icon.png" ] && install -Dm644 "plugins/$dir/icon.png" "$ps/icon.png"
+            [ -d "plugins/$dir/ui" ] && cp -a "plugins/$dir/ui" "$ps/ui"
+            install -Dm755 "target/release/$bin" "$ps/$bin"
+            [ -n "$extra" ] && install -Dm755 "target/release/$extra" "$ps/$extra"
+            (cd "$ps" && zip -rq "$out" .)
+          }
+          pack_plugin ocr builtin-ocr tomoyo-plugin-ocr
+          pack_plugin notes official-notes tomoyo-plugin-notes
+          pack_plugin md-editor official-md-editor tomoyo-plugin-md-editor
+          pack_plugin translate official-translate tomoyo-plugin-translate
+          pack_plugin capture official-capture tomoyo-plugin-capture tomoyo-capture
+          pack_plugin clipboard official-clipboard tomoyo-plugin-clipboard
 
           tgz="dist/Tomoyo-${tag}-linux-x86_64.tar.gz"
           core_tgz="dist/Tomoyo-${tag}-linux-x86_64-core.tar.gz"
           tar -C "$stage" -czf "$tgz" .
           tar -C "$core_stage" -czf "$core_tgz" .
           (cd dist && sha256sum "$(basename "$tgz")" "$(basename "$core_tgz")" > SHA256SUMS-linux.txt)
+          (cd dist/plugins && sha256sum tomoyo-plugin-*-linux-x86_64.zip > ../SHA256SUMS-plugins-linux.txt)
           cat dist/SHA256SUMS-linux.txt
+          cat dist/SHA256SUMS-plugins-linux.txt
 
       - name: Attest Linux Release Build Provenance (SLSA)
         if: startsWith(github.ref, 'refs/tags/v')
@@ -115,7 +139,9 @@ jobs:
           subject-path: |
             dist/Tomoyo-*-linux-x86_64.tar.gz
             dist/Tomoyo-*-linux-x86_64-core.tar.gz
+            dist/plugins/tomoyo-plugin-*-linux-x86_64.zip
             dist/SHA256SUMS-linux.txt
+            dist/SHA256SUMS-plugins-linux.txt
 
       - name: Publish GitHub Release (Linux x86_64)
         if: startsWith(github.ref, 'refs/tags/v')
@@ -126,7 +152,9 @@ jobs:
           files: |
             dist/Tomoyo-*-linux-x86_64.tar.gz
             dist/Tomoyo-*-linux-x86_64-core.tar.gz
+            dist/plugins/tomoyo-plugin-*-linux-x86_64.zip
             dist/SHA256SUMS-linux.txt
+            dist/SHA256SUMS-plugins-linux.txt
             packaging/linux/PKGBUILD
 
   build-windows-x64:
@@ -188,7 +216,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path $stage, "$stage/assets/fonts", "$stage/assets/plugin-icons", "$stage/registry" | Out-Null
           New-Item -ItemType Directory -Force -Path $coreStage, "$coreStage/assets/fonts", "$coreStage/assets/plugin-icons", "$coreStage/registry" | Out-Null
 
-          foreach ($bin in @("tomoyo.exe", "tomoyo-webview-host.exe", "tomoyo-capture.exe", "tomoyo-cli.exe", "tomoyo-plugin-hello.exe", "tomoyo-plugin-ocr.exe", "tomoyo-plugin-notes.exe", "tomoyo-plugin-md-editor.exe")) {
+          foreach ($bin in @("tomoyo.exe", "tomoyo-webview-host.exe", "tomoyo-capture.exe", "tomoyo-cli.exe", "tomoyo-plugin-hello.exe", "tomoyo-plugin-ocr.exe", "tomoyo-plugin-notes.exe", "tomoyo-plugin-md-editor.exe", "tomoyo-plugin-translate.exe", "tomoyo-plugin-capture.exe", "tomoyo-plugin-clipboard.exe")) {
             Copy-Item "target/release/$bin" "$stage/"
           }
 
@@ -230,9 +258,32 @@ jobs:
               }
             }
 
-            foreach ($p in @("example-hello", "example-python", "example-wasm", "example-webview-json", "builtin-ocr", "official-notes", "official-md-editor")) {
+            foreach ($p in @("example-hello", "example-python", "example-wasm", "example-webview-json", "builtin-ocr", "official-notes", "official-md-editor", "official-translate", "official-capture", "official-clipboard")) {
               New-Item -ItemType Directory -Force -Path "$stage/plugins/$p" | Out-Null
               Get-ChildItem "plugins/$p" -Exclude "target","__pycache__" | Copy-Item -Destination "$stage/plugins/$p" -Recurse -Force
+            }
+
+            New-Item -ItemType Directory -Force -Path "dist/plugins" | Out-Null
+            $pluginSpecs = @(
+              @{ Slug = "ocr"; Dir = "builtin-ocr"; Bins = @("tomoyo-plugin-ocr.exe") },
+              @{ Slug = "notes"; Dir = "official-notes"; Bins = @("tomoyo-plugin-notes.exe") },
+              @{ Slug = "md-editor"; Dir = "official-md-editor"; Bins = @("tomoyo-plugin-md-editor.exe") },
+              @{ Slug = "translate"; Dir = "official-translate"; Bins = @("tomoyo-plugin-translate.exe") },
+              @{ Slug = "capture"; Dir = "official-capture"; Bins = @("tomoyo-plugin-capture.exe", "tomoyo-capture.exe") },
+              @{ Slug = "clipboard"; Dir = "official-clipboard"; Bins = @("tomoyo-plugin-clipboard.exe") }
+            )
+            $pluginZips = @()
+            foreach ($spec in $pluginSpecs) {
+              $ps = "dist/stage-plugin-$($spec.Slug)"
+              Remove-Item -Recurse -Force $ps -ErrorAction SilentlyContinue
+              New-Item -ItemType Directory -Force -Path $ps | Out-Null
+              Copy-Item "plugins/$($spec.Dir)/tomoyo-plugin.toml" "$ps/"
+              if (Test-Path "plugins/$($spec.Dir)/icon.png") { Copy-Item "plugins/$($spec.Dir)/icon.png" "$ps/" }
+              if (Test-Path "plugins/$($spec.Dir)/ui") { Copy-Item "plugins/$($spec.Dir)/ui" "$ps/ui" -Recurse -Force }
+              foreach ($b in $spec.Bins) { Copy-Item "$stage/$b" "$ps/" }
+              $pz = "dist/plugins/tomoyo-plugin-$($spec.Slug)-$tag-windows-x86_64.zip"
+              Compress-Archive -Path "$ps/*" -DestinationPath $pz -Force
+              $pluginZips += $pz
             }
 
             $zipPath = "dist/Tomoyo-$tag-windows-x64-portable.zip"
@@ -268,6 +319,13 @@ jobs:
           }
           $lines | Out-File -Encoding ascii "dist/SHA256SUMS.txt"
           Get-Content "dist/SHA256SUMS.txt"
+          $pLines = @()
+          foreach ($pz in $pluginZips) {
+            $h = (Get-FileHash $pz -Algorithm SHA256).Hash.ToLower()
+            $pLines += "$h  $(Split-Path -Leaf $pz)"
+          }
+          $pLines | Out-File -Encoding ascii "dist/SHA256SUMS-plugins-windows.txt"
+          Get-Content "dist/SHA256SUMS-plugins-windows.txt"
 
           $releaseDate = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd")
           node scripts/sync-release-manifests.mjs --version "$ver" --setup-sha256 "$setupSha" --zip-sha256 "$zipSha" --release-date "$releaseDate" --out-dir dist
@@ -281,7 +339,9 @@ jobs:
             dist/Tomoyo-*-windows-x64-setup.exe
             dist/Tomoyo-*-windows-x64-portable.zip
             dist/Tomoyo-*-windows-x64-core-portable.zip
+            dist/plugins/tomoyo-plugin-*-windows-x86_64.zip
             dist/SHA256SUMS.txt
+            dist/SHA256SUMS-plugins-windows.txt
 
       - name: Attach Windows x64 Assets to GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
@@ -291,7 +351,9 @@ jobs:
             dist/Tomoyo-*-windows-x64-setup.exe
             dist/Tomoyo-*-windows-x64-portable.zip
             dist/Tomoyo-*-windows-x64-core-portable.zip
+            dist/plugins/tomoyo-plugin-*-windows-x86_64.zip
             dist/SHA256SUMS.txt
+            dist/SHA256SUMS-plugins-windows.txt
             dist/tomoyo.scoop.json
             dist/TomoyoContributors.Tomoyo.yaml
             dist/TomoyoContributors.Tomoyo.installer.yaml
@@ -320,7 +382,7 @@ jobs:
           $tag = if ($env:GITHUB_REF_NAME -and $env:GITHUB_REF_NAME.StartsWith("v")) { $env:GITHUB_REF_NAME } else { "v3.0.0" }
           $stage = "dist/stage-arm64"
           New-Item -ItemType Directory -Force -Path $stage, "$stage/assets/fonts", "$stage/assets/plugin-icons", "$stage/registry" | Out-Null
-          foreach ($bin in @("tomoyo.exe", "tomoyo-webview-host.exe", "tomoyo-capture.exe", "tomoyo-cli.exe", "tomoyo-plugin-hello.exe", "tomoyo-plugin-ocr.exe", "tomoyo-plugin-notes.exe", "tomoyo-plugin-md-editor.exe")) {
+          foreach ($bin in @("tomoyo.exe", "tomoyo-webview-host.exe", "tomoyo-capture.exe", "tomoyo-cli.exe", "tomoyo-plugin-hello.exe", "tomoyo-plugin-ocr.exe", "tomoyo-plugin-notes.exe", "tomoyo-plugin-md-editor.exe", "tomoyo-plugin-translate.exe", "tomoyo-plugin-capture.exe", "tomoyo-plugin-clipboard.exe")) {
             Copy-Item "target/release/$bin" "$stage/"
           }
           Copy-Item LICENSE-MIT, LICENSE-APACHE, README.md "$stage/"
@@ -332,7 +394,7 @@ jobs:
             New-Item -ItemType Directory -Force -Path "$stage/registry/shards" | Out-Null
             Copy-Item registry/shards/*.json "$stage/registry/shards/" -Force
           }
-          foreach ($p in @("example-hello", "example-python", "example-wasm", "example-webview-json", "builtin-ocr", "official-notes", "official-md-editor")) {
+          foreach ($p in @("example-hello", "example-python", "example-wasm", "example-webview-json", "builtin-ocr", "official-notes", "official-md-editor", "official-translate", "official-capture", "official-clipboard")) {
             New-Item -ItemType Directory -Force -Path "$stage/plugins/$p" | Out-Null
             Get-ChildItem "plugins/$p" -Exclude "target","__pycache__" | Copy-Item -Destination "$stage/plugins/$p" -Recurse -Force
           }

@@ -70,13 +70,13 @@
 - [x] **开放宿主扩展钩子**：实现 `[[tray_actions]]`（Windows / Linux 系统托盘动态注册）、`[[file_actions]]`（`QueryRouter` 零 I/O 扩展名二级菜单，并率先在 `plugins/official-md-editor` 落地 `.md` 关联）、`Permission::SelectionRead`（热键 `capture_selection = true` 无痕划词权限控制）与 `ExecuteResponse.open_webview` 直接拉起插件窗；
 - [x] **开发者工具链增强**：`tomoyo-cli dev --devtools --call <method>` 支持直接拉起带 Inspector/DevTools 的 WebView 与 Hybrid RPC 命令行冒烟测试；`tomoyo-protocol` / `tomoyo-sdk` / `tomoyo-wasm-sdk` 升级至 Protocol v3（待维护者凭 `CARGO_REGISTRY_TOKEN` 推送 `crates.io` 新版）。
 
-### Phase 3（`v2.9` → `v3.0`）：重型官方功能全量外迁
-- **3a**：离线 OCR（`ocr_view.rs` + `frontend/src/apps/ocr`）迁出 `tomoyo-webview-host`；
-- **3b**：多源划词翻译迁出 `tomoyo-core` / `tomoyo-providers` / `tomoyo-webview-host` / `SettingsApp`；
-- **3c**：原生截图与录屏（`tomoyo-capture` + `CaptureConfig` + `CaptureTab.svelte`）迁为独立多平台商店插件；
-- **3d**：剪贴板历史 SQLite 存储与工作台迁为独立订阅型插件，核心仅保留零负载事件派发器；
-- **验收指标**：`tomoyo` 主程序与通用 `tomoyo-webview-host` 零垂直业务代码，`settings.html ≤ 200 KB`，100 轮休眠压测零句柄泄露。
+### Phase 3（`v2.9` → `v3.0` · 已落地 ✅）：重型官方功能全量外迁
+- [x] **3a 离线 OCR 外迁**：删除 `tomoyo-webview-host/src/ocr_view.rs` 及核心内嵌 `ocr.html`；`plugins/builtin-ocr` 升级为 Protocol v3 Hybrid 插件（自带 `ui/index.html` `79.1 KB`、`[[tray_actions]]` 与图像 `[[file_actions]]`），走 `window.tomoyo.callPlugin` 双向 RPC；
+- [x] **3b 多源划词翻译外迁**：移除 `TranslateProvider`、`tr_view.rs`、`TranslateTab.svelte` 及 `tomoyo-webview-host` 内嵌 `translator.html`；`plugins/official-translate`（`dev.tomoyo.translate`，`0.67 MB`）以 Hybrid 插件自包含承载多源翻译、`ui/index.html`（`103.8 KB`）、加密 `secret` 凭据与 `Permission::SelectionRead` 划词热键；
+- [x] **3c 原生截图与录屏外迁**：移除 `CaptureProvider`、`CaptureTab.svelte` 及核心内置截图热键/托盘分支；新增独立原生插件 `plugins/official-capture`（`dev.tomoyo.capture`，`0.57 MB` + 按需拉起 `tomoyo-capture` `1.49 MB`），完整承载 4 个热键、2 个托盘动作、图像贴图文件动作与 21 项声明式设置；
+- [x] **3d 剪贴板历史工作台外迁**：从 `tomoyo-core` / `tomoyo-providers` / `tomoyo-webview-host` 彻底移除 `rusqlite`、`ClipboardProvider`、`clip_view.rs`、`clipboard.html`、`tomoyo-clip-img`、`Clip*` IPC 与前端 `ClipboardPluginCard.svelte` / `OFFICIAL_PLUGINS` 硬编码；新增 `plugins/official-clipboard`（`dev.tomoyo.clipboard`，Hybrid UI `99.4 KB`）并实现 OS 剪贴板监听按订阅者动态启停（纯内核模式下零监听、零数据库占用）；
+- [x] **实测验收指标**：`tomoyo` 主程序由 `7.00 MB` 降至 `5.86 MB`，`tomoyo-webview-host` 由 `5.23 MB` 降至 `3.40 MB`（降幅 `-35%`，仅内嵌唯一页面 `settings.html` `281.0 KB` / `96.65 KB` gzip），100 轮休眠压测 `Handles +0`、`Private 21.33 MB`（零句柄泄露）。
 
-### Phase 4（`v3.0+`）：独立插件生态仓库与 Starter Packs
-- 建立独立 `tomoyo-plugins` 官方插件仓库与多平台 GitHub Actions 自动打包/发版流水线（自动更新分片索引与 `platforms` SHA-256）；
-- 上线首次启动「Starter Packs 按需勾选」与商店一键检查更新/回滚/彻底清理卸载体验。
+### Phase 4（`v3.0+` · 已落地 ✅）：Starter Packs 按需装机与多平台独立插件分发
+- [x] **按需装机套件（`StarterPacksCard.svelte`）**：插件市场上架「纯净微内核 / 高频效率套件 / 写作识字套件 / 官方全家桶」四组一键按需补装卡片，均经 SHA-256 验签安装且每款插件可随时独立卸载；
+- [x] **多平台独立插件产物流水线**：更新 `.github/workflows/release.yml`、`ci.yml`、`packaging/tomoyo.iss`、`packaging/linux/PKGBUILD` 与本地安装/卸载脚本，保持 Core 分发包仅含 `3` 个核心二进制（0 插件），同时自动产出全部 6 款官方插件的 Linux/Windows 独立 ZIP 包（含 `tomoyo-capture` 自包含打包与独立 `SHA256SUMS` + SLSA 溯源证明），分片索引 10/10 全绿。

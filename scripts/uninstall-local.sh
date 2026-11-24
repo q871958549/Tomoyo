@@ -45,12 +45,13 @@ for proc in tomoyo tomoyo-webview-host tomoyo-capture; do
 done
 sleep 0.3
 
-for b in tomoyo tomoyo-webview-host tomoyo-capture tomoyo-cli tomoyo-plugin-hello tomoyo-plugin-ocr tomoyo-plugin-notes tomoyo-plugin-md-editor; do
+for b in tomoyo tomoyo-webview-host tomoyo-capture tomoyo-cli tomoyo-plugin-hello tomoyo-plugin-ocr tomoyo-plugin-notes tomoyo-plugin-md-editor tomoyo-plugin-translate tomoyo-plugin-capture tomoyo-plugin-clipboard; do
   rm -f "$BIN_DIR/$b"
 done
 
 rm -f "$XDG_DATA/applications/tomoyo.desktop" \
   "$XDG_CFG/autostart/tomoyo.desktop" \
+  "$XDG_DATA/icons/hicolor/512x512/apps/tomoyo.png" \
   "$XDG_DATA/icons/hicolor/256x256/apps/tomoyo.png" \
   "$XDG_DATA/icons/hicolor/scalable/apps/tomoyo.svg"
 
@@ -58,7 +59,7 @@ if [ "$PURGE" -eq 1 ]; then
   rm -rf "$DATA_DIR"
 else
   rm -rf "$DATA_DIR/fonts" "$DATA_DIR/plugin-icons" "$DATA_DIR/assets" "$DATA_DIR/registry" "$DATA_DIR/uninstall.sh"
-  for p in example-hello example-python example-wasm example-webview-json builtin-ocr official-notes official-md-editor; do
+  for p in example-hello example-python example-wasm example-webview-json builtin-ocr official-notes official-md-editor official-translate official-capture official-clipboard; do
     rm -rf "$DATA_DIR/plugins/$p"
   done
 fi
