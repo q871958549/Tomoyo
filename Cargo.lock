@@ -908,6 +908,7 @@ dependencies = [
 name = "tomoyo-plugin-ocr"
 version = "3.0.0"
 dependencies = [
+ "base64",
  "serde_json",
  "tomoyo-sdk",
  "windows",

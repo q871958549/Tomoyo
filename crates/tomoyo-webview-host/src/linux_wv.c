@@ -210,12 +210,9 @@ tomoyo_wv_t *tomoyo_wv_create(
     if (wdm) webkit_website_data_manager_set_favicons_enabled(wdm, FALSE);
 #endif
     webkit_web_context_register_uri_scheme(wctx, "tomoyo-clip-img", on_uri_scheme, h, NULL);
-    webkit_web_context_register_uri_scheme(wctx, "tomoyo-ocr-img", on_uri_scheme, h, NULL);
     WebKitSecurityManager *sm = webkit_web_context_get_security_manager(wctx);
     webkit_security_manager_register_uri_scheme_as_secure(sm, "tomoyo-clip-img");
-    webkit_security_manager_register_uri_scheme_as_secure(sm, "tomoyo-ocr-img");
     webkit_security_manager_register_uri_scheme_as_cors_enabled(sm, "tomoyo-clip-img");
-    webkit_security_manager_register_uri_scheme_as_cors_enabled(sm, "tomoyo-ocr-img");
 
     WebKitUserContentManager *ucm = webkit_user_content_manager_new();
     webkit_user_content_manager_register_script_message_handler(ucm, "tomoyo");

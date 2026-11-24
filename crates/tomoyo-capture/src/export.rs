@@ -332,6 +332,46 @@ fn run_offline_ocr_json(width: u32, height: u32, bgra: &[u8]) -> Result<(PathBuf
 }
 
 /// Runs offline OCR and directly copies clean extracted text to clipboard (for `Shift+C` direct extract).
+/// Locates the standalone `builtin-ocr/ui/index.html` Hybrid plugin UI entrypoint across plugin roots.
+#[cfg(any(windows, target_os = "linux"))]
+fn locate_ocr_plugin_ui() -> Option<std::path::PathBuf> {
+    let rel = std::path::Path::new("plugins").join("builtin-ocr").join("ui").join("index.html");
+    let mut cands = vec![tomoyo_core::data_dir().join(&rel)];
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(dir) = exe.parent()
+    {
+        cands.push(dir.join(&rel));
+        if let Some(prefix) = dir.parent() {
+            cands.push(prefix.join("share").join("tomoyo").join(&rel));
+        }
+    }
+    if let Ok(cwd) = std::env::current_dir() {
+        cands.push(cwd.join(&rel));
+    }
+    #[cfg(target_os = "linux")]
+    cands.push(std::path::PathBuf::from("/usr/share/tomoyo").join(&rel));
+    cands.into_iter().find(|p| p.is_file())
+}
+
+#[cfg(any(windows, target_os = "linux"))]
+fn spawn_ocr_hybrid_viewer(host_exe: &Path, theme: &str, img_path: &Path) -> Result<(), String> {
+    let ui_entry = locate_ocr_plugin_ui()
+        .ok_or_else(|| "未检测到离线 OCR 插件前端（请在设置中心「插件市场」安装离线 OCR 插件）".to_string())?;
+    std::process::Command::new(host_exe)
+        .args([
+            "--plugin-id", "dev.tomoyo.ocr",
+            "--entry", &ui_entry.to_string_lossy(),
+            "--title", "Tomoyo OCR 审校",
+            "--theme", theme,
+            "--query", &img_path.to_string_lossy(),
+            "--width", "980",
+            "--height", "660",
+        ])
+        .spawn()
+        .map_err(|e| format!("拉起 OCR 审校窗口失败: {e}"))?;
+    Ok(())
+}
+
 /// Falls back to opening OCR Inspector if no readable text was detected.
 #[cfg(any(windows, target_os = "linux"))]
 pub fn handoff_ocr_copy_direct(width: u32, height: u32, bgra: &[u8]) -> Result<(), String> {
@@ -345,22 +385,11 @@ pub fn handoff_ocr_copy_direct(width: u32, height: u32, bgra: &[u8]) -> Result<(
     let host_name = if cfg!(windows) { "tomoyo-webview-host.exe" } else { "tomoyo-webview-host" };
     let host_exe = find_sibling_exe(host_name)
         .ok_or_else(|| format!("未找到 {host_name}"))?;
-    std::process::Command::new(host_exe)
-        .args([
-            "--entry", "__tomoyo_ocr_viewer__",
-            "--title", "Tomoyo OCR 审校",
-            "--theme", &cfg.theme,
-            "--query", &img_path.to_string_lossy(),
-            "--width", "980",
-            "--height", "660",
-        ])
-        .spawn()
-        .map_err(|e| format!("拉起 OCR 审校窗口失败: {e}"))?;
-    Ok(())
+    spawn_ocr_hybrid_viewer(&host_exe, &cfg.theme, &img_path)
 }
 
 /// Saves screenshot PNG, invokes `tomoyo-plugin-ocr.exe --json` offline, and opens either
-/// `__tomoyo_ocr_viewer__` (OCR inspection) or `__tomoyo_translator__` (Screenshot Translate).
+/// the standalone Hybrid OCR viewer or Translator.
 #[cfg(any(windows, target_os = "linux"))]
 pub fn handoff_to_ocr_or_translate(width: u32, height: u32, bgra: &[u8], translate: bool) -> Result<(), String> {
     let (img_path, parsed) = run_offline_ocr_json(width, height, bgra)?;
@@ -389,17 +418,7 @@ pub fn handoff_to_ocr_or_translate(width: u32, height: u32, bgra: &[u8], transla
             .spawn()
             .map_err(|e| format!("拉起翻译窗口失败: {e}"))?;
     } else {
-        std::process::Command::new(host_exe)
-            .args([
-                "--entry", "__tomoyo_ocr_viewer__",
-                "--title", "Tomoyo OCR 审校",
-                "--theme", &cfg.theme,
-                "--query", &img_path.to_string_lossy(),
-                "--width", "980",
-                "--height", "660",
-            ])
-            .spawn()
-            .map_err(|e| format!("拉起 OCR 审校窗口失败: {e}"))?;
+        spawn_ocr_hybrid_viewer(&host_exe, &cfg.theme, &img_path)?;
     }
     Ok(())
 }

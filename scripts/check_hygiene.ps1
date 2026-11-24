@@ -87,10 +87,10 @@ if (Test-Path $pkgPath) {
     }
 }
 $bundleBudgets = [ordered]@{
-    "frontend\dist\settings.html"   = 320 * 1024
-    "frontend\dist\translator.html" = 150 * 1024
-    "frontend\dist\clipboard.html"  = 150 * 1024
-    "frontend\dist\ocr.html"        = 150 * 1024
+    "frontend\dist\settings.html"     = 320 * 1024
+    "frontend\dist\translator.html"   = 150 * 1024
+    "frontend\dist\clipboard.html"    = 150 * 1024
+    "plugins\builtin-ocr\ui\index.html" = 150 * 1024
 }
 $bundleSummary = @()
 foreach ($kv in $bundleBudgets.GetEnumerator()) {

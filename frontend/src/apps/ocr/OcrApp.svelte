@@ -22,15 +22,32 @@
     lang_tag?: string; lang_note?: string; src_dims?: [number, number]; proc_dims?: [number, number]; elapsed_ms?: number;
   }
 
-  const boot = (window.__TOMOYO_OCR_DATA__ ?? {}) as OcrBoot;
+  const initialBoot = (window.__TOMOYO_OCR_DATA__ ?? {}) as OcrBoot;
+  let boot = $state<OcrBoot>({ ...initialBoot });
 
-  let text = $state(boot.text || '');
+  let text = $state(initialBoot.text || '');
   let showingRaw = $state(false);
   let actualZoom = $state(false);
   let pinnedTop = $state(false);
   let imgLoaded = $state(false);
-  let toast = $state('已加载最近一次 OCR 识别结果');
+  let toast = $state(initialBoot.text ? '已加载最近一次 OCR 识别结果' : '正在通过插件 RPC 加载最近一次 OCR 结果…');
   let taEl: HTMLTextAreaElement | undefined = $state();
+
+  async function hydrateFromPlugin(fallbackImg = '') {
+    if (!window.tomoyo?.callPlugin) return;
+    try {
+      const data = await window.tomoyo.callPlugin<OcrBoot>('get_last_ocr', { image_path: fallbackImg });
+      if (data && typeof data === 'object') {
+        boot = { ...boot, ...data };
+        showingRaw = false;
+        imgLoaded = false;
+        text = data.text || '';
+        toast = text ? '已加载最近一次 OCR 识别结果' : '暂无最近一次 OCR 识别记录';
+      }
+    } catch (err) {
+      toast = `加载 OCR 结果失败：${String(err)}`;
+    }
+  }
 
   let dimsLabel = $derived.by(() => {
     const s = boot.src_dims || [0, 0];
@@ -82,7 +99,13 @@
 
   onMount(() => {
     installErrorTelemetry('ocr_viewer');
-    applyThemeClass(boot.theme || 'dark');
+    applyThemeClass(window.tomoyo?.theme || boot.theme || 'dark');
+    if (window.tomoyo?.callPlugin) {
+      void hydrateFromPlugin(window.tomoyo.initialQuery || boot.image_path || '');
+      window.tomoyo.onEnter?.((action) => {
+        if (action?.payload) void hydrateFromPlugin(action.payload);
+      });
+    }
 
     const onKey = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'c') { e.preventDefault(); copyAll(); }

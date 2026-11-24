@@ -13,14 +13,29 @@ kind = "stdio_jsonrpc"
 command = "tomoyo-plugin-ocr"
 args = []
 
+[ui]
+entry = "ui/index.html"
+utools_compat = false
+width = 1080
+height = 680
+
 [triggers]
 keywords = ["ocr"]
 clipboard_types = ["image"]
+file_extensions = ["png", "jpg", "jpeg", "webp", "bmp", "gif", "ico"]
+
+permissions = ["filesystem_read", "clipboard"]
 
 [resources]
 max_memory_mb = 192
 idle_timeout_secs = 15
 query_timeout_ms = 8000
+
+[[file_actions]]
+id = "ocr_image"
+label = "离线 OCR 识字"
+extensions = ["png", "jpg", "jpeg", "webp", "bmp", "gif", "ico"]
+query_template = "ocr \"{path}\""
 
 [[hotkeys]]
 id = "quick_ocr"

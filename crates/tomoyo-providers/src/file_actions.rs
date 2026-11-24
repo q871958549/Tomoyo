@@ -40,14 +40,6 @@ pub(crate) fn append_contextual_file_actions(
             },
         });
         actions.push(ActionSpec {
-            id: "ocr_image".into(),
-            label: lang.pick("离线 OCR 识字", "Offline OCR Extract Text").into(),
-            shortcut: None,
-            kind: ActionKind::FillQuery {
-                query: format!("ocr \"{full_path}\""),
-            },
-        });
-        actions.push(ActionSpec {
             id: "copy_b64".into(),
             label: lang.pick("复制 Base64 Data URI", "Copy Base64 Data URI").into(),
             shortcut: None,

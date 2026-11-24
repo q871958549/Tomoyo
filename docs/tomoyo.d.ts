@@ -40,6 +40,7 @@ export interface TomoyoPluginApi {
   readonly platform: 'linux' | 'win32' | 'darwin';
   readonly pluginId: string;
   readonly initialQuery: string;
+  readonly theme: 'light' | 'dark' | 'midnight' | string;
   isDarkColors(): boolean;
   copyText(text: string): boolean;
   openExternal(url: string): void;

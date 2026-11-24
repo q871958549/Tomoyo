@@ -6,12 +6,14 @@
 pub fn build_init_script(
     plugin_id: &str,
     initial_query: &str,
-    is_dark: bool,
+    theme: &str,
     utools_compat: bool,
     db_snapshot_json: &str,
 ) -> String {
     let plugin_id_js = serde_json::to_string(plugin_id).unwrap_or_else(|_| "\"\"".into());
     let query_js = serde_json::to_string(initial_query).unwrap_or_else(|_| "\"\"".into());
+    let theme_js = serde_json::to_string(theme).unwrap_or_else(|_| "\"dark\"".into());
+    let is_dark = !theme.eq_ignore_ascii_case("light");
     let dark_js = if is_dark { "true" } else { "false" };
     let utools_js = if utools_compat { "true" } else { "false" };
     let ver_js = serde_json::to_string(tomoyo_core::CURRENT_VERSION).unwrap_or_else(|_| "\"0.5.0\"".into());
@@ -151,6 +153,7 @@ pub fn build_init_script(
   window.tomoyo = {{
     version: {ver_js},
     platform: {platform_js},
+    theme: {theme_js},
     pluginId: PLUGIN_ID,
     initialQuery: INITIAL_QUERY,
     isDarkColors: () => IS_DARK,

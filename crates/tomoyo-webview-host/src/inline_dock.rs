@@ -2,7 +2,6 @@
 
 use crate::clip_view::{is_clip_manager_entry, load_clip_manager_bootstrap};
 use crate::db::PluginDb;
-use crate::ocr_view::{is_ocr_viewer_entry, load_ocr_viewer_bootstrap};
 use crate::shim_js::build_init_script;
 use crate::tr_view::{is_translator_entry, load_translator_bootstrap};
 use crate::win_theme::{apply_host_window_theme, apply_window_icons, to_file_url};
@@ -11,47 +10,40 @@ use std::path::PathBuf;
 
 pub struct HostBootstrapData {
     pub init_script: String,
-    pub ocr_img_dir: Option<PathBuf>,
     pub clip_img_dir: Option<PathBuf>,
     pub entry_url: String,
 }
 
 pub fn prepare_host_bootstrap(opts: &LaunchArgs, db: &PluginDb) -> HostBootstrapData {
     let settings_mode = opts.settings_mode;
-    let ocr_mode = is_ocr_viewer_entry(&opts.entry);
     let clip_mode = is_clip_manager_entry(&opts.entry);
     let tr_mode = is_translator_entry(&opts.entry);
-    let (init_script, ocr_img_dir, clip_img_dir) = if settings_mode {
-        (build_settings_init_script_for(&opts.query), None, None)
-    } else if ocr_mode {
-        let boot = load_ocr_viewer_bootstrap(&opts.theme, &opts.query);
-        (boot.init_script, boot.image_dir, None)
+    let (init_script, clip_img_dir) = if settings_mode {
+        (build_settings_init_script_for(&opts.query), None)
     } else if clip_mode {
         let boot = load_clip_manager_bootstrap(&opts.theme, &opts.query);
-        (boot.init_script, None, Some(boot.images_dir))
+        (boot.init_script, Some(boot.images_dir))
     } else if tr_mode {
-        (load_translator_bootstrap(&opts.theme), None, None)
+        (load_translator_bootstrap(&opts.theme), None)
     } else {
         (
             build_init_script(
                 &opts.plugin_id,
                 &opts.query,
-                opts.theme != "light",
+                &opts.theme,
                 opts.utools_compat,
                 &db.snapshot_json(),
             ),
             None,
-            None,
         )
     };
-    let entry_url = if settings_mode || ocr_mode || clip_mode || tr_mode {
+    let entry_url = if settings_mode || clip_mode || tr_mode {
         String::new()
     } else {
         to_file_url(&opts.entry)
     };
     HostBootstrapData {
         init_script,
-        ocr_img_dir,
         clip_img_dir,
         entry_url,
     }

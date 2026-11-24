@@ -13,6 +13,16 @@ declare global {
     __TOMOYO_TR_INIT__?: unknown;
     __TOMOYO_CLIP_INIT__?: unknown;
     __TOMOYO_OCR_DATA__?: unknown;
+    tomoyo?: {
+      version?: string;
+      platform?: string;
+      pluginId?: string;
+      initialQuery?: string;
+      theme?: string;
+      isDarkColors?: () => boolean;
+      callPlugin?: <T = unknown>(method: string, params?: unknown) => Promise<T>;
+      onEnter?: (cb: (action: { code?: string; type?: string; payload?: string }) => void) => void;
+    };
   }
 }
 

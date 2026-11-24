@@ -329,7 +329,7 @@ mod tests {
 
     #[test]
     fn generates_tomoyo_and_utools_bridge() {
-        let script = build_init_script("dev.test.json", "{\"a\":1}", true, true, "{}");
+        let script = build_init_script("dev.test.json", "{\"a\":1}", "dark", true, "{}");
         assert!(script.contains("window.tomoyo ="));
         assert!(script.contains("callPlugin:"));
         assert!(script.contains("window.utools ="));

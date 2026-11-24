@@ -9,7 +9,6 @@ use crate::linux_workers::{
     dispatch_async_workers, eval_dispatch_json, spawn_hotkey_health_worker, try_acquire_instance,
     HostChannel,
 };
-use crate::ocr_view::{assemble_ocr_viewer_html, is_ocr_viewer_entry, load_ocr_viewer_bootstrap};
 use crate::shim_js::build_init_script;
 use crate::tr_view::{
     assemble_translator_html, is_translator_entry, load_translator_bootstrap,
@@ -65,7 +64,6 @@ struct LinuxHostCtx {
     settings_mode: bool,
     capturing_hotkey: AtomicBool,
     last_activate_probe: RefCell<Instant>,
-    ocr_dir: Option<PathBuf>,
     clip_dir: Option<PathBuf>,
 }
 
@@ -199,7 +197,6 @@ unsafe extern "C" fn on_uri_cb(
     let raw_path = unsafe { CStr::from_ptr(path_ptr) }.to_string_lossy();
     let base_dir = match scheme.as_ref() {
         "tomoyo-clip-img" => st.clip_dir.as_ref(),
-        "tomoyo-ocr-img" => st.ocr_dir.as_ref(),
         _ => None,
     };
     let Some(dir) = base_dir else { return 0; };
@@ -262,7 +259,6 @@ unsafe extern "C" fn on_close_cb(ctx: *mut c_void) {
 pub fn run_linux_host(opts: LaunchArgs) {
     let clip_mode = is_clip_manager_entry(&opts.entry);
     let tr_mode = is_translator_entry(&opts.entry);
-    let ocr_mode = is_ocr_viewer_entry(&opts.entry);
     let channel = HostChannel::new(opts.notify_hwnd, opts.plugin_id.clone());
 
     let plugin_tag;
@@ -272,13 +268,13 @@ pub fn run_linux_host(opts: LaunchArgs) {
         Some("clipboard")
     } else if tr_mode {
         Some("translate")
-    } else if !opts.self_test && !ocr_mode && !opts.plugin_id.is_empty() {
+    } else if !opts.self_test && !opts.plugin_id.is_empty() {
         plugin_tag = format!("plugin-{}", tomoyo_core::linux_launch::sanitize_instance_tag(&opts.plugin_id));
         Some(plugin_tag.as_str())
     } else {
         None
     };
-    let plugin_query = (!opts.settings_mode && !clip_mode && !tr_mode && !ocr_mode)
+    let plugin_query = (!opts.settings_mode && !clip_mode && !tr_mode)
         .then_some(opts.query.as_str());
     let _sock_guard = match mode_tag {
         Some(tag) => match try_acquire_instance(tag, tr_mode, clip_mode, plugin_query, &channel) {
@@ -289,18 +285,15 @@ pub fn run_linux_host(opts: LaunchArgs) {
     };
 
     let db = PluginDb::open(&opts.plugin_id);
-    let (init_script, ocr_dir, clip_dir) = if opts.settings_mode {
-        (build_settings_init_script_for(&opts.query), None, None)
-    } else if ocr_mode {
-        let b = load_ocr_viewer_bootstrap(&opts.theme, &opts.query);
-        (b.init_script, b.image_dir, None)
+    let (init_script, clip_dir) = if opts.settings_mode {
+        (build_settings_init_script_for(&opts.query), None)
     } else if clip_mode {
         let b = load_clip_manager_bootstrap(&opts.theme, &opts.query);
-        (b.init_script, None, Some(b.images_dir))
+        (b.init_script, Some(b.images_dir))
     } else if tr_mode {
-        (load_translator_bootstrap(&opts.theme), None, None)
+        (load_translator_bootstrap(&opts.theme), None)
     } else {
-        (build_init_script(&opts.plugin_id, &opts.query, opts.theme != "light", opts.utools_compat, &db.snapshot_json()), None, None)
+        (build_init_script(&opts.plugin_id, &opts.query, &opts.theme, opts.utools_compat, &db.snapshot_json()), None)
     };
 
     let mut ctx = Box::new(LinuxHostCtx {
@@ -311,7 +304,6 @@ pub fn run_linux_host(opts: LaunchArgs) {
         settings_mode: opts.settings_mode,
         capturing_hotkey: AtomicBool::new(false),
         last_activate_probe: RefCell::new(Instant::now()),
-        ocr_dir,
         clip_dir,
     });
     let ctx_ptr = &mut *ctx as *mut LinuxHostCtx;
@@ -347,11 +339,9 @@ pub fn run_linux_host(opts: LaunchArgs) {
         unsafe { tomoyo_wv_enable_devtools(wv); }
     }
 
-    if opts.settings_mode || ocr_mode || clip_mode || tr_mode {
+    if opts.settings_mode || clip_mode || tr_mode {
         let html = if opts.settings_mode {
             assemble_settings_html()
-        } else if ocr_mode {
-            assemble_ocr_viewer_html()
         } else if clip_mode {
             assemble_clip_manager_html()
         } else {

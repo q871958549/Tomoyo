@@ -8,15 +8,17 @@ mod ocr_engine;
 #[cfg(not(windows))]
 mod ocr_linux;
 mod ocr_preprocess;
+mod ocr_rpc;
 
 use ocr_engine::{
     available_ocr_languages, find_latest_clipboard_image, is_image_ext, recognize_image,
-    tomoyo_data_dir, LangPref, OcrOutput,
+    LangPref, OcrOutput,
 };
 use std::path::{Path, PathBuf};
 use tomoyo_sdk::{
-    ActionKind, ActionSpec, AttachedContext, ExecuteRequest, ExecuteResponse, IconSpec, PluginMeta,
-    PreviewSpec, QueryContext, ResultCategory, ResultItem, TomoyoPlugin,
+    ActionKind, ActionSpec, AttachedContext, ExecuteRequest, ExecuteResponse, IconSpec,
+    OpenWebViewRequest, PluginCallRequest, PluginMeta, PreviewSpec, QueryContext, ResultCategory,
+    ResultItem, TomoyoPlugin,
 };
 
 struct OcrPlugin;
@@ -51,7 +53,7 @@ impl TomoyoPlugin for OcrPlugin {
                 if out.text.trim().is_empty() {
                     return vec![error_item("未在图片中识别到可读文本（可尝试放大截图或切换 `ocr en`）")];
                 }
-                persist_last_ocr_snapshot(&img_path, &out);
+                ocr_rpc::persist_last_ocr_snapshot(&img_path, &out);
                 build_ocr_result_items(&img_path, &out, source_label)
             }
             Err(err) => {
@@ -61,8 +63,37 @@ impl TomoyoPlugin for OcrPlugin {
         }
     }
 
-    fn execute(&self, _req: &ExecuteRequest) -> ExecuteResponse {
+    fn execute(&self, req: &ExecuteRequest) -> ExecuteResponse {
+        if req.action_id == "open_viewer" {
+            let img_path = req
+                .payload
+                .get("image_path")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            return ExecuteResponse {
+                hide_window: true,
+                open_webview: Some(OpenWebViewRequest {
+                    entry: None,
+                    title: Some("Tomoyo OCR 审校窗口".into()),
+                    initial_query: img_path,
+                    width: Some(1080),
+                    height: Some(680),
+                }),
+                ..Default::default()
+            };
+        }
         ExecuteResponse::default()
+    }
+
+    fn call(&self, req: &PluginCallRequest) -> Result<serde_json::Value, String> {
+        match req.method.as_str() {
+            "get_last_ocr" => {
+                let fallback = req.params.get("image_path").and_then(|v| v.as_str()).unwrap_or("");
+                Ok(ocr_rpc::load_last_ocr_payload(fallback))
+            }
+            other => Err(format!("unsupported OCR RPC method `{other}`")),
+        }
     }
 }
 
@@ -117,24 +148,6 @@ fn resolve_target_image(ctx: &QueryContext, explicit_path: Option<&str>) -> Opti
     find_latest_clipboard_image().map(|p| (p, "最近剪贴板截图"))
 }
 
-fn persist_last_ocr_snapshot(img_path: &Path, out: &OcrOutput) {
-    let dir = tomoyo_data_dir().join("logs");
-    let _ = std::fs::create_dir_all(&dir);
-    let snap = serde_json::json!({
-        "image_path": img_path.to_string_lossy(),
-        "text": out.text,
-        "raw_text": out.raw_text,
-        "lang_tag": out.lang_tag,
-        "lang_note": out.lang_note,
-        "lines_count": out.lines.len(),
-        "chars_count": out.text.chars().count(),
-        "src_dims": [out.src_dims.0, out.src_dims.1],
-        "proc_dims": [out.proc_dims.0, out.proc_dims.1],
-        "elapsed_ms": out.elapsed_ms,
-    });
-    let _ = std::fs::write(dir.join("last_ocr.json"), snap.to_string());
-}
-
 fn build_ocr_result_items(img_path: &Path, out: &OcrOutput, source_label: &str) -> Vec<ResultItem> {
     let lines_n = out.lines.len();
     let chars_n = out.text.chars().count();
@@ -176,17 +189,10 @@ fn build_ocr_result_items(img_path: &Path, out: &OcrOutput, source_label: &str) 
                 id: "open_viewer".into(),
                 label: "打开原图对照与可编辑窗口".into(),
                 shortcut: Some("Enter".into()),
-                kind: ActionKind::OpenWebView {
+                kind: ActionKind::PluginExecute {
                     plugin_id: "dev.tomoyo.ocr".into(),
-                    title: "Tomoyo OCR 审校窗口".into(),
-                    entry_path: "__tomoyo_ocr_viewer__".into(),
-                    utools_compat: false,
-                    initial_query: img_path.to_string_lossy().into_owned(),
-                    width: 1080,
-                    height: 680,
-                    max_memory_mb: 256,
-                    icon_path: None,
-                    display_mode: None,
+                    action_id: "open_viewer".into(),
+                    payload: serde_json::json!({ "image_path": img_path.to_string_lossy() }),
                 },
             },
             ActionSpec {
@@ -376,7 +382,7 @@ fn main() {
         let img_path = Path::new(&args[1]);
         match recognize_image(img_path, pref, raw_mode) {
             Ok(out) => {
-                persist_last_ocr_snapshot(img_path, &out);
+                ocr_rpc::persist_last_ocr_snapshot(img_path, &out);
                 if json_mode {
                     let snap = serde_json::json!({
                         "image_path": img_path.to_string_lossy(),

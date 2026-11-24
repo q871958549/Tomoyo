@@ -7,11 +7,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-const DIST_DIR = path.resolve('frontend/dist');
-const BUNDLES = ['settings.html', 'translator.html', 'clipboard.html', 'ocr.html'];
+const BUNDLES = [
+  'frontend/dist/settings.html',
+  'frontend/dist/translator.html',
+  'frontend/dist/clipboard.html',
+  'plugins/builtin-ocr/ui/index.html',
+];
 
 for (const file of BUNDLES) {
-  const full = path.join(DIST_DIR, file);
+  const full = path.resolve(file);
   if (!fs.existsSync(full)) {
     throw new Error(`Missing built bundle: ${full}. Run \`cd frontend && npm run build\`.`);
   }
@@ -32,11 +36,11 @@ if (!fs.existsSync(happyDomPkg)) {
 
 const { Window } = await import(pathToFileURL(happyDomPkg).href);
 
-async function runCompiledHtml(name, initKey, initData, verify) {
-  const html = fs.readFileSync(path.join(DIST_DIR, name), 'utf8');
+async function runCompiledHtml(relPath, initKey, initData, verify, extraWin = null) {
+  const html = fs.readFileSync(path.resolve(relPath), 'utf8');
   const start = html.indexOf('<script>');
   const end = html.lastIndexOf('</script>');
-  if (start < 0 || end <= start) throw new Error(`${name}: missing inline <script>`);
+  if (start < 0 || end <= start) throw new Error(`${relPath}: missing inline <script>`);
   const scriptBody = html.slice(start + '<script>'.length, end);
 
   const win = new Window({ url: 'https://tomoyo.local/' });
@@ -47,20 +51,21 @@ async function runCompiledHtml(name, initKey, initData, verify) {
         const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
         posted.push(parsed);
         if (parsed.cmd === 'report_js_error') {
-          throw new Error(`${name}: runtime JS error reported -> ${parsed.message}`);
+          throw new Error(`${relPath}: runtime JS error reported -> ${parsed.message}`);
         }
       },
       addEventListener: () => {},
       removeEventListener: () => {},
     },
   };
-  win[initKey] = initData;
+  if (initKey) win[initKey] = initData;
+  if (extraWin) extraWin(win);
   win.document.write('<!doctype html><html><body><div id="app"></div></body></html>');
   win.document.close();
 
   const fn = new win.Function(scriptBody);
   fn.call(win);
-  await new Promise((r) => setTimeout(r, 10));
+  await new Promise((r) => setTimeout(r, 15));
 
   await verify(win, posted);
   win.happyDOM?.close?.();
@@ -68,7 +73,7 @@ async function runCompiledHtml(name, initKey, initData, verify) {
 }
 
 const settingsPosted = await runCompiledHtml(
-  'settings.html',
+  'frontend/dist/settings.html',
   '__TOMOYO_SETTINGS_INIT__',
   {
     version: '1.6.0',
@@ -132,7 +137,7 @@ const settingsPosted = await runCompiledHtml(
 );
 
 await runCompiledHtml(
-  'translator.html',
+  'frontend/dist/translator.html',
   '__TOMOYO_TR_INIT__',
   { theme: 'dark', text: '', target_lang: 'auto', engines: ['google'], history: [], wordbook: [] },
   (win) => {
@@ -141,7 +146,7 @@ await runCompiledHtml(
 );
 
 await runCompiledHtml(
-  'clipboard.html',
+  'frontend/dist/clipboard.html',
   '__TOMOYO_CLIP_INIT__',
   { theme: 'light', capture_enabled: true, total: 0, items: [], tags: [], focus_key: '' },
   (win) => {
@@ -152,13 +157,35 @@ await runCompiledHtml(
 );
 
 await runCompiledHtml(
-  'ocr.html',
-  '__TOMOYO_OCR_DATA__',
-  { theme: 'midnight', text: 'Hello OCR', raw_text: 'Hello OCR', lang_tag: 'en-US', src_dims: [100, 40], proc_dims: [200, 80], elapsed_ms: 18 },
+  'plugins/builtin-ocr/ui/index.html',
+  null,
+  null,
   (win) => {
     if (!win.document.body.textContent.includes('OCR 审校与编辑')) {
-      throw new Error('ocr.html: failed to mount header');
+      throw new Error('plugins/builtin-ocr/ui/index.html: failed to mount header');
     }
+    const ta = win.document.querySelector('textarea');
+    if (!ta || ta.value !== 'Hello Hybrid OCR') {
+      throw new Error('plugins/builtin-ocr/ui/index.html: failed to hydrate via window.tomoyo.callPlugin');
+    }
+  },
+  (win) => {
+    win.tomoyo = {
+      theme: 'midnight',
+      initialQuery: '/tmp/sample.png',
+      callPlugin: async (method) => {
+        if (method !== 'get_last_ocr') throw new Error(`unexpected RPC method: ${method}`);
+        return {
+          text: 'Hello Hybrid OCR',
+          raw_text: 'Hello Hybrid OCR',
+          lang_tag: 'en-US',
+          src_dims: [100, 40],
+          proc_dims: [200, 80],
+          elapsed_ms: 18,
+        };
+      },
+      onEnter: () => {},
+    };
   }
 );
 

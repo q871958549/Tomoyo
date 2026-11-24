@@ -30,7 +30,6 @@ mod linux_host;
 mod linux_hotkeys;
 #[cfg(target_os = "linux")]
 mod linux_workers;
-mod ocr_view;
 mod plugin_rpc;
 mod shim_js;
 #[cfg(windows)]
@@ -151,7 +150,6 @@ fn parse_args() -> LaunchArgs {
     let entry = val("--entry").unwrap_or_default();
     let plugin_id = val("--plugin-id").unwrap_or_else(|| "dev.tomoyo.webview".into());
     let cfg_theme = if settings_mode
-        || ocr_view::is_ocr_viewer_entry(&entry)
         || clip_view::is_clip_manager_entry(&entry)
         || tr_view::is_translator_entry(&entry)
     {
@@ -159,7 +157,7 @@ fn parse_args() -> LaunchArgs {
     } else if args.iter().any(|a| a == "--light") {
         "light".into()
     } else {
-        "dark".into()
+        TomoyoConfig::load_or_create().theme
     };
     let theme = val("--theme").unwrap_or(cfg_theme);
     let icon = val("--icon")
@@ -325,7 +323,7 @@ fn main() {
         let script = build_init_script(
             &opts.plugin_id,
             &opts.query,
-            opts.theme != "light",
+            &opts.theme,
             true,
             &pdb.snapshot_json(),
         );
@@ -342,7 +340,6 @@ fn main() {
         assert!(html.contains("save_settings"));
         assert!(!html.contains("type=\"number\""));
         assert!(!html.contains("<textarea"));
-        assert!(ocr_view::assemble_ocr_viewer_html().contains("__TOMOYO_OCR_DATA__"));
         assert!(clip_view::assemble_clip_manager_html().contains("__TOMOYO_CLIP_INIT__"));
         assert!(tr_view::assemble_translator_html().contains("__TOMOYO_TR_INIT__"));
         assert!(handle_host_message(

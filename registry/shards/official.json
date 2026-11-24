@@ -22,7 +22,7 @@
       ],
       "permissions": [],
       "source": "plugins/builtin-ocr",
-      "sha256": "bc16397867dc4efbec45f1b786e79b246027aefd538c1b9274f4c25d46113b2b",
+      "sha256": "3c8f632d85f02e918bde5b1f8c7d2a38ef220a03b628e70cadf38b36f3a0882c",
       "platforms": {},
       "min_tomoyo_version": null,
       "homepage": null,

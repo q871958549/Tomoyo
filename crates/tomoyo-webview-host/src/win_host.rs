@@ -7,7 +7,6 @@ use crate::inline_dock::{
     clear_inline_hwnd_marker, create_inline_dock_window, inline_dock_overlay_js,
     prepare_host_bootstrap, write_inline_hwnd_marker,
 };
-use crate::ocr_view::is_ocr_viewer_entry;
 use crate::single_instance::{
     acquire_or_activate_clipboard, acquire_or_activate_settings, acquire_or_activate_translator,
     CLIPBOARD_WINDOW_CLASS, EPHEMERAL_WINDOW_CLASS, SETTINGS_WINDOW_CLASS, TRANSLATOR_WINDOW_CLASS,
@@ -281,12 +280,10 @@ pub fn run_windows_host(opts: LaunchArgs) {
 
     let plugin_db = Rc::new(RefCell::new(PluginDb::open(&opts.plugin_id)));
     let settings_mode = opts.settings_mode;
-    let ocr_mode = is_ocr_viewer_entry(&opts.entry);
     let notify_hwnd = opts.notify_hwnd;
     let boot = prepare_host_bootstrap(&opts, &plugin_db.borrow());
-    let (init_script, ocr_img_dir, clip_img_dir, entry_url) = (
+    let (init_script, clip_img_dir, entry_url) = (
         boot.init_script,
-        boot.ocr_img_dir,
         boot.clip_img_dir,
         boot.entry_url,
     );
@@ -308,7 +305,6 @@ pub fn run_windows_host(opts: LaunchArgs) {
             let init_script_inner = init_script.clone();
             let entry_url_inner = entry_url.clone();
             let fonts_inner = fonts_dir_opt.clone();
-            let ocr_dir_inner = ocr_img_dir.clone();
             let clip_dir_inner = clip_img_dir.clone();
             let db_inner = Rc::clone(&db_for_msg);
             let tx_inner = event_tx.clone();
@@ -339,7 +335,6 @@ pub fn run_windows_host(opts: LaunchArgs) {
                         if let Ok(webview) = controller.CoreWebView2() {
                             if let Ok(wv3) = webview.cast::<ICoreWebView2_3>() {
                                 map_vdir(&wv3, w!("tomoyo-fonts.local"), fonts_inner.as_ref());
-                                map_vdir(&wv3, w!("tomoyo-ocr-img.local"), ocr_dir_inner.as_ref());
                                 map_vdir(&wv3, w!("tomoyo-clip-img.local"), clip_dir_inner.as_ref());
                             }
                             let script_w = HSTRING::from(&init_script_inner);
@@ -367,7 +362,7 @@ pub fn run_windows_host(opts: LaunchArgs) {
                             ));
                             let _ = webview.add_WebMessageReceived(&msg_handler, &mut token);
 
-                            if let Some(html) = pick_builtin_html(settings_mode, ocr_mode, clip_mode, tr_mode) {
+                            if let Some(html) = pick_builtin_html(settings_mode, clip_mode, tr_mode) {
                                 let hw = HSTRING::from(html);
                                 let _ = webview.NavigateToString(PCWSTR(hw.as_ptr()));
                             } else {
