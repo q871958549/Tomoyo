@@ -892,6 +892,7 @@ name = "tomoyo-plugin-md-editor"
 version = "2.6.1"
 dependencies = [
  "serde_json",
+ "sha2",
  "tomoyo-sdk",
 ]
 

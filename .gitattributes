@@ -1,0 +1,8 @@
+# Keep plugin bundle text files strictly LF across Windows & Linux so SHA-256 verification is deterministic.
+plugins/** text eol=lf
+scripts/*.sh text eol=lf
+*.png binary
+*.ico binary
+*.wasm binary
+*.ttf binary
+*.zip binary

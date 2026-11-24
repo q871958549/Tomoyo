@@ -22,7 +22,7 @@ permissions = ["filesystem_read", "filesystem_write", "network", "shell_exec"]
 
 [resources]
 max_memory_mb = 48
-idle_timeout_secs = 20
+idle_timeout_secs = 120
 query_timeout_ms = 1200
 
 [[hotkeys]]

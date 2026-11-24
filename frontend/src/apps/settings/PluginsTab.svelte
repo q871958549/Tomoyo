@@ -26,8 +26,6 @@
     lang: Lang;
     plugins: PluginEntry[];
     officialIcons?: Record<string, string>;
-    quietMdPath?: string;
-    installingQuietMd?: boolean;
     configPath: string;
     pluginsDir: string;
     runningApps: string[];
@@ -37,7 +35,6 @@
     expandedId: string | null;
     onToggleExpand: (id: string | null) => void;
     onTogglePlugin: (id: string, enabled: boolean) => void;
-    onInstallQuietMd?: () => void;
     onUpdatePluginConfig: (
       hotkeys: Record<string, string>,
       settings: Record<string, Record<string, string | number | boolean>>,
@@ -49,9 +46,9 @@
   }
 
   let {
-    cfg, lang, plugins, officialIcons = {}, quietMdPath = '', installingQuietMd = false,
+    cfg, lang, plugins, officialIcons = {},
     configPath, pluginsDir, runningApps, secretsStatus, hotkeyHealth, showRecord, expandedId,
-    onToggleExpand, onTogglePlugin, onInstallQuietMd, onUpdatePluginConfig, onJumpDoctor, onToast, onSave,
+    onToggleExpand, onTogglePlugin, onUpdatePluginConfig, onJumpDoctor, onToast, onSave,
   }: Props = $props();
 
   let filterText = $state('');
@@ -152,7 +149,7 @@
 <div class="t-card mod-card">
   <div class="sec-head">
     <Layers size={14} class="sec-ico" />
-    <span>{isEn ? 'Official Feature Plugins (Dedicated Logo & Per-Plugin Settings)' : '官方功能插件（独立 Logo · 备忘录与 Quiet.md 分离 · 按需启停）'}</span>
+    <span>{isEn ? 'Built-In Official Feature Plugins (Opt-Out Ready · Phase 3 Externalization)' : '官方功能插件（内置可开关 · 其余 OCR / 备忘录 / 编辑器均按需安装）'}</span>
   </div>
 
   {#if filteredOfficials.length === 0}
@@ -218,7 +215,7 @@
                 {/each}
               </div>
             {/if}
-            <PluginConfigDrawer plugin={entry} {cfg} {lang} {quietMdPath} {installingQuietMd} {onInstallQuietMd} {onChangeDisplayMode} {onChangeHotkey} {onChangeSetting} />
+            <PluginConfigDrawer plugin={entry} {cfg} {lang} {onChangeDisplayMode} {onChangeHotkey} {onChangeSetting} />
           {/if}
         </div>
       {/if}
@@ -290,7 +287,7 @@
           </div>
         </div>
         {#if configurable && isOpen}
-          <PluginConfigDrawer plugin={p} {cfg} {lang} {quietMdPath} {installingQuietMd} {onInstallQuietMd} {onChangeDisplayMode} {onChangeHotkey} {onChangeSetting} />
+          <PluginConfigDrawer plugin={p} {cfg} {lang} {onChangeDisplayMode} {onChangeHotkey} {onChangeSetting} />
         {/if}
       </div>
     {/each}

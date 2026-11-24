@@ -33,7 +33,6 @@ pub enum HostMessage {
     FetchStore { sources: Vec<String>, #[serde(default)] query: String, #[serde(default)] category: String, #[serde(default)] runtime: String, #[serde(default)] sort: String, #[serde(default)] page: usize, #[serde(default)] page_size: usize, #[serde(default)] force_refresh: bool },
     InstallPlugin { plugin_id: String, source: String, sha256: String },
     UninstallPlugin { plugin_id: String },
-    InstallQuietMd,
     SetPluginPermission { plugin_id: String, permission: String, allowed: bool },
     ReportJsError { message: String, #[serde(default)] source: String, #[serde(default)] line: u32 },
     ReadLogs { source: String, #[serde(default)] errors_only: bool },
@@ -84,7 +83,6 @@ pub struct HostAction {
     pub async_check_updates: Option<String>,
     pub async_install_update: Option<tomoyo_core::ReleaseInfo>,
     pub async_fetch_store: Option<crate::store_index::StoreQuery>,
-    pub async_install_quiet_md: bool,
     pub async_translate: Option<(String, String, String)>,
     pub async_refresh_hotkey_health: bool,
     /// `1` = start temporary exclusive WH_KEYBOARD_LL capture, `-1` = stop.
@@ -181,10 +179,6 @@ pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isi
                 page_size,
                 force_refresh,
             }),
-            ..Default::default()
-        },
-        HostMessage::InstallQuietMd => HostAction {
-            async_install_quiet_md: true,
             ..Default::default()
         },
         HostMessage::InstallPlugin { plugin_id, source, sha256 } => {

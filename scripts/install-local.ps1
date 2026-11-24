@@ -6,7 +6,9 @@
 param(
     [string]$InstallDir = (Join-Path $env:LOCALAPPDATA "Programs\Tomoyo"),
     [switch]$NoLaunch,
-    [switch]$EnableAutostart
+    [switch]$EnableAutostart,
+    [switch]$CoreOnly,
+    [switch]$WithExamples
 )
 
 $ErrorActionPreference = "Stop"
@@ -33,9 +35,17 @@ New-Item -ItemType Directory -Force -Path (Join-Path $InstallDir "assets\fonts")
 New-Item -ItemType Directory -Force -Path (Join-Path $InstallDir "assets\plugin-icons") | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $InstallDir "registry") | Out-Null
 
-# Copy executables & license/docs
-foreach ($bin in @("tomoyo.exe", "tomoyo-webview-host.exe", "tomoyo-capture.exe", "tomoyo-cli.exe", "tomoyo-plugin-hello.exe", "tomoyo-plugin-ocr.exe", "tomoyo-plugin-notes.exe", "tomoyo-plugin-md-editor.exe")) {
-    Copy-Item (Join-Path $releaseDir $bin) $InstallDir -Force
+# Copy executables & license/docs (pure microkernel when -CoreOnly is passed)
+$bins = @("tomoyo.exe", "tomoyo-webview-host.exe", "tomoyo-cli.exe")
+if (-not $CoreOnly) {
+    $bins += @("tomoyo-capture.exe", "tomoyo-plugin-ocr.exe", "tomoyo-plugin-notes.exe", "tomoyo-plugin-md-editor.exe")
+}
+if ($WithExamples) {
+    $bins += @("tomoyo-plugin-hello.exe")
+}
+foreach ($bin in $bins) {
+    $srcBin = Join-Path $releaseDir $bin
+    if (Test-Path $srcBin) { Copy-Item $srcBin $InstallDir -Force }
 }
 Copy-Item (Join-Path $repoRoot "LICENSE-MIT"), (Join-Path $repoRoot "LICENSE-APACHE"), (Join-Path $repoRoot "README.md") $InstallDir -Force
 Copy-Item (Join-Path $repoRoot "assets\fonts\*.ttf") (Join-Path $InstallDir "assets\fonts") -Force
@@ -44,8 +54,19 @@ Copy-Item (Join-Path $repoRoot "assets\tomoyo.ico") (Join-Path $InstallDir "asse
 Copy-Item (Join-Path $repoRoot "registry\index.json") (Join-Path $InstallDir "registry\index.json") -Force
 Copy-Item (Join-Path $PSScriptRoot "uninstall-local.ps1") (Join-Path $InstallDir "uninstall.ps1") -Force
 
-# Copy bundled reference plugins (excluding build caches)
-foreach ($p in @("example-hello", "example-python", "example-wasm", "example-webview-json", "builtin-ocr", "official-notes", "official-md-editor")) {
+# Copy optional bundled plugins (opt-out with -CoreOnly; developer examples opt-in via -WithExamples)
+$pluginsToCopy = @()
+if (-not $CoreOnly) {
+    $pluginsToCopy += @("builtin-ocr", "official-notes", "official-md-editor")
+}
+if ($WithExamples) {
+    $pluginsToCopy += @("example-hello", "example-python", "example-wasm", "example-webview-json")
+} else {
+    foreach ($ex in @("example-hello", "example-python", "example-wasm", "example-webview-json")) {
+        Remove-Item (Join-Path $InstallDir "plugins\$ex") -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+foreach ($p in $pluginsToCopy) {
     $dstP = Join-Path $InstallDir "plugins\$p"
     New-Item -ItemType Directory -Force -Path $dstP | Out-Null
     Get-ChildItem (Join-Path $repoRoot "plugins\$p") -Exclude "target","__pycache__" |

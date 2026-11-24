@@ -385,18 +385,22 @@
    - 在 `tomoyo-everything` 接收窗显式调用 `ChangeWindowMessageFilterEx(hwnd, WM_COPYDATA, MSGFLT_ALLOW, None)`，彻底解除高权限 `tomoyo.exe` 无法接收非提权 `Everything.exe` 回复导致的 UIPI 静默丢包（修复 `.md` 等全盘文件搜不到问题并提升 `.md`/`.txt` 相关性权重）。
    - 全局截图/OCR 热键改为不预先隐藏搜索框并在 `enumerate_snap_windows` 中放行 `TomoyoLauncherWindowClass`，直接支持一键吸附截取 Tomoyo 搜索框界面。
 
-### 阶段二十：`v2.7.0` — 面向成千上万款插件的「插件中心 2.0」可扩展架构（架构奠基 → 深化）
-1. **分片注册清单协议（Registry Schema v2）**：
-   - 支持 `schema_version: 2` 轻量主清单 + 按分类分片（`shards` + ETag 304 + `%LOCALAPPDATA%\Tomoyo\cache\store\` 本地缓存），向下兼容全部 v1 清单；内置分类（`efficiency / docs / dev / ai / media / system`）、评分/下载量元信息、校验徽章与按需图标。
-2. **Rust 侧检索引擎与分页 IPC 协议（防前端 DOM / 内存膨胀）**：
-   - 严禁在设置初始化 `__TOMOYO_SETTINGS_INIT__` 中全量注入市场列表；改为由 `tomoyo-webview-host` 在 Rust 侧构建常驻内存检索引擎（关键词 / 分类 / 运行时 / 排序 / 装机状态过滤），通过 `QueryStore` / `StorePage` 分页协议每次仅向 Svelte 交付一页（如 `24` 条）与按页按需的轻量缩略图标，`10,000+` 插件下 DOM 节点始终 `< 100` 且检索耗时 `< 5 ms`，`settings.html` 仍严守 `≤ 320 KB`。
-3. **设置中心双栏检索与插件详情交互（`PluginsTab` + `StoreTab`）**：
-   - 已安装插件列表与插件市场均支持即时关键字搜索、分类芯片筛选、呈现模式快捷切换，以及惰性拉取的插件详情抽屉（权限透明列表、支持触发词、作者与主页）。
+### 阶段二十：`v2.7.0` — 微内核彻底解耦 Phase 1：多平台插件商店 v2.1、Quiet.md 零特权拆离与纯核心安装（推进中 🚧）
+> 完整中长期解耦架构与 `v2.7 → v3.0` 四阶段迁移方案见 [`docs/DECOUPLING_BLUEPRINT.md`](DECOUPLING_BLUEPRINT.md)。
+1. **分片与多平台注册清单协议（Registry Schema v2.1）**：
+   - 在 `schema_version: 2` 分片分页检索（10,000+ 插件 `< 5 ms`、`settings.html ≤ 320 KB`）基础上，新增 `platforms` 多架构产物映射（`windows-x86_64` / `windows-aarch64` / `linux-x86_64` / `linux-aarch64` / `macos-*` / `any`）与 `min_tomoyo_version`，商店与 `tomoyo-cli install` 自动按当前系统匹配校验安装；
+2. **首批彻底零特权拆离（Quiet.md / 备忘录 / 示例插件）**：
+   - 将 Quiet.md 下载校验器从 `tomoyo-core`、`tomoyo-protocol`、`tomoyo-providers`、`tomoyo-webview-host` 与设置前端全量剥离，回归 `plugins/official-md-editor` 插件自包含执行；
+   - 设置中心已安装列表不再硬编码外部插件占位条目；本地安装脚本新增 `--core-only` 纯净微内核模式且默认不再强制铺放 `example-*` 示例插件。
 
-### 阶段二十一：`v2.8.0` — 社区生态拓展与打包分发流水线
-1. **`tomoyo-cli pack` 标准化社区插件包生成器**：校验 `icon.png`、`display_mode`、Protocol v2 Schema 与确定性 `SHA-256` 清单生成；
-2. **WASM 声明式卡片输出原语**：允许零权限 WASM 沙箱插件输出结构化 Markdown/表格/快捷动作卡片在搜索结果右侧直接内嵌呈现；
-3. **插件一键体检与多源仓库镜像健康检测**：自动检测过期清单、不可达镜像与插件版本升级提示。
+### 阶段二十一：`v2.8.0` — Protocol v3 通用底座与开放插件 DX
+1. **Hybrid 混合运行时（`window.tomoyo.callPlugin`）**：允许 WebView 插件直接与自身 STDIO/WASM 后端双向 RPC 通信，为迁出翻译/剪贴板/OCR 视图扫清障碍；
+2. **声明式设置升级与公开扩展钩子**：扩充 `[[settings]]`（`secret` / `hotkey` / `dir` / `file` / `section`），开放 `[[tray_actions]]`、`triggers.file_extensions` 动态文件二级动作与通用 `Permission::SelectionRead` 划词能力；
+3. **社区生态工具链深化**：`tomoyo-cli dev --devtools`、WASM 声明式卡片原语、SDK 发布 `crates.io` 与 PR 自动化清单体检。
+
+### 阶段二十二：`v2.9.0` → `v3.0.0` — 重型官方模块全量外迁与 Starter Packs
+1. **按序外迁重型工具**：将离线 OCR → 多源划词翻译 → 原生截图与录屏 → 剪贴板历史工作台全部迁出核心仓库为独立按需安装插件，核心仅保留极简启动器与插件操作系统底座；
+2. **首次引导按需勾选（Starter Packs）与独立 `tomoyo-plugins` 生态发版**：纯净安装包零捆绑，用户按需一键勾选安装任意官方/社区插件并独立升级卸载。
 
 ---
 

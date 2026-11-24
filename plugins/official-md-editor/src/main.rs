@@ -5,6 +5,7 @@
 //! and opens/creates standalone Markdown documents directly in Quiet.md.
 
 mod quiet_discovery;
+mod quiet_install;
 
 use quiet_discovery::{
     MdDoc, create_md_file, docs_dir_from, find_quiet_md, is_md_file, read_md_doc,
@@ -14,8 +15,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use tomoyo_sdk::{
     ActionKind, ActionSpec, AttachedContext, ExecuteRequest, ExecuteResponse, IconSpec,
-    InternalCommandKind, PluginMeta, PreviewSpec, QueryContext, ResultCategory, ResultItem,
-    TomoyoPlugin,
+    PluginMeta, PreviewSpec, QueryContext, ResultCategory, ResultItem, TomoyoPlugin,
 };
 
 const PLUGIN_ID: &str = "dev.tomoyo.markdown-editor";
@@ -56,8 +56,10 @@ fn build_open_doc_item(doc: &MdDoc, quiet_exe: Option<&Path>, score: i64) -> Res
             id: "install_quiet_md".into(),
             label: "下载安装 Quiet.md (MIT · SHA-256 校验)".into(),
             shortcut: Some("Enter".into()),
-            kind: ActionKind::InternalCommand {
-                command: InternalCommandKind::InstallQuietMd,
+            kind: ActionKind::PluginExecute {
+                plugin_id: PLUGIN_ID.into(),
+                action_id: "install_quiet_md".into(),
+                payload: serde_json::Value::Null,
             },
         });
     }
@@ -219,8 +221,10 @@ fn build_primary_launcher_item(docs_dir: &Path, quiet_exe: Option<&Path>) -> Res
                 id: "install_qm".into(),
                 label: "SHA-256 校验下载并安装 Quiet.md".into(),
                 shortcut: Some("Enter".into()),
-                kind: ActionKind::InternalCommand {
-                    command: InternalCommandKind::InstallQuietMd,
+                kind: ActionKind::PluginExecute {
+                    plugin_id: PLUGIN_ID.into(),
+                    action_id: "install_quiet_md".into(),
+                    payload: serde_json::Value::Null,
                 },
             },
             ActionSpec {
@@ -317,6 +321,14 @@ impl TomoyoPlugin for MarkdownEditorPlugin {
     }
 
     fn execute(&self, req: &ExecuteRequest) -> ExecuteResponse {
+        if req.action_id == "install_quiet_md" {
+            quiet_install::spawn_verified_install();
+            return ExecuteResponse {
+                hide_window: false,
+                toast: Some("正在插件后台 SHA-256 校验下载并安装 Quiet.md…".into()),
+                ..Default::default()
+            };
+        }
         if req.action_id != "create_and_open" {
             return ExecuteResponse::default();
         }

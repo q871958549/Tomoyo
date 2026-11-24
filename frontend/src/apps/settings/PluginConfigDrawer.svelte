@@ -1,10 +1,7 @@
 <script lang="ts">
-  import { AppWindow, Download, ExternalLink, Keyboard, SlidersHorizontal, Zap } from '@lucide/svelte';
-  import { PLUGIN_MD_EDITOR } from '../../lib/defaults';
-  import { postHost } from '../../lib/ipc';
+  import { AppWindow, Keyboard, SlidersHorizontal, Zap } from '@lucide/svelte';
   import type { PluginEntry, PluginHotkeyDecl, PluginSettingField, SelectOption, TomoyoConfig } from '../../lib/types';
   import type { Lang } from '../../lib/i18n';
-  import Button from '../../lib/ui/Button.svelte';
   import HotkeyRecorder from '../../lib/ui/HotkeyRecorder.svelte';
   import Input from '../../lib/ui/Input.svelte';
   import Segmented from '../../lib/ui/Segmented.svelte';
@@ -16,16 +13,13 @@
     plugin: PluginEntry;
     cfg: TomoyoConfig;
     lang: Lang;
-    quietMdPath?: string;
-    installingQuietMd?: boolean;
-    onInstallQuietMd?: () => void;
     onChangeDisplayMode: (pluginId: string, mode: string) => void;
     onChangeHotkey: (slotKey: string, spec: string) => void;
     onChangeSetting: (pluginId: string, key: string, value: string | number | boolean) => void;
   }
 
   let {
-    plugin, cfg, lang, quietMdPath = '', installingQuietMd = false, onInstallQuietMd,
+    plugin, cfg, lang,
     onChangeDisplayMode, onChangeHotkey, onChangeSetting,
   }: Props = $props();
   let isEn = $derived(lang === 'en');
@@ -92,34 +86,6 @@
       />
     </div>
   </div>
-
-  {#if pidLow === PLUGIN_MD_EDITOR}
-    <div class="v2-sec">
-      <div class="v2-row" style="border-top:0;padding-top:2px">
-        <div class="v2-meta">
-          <div class="v2-lbl">{isEn ? 'Quiet.md Engine Status' : 'Quiet.md 桌面编辑器就绪状态 (s1dashu/quiet-md · MIT)'}</div>
-          <div class="v2-desc">
-            {#if quietMdPath}
-              {isEn ? `Detected: ${quietMdPath}` : `已就绪：${quietMdPath}`}
-            {:else}
-              {isEn ? 'Not installed yet — one-click SHA-256 verified install keeps tomoyo.exe lean' : '暂未检测到本机 Quiet.md — 支持从官方 GitHub Releases 一键 SHA-256 校验安装'}
-            {/if}
-          </div>
-        </div>
-        <div style="display:flex;gap:6px;flex-shrink:0">
-          {#if quietMdPath}
-            <Button variant="secondary" size="sm" onclick={() => postHost({ cmd: 'open_path', path: quietMdPath })}>
-              <ExternalLink size={13} />{isEn ? 'Launch Quiet.md' : '立即启动'}
-            </Button>
-          {:else}
-            <Button variant="primary" size="sm" disabled={installingQuietMd} onclick={() => onInstallQuietMd?.()}>
-              <Download size={13} />{installingQuietMd ? (isEn ? 'Installing…' : '安装中…') : (isEn ? 'Install Quiet.md' : '一键校验安装')}
-            </Button>
-          {/if}
-        </div>
-      </div>
-    </div>
-  {/if}
 
   {#if hotkeys.length > 0}
     <div class="v2-sec">

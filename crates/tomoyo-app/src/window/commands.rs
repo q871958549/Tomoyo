@@ -330,20 +330,6 @@ impl AppShell {
                 Err(e) => self.show_toast(&e),
             },
             InternalCommandKind::RunFlow { flow_id, input } => self.execute_workflow(&flow_id, &input),
-            InternalCommandKind::InstallQuietMd => {
-                self.show_toast(self.lang.pick(
-                    "正在下载并校验 Quiet.md 官方安装包 (SHA-256)…",
-                    "Downloading & SHA-256 verifying Quiet.md…",
-                ));
-                let _ = std::thread::Builder::new()
-                    .name("tomoyo-quietmd-setup".into())
-                    .spawn(|| {
-                        match tomoyo_core::install_quiet_md_verified() {
-                            Ok(msg) => tracing::info!("{msg}"),
-                            Err(e) => tracing::warn!("Quiet.md install failed: {e}"),
-                        }
-                    });
-            }
         }
     }
 

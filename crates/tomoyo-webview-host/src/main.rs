@@ -245,9 +245,6 @@ pub fn build_settings_init_script_for(initial_route: &str) -> String {
         tomoyo_core::PLUGIN_CLIPBOARD,
         tomoyo_core::PLUGIN_TRANSLATE,
         tomoyo_core::PLUGIN_CAPTURE,
-        tomoyo_core::PLUGIN_OCR,
-        tomoyo_core::PLUGIN_NOTES,
-        tomoyo_core::PLUGIN_MD_EDITOR,
     ] {
         if let Some(url) = tomoyo_core::resolve_bundled_module_icon(mid)
             .and_then(|ip| tomoyo_core::read_icon_data_url(&ip))
@@ -255,9 +252,6 @@ pub fn build_settings_init_script_for(initial_route: &str) -> String {
             official_icons.insert(mid.to_string(), serde_json::Value::String(url));
         }
     }
-    let quiet_md_path = tomoyo_core::detect_quiet_md_binary(None)
-        .map(|p| p.to_string_lossy().into_owned())
-        .unwrap_or_default();
 
     let plugins_dir = tomoyo_core::data_dir().join("plugins");
     let _ = std::fs::create_dir_all(&plugins_dir);
@@ -284,7 +278,6 @@ pub fn build_settings_init_script_for(initial_route: &str) -> String {
         "has_bundled_alibaba_font": locate_fonts_dir().is_some(),
         "system_fonts": tomoyo_core::list_system_font_families(),
         "official_icons": official_icons,
-        "quiet_md_path": quiet_md_path,
         "initial_route": initial_route,
     });
     format!(

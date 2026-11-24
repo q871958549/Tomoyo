@@ -270,7 +270,6 @@ export interface SettingsInitPayload {
   cached_update?: UpdateStatus | null;
   system_fonts?: string[];
   official_icons?: Record<string, string>;
-  quiet_md_path?: string;
   initial_route?: string;
 }
 

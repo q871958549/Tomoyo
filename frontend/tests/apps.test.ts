@@ -169,7 +169,8 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
     document.querySelector<HTMLButtonElement>('button[data-config-plugin="dev.tomoyo.ocr"]')?.click();
     flushSync();
     expect(document.querySelector('[data-plugin-drawer="dev.tomoyo.ocr"]')).not.toBeNull();
-    expect(document.body.textContent).toContain('Quiet.md Markdown 编辑器');
+    // Uninstalled optional plugins (e.g. Quiet.md) must NOT render ghost cards in Installed Plugins!
+    expect(document.body.textContent).not.toContain('Quiet.md Markdown 编辑器');
     document.querySelector<HTMLButtonElement>('button[role="switch"][aria-label="dev.tomoyo.ocr:raw_output"]')?.click();
     flushSync();
     const inlineBtn = [...document.querySelectorAll<HTMLButtonElement>('[data-plugin-drawer="dev.tomoyo.ocr"] .t-seg button')].find((b) => b.textContent?.includes('搜索结果内嵌'));
@@ -177,7 +178,7 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
     flushSync();
     expect(wv.posted.some((m) => m.cmd === 'save_settings' && (m.config as { plugin_display_modes?: Record<string, string> })?.plugin_display_modes?.['dev.tomoyo.ocr'] === 'inline')).toBe(true);
 
-    // Scalable StoreTab search + pagination + dedicated logos
+    // Scalable StoreTab search + pagination + multi-platform compatibility guard
     const storeSeg = [...document.querySelectorAll<HTMLButtonElement>('.subbar button')].find((b) => b.textContent?.includes('插件市场'));
     storeSeg?.click();
     flushSync();
@@ -199,12 +200,25 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
         display_mode: 'window',
         source: 'plugins/official-md-editor',
         sha256: '0'.repeat(64),
+        platform_compatible: true,
+      }, {
+        id: 'community.macos.only',
+        name: 'macOS QuickLook Bridge',
+        version: '1.0.0',
+        description: 'macOS only helper',
+        runtime_kind: 'stdio_jsonrpc',
+        category: 'system',
+        display_mode: 'window',
+        source: '',
+        sha256: '',
+        platform_compatible: false,
       }],
     });
     flushSync();
     expect(document.body.textContent).toContain('10000');
     expect(document.body.textContent).toContain('417');
     expect(document.body.textContent).toContain('Quiet.md Markdown 编辑器');
+    expect(document.body.textContent).toContain('暂不支持当前系统');
 
     // Search & Web sub-tabs
     document.querySelector<HTMLButtonElement>('button[data-tab="search"]')?.click();

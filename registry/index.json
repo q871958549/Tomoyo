@@ -20,7 +20,7 @@
       "keywords": ["md", "markdown", "quiet", "edit"],
       "homepage": "https://github.com/s1dashu/quiet-md",
       "source": "plugins/official-md-editor",
-      "sha256": "0b227a2fcd6758267263c78e3bed33c5fe6e2572ad4bf100e98f3d99e729b815"
+      "sha256": "b8943fbfb2ba5db5052c40fbfac23d2590f3fea44f3b1cfd3670f7d87ef1f371"
     },
     {
       "id": "dev.tomoyo.notes",
@@ -36,7 +36,7 @@
       "tags": ["notes", "memo", "tags"],
       "keywords": ["note", "memo", "bw"],
       "source": "plugins/official-notes",
-      "sha256": "599b24cf3cb74a0a9ab1b8966ce7c73203890a2ab15e0071add318314d1eb1a4"
+      "sha256": "596bac85a36ab74ed40275bc8bea38e82ac743538f98e104ca4d696501be1b93"
     },
     {
       "id": "dev.tomoyo.ocr",
@@ -52,7 +52,7 @@
       "tags": ["ocr", "vision", "offline"],
       "keywords": ["ocr"],
       "source": "plugins/builtin-ocr",
-      "sha256": "24bef848835b600ee99d1c397d9657afd22650b480cc9ca265460e5e7b19ad64"
+      "sha256": "bc16397867dc4efbec45f1b786e79b246027aefd538c1b9274f4c25d46113b2b"
     },
     {
       "id": "dev.tomoyo.example-hello",
@@ -68,7 +68,7 @@
       "tags": ["text", "case", "rust"],
       "keywords": ["hi", "case"],
       "source": "plugins/example-hello",
-      "sha256": "11bab298906f86f3365f75079bda5c3945efd30906183cd1b4f0fb17254fdfd7"
+      "sha256": "657ad202fca327ab5abe73522f029c7ea0c86c22ac74cc58de65b00c9651cadd"
     },
     {
       "id": "dev.tomoyo.example-python",
@@ -84,7 +84,7 @@
       "tags": ["hash", "sha256", "python"],
       "keywords": ["py", "hash"],
       "source": "plugins/example-python",
-      "sha256": "1a9a7e290d021790f772a00422e93e3d479d33ba0690c3cef32dedc8b684b28e"
+      "sha256": "855586d076bde6ae55d211ce728848bb40932d3ef5fde1246d2fc115742eb91e"
     },
     {
       "id": "dev.tomoyo.example-wasm",
@@ -100,7 +100,7 @@
       "tags": ["wasm", "jwt", "unit"],
       "keywords": ["wasm", "jwt", "unit"],
       "source": "plugins/example-wasm",
-      "sha256": "1d2b16426bc79be4a968c8e9f8c74e61c02a43b8648c55d425d29ee05029c3a0"
+      "sha256": "d7b61aeaa363d3ee9064487f0b84c5c38f94a498e5c08a1b4dcc000dd1ab11ae"
     },
     {
       "id": "dev.tomoyo.example-webview-json",
@@ -116,7 +116,7 @@
       "tags": ["json", "formatter", "webview"],
       "keywords": ["json", "utools"],
       "source": "plugins/example-webview-json",
-      "sha256": "6312ef5634708315b78ca632c2f9356426d25e610490c8e8df445386b1cc4713"
+      "sha256": "b7676b2218be549ef08651f296e6d278b7a1633b9d1af1e75f18f479cc76e3c1"
     }
   ]
 }

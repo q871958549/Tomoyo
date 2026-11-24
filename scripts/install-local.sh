@@ -12,15 +12,19 @@ DATA_DIR="${TOMOYO_DATA_DIR:-$XDG_DATA/tomoyo}"
 NO_LAUNCH=0
 ENABLE_AUTOSTART=0
 BUILD_FIRST=0
+CORE_ONLY=0
+WITH_EXAMPLES=0
 for arg in "$@"; do
   case "$arg" in
     --no-launch) NO_LAUNCH=1 ;;
     --enable-autostart) ENABLE_AUTOSTART=1 ;;
     --build) BUILD_FIRST=1 ;;
+    --core-only) CORE_ONLY=1 ;;
+    --with-examples) WITH_EXAMPLES=1 ;;
     --bin-dir=*) BIN_DIR="${arg#*=}" ;;
     --data-dir=*) DATA_DIR="${arg#*=}" ;;
     -h|--help)
-      echo "Usage: $0 [--build] [--no-launch] [--enable-autostart] [--bin-dir=PATH] [--data-dir=PATH]"
+      echo "Usage: $0 [--build] [--no-launch] [--enable-autostart] [--core-only] [--with-examples] [--bin-dir=PATH] [--data-dir=PATH]"
       exit 0
       ;;
     *) echo "Unknown option: $arg" >&2; exit 2 ;;
@@ -77,15 +81,16 @@ mkdir -p "$BIN_DIR" "$DATA_DIR/fonts" "$DATA_DIR/plugin-icons" "$DATA_DIR/assets
 BINS=(
   tomoyo
   tomoyo-webview-host
-  tomoyo-capture
   tomoyo-cli
-  tomoyo-plugin-hello
-  tomoyo-plugin-ocr
-  tomoyo-plugin-notes
-  tomoyo-plugin-md-editor
 )
+if [ "$CORE_ONLY" -eq 0 ]; then
+  BINS+=(tomoyo-capture tomoyo-plugin-ocr tomoyo-plugin-notes tomoyo-plugin-md-editor)
+fi
+if [ "$WITH_EXAMPLES" -eq 1 ]; then
+  BINS+=(tomoyo-plugin-hello)
+fi
 for b in "${BINS[@]}"; do
-  install -Dm755 "$RELEASE_DIR/$b" "$BIN_DIR/$b"
+  [ -x "$RELEASE_DIR/$b" ] && install -Dm755 "$RELEASE_DIR/$b" "$BIN_DIR/$b"
 done
 
 install -Dm644 "$REPO_ROOT/LICENSE-MIT" "$DATA_DIR/LICENSE-MIT"
@@ -97,7 +102,18 @@ install -Dm644 "$REPO_ROOT/assets/tomoyo-icon.png" "$DATA_DIR/assets/tomoyo-icon
 install -Dm644 "$REPO_ROOT/registry/index.json" "$DATA_DIR/registry/index.json"
 install -Dm755 "$REPO_ROOT/scripts/uninstall-local.sh" "$DATA_DIR/uninstall.sh"
 
-for p in example-hello example-python example-wasm example-webview-json builtin-ocr official-notes official-md-editor; do
+PLUGINS_TO_INSTALL=()
+if [ "$CORE_ONLY" -eq 0 ]; then
+  PLUGINS_TO_INSTALL+=(builtin-ocr official-notes official-md-editor)
+fi
+if [ "$WITH_EXAMPLES" -eq 1 ]; then
+  PLUGINS_TO_INSTALL+=(example-hello example-python example-wasm example-webview-json)
+else
+  for ex in example-hello example-python example-wasm example-webview-json; do
+    rm -rf "$DATA_DIR/plugins/$ex"
+  done
+fi
+for p in "${PLUGINS_TO_INSTALL[@]}"; do
   rm -rf "$DATA_DIR/plugins/$p"
   mkdir -p "$DATA_DIR/plugins/$p"
   cp -a "$REPO_ROOT/plugins/$p/." "$DATA_DIR/plugins/$p/"
