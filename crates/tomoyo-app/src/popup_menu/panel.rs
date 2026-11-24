@@ -81,6 +81,7 @@ pub(super) fn create_panel_window(
     w_px: i32,
     h_px: i32,
     is_dark: bool,
+    owner: Option<HWND>,
     sess_ptr: isize,
 ) -> Option<HWND> {
     let hinst = unsafe { GetModuleHandleW(None).ok()? };
@@ -94,7 +95,7 @@ pub(super) fn create_panel_window(
             y,
             w_px,
             h_px,
-            None,
+            owner,
             None,
             Some(hinst.into()),
             None,

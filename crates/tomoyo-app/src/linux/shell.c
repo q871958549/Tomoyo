@@ -1,51 +1,37 @@
-#include <gtk/gtk.h>
+#include "shell_internal.h"
 #include <cairo.h>
 #include <pango/pangocairo.h>
-#include <libayatana-appindicator/app-indicator.h>
-#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
-typedef void (*tomoyo_draw_cb)(void *ctx, void *cr, int width, int height);
-typedef int (*tomoyo_key_cb)(void *ctx, uint32_t keyval, uint32_t state);
-typedef void (*tomoyo_mouse_cb)(void *ctx, int kind, int x, int y, int delta);
-typedef void (*tomoyo_void_cb)(void *ctx);
-typedef void (*tomoyo_cmd_cb)(void *ctx, uint32_t cmd_id);
-
-typedef struct {
-    GtkWidget *window;
-    GtkWidget *overlay;
-    GtkWidget *darea;
-    GtkWidget *fixed;
-    GtkWidget *entry;
-    GtkCssProvider *css;
-    AppIndicator *tray;
-    GtkWidget *tray_menu;
-    gulong entry_changed_id;
-    int suppress_change;
-    gint last_btn;
-    gint last_rx;
-    gint last_ry;
-    guint32 last_time;
-    int last_w, last_h, last_ex, last_ey, last_ew, last_eh;
-    void *ctx;
-    tomoyo_draw_cb on_draw;
-    tomoyo_key_cb on_key;
-    tomoyo_mouse_cb on_mouse;
-    tomoyo_void_cb on_text_changed;
-    tomoyo_void_cb on_paste;
-    tomoyo_void_cb on_focus_out;
-    tomoyo_void_cb on_clip_change;
-    tomoyo_cmd_cb on_tray_cmd;
-} tomoyo_app_t;
-
-typedef struct { tomoyo_cmd_cb cb; void *ctx; uint32_t cmd; } menu_pick_t;
-static void on_popup_activate(GtkMenuItem *it, gpointer ud) {
-    (void)it;
-    menu_pick_t *p = (menu_pick_t *)ud;
-    if (p && p->cb) p->cb(p->ctx, p->cmd);
+static gboolean cb_entry_btn_press(GtkWidget *w, GdkEventButton *ev, gpointer ud) {
+    tomoyo_app_t *a = (tomoyo_app_t *)ud;
+    if (!a || !a->on_mouse || ev->button != 3) return FALSE;
+    if (ev->type != GDK_BUTTON_PRESS) return TRUE;
+    a->last_btn = (gint)ev->button;
+    a->last_rx = (gint)ev->x_root; a->last_ry = (gint)ev->y_root; a->last_time = ev->time;
+    if (!gtk_widget_has_focus(w)) {
+        int s = 0, e = 0;
+        gboolean sel = gtk_editable_get_selection_bounds(GTK_EDITABLE(w), &s, &e);
+        gtk_widget_grab_focus(w);
+        if (!sel) gtk_editable_set_position(GTK_EDITABLE(w), -1);
+    }
+    int ex = a->last_ex > 0 ? a->last_ex : 62, ey = a->last_ey > 0 ? a->last_ey : 14;
+    a->popup_from_kb = 0;
+    a->on_mouse(a->ctx, 7, ex + (int)ev->x, ey + (int)ev->y, 0);
+    return TRUE;
 }
-static void free_menu_pick(gpointer ud, GClosure *cl) { (void)cl; free(ud); }
+
+static gboolean cb_entry_popup_menu(GtkWidget *w, gpointer ud) {
+    (void)w;
+    tomoyo_app_t *a = (tomoyo_app_t *)ud;
+    if (!a || !a->on_mouse) return FALSE;
+    int ex = a->last_ex > 0 ? a->last_ex : 62, ey = a->last_ey > 0 ? a->last_ey : 14;
+    a->last_time = gtk_get_current_event_time();
+    a->popup_from_kb = 1;
+    a->on_mouse(a->ctx, 7, ex + 24, ey + 28, 0);
+    return TRUE;
+}
 
 static gboolean cb_draw(GtkWidget *w, cairo_t *cr, gpointer ud) {
     tomoyo_app_t *a = (tomoyo_app_t *)ud;
@@ -184,6 +170,8 @@ tomoyo_app_t *tomoyo_linux_ui_create(
     g_signal_connect(a->darea, "motion-notify-event", G_CALLBACK(cb_motion), a);
     g_signal_connect(a->darea, "scroll-event", G_CALLBACK(cb_scroll), a);
     g_signal_connect(a->entry, "key-press-event", G_CALLBACK(cb_key), a);
+    g_signal_connect(a->entry, "button-press-event", G_CALLBACK(cb_entry_btn_press), a);
+    g_signal_connect(a->entry, "popup-menu", G_CALLBACK(cb_entry_popup_menu), a);
     g_signal_connect(a->window, "key-press-event", G_CALLBACK(cb_key), a);
     a->entry_changed_id = g_signal_connect(a->entry, "changed", G_CALLBACK(cb_changed), a);
     g_signal_connect(a->entry, "paste-clipboard", G_CALLBACK(cb_paste), a);
@@ -284,58 +272,27 @@ void tomoyo_linux_ui_screen_info(tomoyo_app_t *a, int *ox, int *oy, int *ow, int
     }
 }
 
-void tomoyo_linux_tray_setup(tomoyo_app_t *a, const char *icon_path, const char *hotkey_lbl) {
-    if (!a || !icon_path) return;
-    G_GNUC_BEGIN_IGNORE_DEPRECATIONS
-    a->tray = app_indicator_new("tomoyo-launcher", icon_path, APP_INDICATOR_CATEGORY_APPLICATION_STATUS);
-    G_GNUC_END_IGNORE_DEPRECATIONS
-    app_indicator_set_status(a->tray, APP_INDICATOR_STATUS_ACTIVE);
-    app_indicator_set_title(a->tray, hotkey_lbl ? hotkey_lbl : "Tomoyo");
-    a->tray_menu = gtk_menu_new();
-    const struct { const char *lbl; uint32_t cmd; } items[] = {
-        { "显示 Tomoyo", 1 }, { "设置中心...", 2 }, { "剪贴板历史", 3 },
-        { "多源翻译", 4 }, { "区域截图", 5 }, { "区域录屏", 6 }, { NULL, 0 }, { "退出 Tomoyo", 9 }
-    };
-    for (size_t i = 0; i < sizeof(items) / sizeof(items[0]); i++) {
-        if (!items[i].lbl) {
-            gtk_menu_shell_append(GTK_MENU_SHELL(a->tray_menu), gtk_separator_menu_item_new());
-            continue;
-        }
-        GtkWidget *mi = gtk_menu_item_new_with_label(items[i].lbl);
-        menu_pick_t *p = (menu_pick_t *)malloc(sizeof(menu_pick_t));
-        p->cb = a->on_tray_cmd; p->ctx = a->ctx; p->cmd = items[i].cmd;
-        g_signal_connect_data(mi, "activate", G_CALLBACK(on_popup_activate), p, free_menu_pick, 0);
-        gtk_menu_shell_append(GTK_MENU_SHELL(a->tray_menu), mi);
-    }
-    gtk_widget_show_all(a->tray_menu);
-    app_indicator_set_menu(a->tray, GTK_MENU(a->tray_menu));
+void tomoyo_linux_ui_focus_entry(tomoyo_app_t *a) {
+    if (!a || !a->window || !a->entry) return;
+    int s = 0, e = 0;
+    gboolean had_sel = gtk_editable_get_selection_bounds(GTK_EDITABLE(a->entry), &s, &e);
+    int pos = gtk_editable_get_position(GTK_EDITABLE(a->entry));
+    gtk_window_present(GTK_WINDOW(a->window));
+    gtk_widget_grab_focus(a->entry);
+    if (had_sel) gtk_editable_select_region(GTK_EDITABLE(a->entry), s, e);
+    else gtk_editable_set_position(GTK_EDITABLE(a->entry), pos);
 }
-
-static void on_popup_done(GtkMenuShell *ms, gpointer ud) {
-    menu_pick_t *p = (menu_pick_t *)ud;
-    if (p && p->cb) p->cb(p->ctx, p->cmd);
-    gtk_widget_destroy(GTK_WIDGET(ms));
+int tomoyo_linux_ui_is_active(tomoyo_app_t *a) { return (a && a->window && gtk_window_is_active(GTK_WINDOW(a->window))) ? 1 : 0; }
+int tomoyo_linux_entry_has_selection(tomoyo_app_t *a) {
+    int s = 0, e = 0;
+    return (a && a->entry && gtk_editable_get_selection_bounds(GTK_EDITABLE(a->entry), &s, &e)) ? 1 : 0;
 }
-
-void tomoyo_linux_show_popup(const char **labels, const uint32_t *cmds, const int *checks, size_t n, tomoyo_cmd_cb cb, void *ctx) {
-    GtkWidget *m = gtk_menu_new();
-    for (size_t i = 0; i < n; i++) {
-        if (!labels[i] || strcmp(labels[i], "---") == 0) {
-            gtk_menu_shell_append(GTK_MENU_SHELL(m), gtk_separator_menu_item_new());
-            continue;
-        }
-        GtkWidget *mi = checks[i] ? gtk_check_menu_item_new_with_label(labels[i]) : gtk_menu_item_new_with_label(labels[i]);
-        if (checks[i]) gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(mi), TRUE);
-        menu_pick_t *p = (menu_pick_t *)malloc(sizeof(menu_pick_t));
-        p->cb = cb; p->ctx = ctx; p->cmd = cmds[i];
-        g_signal_connect_data(mi, "activate", G_CALLBACK(on_popup_activate), p, free_menu_pick, 0);
-        gtk_menu_shell_append(GTK_MENU_SHELL(m), mi);
-    }
-    menu_pick_t *pd = (menu_pick_t *)malloc(sizeof(menu_pick_t));
-    pd->cb = cb; pd->ctx = ctx; pd->cmd = 0;
-    g_signal_connect_data(m, "selection-done", G_CALLBACK(on_popup_done), pd, free_menu_pick, 0);
-    gtk_widget_show_all(m);
-    gtk_menu_popup_at_pointer(GTK_MENU(m), NULL);
+void tomoyo_linux_entry_edit_cmd(tomoyo_app_t *a, int op) {
+    if (!a || !a->entry) return;
+    if (op == 1) gtk_editable_cut_clipboard(GTK_EDITABLE(a->entry));
+    else if (op == 2) gtk_editable_copy_clipboard(GTK_EDITABLE(a->entry));
+    else if (op == 3) gtk_editable_paste_clipboard(GTK_EDITABLE(a->entry));
+    else if (op == 4) gtk_editable_select_region(GTK_EDITABLE(a->entry), 0, -1);
 }
 
 typedef struct { void (*fn)(void *); void *data; } ui_idle_t;

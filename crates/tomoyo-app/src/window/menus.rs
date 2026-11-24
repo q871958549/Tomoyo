@@ -12,8 +12,7 @@ use windows::Win32::Foundation::{LPARAM, WPARAM};
 use windows::Win32::Graphics::Gdi::UpdateWindow;
 use windows::Win32::UI::Input::KeyboardAndMouse::SetFocus;
 use windows::Win32::UI::WindowsAndMessaging::{
-    DestroyWindow, GetForegroundWindow, GetWindowThreadProcessId, SendMessageW,
-    SetForegroundWindow, WM_COPY, WM_CUT, WM_PASTE,
+    DestroyWindow, SendMessageW, SetForegroundWindow, WM_COPY, WM_CUT, WM_PASTE,
 };
 
 const CMD_EDIT_PASTE: u32 = 10;
@@ -59,13 +58,14 @@ impl AppShell {
 
         self.inter.in_modal_overlay = true;
         let app_ptr = self as *mut AppShell;
-        run_interactive_popup_menu(
+        let dismissed_externally = run_interactive_popup_menu(
             pal,
             dpi_scale,
             font_regular,
             font_medium,
             initial,
             false,
+            Some(self.hwnd),
             |cmd| {
                 let shell = unsafe { &mut *app_ptr };
                 if matches!(cmd, CMD_SETTINGS | CMD_CONFIG | CMD_QUIT) {
@@ -73,6 +73,9 @@ impl AppShell {
                     return MenuStepOutcome::Close;
                 }
                 shell.execute_tryable_menu_command(cmd);
+                if matches!(cmd, CMD_EDIT_PASTE..=CMD_EDIT_CLEAR | CMD_MODE_ALL..=CMD_MODE_CALC) {
+                    return MenuStepOutcome::Close;
+                }
                 unsafe {
                     let _ = UpdateWindow(shell.hwnd);
                 }
@@ -88,22 +91,17 @@ impl AppShell {
             self.execute_terminal_menu_command(cmd);
             return;
         }
+        if dismissed_externally {
+            self.hide_launcher();
+            return;
+        }
         unsafe {
-            let fg = GetForegroundWindow();
-            let mut fg_pid = 0u32;
-            if !fg.is_invalid() {
-                GetWindowThreadProcessId(fg, Some(&mut fg_pid));
-            }
-            if fg.is_invalid() || fg == self.hwnd || fg_pid == std::process::id() {
-                let _ = SetForegroundWindow(self.hwnd);
-                let _ = SetFocus(Some(self.edit_hwnd));
-            } else {
-                self.hide_launcher();
-            }
+            let _ = SetForegroundWindow(self.hwnd);
+            let _ = SetFocus(Some(self.edit_hwnd));
         }
     }
 
-    fn build_launcher_menu_entries(&self, _from_edit: bool) -> Vec<PopupEntry> {
+    fn build_launcher_menu_entries(&self, from_edit: bool) -> Vec<PopupEntry> {
         let l = self.lang;
         let low = self.current_query.trim().to_lowercase();
         let has_query = !self.current_query.is_empty();
@@ -119,17 +117,14 @@ impl AppShell {
         }
         let has_sel = sel_end > sel_start;
 
-        let edit_sub = PopupEntry::submenu(
-            l.pick("编辑与输入", "Edit Input"),
-            vec![
-                PopupEntry::item(CMD_EDIT_PASTE, l.pick("粘贴", "Paste"), Some("Ctrl+V"), false),
-                PopupEntry::item_disabled(CMD_EDIT_CUT, l.pick("剪切选中", "Cut"), Some("Ctrl+X"), !has_sel),
-                PopupEntry::item_disabled(CMD_EDIT_COPY, l.pick("复制文本", "Copy"), Some("Ctrl+C"), !has_query && !has_sel),
-                PopupEntry::item_disabled(CMD_EDIT_SELALL, l.pick("全选搜索框", "Select All"), Some("Ctrl+A"), !has_query),
-                PopupEntry::Separator,
-                PopupEntry::item_disabled(CMD_EDIT_CLEAR, l.pick("清空当前输入", "Clear Input"), Some("Esc"), !has_query && self.attached.is_none()),
-            ],
-        );
+        let edit_items = vec![
+            PopupEntry::item(CMD_EDIT_PASTE, l.pick("粘贴", "Paste"), Some("Ctrl+V"), false),
+            PopupEntry::item_disabled(CMD_EDIT_CUT, l.pick("剪切选中", "Cut"), Some("Ctrl+X"), !has_sel),
+            PopupEntry::item_disabled(CMD_EDIT_COPY, l.pick("复制文本", "Copy"), Some("Ctrl+C"), !has_query && !has_sel),
+            PopupEntry::item_disabled(CMD_EDIT_SELALL, l.pick("全选搜索框", "Select All"), Some("Ctrl+A"), !has_query),
+            PopupEntry::Separator,
+            PopupEntry::item_disabled(CMD_EDIT_CLEAR, l.pick("清空当前输入", "Clear Input"), Some("Esc"), !has_query && self.attached.is_none()),
+        ];
 
         let mode_sub = PopupEntry::submenu(
             l.pick("切换搜索模式", "Search Mode"),
@@ -187,8 +182,14 @@ impl AppShell {
             ],
         );
 
-        vec![
-            edit_sub,
+        let mut root = Vec::with_capacity(18);
+        if from_edit {
+            root.extend(edit_items);
+            root.push(PopupEntry::Separator);
+        } else {
+            root.push(PopupEntry::submenu(l.pick("编辑与输入", "Edit Input"), edit_items));
+        }
+        root.extend([
             mode_sub,
             PopupEntry::Separator,
             theme_sub,
@@ -199,7 +200,8 @@ impl AppShell {
             PopupEntry::item(CMD_SETTINGS, l.pick("设置中心...", "Settings..."), Some("Ctrl+,"), false),
             PopupEntry::Separator,
             PopupEntry::danger_item(CMD_QUIT, l.pick("退出 Tomoyo", "Exit Tomoyo"), None),
-        ]
+        ]);
+        root
     }
 
     fn execute_tryable_menu_command(&mut self, cmd: u32) {
@@ -343,7 +345,7 @@ impl AppShell {
         entries.push(PopupEntry::item(CMD_TOGGLE_PREVIEW, l.pick("右侧实时预览", "Live Preview Pane"), Some("Ctrl+P"), self.preview_enabled));
 
         self.inter.in_modal_overlay = true;
-        let chosen = show_themed_popup_menu(self.theme, self.dpi_scale, self.font_regular, self.font_medium, &entries, false);
+        let chosen = show_themed_popup_menu(self.theme, self.dpi_scale, self.font_regular, self.font_medium, &entries, false, Some(self.hwnd));
         self.inter.in_modal_overlay = false;
 
         let Some(cmd) = chosen else { return };
@@ -415,6 +417,7 @@ impl AppShell {
             self.font_medium,
             &entries,
             false,
+            Some(self.hwnd),
         );
         self.inter.in_modal_overlay = false;
         unsafe { let _ = SetForegroundWindow(self.hwnd); }

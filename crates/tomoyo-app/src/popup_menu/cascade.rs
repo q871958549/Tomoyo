@@ -19,12 +19,12 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     VK_UP,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    DefWindowProcW, DestroyWindow, GetClientRect, GetCursorPos, GetMessageW, GetWindowLongPtrW,
-    IsWindow, KillTimer, LoadCursorW, PostMessageW, PostQuitMessage, RegisterClassW,
-    SetForegroundWindow, SetTimer, SetWindowLongPtrW, SetWindowPos, ShowWindow, TranslateMessage,
-    GWLP_USERDATA, HWND_TOPMOST, IDC_ARROW, MSG, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SW_SHOW,
-    SW_SHOWNOACTIVATE, WM_ACTIVATE, WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_NULL,
-    WM_PAINT, WM_RBUTTONUP, WM_TIMER, WNDCLASSW,
+    DefWindowProcW, DestroyWindow, GetClientRect, GetCursorPos, GetForegroundWindow, GetMessageW,
+    GetWindowLongPtrW, GetWindowThreadProcessId, IsWindow, KillTimer, LoadCursorW, PostMessageW,
+    PostQuitMessage, RegisterClassW, SetForegroundWindow, SetTimer, SetWindowLongPtrW, SetWindowPos,
+    ShowWindow, TranslateMessage, GWLP_USERDATA, HWND_TOPMOST, IDC_ARROW, MSG, SWP_NOACTIVATE,
+    SWP_NOMOVE, SWP_NOSIZE, SW_SHOW, SW_SHOWNOACTIVATE, WM_ACTIVATE, WM_ERASEBKGND, WM_KEYDOWN,
+    WM_LBUTTONUP, WM_MOUSEMOVE, WM_NULL, WM_PAINT, WM_RBUTTONUP, WM_TIMER, WNDCLASSW,
 };
 
 const SUBMENU_SWITCH_TIMER: usize = 701;
@@ -33,10 +33,12 @@ pub(super) struct MenuSession<'a> {
     pub pal: ThemePalette,
     pub scale: f32,
     pub fonts: FontPack,
+    pub owner: Option<HWND>,
     pub lvl1: PanelState,
     pub lvl2: Option<PanelState>,
     pub pending_sub_idx: Option<usize>,
     pub suppress_deactivate: bool,
+    pub external_deactivate: bool,
     pub closed: bool,
     pub on_command: &'a mut dyn FnMut(u32) -> MenuStepOutcome,
 }
@@ -50,10 +52,11 @@ pub(super) fn run_session(
     font_medium: &str,
     entries: Vec<PopupEntry>,
     align_bottom: bool,
+    owner: Option<HWND>,
     on_command: &mut dyn FnMut(u32) -> MenuStepOutcome,
-) {
+) -> bool {
     if entries.is_empty() {
-        return;
+        return false;
     }
     let scale = dpi_scale.max(1.0);
     ensure_popup_class();
@@ -71,10 +74,12 @@ pub(super) fn run_session(
         pal,
         scale,
         fonts,
+        owner,
         lvl1: PanelState::from_entries(entries, false),
         lvl2: None,
         pending_sub_idx: None,
         suppress_deactivate: false,
+        external_deactivate: false,
         closed: false,
         on_command,
     });
@@ -83,8 +88,8 @@ pub(super) fn run_session(
     let h_px = (sess.lvl1.h_dip * scale).round() as i32;
     let (x, y) = place_on_monitor(pt, w_px, h_px, align_bottom);
     let sess_ptr = &mut *sess as *mut MenuSession<'_> as isize;
-    let Some(hwnd1) = create_panel_window(x, y, w_px, h_px, pal.is_dark, sess_ptr) else {
-        return;
+    let Some(hwnd1) = create_panel_window(x, y, w_px, h_px, pal.is_dark, owner, sess_ptr) else {
+        return false;
     };
     sess.lvl1.hwnd = hwnd1;
 
@@ -110,8 +115,15 @@ pub(super) fn run_session(
 
         sess.suppress_deactivate = true;
         close_child_panel(&mut sess);
+        if !sess.external_deactivate
+            && let Some(own) = sess.owner
+            && IsWindow(Some(own)).as_bool()
+        {
+            let _ = SetForegroundWindow(own);
+        }
         SetWindowLongPtrW(hwnd1, GWLP_USERDATA, 0);
         let _ = DestroyWindow(hwnd1);
+        sess.external_deactivate
     }
 }
 
@@ -172,7 +184,7 @@ fn open_child_submenu(sess: &mut MenuSession<'_>, idx: usize) {
     let row_y0_px = (sess.lvl1.metrics[idx].y0 * sess.scale).round() as i32;
     let (cx, cy) = place_child_on_monitor(sess.lvl1.hwnd, row_y0_px, cw, ch, sess.scale);
     let sess_ptr = sess as *mut MenuSession<'_> as isize;
-    let Some(hwnd2) = create_panel_window(cx, cy, cw, ch, sess.pal.is_dark, sess_ptr) else {
+    let Some(hwnd2) = create_panel_window(cx, cy, cw, ch, sess.pal.is_dark, Some(sess.lvl1.hwnd), sess_ptr) else {
         return;
     };
     panel.hwnd = hwnd2;
@@ -250,6 +262,14 @@ unsafe extern "system" fn popup_wndproc(
             if (wparam.0 & 0xFFFF) == 0 && !sess.suppress_deactivate {
                 let other = HWND(lparam.0 as *mut c_void);
                 if !is_menu_family_hwnd(sess, other) {
+                    let target = if !other.is_invalid() { other } else { unsafe { GetForegroundWindow() } };
+                    let mut pid = 0u32;
+                    if !target.is_invalid() {
+                        unsafe { GetWindowThreadProcessId(target, Some(&mut pid)); }
+                    }
+                    if pid != 0 && pid != std::process::id() {
+                        sess.external_deactivate = true;
+                    }
                     close_session(sess);
                 }
             }

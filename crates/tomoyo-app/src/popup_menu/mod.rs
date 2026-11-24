@@ -8,6 +8,7 @@ mod paint;
 mod panel;
 
 use crate::renderer::ThemePalette;
+use windows::Win32::Foundation::HWND;
 
 #[derive(Debug, Clone)]
 pub enum PopupEntry {
@@ -95,6 +96,7 @@ pub fn show_themed_popup_menu(
     font_medium: &str,
     entries: &[PopupEntry],
     align_bottom: bool,
+    owner: Option<HWND>,
 ) -> Option<u32> {
     let mut picked = None;
     let mut handler = |id: u32| {
@@ -108,6 +110,7 @@ pub fn show_themed_popup_menu(
         font_medium,
         entries.to_vec(),
         align_bottom,
+        owner,
         &mut handler,
     );
     picked
@@ -115,6 +118,7 @@ pub fn show_themed_popup_menu(
 
 /// Runs a cascading Level-1/Level-2 context menu that stays open across tryable commands
 /// until the user clicks outside, presses `Esc`, or selects an explicit close/navigate action.
+/// Returns `true` when dismissed because focus explicitly moved to another process.
 pub fn run_interactive_popup_menu(
     pal: ThemePalette,
     dpi_scale: f32,
@@ -122,8 +126,9 @@ pub fn run_interactive_popup_menu(
     font_medium: &str,
     entries: Vec<PopupEntry>,
     align_bottom: bool,
+    owner: Option<HWND>,
     mut on_command: impl FnMut(u32) -> MenuStepOutcome,
-) {
+) -> bool {
     cascade::run_session(
         pal,
         dpi_scale,
@@ -131,6 +136,7 @@ pub fn run_interactive_popup_menu(
         font_medium,
         entries,
         align_bottom,
+        owner,
         &mut on_command,
-    );
+    )
 }

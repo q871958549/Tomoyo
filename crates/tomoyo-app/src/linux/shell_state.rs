@@ -84,6 +84,8 @@ pub struct AppCore {
     pub(super) action_menu_open: bool,
     pub(super) selected_action: usize,
     pub(super) menu_open: bool,
+    pub(super) menu_closed_at: Option<Instant>,
+    pub(super) menu_refocus: bool,
     pub(super) launching_row: Option<(usize, bool)>,
     pub(super) toast: Option<(String, Instant)>,
     pub(super) attached: Option<AttachedContext>,
@@ -156,6 +158,8 @@ impl AppCore {
             action_menu_open: false,
             selected_action: 0,
             menu_open: false,
+            menu_closed_at: None,
+            menu_refocus: false,
             launching_row: None,
             toast: None,
             attached: None,
@@ -274,6 +278,9 @@ impl AppCore {
 
     pub(super) fn show_launcher_with_query(&mut self, query: Option<&str>) {
         self.cancel_hibernate_timer();
+        self.menu_open = false;
+        self.menu_closed_at = None;
+        self.menu_refocus = false;
         if let Some(q) = query {
             self.set_query_text(q);
         } else if !self.ui.is_null() {
@@ -302,6 +309,9 @@ impl AppCore {
 
     pub(super) fn hide_launcher(&mut self) {
         self.action_menu_open = false;
+        self.menu_open = false;
+        self.menu_closed_at = None;
+        self.menu_refocus = false;
         self.dragging_divider = false;
         self.hovered = None;
         self.hovered_filter = None;

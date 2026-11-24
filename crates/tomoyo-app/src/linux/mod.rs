@@ -5,6 +5,7 @@ mod ipc;
 mod render_pango;
 mod shell_commands;
 mod shell_events;
+mod shell_menus;
 mod shell_query;
 mod shell_state;
 
@@ -53,6 +54,11 @@ unsafe extern "C" {
     pub fn tomoyo_linux_ui_queue_draw(a: *mut c_void);
     pub fn tomoyo_linux_ui_screen_info(a: *mut c_void, ox: *mut c_int, oy: *mut c_int, ow: *mut c_int, oh: *mut c_int, oscale: *mut c_int);
     pub fn tomoyo_linux_tray_setup(a: *mut c_void, icon_path: *const c_char, hotkey_lbl: *const c_char);
+    pub fn tomoyo_linux_ui_focus_entry(a: *mut c_void);
+    pub fn tomoyo_linux_ui_is_active(a: *mut c_void) -> c_int;
+    pub fn tomoyo_linux_entry_has_selection(a: *mut c_void) -> c_int;
+    pub fn tomoyo_linux_entry_edit_cmd(a: *mut c_void, op: c_int);
+    pub fn tomoyo_linux_schedule_idle(fn_cb: unsafe extern "C" fn(*mut c_void), data: *mut c_void);
     pub fn tomoyo_linux_add_timeout(ms: u32, cb: unsafe extern "C" fn(*mut c_void) -> c_int, data: *mut c_void) -> u32;
     pub fn tomoyo_linux_remove_source(id: u32);
     pub fn tomoyo_linux_ui_run();

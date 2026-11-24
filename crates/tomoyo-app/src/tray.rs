@@ -173,7 +173,7 @@ impl TrayIcon {
             PopupEntry::Separator,
             PopupEntry::danger_item(MENU_ID_QUIT, lang.pick("退出 Tomoyo", "Exit Tomoyo"), None),
         ]);
-        show_themed_popup_menu(pal, dpi_scale, font_regular, font_medium, &entries, true)
+        show_themed_popup_menu(pal, dpi_scale, font_regular, font_medium, &entries, true, None)
     }
 }
 

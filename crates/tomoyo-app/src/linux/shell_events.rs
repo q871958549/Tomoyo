@@ -1,8 +1,6 @@
 //! Linux event handlers: keyboard nav, mouse hit-tests, popup menus, clipboard capture & flows.
 
-use crate::actions::{
-    clipboard_has_rich_attachment, read_clipboard_files, read_clipboard_image_png, shell_open,
-};
+use crate::actions::{clipboard_has_rich_attachment, read_clipboard_files, read_clipboard_image_png};
 use crate::linux::{
     tomoyo_linux_ui_begin_drag, tomoyo_linux_ui_get_entry_text, tomoyo_linux_ui_quit,
 };
@@ -10,21 +8,9 @@ use crate::linux::ipc::schedule_on_ui;
 use crate::linux::shell_state::{with_current_core, AppCore};
 use crate::renderer::{compute_filter_bar_layout, FilterHit, HEADER_HEIGHT_DIP};
 use std::cell::RefCell;
-use std::ffi::{c_char, c_int, c_void, CStr, CString};
+use std::ffi::{c_int, c_void, CStr};
 use std::time::Duration;
-use tomoyo_core::TomoyoConfig;
 use tomoyo_protocol::{AttachedContext, SearchFilter};
-
-unsafe extern "C" {
-    fn tomoyo_linux_show_popup(
-        labels: *const *const c_char,
-        cmds: *const u32,
-        checks: *const c_int,
-        n: usize,
-        cb: unsafe extern "C" fn(*mut c_void, u32),
-        ctx: *mut c_void,
-    );
-}
 
 #[inline]
 fn borrow_core(ctx: *mut c_void) -> Option<&'static RefCell<AppCore>> {
@@ -70,6 +56,7 @@ pub unsafe extern "C" fn on_focus_out_cb(ctx: *mut c_void) {
     if let Some(cell) = borrow_core(ctx)
         && let Ok(mut st) = cell.try_borrow_mut()
         && !st.menu_open
+        && !st.menu_closed_at.is_some_and(|t| t.elapsed() < Duration::from_millis(220))
         && st.shown_at.elapsed() > Duration::from_millis(180)
     {
         st.hide_launcher();
@@ -232,7 +219,7 @@ pub unsafe extern "C" fn on_mouse_cb(ctx: *mut c_void, kind: c_int, x: c_int, y:
         }
         1 | 2 => {
             if yd < header_h && xd < 56.0 {
-                st.show_logo_menu();
+                st.show_launcher_context_menu(false);
                 return;
             }
             if kind == 1 && yd < header_h {
@@ -269,38 +256,20 @@ pub unsafe extern "C" fn on_mouse_cb(ctx: *mut c_void, kind: c_int, x: c_int, y:
             }
         }
         3 => {
-            if yd < header_h && xd < 56.0 { st.show_logo_menu(); }
+            if yd < header_h && xd < 56.0 { st.show_launcher_context_menu(false); }
+            else if yd < header_h { st.show_launcher_context_menu(true); }
             else if let Some(i) = row_from_y {
                 st.selected = i;
                 st.action_menu_open = true;
                 st.selected_action = 0;
                 st.invalidate();
+            } else {
+                st.show_launcher_context_menu(false);
             }
         }
+        7 => st.show_launcher_context_menu(true),
         _ => {}
     }
-}
-
-unsafe extern "C" fn on_menu_picked(_ctx: *mut c_void, id: u32) {
-    with_current_core(|st| {
-        st.menu_open = false;
-        match id {
-            101 => st.open_settings_center(),
-            102 => st.apply_theme("light", true),
-            103 => st.apply_theme("dark", true),
-            104 => st.apply_theme("midnight", true),
-            105 => st.apply_language("zh", true),
-            106 => st.apply_language("en", true),
-            107 => { st.preview_enabled = !st.preview_enabled; st.resize_to_fit(); }
-            108 => { st.custom_pos = None; st.resize_to_fit(); }
-            109 => st.set_query_text(":stats"),
-            110 => { st.router.reload_all(); st.dispatch_query(); st.show_toast("已热重载全部插件与索引"); }
-            111 => { let _ = st.run_hibernate(); st.show_toast("已完成内存休眠整理"); }
-            112 => { let _ = shell_open(&TomoyoConfig::config_path().to_string_lossy(), None, None); }
-            113 => { st.shutdown_clean(); unsafe { tomoyo_linux_ui_quit(); } }
-            _ => {}
-        }
-    });
 }
 
 impl AppCore {
@@ -309,26 +278,5 @@ impl AppCore {
         else if self.selected >= self.scroll_offset + self.max_visible_rows {
             self.scroll_offset = self.selected + 1 - self.max_visible_rows;
         }
-    }
-
-    fn show_logo_menu(&mut self) {
-        self.menu_open = true;
-        let is_l = self.theme_name.eq_ignore_ascii_case("light");
-        let is_m = self.theme_name.eq_ignore_ascii_case("midnight");
-        let entries: Vec<(&str, u32, bool)> = vec![
-            ("设置中心 (Ctrl+,)", 101, false), ("---", 0, false),
-            ("主题：浅色 (Light)", 102, is_l), ("主题：深色 (Dark)", 103, !is_l && !is_m), ("主题：午夜蓝 (Midnight)", 104, is_m),
-            ("---", 0, false),
-            ("简体中文", 105, self.lang == tomoyo_core::Lang::Zh), ("English", 106, self.lang == tomoyo_core::Lang::En),
-            ("---", 0, false),
-            ("右侧实时预览 (Ctrl+P)", 107, self.preview_enabled), ("重置窗口位置与尺寸", 108, false),
-            ("内存与插件监控 (:stats)", 109, false), ("热重载全部 (:reload)", 110, false),
-            ("立即休眠整理内存 (:gc)", 111, false), ("打开 config.toml", 112, false), ("---", 0, false), ("退出 Tomoyo", 113, false),
-        ];
-        let cstrs: Vec<CString> = entries.iter().map(|(l, _, _)| CString::new(*l).unwrap()).collect();
-        let ptrs: Vec<*const c_char> = cstrs.iter().map(|s| s.as_ptr()).collect();
-        let cmds: Vec<u32> = entries.iter().map(|(_, id, _)| *id).collect();
-        let chks: Vec<c_int> = entries.iter().map(|(_, _, c)| c_int::from(*c)).collect();
-        unsafe { tomoyo_linux_show_popup(ptrs.as_ptr(), cmds.as_ptr(), chks.as_ptr(), entries.len(), on_menu_picked, std::ptr::null_mut()); }
     }
 }
