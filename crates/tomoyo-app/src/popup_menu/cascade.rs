@@ -46,19 +46,14 @@ pub(super) struct MenuSession<'a> {
 static MENU_CLASS_OK: OnceLock<bool> = OnceLock::new();
 
 pub(super) fn run_session(
-    pal: ThemePalette,
-    dpi_scale: f32,
-    font_regular: &str,
-    font_medium: &str,
+    style: super::PopupMenuStyle<'_>,
     entries: Vec<PopupEntry>,
-    align_bottom: bool,
-    owner: Option<HWND>,
     on_command: &mut dyn FnMut(u32) -> MenuStepOutcome,
 ) -> bool {
     if entries.is_empty() {
         return false;
     }
-    let scale = dpi_scale.max(1.0);
+    let scale = style.dpi_scale.max(1.0);
     ensure_popup_class();
 
     let mut pt = POINT::default();
@@ -66,10 +61,13 @@ pub(super) fn run_session(
 
     let fonts = FontPack::create(
         scale,
-        font_regular,
-        font_medium,
+        style.font_regular,
+        style.font_medium,
         &tomoyo_core::TypographyConfig::default(),
     );
+    let pal = style.pal;
+    let owner = style.owner;
+    let align_bottom = style.align_bottom;
     let mut sess = Box::new(MenuSession {
         pal,
         scale,

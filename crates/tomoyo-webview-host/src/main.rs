@@ -40,6 +40,8 @@ mod tr_view;
 #[cfg(windows)]
 mod win_host;
 #[cfg(windows)]
+mod win_msg;
+#[cfg(windows)]
 mod win_theme;
 #[cfg(windows)]
 mod win_workers;

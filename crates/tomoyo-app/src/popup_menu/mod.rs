@@ -89,30 +89,25 @@ pub(super) struct RowMetric {
     pub disabled: bool,
 }
 
+pub struct PopupMenuStyle<'a> {
+    pub pal: ThemePalette,
+    pub dpi_scale: f32,
+    pub font_regular: &'a str,
+    pub font_medium: &'a str,
+    pub align_bottom: bool,
+    pub owner: Option<HWND>,
+}
+
 pub fn show_themed_popup_menu(
-    pal: ThemePalette,
-    dpi_scale: f32,
-    font_regular: &str,
-    font_medium: &str,
+    style: PopupMenuStyle<'_>,
     entries: &[PopupEntry],
-    align_bottom: bool,
-    owner: Option<HWND>,
 ) -> Option<u32> {
     let mut picked = None;
     let mut handler = |id: u32| {
         picked = Some(id);
         MenuStepOutcome::Close
     };
-    cascade::run_session(
-        pal,
-        dpi_scale,
-        font_regular,
-        font_medium,
-        entries.to_vec(),
-        align_bottom,
-        owner,
-        &mut handler,
-    );
+    cascade::run_session(style, entries.to_vec(), &mut handler);
     picked
 }
 
@@ -120,23 +115,9 @@ pub fn show_themed_popup_menu(
 /// until the user clicks outside, presses `Esc`, or selects an explicit close/navigate action.
 /// Returns `true` when dismissed because focus explicitly moved to another process.
 pub fn run_interactive_popup_menu(
-    pal: ThemePalette,
-    dpi_scale: f32,
-    font_regular: &str,
-    font_medium: &str,
+    style: PopupMenuStyle<'_>,
     entries: Vec<PopupEntry>,
-    align_bottom: bool,
-    owner: Option<HWND>,
     mut on_command: impl FnMut(u32) -> MenuStepOutcome,
 ) -> bool {
-    cascade::run_session(
-        pal,
-        dpi_scale,
-        font_regular,
-        font_medium,
-        entries,
-        align_bottom,
-        owner,
-        &mut on_command,
-    )
+    cascade::run_session(style, entries, &mut on_command)
 }

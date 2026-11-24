@@ -5,7 +5,9 @@
 
 use super::{AppShell, EM_GETSEL, EM_SETSEL};
 use crate::actions::{clipboard_has_rich_attachment, set_clipboard_text};
-use crate::popup_menu::{run_interactive_popup_menu, show_themed_popup_menu, MenuStepOutcome, PopupEntry};
+use crate::popup_menu::{
+    run_interactive_popup_menu, show_themed_popup_menu, MenuStepOutcome, PopupEntry, PopupMenuStyle,
+};
 use tomoyo_core::Lang;
 use tomoyo_protocol::SearchFilter;
 use windows::Win32::Foundation::{LPARAM, WPARAM};
@@ -44,28 +46,31 @@ const CMD_QUIT: u32 = 113;
 const CMD_UPDATE: u32 = 114;
 
 impl AppShell {
+    fn popup_style(&self) -> PopupMenuStyle<'_> {
+        PopupMenuStyle {
+            pal: self.theme,
+            dpi_scale: self.dpi_scale,
+            font_regular: self.font_regular,
+            font_medium: self.font_medium,
+            align_bottom: false,
+            owner: Some(self.hwnd),
+        }
+    }
+
     pub(super) fn show_logo_context_menu(&mut self) {
         self.show_launcher_context_menu(false);
     }
 
     pub(super) fn show_launcher_context_menu(&mut self, from_edit: bool) {
         let initial = self.build_launcher_menu_entries(from_edit);
-        let pal = self.theme;
-        let dpi_scale = self.dpi_scale;
-        let font_regular = self.font_regular;
-        let font_medium = self.font_medium;
         let mut close_action: Option<u32> = None;
 
         self.inter.in_modal_overlay = true;
         let app_ptr = self as *mut AppShell;
+        let style = self.popup_style();
         let dismissed_externally = run_interactive_popup_menu(
-            pal,
-            dpi_scale,
-            font_regular,
-            font_medium,
+            style,
             initial,
-            false,
-            Some(self.hwnd),
             |cmd| {
                 let shell = unsafe { &mut *app_ptr };
                 if matches!(cmd, CMD_SETTINGS | CMD_CONFIG | CMD_QUIT) {
@@ -345,7 +350,7 @@ impl AppShell {
         entries.push(PopupEntry::item(CMD_TOGGLE_PREVIEW, l.pick("右侧实时预览", "Live Preview Pane"), Some("Ctrl+P"), self.preview_enabled));
 
         self.inter.in_modal_overlay = true;
-        let chosen = show_themed_popup_menu(self.theme, self.dpi_scale, self.font_regular, self.font_medium, &entries, false, Some(self.hwnd));
+        let chosen = show_themed_popup_menu(self.popup_style(), &entries);
         self.inter.in_modal_overlay = false;
 
         let Some(cmd) = chosen else { return };
@@ -410,15 +415,7 @@ impl AppShell {
         ));
 
         self.inter.in_modal_overlay = true;
-        let chosen = show_themed_popup_menu(
-            self.theme,
-            self.dpi_scale,
-            self.font_regular,
-            self.font_medium,
-            &entries,
-            false,
-            Some(self.hwnd),
-        );
+        let chosen = show_themed_popup_menu(self.popup_style(), &entries);
         self.inter.in_modal_overlay = false;
         unsafe { let _ = SetForegroundWindow(self.hwnd); }
 

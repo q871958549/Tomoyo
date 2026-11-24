@@ -1,4 +1,12 @@
-@import "tailwindcss";
+/* Minimalist preflight (replaces unused Tailwind utility generator) */
+*, *::before, *::after { box-sizing: border-box; }
+h1, h2, h3, h4, p, ul, ol, figure, blockquote { margin: 0; padding: 0; }
+ul, ol { list-style: none; }
+button, input, select, textarea { font: inherit; color: inherit; margin: 0; }
+button { background: transparent; border: 0; padding: 0; }
+img, svg { display: block; vertical-align: middle; }
+a { color: inherit; text-decoration: none; }
+table { border-collapse: collapse; }
 
 @font-face {
   font-family: "Alibaba PuHuiTi 3.0";
@@ -105,10 +113,6 @@ body.theme-midnight {
   --scroll-thumb: #2b3556;
   --scroll-thumb-hover: #425282;
   --img-stage: #080a11;
-}
-
-*, *::before, *::after {
-  box-sizing: border-box;
 }
 
 html, body {

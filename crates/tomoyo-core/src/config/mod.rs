@@ -5,9 +5,15 @@ mod hotkey;
 mod modules;
 mod paths;
 mod sanitize;
+mod sections;
 mod typography;
 
 pub use capture::{sanitize_capture_config, CaptureConfig, CaptureToolHotkeys};
+pub use sections::{
+    default_ev_favorites, AppsConfig, ClipboardConfig, EverythingConfig, EverythingFavorite,
+    UpdateConfig, WebSearchEngine, WindowConfig,
+};
+use sections::{default_plugin_registries, default_true};
 pub use typography::{
     quantize_font_weight, sanitize_typography, TypographyConfig,
 };
@@ -118,234 +124,10 @@ pub struct TomoyoConfig {
     pub web_searches: Vec<WebSearchEngine>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AppsConfig {
-    /// Extra directories scanned for `.lnk` / `.exe` applications (e.g. `E:\Tools`).
-    #[serde(default)]
-    pub extra_dirs: Vec<String>,
-    /// Auto-detect desktop organizer folders (DeskBox, Tencent DeskGo, etc.).
-    #[serde(default = "default_true")]
-    pub auto_detect_desktop_organizers: bool,
-    /// Maximum recursion depth for `extra_dirs` (`1..=4`, default `2`).
-    #[serde(default = "default_extra_scan_depth")]
-    pub extra_scan_depth: usize,
-}
-
-fn default_extra_scan_depth() -> usize {
-    2
-}
-
-impl Default for AppsConfig {
-    fn default() -> Self {
-        Self {
-            extra_dirs: Vec::new(),
-            auto_detect_desktop_organizers: true,
-            extra_scan_depth: default_extra_scan_depth(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UpdateConfig {
-    #[serde(default = "default_true")]
-    pub auto_check: bool,
-    #[serde(default = "default_update_interval")]
-    pub check_interval_hours: u64,
-    #[serde(default = "default_update_repo")]
-    pub repo: String,
-    #[serde(default)]
-    pub last_checked_unix: u64,
-    #[serde(default)]
-    pub skipped_version: Option<String>,
-}
-
-fn default_update_interval() -> u64 {
-    24
-}
-fn default_update_repo() -> String {
-    "q871958549/Tomoyo".into()
-}
-fn default_plugin_registries() -> Vec<String> {
-    vec![
-        "registry/index.json".into(),
-        "https://raw.githubusercontent.com/q871958549/Tomoyo/main/registry/index.json".into(),
-    ]
-}
-
-impl Default for UpdateConfig {
-    fn default() -> Self {
-        Self {
-            auto_check: true,
-            check_interval_hours: default_update_interval(),
-            repo: default_update_repo(),
-            last_checked_unix: 0,
-            skipped_version: None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WindowConfig {
-    /// Main list pane width in DIPs (default 720, range 520..=1400).
-    #[serde(default = "default_win_width")]
-    pub width_dip: i32,
-    /// Maximum visible result rows before scrolling (default 8, range 4..=18).
-    #[serde(default = "default_max_rows")]
-    pub max_visible_rows: usize,
-    /// Right-side live preview pane width in DIPs (default 310, range 220..=620).
-    #[serde(default = "default_preview_width")]
-    pub preview_width_dip: i32,
-    /// Persisted screen X coordinate when user drags the launcher (`None` = auto center).
-    #[serde(default)]
-    pub custom_x: Option<i32>,
-    /// Persisted screen Y coordinate when user drags the launcher (`None` = auto upper-third).
-    #[serde(default)]
-    pub custom_y: Option<i32>,
-}
-
-fn default_win_width() -> i32 {
-    720
-}
-fn default_max_rows() -> usize {
-    8
-}
-fn default_preview_width() -> i32 {
-    310
-}
-
-impl Default for WindowConfig {
-    fn default() -> Self {
-        Self {
-            width_dip: default_win_width(),
-            max_visible_rows: default_max_rows(),
-            preview_width_dip: default_preview_width(),
-            custom_x: None,
-            custom_y: None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EverythingFavorite {
-    pub tag: String,
-    pub label: String,
-    pub expr: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EverythingConfig {
-    #[serde(default = "default_ev_global")]
-    pub max_global_results: usize,
-    #[serde(default = "default_ev_dedicated")]
-    pub max_dedicated_results: usize,
-    /// Extra default filter appended to dedicated/file queries (e.g. `"!*.tmp"`).
-    #[serde(default)]
-    pub extra_filter: String,
-    /// User saved favorite Everything filter expressions (`@today`, `@large`, `@code`, etc.).
-    #[serde(default = "default_ev_favorites")]
-    pub favorites: Vec<EverythingFavorite>,
-}
-
-pub fn default_ev_favorites() -> Vec<EverythingFavorite> {
-    vec![
-        EverythingFavorite {
-            tag: "@today".into(),
-            label: "今日修改文件".into(),
-            expr: "dm:today".into(),
-        },
-        EverythingFavorite {
-            tag: "@large".into(),
-            label: "大文件 (>50MB)".into(),
-            expr: "size:>50mb".into(),
-        },
-        EverythingFavorite {
-            tag: "@code".into(),
-            label: "源码工程文件".into(),
-            expr: "ext:rs;ts;tsx;py;go;c;cpp;h;toml".into(),
-        },
-    ]
-}
-
-impl Default for EverythingConfig {
-    fn default() -> Self {
-        Self {
-            max_global_results: default_ev_global(),
-            max_dedicated_results: default_ev_dedicated(),
-            extra_filter: String::new(),
-            favorites: default_ev_favorites(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ClipboardConfig {
-    #[serde(default = "default_clip_max")]
-    pub max_persisted_items: usize,
-    #[serde(default = "default_true")]
-    pub persist_sqlite: bool,
-    /// Dedicated global shortcut to summon Clipboard Center directly (empty `""` disables).
-    #[serde(default = "default_clip_hotkey")]
-    pub hotkey: String,
-    /// Master switch for automatic background clipboard recording.
-    #[serde(default = "default_true")]
-    pub capture_enabled: bool,
-    /// Record copied screenshots/images (`CF_DIB`) to disk-backed LRU.
-    #[serde(default = "default_true")]
-    pub capture_images: bool,
-    /// Process executable names ignored during clipboard capture (privacy / password managers).
-    #[serde(default = "default_excluded_apps")]
-    pub excluded_apps: Vec<String>,
-}
-
-fn default_clip_hotkey() -> String {
-    "Alt+V".into()
-}
-
-impl Default for ClipboardConfig {
-    fn default() -> Self {
-        Self {
-            max_persisted_items: default_clip_max(),
-            persist_sqlite: true,
-            hotkey: default_clip_hotkey(),
-            capture_enabled: true,
-            capture_images: true,
-            excluded_apps: default_excluded_apps(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WebSearchEngine {
-    pub keyword: String,
-    pub name: String,
-    /// URL template with `{q}` placeholder.
-    pub url: String,
-}
-
-fn default_language() -> String {
-    "zh".into()
-}
-fn default_hotkey() -> String {
-    "Alt+Space".into()
-}
-fn default_theme() -> String {
-    "dark".into()
-}
-fn default_hibernate_secs() -> u32 {
-    15
-}
-fn default_true() -> bool {
-    true
-}
-fn default_ev_global() -> usize {
-    6
-}
-fn default_ev_dedicated() -> usize {
-    30
-}
-fn default_clip_max() -> usize {
-    500
-}
+fn default_language() -> String { "zh".into() }
+fn default_hotkey() -> String { "Alt+Space".into() }
+fn default_theme() -> String { "dark".into() }
+fn default_hibernate_secs() -> u32 { 15 }
 
 impl Default for TomoyoConfig {
     fn default() -> Self {

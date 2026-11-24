@@ -1,13 +1,16 @@
 import { defineConfig } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
-import tailwindcss from '@tailwindcss/vite';
 import { viteSingleFile } from 'vite-plugin-singlefile';
 
 const entry = process.env.TOMOYO_ENTRY || 'settings';
 
 export default defineConfig({
-  plugins: [svelte(), tailwindcss(), viteSingleFile()],
+  plugins: [svelte(), viteSingleFile()],
+  esbuild: {
+    legalComments: 'none',
+  },
   build: {
+    target: 'es2022',
     outDir: 'dist',
     emptyOutDir: false,
     assetsInlineLimit: 100_000_000,

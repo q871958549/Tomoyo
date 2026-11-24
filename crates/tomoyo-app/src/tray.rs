@@ -1,7 +1,7 @@
 //! System tray icon & theme-matched context menu with RAII cleanup.
 
 use crate::brand::generate_icon_bgra;
-use crate::popup_menu::{show_themed_popup_menu, PopupEntry};
+use crate::popup_menu::{show_themed_popup_menu, PopupEntry, PopupMenuStyle};
 use crate::renderer::ThemePalette;
 use tomoyo_core::Lang;
 use windows::core::PCWSTR;
@@ -173,7 +173,17 @@ impl TrayIcon {
             PopupEntry::Separator,
             PopupEntry::danger_item(MENU_ID_QUIT, lang.pick("退出 Tomoyo", "Exit Tomoyo"), None),
         ]);
-        show_themed_popup_menu(pal, dpi_scale, font_regular, font_medium, &entries, true, None)
+        show_themed_popup_menu(
+            PopupMenuStyle {
+                pal,
+                dpi_scale,
+                font_regular,
+                font_medium,
+                align_bottom: true,
+                owner: None,
+            },
+            &entries,
+        )
     }
 }
 

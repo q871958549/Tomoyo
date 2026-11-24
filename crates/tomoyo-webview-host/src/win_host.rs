@@ -1,29 +1,25 @@
 //! Native Win32 WebView2 container window, DWM titlebar theme sync, topmost pin & async worker relay.
 
-use crate::bridge::handle_host_message;
-use crate::clip_view::{assemble_clip_manager_html, is_clip_manager_entry};
+use crate::clip_view::is_clip_manager_entry;
 use crate::db::PluginDb;
 use crate::hotkey_capture::HotkeyCaptureController;
 use crate::inline_dock::{
     clear_inline_hwnd_marker, create_inline_dock_window, inline_dock_overlay_js,
-    prepare_host_bootstrap, promote_inline_to_window, write_inline_hwnd_marker,
+    prepare_host_bootstrap, write_inline_hwnd_marker,
 };
-use crate::ocr_view::{assemble_ocr_viewer_html, is_ocr_viewer_entry};
+use crate::ocr_view::is_ocr_viewer_entry;
 use crate::single_instance::{
     acquire_or_activate_clipboard, acquire_or_activate_settings, acquire_or_activate_translator,
     CLIPBOARD_WINDOW_CLASS, EPHEMERAL_WINDOW_CLASS, SETTINGS_WINDOW_CLASS, TRANSLATOR_WINDOW_CLASS,
     WM_APP_ACTIVATE_CLIPBOARD, WM_APP_ACTIVATE_SETTINGS, WM_APP_ACTIVATE_TRANSLATOR,
 };
-use crate::tr_view::{
-    assemble_translator_html, is_translator_entry, read_latest_translate_req_event,
-};
+use crate::tr_view::{is_translator_entry, read_latest_translate_req_event};
+use crate::win_msg::{dispatch_webview_message, pick_builtin_html};
 use crate::win_theme::{
-    apply_host_window_theme, configure_controller_visuals, create_themed_host_window,
-    destroy_owned_icons, load_window_icons, map_vdir, reveal_host_window_and_notify,
-    toggle_pin_topmost_window,
+    configure_controller_visuals, create_themed_host_window, destroy_owned_icons, load_window_icons,
+    map_vdir, reveal_host_window_and_notify,
 };
-use crate::win_workers::dispatch_async_workers;
-use crate::{assemble_settings_html, LaunchArgs};
+use crate::LaunchArgs;
 use std::cell::RefCell;
 use std::ffi::c_void;
 use std::rc::Rc;
@@ -46,33 +42,33 @@ use windows::Win32::UI::HiDpi::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     DefWindowProcW, DestroyWindow, DispatchMessageW, GetClientRect, GetMessageW,
-    GetWindowLongPtrW, IsIconic, IsWindow, PostMessageW, PostQuitMessage, SetForegroundWindow,
+    GetWindowLongPtrW, IsIconic, IsWindow, PostQuitMessage, SetForegroundWindow,
     SetTimer, SetWindowLongPtrW, ShowWindow, TranslateMessage, GWLP_USERDATA, MSG, SW_RESTORE,
     SW_SHOW, WM_ACTIVATE, WM_CLOSE, WM_DESTROY, WM_SIZE, WM_TIMER,
 };
 
-const WM_APP_WEBVIEW_EVENT: u32 = 0x8000 + 31;
-const WM_APP_PICK_FOLDER: u32 = 0x8000 + 33;
-const TIMER_REVEAL_FALLBACK: usize = 901;
+pub(crate) const WM_APP_WEBVIEW_EVENT: u32 = 0x8000 + 31;
+pub(crate) const WM_APP_PICK_FOLDER: u32 = 0x8000 + 33;
+pub(crate) const TIMER_REVEAL_FALLBACK: usize = 901;
 
-struct HostWindowState {
-    controller: Option<ICoreWebView2Controller>,
-    webview: Option<ICoreWebView2>,
-    event_tx: mpsc::Sender<String>,
-    event_rx: mpsc::Receiver<String>,
-    base_title: String,
-    theme: String,
-    pref_w: i32,
-    pref_h: i32,
-    icons: (Option<windows::Win32::UI::WindowsAndMessaging::HICON>, Option<windows::Win32::UI::WindowsAndMessaging::HICON>, bool),
-    is_topmost: bool,
-    picking_folder: bool,
-    settings_mode: bool,
-    window_revealed: bool,
-    notify_hwnd: Option<isize>,
-    inline_owner: Option<isize>,
-    last_activate_probe: Instant,
-    hk_capture: HotkeyCaptureController,
+pub(crate) struct HostWindowState {
+    pub controller: Option<ICoreWebView2Controller>,
+    pub webview: Option<ICoreWebView2>,
+    pub event_tx: mpsc::Sender<String>,
+    pub event_rx: mpsc::Receiver<String>,
+    pub base_title: String,
+    pub theme: String,
+    pub pref_w: i32,
+    pub pref_h: i32,
+    pub icons: (Option<windows::Win32::UI::WindowsAndMessaging::HICON>, Option<windows::Win32::UI::WindowsAndMessaging::HICON>, bool),
+    pub is_topmost: bool,
+    pub picking_folder: bool,
+    pub settings_mode: bool,
+    pub window_revealed: bool,
+    pub notify_hwnd: Option<isize>,
+    pub inline_owner: Option<isize>,
+    pub last_activate_probe: Instant,
+    pub hk_capture: HotkeyCaptureController,
 }
 
 unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
@@ -342,7 +338,6 @@ pub fn run_windows_host(opts: LaunchArgs) {
 
                             let db_cb = Rc::clone(&db_inner);
                             let tx_cb = tx_inner.clone();
-                            let hwnd_raw = hwnd.0 as usize;
                             let mut token = 0i64;
                             let msg_handler = WebMessageReceivedEventHandler::create(Box::new(
                                 move |wv_sender, args| {
@@ -351,43 +346,7 @@ pub fn run_windows_host(opts: LaunchArgs) {
                                         if args.TryGetWebMessageAsString(&mut raw).is_ok() && !raw.is_null() {
                                             let s = raw.to_string().unwrap_or_default();
                                             windows::Win32::System::Com::CoTaskMemFree(Some(raw.0 as *const c_void));
-                                            let act = handle_host_message(&s, &mut db_cb.borrow_mut(), notify_hwnd);
-                                            if let Some(theme) = &act.apply_theme {
-                                                (*state_ptr).theme = theme.clone();
-                                                apply_host_window_theme(hwnd, theme);
-                                            }
-                                            if act.pop_out_window {
-                                                let st_ref = &*state_ptr;
-                                                promote_inline_to_window(hwnd, st_ref.pref_w, st_ref.pref_h, &st_ref.base_title, &st_ref.theme, (st_ref.icons.0, st_ref.icons.1), st_ref.inline_owner.or(notify_hwnd));
-                                                (*state_ptr).inline_owner = None;
-                                            }
-                                            if act.window_ready && !(*state_ptr).window_revealed {
-                                                (*state_ptr).window_revealed = true;
-                                                reveal_host_window_and_notify(hwnd, TIMER_REVEAL_FALLBACK, notify_hwnd);
-                                            }
-                                            if act.toggle_topmost {
-                                                let bt = (*state_ptr).base_title.clone();
-                                                toggle_pin_topmost_window(hwnd, &bt, &mut (*state_ptr).is_topmost);
-                                            }
-                                            if act.pick_folder_mode != 0 {
-                                                // Defer modal IFileOpenDialog out of WebMessageReceived to avoid WebView2 COM reentrancy.
-                                                let _ = PostMessageW(Some(hwnd), WM_APP_PICK_FOLDER, WPARAM(act.pick_folder_mode as usize), LPARAM(0));
-                                            }
-                                            if let Some(reply) = &act.reply_json
-                                                && let Some(wv) = &wv_sender {
-                                                    let rw = HSTRING::from(reply);
-                                                    let _ = wv.PostWebMessageAsJson(PCWSTR(rw.as_ptr()));
-                                                }
-                                            if act.hotkey_capture_cmd > 0 {
-                                                (*state_ptr).hk_capture.start(hwnd_raw, tx_cb.clone(), WM_APP_WEBVIEW_EVENT);
-                                            } else if act.hotkey_capture_cmd < 0 {
-                                                (*state_ptr).hk_capture.stop();
-                                            }
-                                            let should_close = act.should_close;
-                                            dispatch_async_workers(act, notify_hwnd, &tx_cb, hwnd_raw, WM_APP_WEBVIEW_EVENT);
-                                            if should_close {
-                                                let _ = PostMessageW(Some(hwnd), WM_CLOSE, WPARAM(0), LPARAM(0));
-                                            }
+                                            dispatch_webview_message(&s, &mut db_cb.borrow_mut(), state_ptr, hwnd, notify_hwnd, wv_sender.as_ref(), &tx_cb);
                                         }
                                     }
                                     Ok(())
@@ -395,18 +354,7 @@ pub fn run_windows_host(opts: LaunchArgs) {
                             ));
                             let _ = webview.add_WebMessageReceived(&msg_handler, &mut token);
 
-                            let html = if settings_mode {
-                                Some(assemble_settings_html())
-                            } else if ocr_mode {
-                                Some(assemble_ocr_viewer_html())
-                            } else if clip_mode {
-                                Some(assemble_clip_manager_html())
-                            } else if tr_mode {
-                                Some(assemble_translator_html())
-                            } else {
-                                None
-                            };
-                            if let Some(html) = html {
+                            if let Some(html) = pick_builtin_html(settings_mode, ocr_mode, clip_mode, tr_mode) {
                                 let hw = HSTRING::from(html);
                                 let _ = webview.NavigateToString(PCWSTR(hw.as_ptr()));
                             } else {
