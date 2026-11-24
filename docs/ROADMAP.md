@@ -33,6 +33,8 @@
 ├──────────────────────────────────────────────────────────────────────────────┤
 │  v2.7.0 · 规划：万级插件中心 2.0（分片索引 / Rust 侧检索分类分页 / 详情抽屉） │
 ├──────────────────────────────────────────────────────────────────────────────┤
+│  v2.6.1 · [已完成 ✅] Windows 原生录屏 · 卸载防重 · Everything UIPI/截图修复 │
+├──────────────────────────────────────────────────────────────────────────────┤
 │  v2.6.0 · [已完成 ✅] 备忘录与 Quiet.md 分离 · 插件专属 Logo · 内嵌/独立双模态   │
 ├──────────────────────────────────────────────────────────────────────────────┤
 │  v2.5.1 · [已完成 ✅] 补充 UI 设计规范 §1.3/§2.8 并重构分类栏列表与 FontSelect│
@@ -373,6 +375,15 @@
 3. **插件双呈态展示：`inline` 搜索结果内嵌展示 vs `window` 独立窗口分离**：
    - 插件可在 `tomoyo-plugin.toml` 声明默认 `display_mode`（`auto` / `inline` / `window`），用户亦可针对任意插件在设置中心「插件中心」与搜索结果动作菜单中自由覆盖切换。
    - `inline` 模式将 WebView 宿主按无边框从属面精准贴靠在搜索框右侧预览区域内，主窗体聚焦保护自动识别子宿主（点击不误关），跟随缩放/关闭即时销毁释放全部 WebView 内存，并支持顶部一键「分离为独立窗口（Pop Out）」热切换至带专属 Logo 标题栏的 `WS_OVERLAPPEDWINDOW`。
+
+### 阶段十九·补丁：`v2.6.1` — Windows 原生区域录屏、双卸载项治理与 Everything UIPI/截图自捕修复（已完成 ✅）
+1. **Windows 端原生区域录屏（`win_record*.rs` + `overlay*.rs` + `SettingsApp.svelte`）**：
+   - 免装 FFmpeg 开箱即录：集成 Windows 原生 **Media Foundation (`IMFSinkWriter`)** H.264/AAC MP4 编码器、**WASAPI** 系统声音 Loopback / 麦克风采集、纯 Rust **Median-Cut 256 色 + 脏矩形 LZW GIF89a** 编码器，与 `WDA_EXCLUDEFROMCAPTURE` 防穿帮录制边框及悬浮控制条（暂停/继续/完成/`CF_HDROP` 复制文件/播放/定位目录），全量打通截图工具栏、快捷键 `V`、搜索前缀 `rec`/`lp` 与设置中心。
+2. **彻底修复双卸载注册表条目（`tomoyo.iss` + `install-local.ps1` + `uninstall-local.ps1` + `updater/installer/win.rs`）**：
+   - 建立 Inno Setup（`{8F4E29A1-...}_is1`）与本地脚本安装（`Uninstall\Tomoyo`）双向互斥清理机制，加固 `Cargo.toml` 版本提取正则，保证卸载列表始终仅展示唯一 Tomoyo 条目。
+3. **修复高权限下 Everything 搜索 100% 超时与截图截不到搜索框**：
+   - 在 `tomoyo-everything` 接收窗显式调用 `ChangeWindowMessageFilterEx(hwnd, WM_COPYDATA, MSGFLT_ALLOW, None)`，彻底解除高权限 `tomoyo.exe` 无法接收非提权 `Everything.exe` 回复导致的 UIPI 静默丢包（修复 `.md` 等全盘文件搜不到问题并提升 `.md`/`.txt` 相关性权重）。
+   - 全局截图/OCR 热键改为不预先隐藏搜索框并在 `enumerate_snap_windows` 中放行 `TomoyoLauncherWindowClass`，直接支持一键吸附截取 Tomoyo 搜索框界面。
 
 ### 阶段二十：`v2.7.0` — 面向成千上万款插件的「插件中心 2.0」可扩展架构（架构奠基 → 深化）
 1. **分片注册清单协议（Registry Schema v2）**：

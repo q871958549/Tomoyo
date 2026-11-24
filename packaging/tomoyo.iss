@@ -2,7 +2,7 @@
 ; Zero-UAC per-user install to %LOCALAPPDATA%\Programs\Tomoyo with clean uninstaller.
 
 #ifndef AppVersion
-  #define AppVersion "2.6.0"
+  #define AppVersion "2.6.1"
 #endif
 
 #ifndef StageDir
@@ -46,6 +46,9 @@ Name: "autostart"; Description: "Launch Tomoyo silently at Windows login (开机
 [Files]
 Source: "{#StageDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
+[InstallDelete]
+Type: files; Name: "{app}\uninstall.ps1"
+
 [Icons]
 Name: "{group}\Tomoyo"; Filename: "{app}\tomoyo.exe"; IconFilename: "{app}\tomoyo.exe"
 Name: "{group}\Uninstall Tomoyo"; Filename: "{uninstallexe}"
@@ -71,5 +74,7 @@ begin
   Exec('taskkill.exe', '/F /IM tomoyo-plugin-md-editor.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Exec('taskkill.exe', '/F /IM tomoyo-plugin-hello.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Exec('taskkill.exe', '/F /IM tomoyo-cli.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  // Remove legacy scripts/install-local.ps1 uninstall entry so Add/Remove Programs only shows one Tomoyo
+  RegDeleteKeyIncludingSubkeys(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\Tomoyo');
   Result := True;
 end;

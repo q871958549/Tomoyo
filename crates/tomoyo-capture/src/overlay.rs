@@ -14,6 +14,7 @@ use crate::overlay_input::{
 use crate::overlay_text::{paint_overlay_gdi_labels, InlineTextEditor};
 use crate::screen::{capture_virtual_desktop, enumerate_snap_windows, DesktopSnapshot, ScreenRect};
 use crate::snap_detect::{SnapCandidate, SnapContext};
+use crate::win_record::RecordRequest;
 use std::ffi::c_void;
 use tomoyo_core::{CaptureToolHotkeys, TomoyoConfig};
 use windows::core::{w, PCWSTR};
@@ -42,12 +43,14 @@ pub enum CaptureMode {
     Region,
     QuickOcr,
     QuickTranslate,
+    Record,
 }
 
 pub enum CaptureOutcome {
     Done,
     Pin { width: u32, height: u32, bgra: Vec<u8>, screen_x: i32, screen_y: i32 },
     ScrollLong { screen_x: i32, screen_y: i32, width: i32, height: i32, save_dir: String },
+    Record(RecordRequest),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -79,6 +82,11 @@ pub(crate) struct OverlayState {
     pub text_size: i32,
     pub shape_filled: bool,
     pub mosaic_blur: bool,
+    pub record_open: bool,
+    pub rec_is_gif: bool,
+    pub rec_fps: u8,
+    pub rec_audio: u8,
+    pub rec_cursor: bool,
     pub stack: AnnotationStack,
     pub live_ann: Option<Annotation>,
     pub pen_pts: Vec<(i32, i32)>,
@@ -152,12 +160,17 @@ pub fn run_capture_overlay(mode: CaptureMode) -> Result<CaptureOutcome, String> 
             ..Default::default()
         });
         let (ox, oy, w, h) = (snap.origin_x, snap.origin_y, snap.width, snap.height);
+        let rec_is_gif = cfg.capture.record_format.eq_ignore_ascii_case("gif");
+        let rec_fps = cfg.capture.record_fps;
+        let rec_audio = match cfg.capture.record_audio.as_str() { "system" => 1, "mic" => 2, _ => 0 };
+        let rec_cursor = cfg.capture.record_cursor;
         let mut st = Box::new(OverlayState {
             snap, dimmed, snap_ctx, mode, save_dir: cfg.capture.save_dir,
             hex_lower: cfg.capture.copy_hex_lowercase, rgb_mode: false,
             tool_hotkeys: cfg.capture.tool_hotkeys, sel: None, hover_snap,
             tool: ToolKind::Select, color_idx: 0, thickness: 4, step_radius: 13, text_size: 20,
             shape_filled: false, mosaic_blur: false,
+            record_open: mode == CaptureMode::Record, rec_is_gif, rec_fps, rec_audio, rec_cursor,
             stack: AnnotationStack::default(), live_ann: None, pen_pts: Vec::new(),
             drag: DragMode::None, cursor: init_cursor, hovered_cmd: None, hovered_annot: None,
             hovered_ctrl: None, wheel_hud: None,
@@ -218,7 +231,9 @@ unsafe extern "system" fn overlay_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, 
             let hdc = unsafe { BeginPaint(hwnd, &mut ps) };
             let style = ToolbarStyleState {
                 active_tool: st.tool, active_color: st.color_idx, active_thickness: st.thickness,
-                shape_filled: st.shape_filled, mosaic_blur: st.mosaic_blur, allow_record: false, ..Default::default()
+                shape_filled: st.shape_filled, mosaic_blur: st.mosaic_blur,
+                allow_record: true, record_open: st.record_open, rec_is_gif: st.rec_is_gif,
+                rec_fps: st.rec_fps, rec_audio: st.rec_audio, rec_cursor: st.rec_cursor,
             };
             st.layout = st.sel.filter(|r| r.is_valid()).map_or_else(ToolbarLayout::default, |s| {
                 build_toolbar_layout(s, st.snap.width, st.snap.height, &style, &st.tool_hotkeys)
@@ -255,6 +270,7 @@ unsafe extern "system" fn overlay_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, 
                         match st.mode {
                             CaptureMode::QuickOcr => { st.execute_action(hwnd, ToolbarCmd::Ocr); return LRESULT(0); }
                             CaptureMode::QuickTranslate => { st.execute_action(hwnd, ToolbarCmd::Translate); return LRESULT(0); }
+                            CaptureMode::Record => { st.record_open = true; }
                             CaptureMode::Region => {}
                         }
                     }
@@ -286,6 +302,7 @@ unsafe extern "system" fn overlay_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, 
             } else if st.sel.is_some() {
                 st.sel = None;
                 st.tool = ToolKind::Select;
+                st.record_open = st.mode == CaptureMode::Record;
                 st.hover_snap = st.snap_ctx.hover_at(&st.snap, st.cursor.0, st.cursor.1);
                 unsafe { let _ = InvalidateRect(Some(hwnd), None, false); }
             } else {

@@ -350,7 +350,7 @@
             <Segmented value={subPlugins} options={[{ value: 'installed', label: lang === 'en' ? 'Modules & Plugins' : '已安装与插件设置' }, { value: 'store', label: tr(lang, 'nav_store') }]} onchange={(v) => { subPlugins = v; if (v === 'store' && !storeLoaded) { storeLoaded = true; fetchStore(); } }} />
           </div>
           {#if subPlugins === 'installed'}
-            <PluginsTab {cfg} {lang} {plugins} officialIcons={init.official_icons || {}} {quietMdPath} {installingQuietMd} {configPath} pluginsDir={init.plugins_dir} runningApps={init.running_apps} {secretsStatus} {hotkeyHealth} showRecord={init.platform !== 'windows'} expandedId={expandedPlugin} onToggleExpand={(id) => (expandedPlugin = id)} {onTogglePlugin} {onInstallQuietMd} {onUpdatePluginConfig} onJumpDoctor={() => switchTab('hotkeys')} onToast={setToast} onSave={scheduleSave} />
+            <PluginsTab {cfg} {lang} {plugins} officialIcons={init.official_icons || {}} {quietMdPath} {installingQuietMd} {configPath} pluginsDir={init.plugins_dir} runningApps={init.running_apps} {secretsStatus} {hotkeyHealth} showRecord={true} expandedId={expandedPlugin} onToggleExpand={(id) => (expandedPlugin = id)} {onTogglePlugin} {onInstallQuietMd} {onUpdatePluginConfig} onJumpDoctor={() => switchTab('hotkeys')} onToast={setToast} onSave={scheduleSave} />
           {:else}
             <StoreTab {lang} items={storeItems} meta={storeMeta} statusText={storeStatus} loading={storeLoading} onQuery={fetchStore} />
           {/if}

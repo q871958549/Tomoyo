@@ -18,14 +18,14 @@ if (-not (Test-Path (Join-Path $releaseDir "tomoyo.exe"))) {
     throw "Release binary not found at $releaseDir\tomoyo.exe. Run `cargo build --release --workspace` first."
 }
 
-# Read version from root Cargo.toml
+# Read version from [workspace.package] in root Cargo.toml
 $cargoToml = Get-Content (Join-Path $repoRoot "Cargo.toml") -Raw
-$version = if ($cargoToml -match 'version\s*=\s*"([^"]+)"') { $Matches[1] } else { "0.5.0" }
+$version = if ($cargoToml -match '(?ms)\[workspace\.package\][^\[]*?^\s*version\s*=\s*"([^"]+)"') { $Matches[1] } else { "2.6.1" }
 
 Write-Host "=== Installing Tomoyo v$version -> $InstallDir ===" -ForegroundColor Cyan
 
 # Stop any running instances before replacing binaries
-Stop-Process -Name "tomoyo","tomoyo-webview-host","tomoyo-capture" -Force -ErrorAction SilentlyContinue
+Stop-Process -Name "tomoyo","tomoyo-webview-host","tomoyo-capture","tomoyo-plugin-ocr","tomoyo-plugin-notes","tomoyo-plugin-md-editor","tomoyo-plugin-hello","tomoyo-cli" -Force -ErrorAction SilentlyContinue
 Start-Sleep -Milliseconds 300
 
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
@@ -76,6 +76,13 @@ if (Test-Path $desktopDir) {
 }
 
 # Register in Windows Add/Remove Programs (HKCU — zero UAC required)
+# Remove any previous Inno Setup uninstall key & stub so Windows never shows duplicate Tomoyo entries
+$innoUninstKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{8F4E29A1-6C74-4D3B-9B2A-7E3F50D81C20}_is1"
+if (Test-Path $innoUninstKey) {
+    Remove-Item -Path $innoUninstKey -Recurse -Force -ErrorAction SilentlyContinue
+}
+Remove-Item -Path (Join-Path $InstallDir "unins000.exe"), (Join-Path $InstallDir "unins000.dat") -Force -ErrorAction SilentlyContinue
+
 $uninstKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Tomoyo"
 New-Item -Path $uninstKey -Force | Out-Null
 $installSizeKb = [math]::Round(((Get-ChildItem $InstallDir -Recurse -File | Measure-Object Length -Sum).Sum / 1KB))

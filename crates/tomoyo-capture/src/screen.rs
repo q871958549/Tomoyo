@@ -273,8 +273,8 @@ pub fn enumerate_snap_windows(origin_x: i32, origin_y: i32, max_w: i32, max_h: i
     use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED, DWMWA_EXTENDED_FRAME_BOUNDS};
     use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST};
     use windows::Win32::UI::WindowsAndMessaging::{
-        EnumWindows, GetWindowLongW, GetWindowRect, IsIconic, IsWindowVisible, GWL_EXSTYLE, GWL_STYLE,
-        WS_CAPTION, WS_EX_TOOLWINDOW,
+        EnumWindows, GetClassNameW, GetWindowLongW, GetWindowRect, IsIconic, IsWindowVisible,
+        GWL_EXSTYLE, GWL_STYLE, WS_CAPTION, WS_EX_TOOLWINDOW,
     };
 
     struct CollectCtx { origin_x: i32, origin_y: i32, max_w: i32, max_h: i32, out: WinSnapInfo }
@@ -283,7 +283,14 @@ pub fn enumerate_snap_windows(origin_x: i32, origin_y: i32, max_w: i32, max_h: i
         unsafe {
             if !IsWindowVisible(hwnd).as_bool() || IsIconic(hwnd).as_bool() { return BOOL(1); }
             let ex = GetWindowLongW(hwnd, GWL_EXSTYLE) as u32;
-            if (ex & WS_EX_TOOLWINDOW.0) != 0 { return BOOL(1); }
+            if (ex & WS_EX_TOOLWINDOW.0) != 0 {
+                let mut cls = [0u16; 64];
+                let n = GetClassNameW(hwnd, &mut cls) as usize;
+                let name = String::from_utf16_lossy(&cls[..n]);
+                if name != "TomoyoLauncherWindowClass" {
+                    return BOOL(1);
+                }
+            }
             let mut cloaked: u32 = 0;
             if DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, &mut cloaked as *mut _ as *mut c_void, 4).is_ok() && cloaked != 0 {
                 return BOOL(1);

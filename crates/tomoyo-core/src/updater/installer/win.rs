@@ -22,7 +22,7 @@ const COMMON_PS1_PRELUDE: &str = r#"function Write-UpdateLog([string]$Msg) {
 }
 Write-UpdateLog "Updater helper started (PID=$PID)"
 Start-Sleep -Milliseconds 500
-$targets = @('tomoyo-webview-host','tomoyo','tomoyo-capture','tomoyo-plugin-ocr','tomoyo-plugin-notes','tomoyo-plugin-hello','tomoyo-cli')
+$targets = @('tomoyo-webview-host','tomoyo','tomoyo-capture','tomoyo-plugin-ocr','tomoyo-plugin-notes','tomoyo-plugin-md-editor','tomoyo-plugin-hello','tomoyo-cli')
 foreach ($name in $targets) {
   $waitSec = if ($name -eq 'tomoyo') { 4.0 } else { 2.0 }
   $deadline = (Get-Date).AddSeconds($waitSec)
@@ -120,6 +120,7 @@ try {
     };
     let finish = r#"if ($exitCode -eq 0) {
   Remove-Item -LiteralPath $Installer -Force -ErrorAction SilentlyContinue
+  Remove-Item -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Tomoyo' -Recurse -Force -ErrorAction SilentlyContinue
 }
 $launch = if ($TargetExe -and (Test-Path -LiteralPath $TargetExe)) { $TargetExe } elseif ($FallbackExe -and (Test-Path -LiteralPath $FallbackExe)) { $FallbackExe } else { $TargetExe }
 $exists = [bool]($launch -and (Test-Path -LiteralPath $launch))
@@ -345,6 +346,8 @@ mod tests {
         assert!(setup.contains("/VERYSILENT"));
         assert!(setup.contains("tomoyo-capture"));
         assert!(setup.contains("tomoyo-plugin-ocr"));
+        assert!(setup.contains("tomoyo-plugin-md-editor"));
+        assert!(setup.contains(r"Uninstall\Tomoyo"));
         assert!(setup.contains("Write-UpdateLog"));
 
         let portable = build_helper_ps1_body(true, false);

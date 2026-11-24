@@ -202,9 +202,9 @@ impl AppCore {
                         HotkeyAction::ToggleMain => st.toggle_launcher(),
                         HotkeyAction::Clipboard => st.toggle_clipboard_launcher(),
                         HotkeyAction::Translate => st.trigger_selection_translate(),
-                        HotkeyAction::Capture => st.trigger_capture("region"),
+                        HotkeyAction::Capture => st.trigger_capture_ex("region", false),
                         HotkeyAction::Pin => st.trigger_capture("pin_clipboard"),
-                        HotkeyAction::Ocr => st.trigger_capture("ocr"),
+                        HotkeyAction::Ocr => st.trigger_capture_ex("ocr", false),
                         HotkeyAction::Plugin(hk) => st.handle_plugin_hotkey(hk),
                         HotkeyAction::Flow(id) => st.execute_workflow(&id, ""),
                     });

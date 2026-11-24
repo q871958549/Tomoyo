@@ -12,6 +12,8 @@ use crate::overlay::{CaptureOutcome, OverlayState, TIMER_WHEEL_HUD};
 use crate::overlay_draw::ToolbarCmd;
 use crate::overlay_text::bake_text_annotations_into_bgra;
 use crate::screen::ScreenRect;
+use crate::win_record::{RecAudio, RecFormat, RecordRequest};
+use tomoyo_core::TomoyoConfig;
 use windows::Win32::Foundation::HWND;
 use windows::Win32::Graphics::Gdi::InvalidateRect;
 use windows::Win32::UI::Input::KeyboardAndMouse::SetFocus;
@@ -54,6 +56,7 @@ impl OverlayState {
         self.commit_text_if_open(hwnd);
         match cmd {
             ToolbarCmd::Tool(t) => {
+                self.record_open = false;
                 self.tool = if self.tool == t { ToolKind::Select } else { t };
                 if self.tool != ToolKind::Select {
                     self.stack.selected = None;
@@ -111,13 +114,40 @@ impl OverlayState {
             ToolbarCmd::Undo => {
                 self.stack.undo();
             }
-            ToolbarCmd::Record
-            | ToolbarCmd::RecFormat(_)
-            | ToolbarCmd::RecFps(_)
-            | ToolbarCmd::RecAudio(_)
-            | ToolbarCmd::RecCursor
-            | ToolbarCmd::RecStart => {
-                self.show_wheel_hud(hwnd, "录屏请在 Linux Wayland 端或设置中心触发".into());
+            ToolbarCmd::Record => {
+                self.record_open = !self.record_open;
+                if self.record_open {
+                    self.tool = ToolKind::Select;
+                    self.stack.selected = None;
+                }
+            }
+            ToolbarCmd::RecFormat(g) => { self.rec_is_gif = g; }
+            ToolbarCmd::RecFps(f) => { self.rec_fps = f; }
+            ToolbarCmd::RecAudio(a) => { self.rec_audio = a; }
+            ToolbarCmd::RecCursor => { self.rec_cursor = !self.rec_cursor; }
+            ToolbarCmd::RecStart => {
+                if let Some(s) = self.sel.filter(|r| r.is_valid()) {
+                    let r = s.clamp_to(self.snap.width, self.snap.height);
+                    let mut cfg = TomoyoConfig::load_or_create();
+                    cfg.capture.record_format = if self.rec_is_gif { "gif" } else { "mp4" }.into();
+                    cfg.capture.record_fps = self.rec_fps;
+                    cfg.capture.record_audio = match self.rec_audio { 1 => "system", 2 => "mic", _ => "none" }.into();
+                    cfg.capture.record_cursor = self.rec_cursor;
+                    let _ = cfg.save();
+                    self.outcome = Some(CaptureOutcome::Record(RecordRequest {
+                        screen_x: self.snap.origin_x + r.x,
+                        screen_y: self.snap.origin_y + r.y,
+                        width: r.w,
+                        height: r.h,
+                        format: if self.rec_is_gif { RecFormat::Gif } else { RecFormat::Mp4 },
+                        fps: self.rec_fps,
+                        audio: match self.rec_audio { 1 => RecAudio::System, 2 => RecAudio::Mic, _ => RecAudio::None },
+                        include_cursor: self.rec_cursor,
+                        save_dir: self.save_dir.clone(),
+                    }));
+                    unsafe { let _ = DestroyWindow(hwnd); }
+                    return;
+                }
             }
             ToolbarCmd::ScrollLong => {
                 if let Some(s) = self.sel.filter(|r| r.is_valid()) {

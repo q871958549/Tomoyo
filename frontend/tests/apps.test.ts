@@ -47,7 +47,8 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
       pin: { spec: 'F3', active: 'F3', ok: true, disabled: false, reason: '' },
     };
     window.__TOMOYO_SETTINGS_INIT__ = {
-      version: '2.6.0',
+      version: '2.6.1',
+      platform: 'windows',
       autostart: true,
       config: {
         language: 'zh',
@@ -157,6 +158,7 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
     document.querySelector<HTMLButtonElement>('button[data-config-plugin="dev.tomoyo.capture"]')?.click();
     flushSync();
     expect(document.body.textContent).toContain('全局一键贴图快捷键');
+    expect(document.body.textContent).toContain('录屏默认格式与帧率');
     expect(document.body.textContent).toContain('F3');
 
     const trSwitch = document.querySelector<HTMLButtonElement>('button[role="switch"][aria-label="多源划词翻译"]');

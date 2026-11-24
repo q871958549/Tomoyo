@@ -145,9 +145,9 @@ pub(super) unsafe extern "system" fn main_wndproc(
                 HOTKEY_ID => app.toggle_launcher(),
                 HOTKEY_CLIPBOARD_ID => app.toggle_clipboard_launcher(),
                 HOTKEY_TRANSLATE_ID => app.trigger_selection_translate(),
-                HOTKEY_CAPTURE_ID => app.trigger_capture("region"),
+                HOTKEY_CAPTURE_ID => app.trigger_capture_ex("region", false),
                 HOTKEY_PIN_ID => app.trigger_capture("pin_clipboard"),
-                HOTKEY_OCR_ID => app.trigger_capture("ocr"),
+                HOTKEY_OCR_ID => app.trigger_capture_ex("ocr", false),
                 id if id >= super::plugin_hotkeys::FLOW_HOTKEY_BASE => {
                     super::plugin_hotkeys::handle_flow_hotkey(app, id);
                 }

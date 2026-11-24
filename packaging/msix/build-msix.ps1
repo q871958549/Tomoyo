@@ -1,8 +1,8 @@
 # Builds a staged Windows MSIX package from target\release using Windows SDK MakeAppx.exe
 param(
-    [string]$Version = "2.6.0",
+    [string]$Version = "2.6.1",
     [string]$StageDir = "dist\msix-stage",
-    [string]$OutPath = "dist\Tomoyo-v2.6.0-x64.msix"
+    [string]$OutPath = "dist\Tomoyo-v2.6.1-x64.msix"
 )
 
 $ErrorActionPreference = "Stop"

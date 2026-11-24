@@ -106,9 +106,15 @@ impl AppCore {
     }
 
     pub(super) fn trigger_capture(&mut self, mode: &str) {
+        self.trigger_capture_ex(mode, true);
+    }
+
+    pub(super) fn trigger_capture_ex(&mut self, mode: &str, hide_launcher_first: bool) {
         let was_visible = self.is_visible();
-        self.hide_launcher();
-        if was_visible {
+        if hide_launcher_first {
+            self.hide_launcher();
+        }
+        if hide_launcher_first && was_visible {
             let m = mode.to_string();
             let _ = std::thread::Builder::new().name("tomoyo-cap-delay".into()).spawn(move || {
                 std::thread::sleep(std::time::Duration::from_millis(75));

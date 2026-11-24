@@ -347,14 +347,20 @@ impl AppShell {
         }
     }
 
-    /// Hides the launcher if visible and launches the ephemeral `tomoyo-capture.exe` tool.
+    /// Launches the ephemeral `tomoyo-capture.exe` tool (hiding the launcher first when invoked as a command).
     pub fn trigger_capture(&mut self, mode: &str) {
+        self.trigger_capture_ex(mode, true);
+    }
+
+    /// Launches `tomoyo-capture.exe`. Global hotkeys pass `hide_launcher_first = false` so users
+    /// can directly screenshot Tomoyo's search box when it is open on screen.
+    pub fn trigger_capture_ex(&mut self, mode: &str, hide_launcher_first: bool) {
         let was_visible = unsafe { IsWindowVisible(self.hwnd).as_bool() };
-        if was_visible {
+        if hide_launcher_first && was_visible {
             self.hide_launcher();
         }
         let mode_owned = mode.to_string();
-        if was_visible && mode_owned != "pin_clipboard" {
+        if hide_launcher_first && was_visible && mode_owned != "pin_clipboard" {
             // Allow DWM 110ms to finish hiding Tomoyo's launcher before BitBlt captures the screen.
             let _ = std::thread::Builder::new()
                 .name("tomoyo-cap-delay".into())

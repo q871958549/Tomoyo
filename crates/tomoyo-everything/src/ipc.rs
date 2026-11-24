@@ -19,10 +19,10 @@ mod win {
     use windows::Win32::System::DataExchange::COPYDATASTRUCT;
     use windows::Win32::System::LibraryLoader::GetModuleHandleW;
     use windows::Win32::UI::WindowsAndMessaging::{
-        CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, FindWindowW,
-        GetWindowLongPtrW, MsgWaitForMultipleObjects, PeekMessageW, RegisterClassW,
-        SendMessageTimeoutW, SetWindowLongPtrW, TranslateMessage, GWLP_USERDATA, MSG, PM_REMOVE,
-        QS_ALLINPUT, SMTO_NORMAL, WM_COPYDATA, WNDCLASSW,
+        ChangeWindowMessageFilterEx, CreateWindowExW, DefWindowProcW, DestroyWindow,
+        DispatchMessageW, FindWindowW, GetWindowLongPtrW, MsgWaitForMultipleObjects, PeekMessageW,
+        RegisterClassW, SendMessageTimeoutW, SetWindowLongPtrW, TranslateMessage, GWLP_USERDATA,
+        MSG, MSGFLT_ALLOW, PM_REMOVE, QS_ALLINPUT, SMTO_NORMAL, WM_COPYDATA, WNDCLASSW,
     };
 
     const RECV_CLASS_NAME: PCWSTR = w!("TomoyoEverythingIpcRecv");
@@ -70,6 +70,10 @@ mod win {
                     None,
                 )
                 .map_err(|e| EverythingError::Ipc(format!("CreateWindowExW failed: {e}")))?;
+
+                // Allow replies from non-elevated Everything.exe (Medium IL) when Tomoyo runs
+                // elevated (High IL); without this UIPI silently drops WM_COPYDATA replies!
+                let _ = ChangeWindowMessageFilterEx(hwnd, WM_COPYDATA, MSGFLT_ALLOW, None);
 
                 Ok(Self { hwnd })
             }

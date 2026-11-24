@@ -50,6 +50,18 @@ mod scroll_hud;
 #[cfg(windows)]
 mod scroll_preview;
 mod stitch;
+#[cfg(windows)]
+mod win_record;
+#[cfg(windows)]
+mod win_record_audio;
+#[cfg(windows)]
+mod win_record_gif;
+#[cfg(windows)]
+mod win_record_hud;
+#[cfg(windows)]
+mod win_record_hud_draw;
+#[cfg(windows)]
+mod win_record_mf;
 
 #[cfg(windows)]
 fn run_windows_main() {
@@ -175,10 +187,16 @@ fn run_windows_main() {
         return;
     }
 
+    if win_record::try_stop_active_recording() {
+        return;
+    }
+
     let mode = if args.iter().any(|a| a == "--ocr") {
         CaptureMode::QuickOcr
     } else if args.iter().any(|a| a == "--translate") {
         CaptureMode::QuickTranslate
+    } else if args.iter().any(|a| a == "--record") {
+        CaptureMode::Record
     } else {
         CaptureMode::Region
     };
@@ -193,6 +211,9 @@ fn run_windows_main() {
             {
                 let _ = run_pin_window(width, height, bgra, screen_x, screen_y);
             }
+        }
+        Ok(CaptureOutcome::Record(req)) => {
+            win_record::run_screen_recording(req);
         }
         _ => {}
     }
@@ -300,6 +321,9 @@ fn run_windows_main() {
 fn run_windows_main() {
     eprintln!("tomoyo-capture requires Windows or Linux");
 }
+
+#[cfg(all(windows, test))]
+pub(crate) static PROCESS_GUI_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 fn main() {
     run_windows_main();

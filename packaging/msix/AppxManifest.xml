@@ -7,7 +7,7 @@
   <Identity
     Name="TomoyoContributors.Tomoyo"
     Publisher="CN=TomoyoContributors"
-    Version="2.6.0.0"
+    Version="2.6.1.0"
     ProcessorArchitecture="x64" />
   <Properties>
     <DisplayName>Tomoyo</DisplayName>

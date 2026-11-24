@@ -197,7 +197,8 @@ pub fn paint_overlay_gdi_labels(
         SetBkMode(mem_dc, TRANSPARENT);
         for btn in &layout.hits {
             if btn.pill_text.is_empty() { continue; }
-            SetTextColor(mem_dc, COLORREF(if btn.active { 0x00FA_A560 } else { 0x00E2_E8F0 }));
+            let col = if btn.danger { 0x00FF_FFFF } else if btn.active { 0x00FA_A560 } else { 0x00E2_E8F0 };
+            SetTextColor(mem_dc, COLORREF(col));
             let mut rc = RECT { left: btn.rect.x, top: btn.rect.y, right: btn.rect.right(), bottom: btn.rect.bottom() };
             let mut w: Vec<u16> = btn.pill_text.encode_utf16().collect();
             DrawTextW(mem_dc, &mut w, &mut rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
@@ -206,7 +207,9 @@ pub fn paint_overlay_gdi_labels(
             let b = dim_badge_rect(s, snap.width);
             let mut rc = RECT { left: b.x, top: b.y, right: b.right(), bottom: b.bottom() };
             SetTextColor(mem_dc, COLORREF(0x00F8_FAFC));
-            let mut w: Vec<u16> = format!("{} × {}", s.w, s.h).encode_utf16().collect();
+            let rec_open = layout.hits.iter().any(|h| h.cmd == ToolbarCmd::RecStart);
+            let badge_txt = if rec_open { format!("录制 {} × {}", s.w, s.h) } else { format!("{} × {}", s.w, s.h) };
+            let mut w: Vec<u16> = badge_txt.encode_utf16().collect();
             DrawTextW(mem_dc, &mut w, &mut rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         } else if let Some(h) = hover_snap {
             let b = snap_badge_rect(h.rect, snap.width);

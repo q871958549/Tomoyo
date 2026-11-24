@@ -16,7 +16,7 @@ use windows::Win32::Foundation::HWND;
 use windows::Win32::Graphics::Gdi::InvalidateRect;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetKeyState, SetCapture, VK_BACK, VK_CONTROL, VK_DELETE, VK_ESCAPE, VK_MENU, VK_RETURN,
-    VK_SHIFT, VK_TAB,
+    VK_SHIFT, VK_SPACE, VK_TAB,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     IDC_CROSS, IDC_HAND, IDC_SIZEALL, IDC_SIZENESW, IDC_SIZENS, IDC_SIZENWSE, IDC_SIZEWE,
@@ -187,7 +187,8 @@ pub fn handle_lbutton_dblclk(st: &mut OverlayState, hwnd: HWND, x: i32, y: i32) 
         && st.tool == ToolKind::Select
         && st.stack.hit_test_top(x, y).is_none()
     {
-        st.execute_action(hwnd, ToolbarCmd::Copy);
+        let cmd = if st.record_open { ToolbarCmd::RecStart } else { ToolbarCmd::Copy };
+        st.execute_action(hwnd, cmd);
     }
 }
 
@@ -281,7 +282,12 @@ pub fn handle_key_down(st: &mut OverlayState, hwnd: HWND, vk: u16) {
     } else if (vk == VK_DELETE.0 || vk == VK_BACK.0) && st.stack.selected.is_some() {
         st.stack.delete_selected();
         unsafe { let _ = InvalidateRect(Some(hwnd), None, false); }
-    } else if vk == VK_RETURN.0 || (ctrl && !shift && !alt && vk == b'C' as u16 && st.sel.is_some()) {
+    } else if vk == VK_RETURN.0 {
+        let cmd = if st.record_open { ToolbarCmd::RecStart } else { ToolbarCmd::Copy };
+        st.execute_action(hwnd, cmd);
+    } else if vk == VK_SPACE.0 && st.record_open && st.sel.is_some() {
+        st.execute_action(hwnd, ToolbarCmd::RecStart);
+    } else if ctrl && !shift && !alt && vk == b'C' as u16 && st.sel.is_some() {
         st.execute_action(hwnd, ToolbarCmd::Copy);
     } else if ctrl && !shift && !alt && vk == b'Z' as u16 {
         st.stack.undo();
@@ -311,6 +317,7 @@ pub fn handle_key_down(st: &mut OverlayState, hwnd: HWND, vk: u16) {
             else if m(&hk.translate) { Some(ToolbarCmd::Translate) }
             else if m(&hk.pin) { Some(ToolbarCmd::Pin) }
             else if m(&hk.scroll) { Some(ToolbarCmd::ScrollLong) }
+            else if m(&hk.record) { Some(ToolbarCmd::Record) }
             else if m(&hk.rect) || (plain && b == b'1') { Some(ToolbarCmd::Tool(ToolKind::Rect)) }
             else if m(&hk.ellipse) || (plain && b == b'2') { Some(ToolbarCmd::Tool(ToolKind::Ellipse)) }
             else if m(&hk.arrow) || (plain && b == b'3') { Some(ToolbarCmd::Tool(ToolKind::Arrow)) }

@@ -88,7 +88,7 @@ pub(crate) fn compute_ev_score(
         220
     } else if matches!(
         ext_lower.as_str(),
-        "pdf" | "xlsx" | "xls" | "docx" | "doc" | "pptx" | "ppt" | "png" | "jpg" | "zip"
+        "md" | "markdown" | "txt" | "pdf" | "xlsx" | "xls" | "docx" | "doc" | "pptx" | "ppt" | "png" | "jpg" | "zip"
     ) {
         120
     } else {

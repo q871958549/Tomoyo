@@ -374,6 +374,7 @@ mod tests {
 
     #[test]
     fn renders_text_and_color_pin_cards_cleanly() {
+        let _gui_guard = crate::PROCESS_GUI_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let txt = render_text_or_color_pin_card("Tomoyo F3 贴图\n支持中英文与代码", "light", 1.0)
             .unwrap();
         assert!(txt.width >= 240 && txt.height >= 60);

@@ -126,7 +126,7 @@ impl Provider for CaptureProvider {
     }
 
     fn prefixes(&self) -> &'static [&'static str] {
-        &["cap", "shot", "jt", "pin", "jtocr", "jtfy"]
+        &["cap", "shot", "jt", "pin", "jtocr", "jtfy", "rec", "lp"]
     }
 
     fn matches_prefix(&self, token_lower: &str) -> bool {
@@ -156,6 +156,7 @@ impl Provider for CaptureProvider {
                     ("pin", "pin_clipboard") => Some(cmd.base_score + 400),
                     ("jtocr", "ocr") => Some(cmd.base_score + 400),
                     ("jtfy", "translate") => Some(cmd.base_score + 400),
+                    ("rec" | "lp", "record") => Some(cmd.base_score + 400),
                     ("cap" | "shot" | "jt", _) => {
                         if ctx.args.trim().is_empty() {
                             Some(cmd.base_score)
@@ -232,7 +233,7 @@ impl Provider for CaptureProvider {
                         ),
                         (
                             lang.pick("快捷键提示", "Shortcuts").into(),
-                            "1-6 框/圆/箭/笔/马赛克/序号 · C 取色 · P 贴图 · O 识字 · T 翻译 · Ctrl+S 保存".into(),
+                            "1-6 框/圆/箭/笔/马赛克/序号 · C 取色 · V 录屏 · P 贴图 · O 识字 · T 翻译 · Ctrl+S 保存".into(),
                         ),
                         (
                             lang.pick("内存原则", "Idle Overhead").into(),
@@ -265,5 +266,11 @@ mod tests {
         ctx_zh.args.clear();
         let hits = prov.query(&ctx_zh);
         assert!(hits.iter().any(|it| it.id == "capture:translate"));
+
+        let mut ctx_rec = QueryContext::new("rec", 3, 10);
+        ctx_rec.keyword = Some("rec".into());
+        ctx_rec.args.clear();
+        let rec_hits = prov.query(&ctx_rec);
+        assert!(rec_hits.iter().any(|it| it.id == "capture:record"));
     }
 }
