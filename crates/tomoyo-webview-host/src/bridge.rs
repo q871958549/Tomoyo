@@ -1,9 +1,8 @@
 //! Dispatches incoming WebView2 host messages safely to native OS helpers, DB, and Plugin Store.
 
 use crate::bridge_ops::{
-    finish_clip_mutation, handle_clear_logs, handle_copy_diag_bundle, handle_install_plugin,
-    handle_open_clipboard_manager, handle_open_logs_dir, handle_read_logs,
-    handle_set_plugin_permission, handle_uninstall_plugin,
+    handle_clear_logs, handle_copy_diag_bundle, handle_install_plugin, handle_open_logs_dir,
+    handle_read_logs, handle_set_plugin_permission, handle_uninstall_plugin,
 };
 use crate::bridge_os::{notify_parent_mode, set_clipboard_text, shell_open};
 use crate::db::PluginDb;
@@ -42,14 +41,6 @@ pub enum HostMessage {
     ClearDiagnosticLogs { #[serde(default)] source: String, #[serde(default)] errors_only: bool },
     CopyDiagnosticBundle,
     OpenLogsDir,
-    OpenClipboardManager,
-    ClipList { #[serde(default)] query: String },
-    ClipTogglePin { id_key: String },
-    ClipUpdate { id_key: String, #[serde(default)] text: Option<String>, #[serde(default)] tag: String, #[serde(default)] note: String },
-    ClipDelete { id_key: String },
-    ClipClearUnpinned,
-    ClipExport,
-    ClipImport { json: String },
     SetSecret { key: String, value: String },
     DeleteSecret { key: String },
     CheckHotkeyHealth,
@@ -214,35 +205,6 @@ pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isi
         HostMessage::ClearDiagnosticLogs { source, errors_only } => handle_clear_logs(source, errors_only),
         HostMessage::CopyDiagnosticBundle => handle_copy_diag_bundle(),
         HostMessage::OpenLogsDir => handle_open_logs_dir(),
-        HostMessage::OpenClipboardManager => handle_open_clipboard_manager(notify_hwnd),
-        HostMessage::ClipList { query } => HostAction {
-            reply_json: Some(crate::clip_view::handle_clip_list(&query)),
-            ..Default::default()
-        },
-        HostMessage::ClipTogglePin { id_key } => {
-            let (reply, mutated) = crate::clip_view::handle_clip_toggle_pin(&id_key);
-            finish_clip_mutation(reply, mutated, notify_hwnd)
-        }
-        HostMessage::ClipUpdate { id_key, text, tag, note } => {
-            let (reply, mutated) = crate::clip_view::handle_clip_update(&id_key, text, &tag, &note);
-            finish_clip_mutation(reply, mutated, notify_hwnd)
-        }
-        HostMessage::ClipDelete { id_key } => {
-            let (reply, mutated) = crate::clip_view::handle_clip_delete(&id_key);
-            finish_clip_mutation(reply, mutated, notify_hwnd)
-        }
-        HostMessage::ClipClearUnpinned => {
-            let (reply, mutated) = crate::clip_view::handle_clip_clear_unpinned();
-            finish_clip_mutation(reply, mutated, notify_hwnd)
-        }
-        HostMessage::ClipExport => HostAction {
-            reply_json: Some(crate::clip_view::handle_clip_export()),
-            ..Default::default()
-        },
-        HostMessage::ClipImport { json } => {
-            let (reply, mutated) = crate::clip_view::handle_clip_import(&json);
-            finish_clip_mutation(reply, mutated, notify_hwnd)
-        }
         HostMessage::SetSecret { key, value } => HostAction { reply_json: Some(crate::plugin_rpc::handle_set_secret(&key, &value)), ..Default::default() },
         HostMessage::DeleteSecret { key } => HostAction { reply_json: Some(crate::plugin_rpc::handle_delete_secret(&key)), ..Default::default() },
         HostMessage::CheckHotkeyHealth => HostAction {

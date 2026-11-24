@@ -26,7 +26,7 @@ pub use file_ops::{
 pub use shell_win::send_ctrl_c_cleanly;
 pub use shell_win::{
     kill_process_by_pid, paste_into_previous_window_async, shell_open, shell_open_as_admin,
-    spawn_clipboard_manager_window, spawn_ephemeral_webview_ex, spawn_settings_window,
+    spawn_ephemeral_webview_ex, spawn_settings_window,
 };
 
 use shell_win::{focus_window, open_terminal_at, reveal_in_file_manager, run_system_command};
@@ -38,6 +38,7 @@ use tomoyo_protocol::{ActionKind, ExecuteRequest, InternalCommandKind};
 pub struct ActionOutcome {
     pub hide_window: bool,
     pub paste_after_hide: bool,
+    pub refresh_query: bool,
     pub toast: Option<String>,
     pub fill_query: Option<String>,
     pub internal: Option<InternalCommandKind>,
@@ -48,6 +49,7 @@ impl Default for ActionOutcome {
         Self {
             hide_window: true,
             paste_after_hide: false,
+            refresh_query: false,
             toast: None,
             fill_query: None,
             internal: None,
@@ -190,6 +192,7 @@ pub fn execute_action(
                     ActionOutcome {
                         hide_window: resp.hide_window && resp.fill_query.is_none(),
                         paste_after_hide: false,
+                        refresh_query: resp.refresh_query,
                         toast: resp.toast,
                         fill_query: resp.fill_query,
                         internal: None,

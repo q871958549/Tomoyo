@@ -28,27 +28,6 @@ pub fn spawn_settings_window(parent_pid: isize, theme_name: &str) -> Result<bool
     .map(|()| true)
 }
 
-pub fn spawn_clipboard_manager_window(
-    parent_pid: isize,
-    theme_name: &str,
-    focus_key: Option<&str>,
-) -> Result<(), String> {
-    let mut args = vec![
-        "--plugin-id",
-        "builtin.clipboard",
-        "--title",
-        "Tomoyo 剪贴板工作台",
-        "--entry",
-        "__tomoyo_clipboard_manager__",
-    ];
-    let fk = focus_key.unwrap_or_default().to_string();
-    if !fk.is_empty() {
-        args.push("--query");
-        args.push(&fk);
-    }
-    spawn_ephemeral_singleton("clipboard", parent_pid, theme_name, &args, 1060, 680)
-}
-
 fn try_wake_singleton_socket(mode_tag: &str, payload: &str) -> bool {
     if mode_tag.is_empty() {
         return false;

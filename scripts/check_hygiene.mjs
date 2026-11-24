@@ -102,9 +102,9 @@ if (fs.existsSync("frontend/package.json")) {
   }
 }
 const bundleBudgets = {
-  "frontend/dist/settings.html": 320 * 1024,
+  "frontend/dist/settings.html": 300 * 1024,
   "plugins/official-translate/ui/index.html": 150 * 1024,
-  "frontend/dist/clipboard.html": 150 * 1024,
+  "plugins/official-clipboard/ui/index.html": 150 * 1024,
   "plugins/builtin-ocr/ui/index.html": 150 * 1024,
 };
 const bundleSummary = [];
@@ -202,14 +202,15 @@ if (checkBinaries) {
   const isWin = process.platform === "win32";
   const ext = isWin ? ".exe" : "";
   const binBudgets = {
-    [`target/release/tomoyo${ext}`]: isWin ? 6.5 : 7.5,
-    [`target/release/tomoyo-webview-host${ext}`]: 5.5,
+    [`target/release/tomoyo${ext}`]: isWin ? 5.8 : 6.2,
+    [`target/release/tomoyo-webview-host${ext}`]: 4.2,
     [`target/release/tomoyo-capture${ext}`]: 1.5,
     [`target/release/tomoyo-plugin-ocr${ext}`]: 0.8,
     [`target/release/tomoyo-plugin-notes${ext}`]: 0.8,
     [`target/release/tomoyo-plugin-md-editor${ext}`]: 0.8,
     [`target/release/tomoyo-plugin-translate${ext}`]: 0.8,
     [`target/release/tomoyo-plugin-capture${ext}`]: 0.8,
+    [`target/release/tomoyo-plugin-clipboard${ext}`]: 2.5,
   };
   let binViolations = 0;
   const binSummary = [];

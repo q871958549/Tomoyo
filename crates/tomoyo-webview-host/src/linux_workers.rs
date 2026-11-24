@@ -345,7 +345,6 @@ impl Drop for SocketGuard {
 
 pub fn try_acquire_instance(
     mode_tag: &str,
-    clip_mode: bool,
     plugin_query: Option<&str>,
     ch: &Arc<HostChannel>,
 ) -> Result<SocketGuard, ()> {
@@ -382,11 +381,7 @@ pub fn try_acquire_instance(
                 let t = TomoyoConfig::load_or_create().theme;
                 let mode = if t.eq_ignore_ascii_case("light") { 0 } else if t.eq_ignore_ascii_case("midnight") { 2 } else { 1 };
                 c.desired_theme.store(mode, Ordering::SeqCst);
-                if clip_mode {
-                    let q = cmd.trim().strip_prefix("activate_clip:").unwrap_or("");
-                    let _ = q;
-                    c.push(crate::clip_view::handle_clip_list(""));
-                } else if let Some(q_json) = cmd.trim().strip_prefix("activate_plugin:") {
+                if let Some(q_json) = cmd.trim().strip_prefix("activate_plugin:") {
                     c.push(format!("__TOMOYO_REACTIVATE__:{q_json}"));
                 }
                 c.request_present();

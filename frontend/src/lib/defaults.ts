@@ -8,28 +8,6 @@ export const PLUGIN_OCR = 'dev.tomoyo.ocr';
 export const PLUGIN_NOTES = 'dev.tomoyo.notes';
 export const PLUGIN_MD_EDITOR = 'dev.tomoyo.markdown-editor';
 
-export interface OfficialPluginMeta {
-  id: string;
-  category: string;
-  zhName: string;
-  enName: string;
-  zhDesc: string;
-  enDesc: string;
-  triggers: string;
-}
-
-export const OFFICIAL_PLUGINS: OfficialPluginMeta[] = [
-  {
-    id: PLUGIN_CLIPBOARD,
-    category: 'productivity',
-    zhName: '剪贴板管理中心',
-    enName: 'Clipboard Center',
-    zhDesc: '历史采集、图片缓存、隐私屏蔽与工作台；关闭即卸载系统剪贴板监听与热键',
-    enDesc: 'History, image cache, privacy filter & workbench; unhooks OS listener & hotkey when off',
-    triggers: 'cb / clip',
-  },
-];
-
 export function isPluginEnabled(cfg: Pick<TomoyoConfig, 'disabled_plugins'>, id: string): boolean {
   const list = cfg.disabled_plugins || [];
   const target = id.toLowerCase();

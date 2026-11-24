@@ -200,14 +200,14 @@ pub(super) fn handle_plugin_hotkey(app: &mut AppShell, id: i32) {
                 }
                 std::thread::sleep(Duration::from_millis(60));
                 suppress_flag.store(false, Ordering::Release);
-                let payload = PluginEventPayload {
-                    event: PluginEventKind::HotkeyTriggered,
-                    data: serde_json::json!({
+                let payload = PluginEventPayload::new(
+                    PluginEventKind::HotkeyTriggered,
+                    serde_json::json!({
                         "hotkey_id": hk.hotkey_id,
                         "spec": hk.spec,
                         "selected_text": captured.trim(),
                     }),
-                };
+                );
                 if let Some(resp) = host.dispatch_event(Some(&hk.plugin_id), &payload).into_iter().next() {
                     if let Ok(mut g) = slot.lock() {
                         *g = Some((hk.plugin_id.clone(), resp));
@@ -224,32 +224,30 @@ pub(super) fn handle_plugin_hotkey(app: &mut AppShell, id: i32) {
             });
         return;
     }
-    let payload = PluginEventPayload {
-        event: PluginEventKind::HotkeyTriggered,
-        data: serde_json::json!({
+    let payload = PluginEventPayload::new(
+        PluginEventKind::HotkeyTriggered,
+        serde_json::json!({
             "hotkey_id": hk.hotkey_id,
             "spec": hk.spec,
         }),
-    };
+    );
     let resps = app.plugin_host.dispatch_event(Some(&hk.plugin_id), &payload);
     if let Some(resp) = resps.into_iter().next() {
         apply_plugin_exec_response(app, &hk.plugin_id, resp);
     }
 }
 
-/// Dispatches a `ClipboardText` Protocol v2 event off the UI thread ONLY when a subscriber exists.
-pub(super) fn dispatch_clipboard_text_event(app: &AppShell, text: &str, source_app: &str) {
-    if !app.plugin_host.has_event_subscriber(PluginEventKind::ClipboardText) {
+/// Dispatches a clipboard Protocol v2/v3 event off the UI thread ONLY when a subscriber exists.
+pub(super) fn dispatch_clipboard_event(
+    app: &AppShell,
+    kind: PluginEventKind,
+    data: serde_json::Value,
+) {
+    if !app.plugin_host.has_event_subscriber(kind) {
         return;
     }
     let host = Arc::clone(&app.plugin_host);
-    let payload = PluginEventPayload {
-        event: PluginEventKind::ClipboardText,
-        data: serde_json::json!({
-            "text": text,
-            "source_app": source_app,
-        }),
-    };
+    let payload = PluginEventPayload::new(kind, data);
     let _ = std::thread::Builder::new()
         .name("tomoyo-plugin-event".into())
         .spawn(move || {

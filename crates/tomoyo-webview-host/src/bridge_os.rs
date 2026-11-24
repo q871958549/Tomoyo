@@ -133,3 +133,83 @@ pub fn spawn_settings_center(target: &str, notify_hwnd: Option<isize>) {
     }
     let _ = cmd.spawn();
 }
+
+/// Enumerates curated privacy/remote-desktop apps + currently running desktop processes
+/// for Settings Center searchable comboboxes.
+pub fn enumerate_running_app_exes() -> Vec<String> {
+    let mut set = std::collections::BTreeSet::new();
+    for preset in [
+        "keepass.exe",
+        "keepassxc.exe",
+        "bitwarden.exe",
+        "1password.exe",
+        "enpass.exe",
+        "lastpass.exe",
+        "mstsc.exe",
+        "todesk.exe",
+        "anydesk.exe",
+        "wechat.exe",
+        "qq.exe",
+        "chrome.exe",
+        "msedge.exe",
+        "firefox.exe",
+        "code.exe",
+    ] {
+        set.insert(preset.to_string());
+    }
+    #[cfg(windows)]
+    {
+        use windows::Win32::Foundation::CloseHandle;
+        use windows::Win32::System::Diagnostics::ToolHelp::{
+            CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
+            TH32CS_SNAPPROCESS,
+        };
+        unsafe {
+            if let Ok(snap) = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) {
+                let mut pe = PROCESSENTRY32W {
+                    dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32,
+                    ..Default::default()
+                };
+                if Process32FirstW(snap, &mut pe).is_ok() {
+                    loop {
+                        let len = pe.szExeFile.iter().position(|&c| c == 0).unwrap_or(pe.szExeFile.len());
+                        let name = String::from_utf16_lossy(&pe.szExeFile[..len]).to_ascii_lowercase();
+                        if name.ends_with(".exe")
+                            && !matches!(name.as_str(), "svchost.exe" | "conhost.exe" | "csrss.exe" | "smss.exe" | "services.exe" | "lsass.exe" | "dwm.exe" | "tomoyo.exe" | "tomoyo-webview-host.exe")
+                        {
+                            set.insert(name);
+                        }
+                        if Process32NextW(snap, &mut pe).is_err() {
+                            break;
+                        }
+                    }
+                }
+                let _ = CloseHandle(snap);
+            }
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        for preset in [
+            "keepassxc", "bitwarden", "1password", "enpass", "rustdesk", "remmina",
+            "firefox", "chromium", "google-chrome", "code", "wechat", "qq",
+        ] {
+            set.insert(preset.to_string());
+        }
+        if let Ok(rd) = std::fs::read_dir("/proc") {
+            for ent in rd.flatten() {
+                let name = ent.file_name();
+                if !name.to_string_lossy().bytes().all(|b| b.is_ascii_digit()) {
+                    continue;
+                }
+                if let Ok(comm) = std::fs::read_to_string(ent.path().join("comm")) {
+                    let c = comm.trim().to_ascii_lowercase();
+                    if !c.is_empty() && !matches!(c.as_str(), "tomoyo" | "tomoyo-webview-host" | "systemd" | "kworker" | "dbus-daemon") {
+                        set.insert(c);
+                    }
+                }
+            }
+        }
+    }
+    set.into_iter().take(120).collect()
+}

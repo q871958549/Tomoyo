@@ -77,6 +77,42 @@
       "downloads": 0
     },
     {
+      "id": "dev.tomoyo.clipboard",
+      "name": "剪贴板管理中心 (官方插件)",
+      "version": "3.0.0",
+      "description": "CopyQ 级本地 SQLite 剪贴板历史、图片与文件采集、标签备注、隐私屏蔽及按需工作台（关闭即卸载系统剪贴板监听与热键）",
+      "author": "Tomoyo Contributors",
+      "license": "MIT OR Apache-2.0",
+      "runtime_kind": "stdio_jsonrpc",
+      "category": "productivity",
+      "icon": "icon.png",
+      "display_mode": "window",
+      "tags": [
+        "clipboard",
+        "history",
+        "sqlite",
+        "images",
+        "snippets",
+        "privacy"
+      ],
+      "keywords": [
+        "cb",
+        "clip"
+      ],
+      "permissions": [
+        "clipboard",
+        "filesystem_read",
+        "filesystem_write"
+      ],
+      "source": "plugins/official-clipboard",
+      "sha256": "daf0127dfd285c46f98c8797bd17aeff03c04ff21b1bd664058fc4bf532cd682",
+      "platforms": {},
+      "min_tomoyo_version": null,
+      "homepage": "https://github.com/q871958549/Tomoyo",
+      "updated_at": "",
+      "downloads": 0
+    },
+    {
       "id": "dev.tomoyo.markdown-editor",
       "name": "Quiet.md Markdown 编辑器 (官方插件)",
       "version": "2.6.0",
@@ -169,7 +205,7 @@
         "selection_read"
       ],
       "source": "plugins/official-translate",
-      "sha256": "bd028c4d6d81167d6239aa6c2bc6b19327e6e3701e4a00d4d14dc5424cb39f86",
+      "sha256": "06ef483c57a809ac509acc3c9542f8d1b4da4f0d2257a2910076ad7b2605b041",
       "platforms": {},
       "min_tomoyo_version": null,
       "homepage": "https://github.com/q871958549/Tomoyo",

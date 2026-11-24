@@ -9,12 +9,9 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 
 pub const SETTINGS_WINDOW_CLASS: PCWSTR = w!("TomoyoSettingsCenterWindowClass");
-pub const CLIPBOARD_WINDOW_CLASS: PCWSTR = w!("TomoyoClipboardManagerWindowClass");
 pub const EPHEMERAL_WINDOW_CLASS: PCWSTR = w!("TomoyoEphemeralWebViewHost");
 pub const SETTINGS_SINGLETON_MUTEX: PCWSTR = w!("Local\\TomoyoSettingsCenterSingleton");
-pub const CLIPBOARD_SINGLETON_MUTEX: PCWSTR = w!("Local\\TomoyoClipboardManagerSingleton");
 pub const WM_APP_ACTIVATE_SETTINGS: u32 = 0x8000 + 32;
-pub const WM_APP_ACTIVATE_CLIPBOARD: u32 = 0x8000 + 34;
 
 pub struct SettingsSingletonGuard(HANDLE);
 
@@ -35,14 +32,6 @@ pub fn acquire_or_activate_settings() -> Option<SettingsSingletonGuard> {
         SETTINGS_SINGLETON_MUTEX,
         Some(SETTINGS_WINDOW_CLASS),
         WM_APP_ACTIVATE_SETTINGS,
-    )
-}
-
-pub fn acquire_or_activate_clipboard() -> Option<SettingsSingletonGuard> {
-    acquire_or_activate_named(
-        CLIPBOARD_SINGLETON_MUTEX,
-        Some(CLIPBOARD_WINDOW_CLASS),
-        WM_APP_ACTIVATE_CLIPBOARD,
     )
 }
 

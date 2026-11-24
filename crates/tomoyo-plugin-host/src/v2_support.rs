@@ -191,11 +191,13 @@ pub(crate) fn collect_active_plugin_hotkeys(
     out
 }
 
-/// Dispatches a Protocol v2 `tomoyo/event` to enabled subscribed STDIO plugins that hold permissions.
+/// Dispatches a Protocol v2/v3 `tomoyo/event` to enabled subscribed STDIO plugins that hold permissions.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn dispatch_plugin_event(
     plugins: &mut HashMap<String, RegisteredPlugin>,
     disabled_ids: &HashSet<String>,
     perms: &mut PermissionStore,
+    all_settings: &BTreeMap<String, BTreeMap<String, Value>>,
     target_plugin: Option<&str>,
     payload: &PluginEventPayload,
     interactive: bool,
@@ -233,8 +235,12 @@ pub(crate) fn dispatch_plugin_event(
             }
             Err(_) => continue,
         }
+        let mut plug_payload = payload.clone();
+        if plug_payload.plugin_settings.is_empty() {
+            plug_payload.plugin_settings = effective_plugin_settings(&plug.manifest, all_settings);
+        }
         if let Some(LiveRuntime::Stdio(proc)) = plug.live.as_mut()
-            && let Ok(params) = serde_json::to_value(payload) {
+            && let Ok(params) = serde_json::to_value(&plug_payload) {
                 let timeout = Duration::from_millis(plug.manifest.resources.query_timeout_ms.min(1500));
                 if let Ok(val) = proc.call(METHOD_EVENT, params, timeout)
                     && let Ok(resp) = serde_json::from_value::<ExecuteResponse>(val) {

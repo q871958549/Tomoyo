@@ -9,7 +9,6 @@
 
 typedef void (*wv_msg_cb)(void *ctx, const char *json);
 typedef int (*wv_key_cb)(void *ctx, uint32_t keyval, uint32_t state);
-typedef int (*wv_uri_cb)(void *ctx, const char *scheme, const char *path, uint8_t **out_data, size_t *out_len);
 typedef void (*wv_void_cb)(void *ctx);
 
 typedef struct {
@@ -19,7 +18,6 @@ typedef struct {
     WebKitWebView *webview;
     wv_msg_cb on_msg;
     wv_key_cb on_key;
-    wv_uri_cb on_uri;
     wv_void_cb on_focus_in;
     wv_void_cb on_close;
     void *ctx;
@@ -53,39 +51,6 @@ static void on_script_message(WebKitUserContentManager *mgr, WebKitJavascriptRes
     if (txt) {
         h->on_msg(h->ctx, txt);
         g_free(txt);
-    }
-}
-
-static void on_uri_scheme(WebKitURISchemeRequest *req, gpointer ud) {
-    tomoyo_wv_t *h = (tomoyo_wv_t *)ud;
-    const gchar *scheme = webkit_uri_scheme_request_get_scheme(req);
-    const gchar *path = webkit_uri_scheme_request_get_path(req);
-    if (!h || !h->on_uri) {
-        GError *e = g_error_new_literal(g_quark_from_static_string("tomoyo"), 404, "not found");
-        webkit_uri_scheme_request_finish_error(req, e);
-        g_error_free(e);
-        return;
-    }
-    uint8_t *buf = NULL;
-    size_t len = 0;
-    if (h->on_uri(h->ctx, scheme ? scheme : "", path ? path : "", &buf, &len) && buf && len > 0) {
-        GBytes *bytes = g_bytes_new_take(buf, len);
-        GInputStream *stream = g_memory_input_stream_new_from_bytes(bytes);
-        const char *mime = "image/png";
-        if (path) {
-            if (g_str_has_suffix(path, ".jpg") || g_str_has_suffix(path, ".jpeg")) mime = "image/jpeg";
-            else if (g_str_has_suffix(path, ".webp")) mime = "image/webp";
-            else if (g_str_has_suffix(path, ".gif")) mime = "image/gif";
-            else if (g_str_has_suffix(path, ".svg")) mime = "image/svg+xml";
-        }
-        webkit_uri_scheme_request_finish(req, stream, (gint64)len, mime);
-        g_object_unref(stream);
-        g_bytes_unref(bytes);
-    } else {
-        if (buf) free(buf);
-        GError *e = g_error_new_literal(g_quark_from_static_string("tomoyo"), 404, "not found");
-        webkit_uri_scheme_request_finish_error(req, e);
-        g_error_free(e);
     }
 }
 
@@ -155,7 +120,6 @@ tomoyo_wv_t *tomoyo_wv_create(
     const char *extra_init_js,
     wv_msg_cb on_msg,
     wv_key_cb on_key,
-    wv_uri_cb on_uri,
     wv_void_cb on_focus_in,
     wv_void_cb on_close,
     void *ctx
@@ -170,7 +134,6 @@ tomoyo_wv_t *tomoyo_wv_create(
     if (!h) return NULL;
     h->on_msg = on_msg;
     h->on_key = on_key;
-    h->on_uri = on_uri;
     h->on_focus_in = on_focus_in;
     h->on_close = on_close;
     h->ctx = ctx;
@@ -209,10 +172,6 @@ tomoyo_wv_t *tomoyo_wv_create(
     WebKitWebsiteDataManager *wdm = webkit_web_context_get_website_data_manager(wctx);
     if (wdm) webkit_website_data_manager_set_favicons_enabled(wdm, FALSE);
 #endif
-    webkit_web_context_register_uri_scheme(wctx, "tomoyo-clip-img", on_uri_scheme, h, NULL);
-    WebKitSecurityManager *sm = webkit_web_context_get_security_manager(wctx);
-    webkit_security_manager_register_uri_scheme_as_secure(sm, "tomoyo-clip-img");
-    webkit_security_manager_register_uri_scheme_as_cors_enabled(sm, "tomoyo-clip-img");
 
     WebKitUserContentManager *ucm = webkit_user_content_manager_new();
     webkit_user_content_manager_register_script_message_handler(ucm, "tomoyo");

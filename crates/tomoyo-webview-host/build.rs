@@ -7,15 +7,13 @@ use std::process::Command;
 
 fn main() {
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR missing"));
-    for name in ["settings.html", "clipboard.html"] {
-        let src = format!("../../frontend/dist/{name}");
-        println!("cargo:rerun-if-changed={src}");
-        let raw = std::fs::read(&src).unwrap_or_else(|e| panic!("failed to read {src}: {e}"));
-        let mut enc = GzEncoder::new(Vec::with_capacity(raw.len() / 3), Compression::best());
-        enc.write_all(&raw).expect("gzip write failed");
-        let gz = enc.finish().expect("gzip finish failed");
-        std::fs::write(out_dir.join(format!("{name}.gz")), gz).expect("write compressed html");
-    }
+    let src = "../../frontend/dist/settings.html";
+    println!("cargo:rerun-if-changed={src}");
+    let raw = std::fs::read(src).unwrap_or_else(|e| panic!("failed to read {src}: {e}"));
+    let mut enc = GzEncoder::new(Vec::with_capacity(raw.len() / 3), Compression::best());
+    enc.write_all(&raw).expect("gzip write failed");
+    let gz = enc.finish().expect("gzip finish failed");
+    std::fs::write(out_dir.join("settings.html.gz"), gz).expect("write compressed html");
 
     #[cfg(windows)]
     {

@@ -40,11 +40,11 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
   it('boots slim 6-tab SettingsApp, expands in-plugin drawers, and switches sub-tabs cleanly', async () => {
     const wv = setupMockWebView();
     const origHealth = {
-      main: { spec: 'Alt+Space', active: 'Alt+Space', ok: true, disabled: false, reason: '' },
-      clipboard: { spec: 'Alt+C', active: '', ok: false, disabled: false, reason: '已被系统或其他软件占用（Alt+C）' },
+      main: { spec: 'Alt+Space', active: '', ok: false, disabled: false, reason: '已被系统或其他软件占用（Alt+Space）' },
+      clipboard: { spec: '', active: '', ok: true, disabled: true, reason: '' },
       translate: { spec: '', active: '', ok: true, disabled: true, reason: '' },
-      capture: { spec: 'Alt+1', active: '', ok: false, disabled: false, reason: '已被系统或其他软件占用（Alt+1）' },
-      pin: { spec: 'F3', active: 'F3', ok: true, disabled: false, reason: '' },
+      capture: { spec: '', active: '', ok: true, disabled: true, reason: '' },
+      pin: { spec: '', active: '', ok: true, disabled: true, reason: '' },
     };
     window.__TOMOYO_SETTINGS_INIT__ = {
       version: '3.0.0',
@@ -75,7 +75,15 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
         web_searches: [{ keyword: 'g', name: 'Google', url: 'https://www.google.com/search?q={q}' }],
       },
       plugins: [{
-        id: 'dev.tomoyo.ocr', name: 'OCR', runtime: 'STDIO', keywords: ['ocr'], max_memory_mb: 128,
+        id: 'dev.tomoyo.clipboard', name: '剪贴板管理中心', version: '3.0.0', runtime: 'STDIO', keywords: ['cb', 'clip'], max_memory_mb: 96,
+        declared_permissions: ['clipboard'], granted_permissions: ['clipboard'],
+        has_ui: true, tray_actions_count: 1, file_actions_count: 0,
+        declared_hotkeys: [{ id: 'open_cb', label: '剪贴板历史快捷搜索', default_hotkey: 'Alt+V', trigger_query: 'cb ' }],
+        settings_schema: [
+          { key: 'capture_enabled', label: '后台自动采集剪贴板', section: '采集与持久化', type: 'bool', default: true },
+        ],
+      }, {
+        id: 'dev.tomoyo.ocr', name: 'OCR', version: '3.0.0', runtime: 'STDIO', keywords: ['ocr'], max_memory_mb: 128,
         declared_permissions: ['selection_read'], granted_permissions: ['selection_read'],
         has_ui: true, tray_actions_count: 1, file_actions_count: 1,
         declared_hotkeys: [{ id: 'quick_ocr', label: '快速识别截图', default_hotkey: '', trigger_query: 'ocr ' }],
@@ -113,13 +121,13 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
     // Hotkey conflict bar + Hotkey Doctor rescue flow
     const conflictBtn = document.querySelector<HTMLButtonElement>('button#toast.conflict-bar-btn');
     expect(conflictBtn).not.toBeNull();
-    expect(conflictBtn?.textContent).toContain('Alt+C');
+    expect(conflictBtn?.textContent).toContain('Alt+Space');
     expect(document.querySelector('button[data-tab="hotkeys"] .nav-badge')?.textContent).toBe('1');
     conflictBtn?.click();
     flushSync();
     expect(document.querySelector('button[data-tab="hotkeys"]')?.classList.contains('is-active')).toBe(true);
     expect(document.body.textContent).toContain('高优先级强行接管冲突热键');
-    document.querySelector<HTMLButtonElement>('button.btn-rescue-clipboard')?.click();
+    document.querySelector<HTMLButtonElement>('button.btn-rescue-main')?.click();
     flushSync();
     expect(wv.posted.some((m) => m.cmd === 'save_settings' && (m.config as { override_conflict_hotkeys?: boolean })?.override_conflict_hotkeys === true)).toBe(true);
 
@@ -127,11 +135,7 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
     wv.emit({
       event: 'hotkey_health',
       health: {
-        main: { spec: 'Alt+Space', active: 'Alt+Space', ok: true, disabled: false, overridden: false, reason: '' },
-        clipboard: { spec: 'Alt+C', active: 'Alt+C', ok: true, disabled: false, overridden: true, reason: '已高优先级接管生效' },
-        translate: { spec: 'Alt+T', active: 'Alt+T', ok: true, disabled: false, overridden: false, reason: '' },
-        capture: { spec: 'Alt+1', active: 'Alt+1', ok: true, disabled: false, overridden: false, reason: '' },
-        pin: { spec: 'F3', active: 'F3', ok: true, disabled: false, overridden: false, reason: '' },
+        main: { spec: 'Alt+Space', active: 'Alt+Space', ok: true, disabled: false, overridden: true, reason: '已高优先级接管生效' },
       },
     });
     flushSync();
@@ -146,19 +150,19 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
       expect(btn.classList.contains('is-active')).toBe(true);
     }
 
-    // Plugin Center consolidates Clipboard / Translate / Capture / OCR / Notes inside module drawers!
+    // Unified Plugin Center renders all installed Protocol v3 plugins uniformly (zero hardcoded OFFICIAL_PLUGINS!)
     document.querySelector<HTMLButtonElement>('button[data-tab="plugins"]')?.click();
     flushSync();
-    expect(document.body.textContent).toContain('官方功能插件');
+    expect(document.body.textContent).toContain('已安装插件（2）');
 
     document.querySelector<HTMLButtonElement>('button[data-config-plugin="dev.tomoyo.clipboard"]')?.click();
     flushSync();
-    expect(document.body.textContent).toContain('已被系统或其他软件占用（Alt+C）');
+    expect(document.querySelector('[data-plugin-drawer="dev.tomoyo.clipboard"]')).not.toBeNull();
+    expect(document.body.textContent).toContain('剪贴板历史快捷搜索');
 
     const cbSwitch = document.querySelector<HTMLButtonElement>('button[role="switch"][aria-label="剪贴板管理中心"]');
     cbSwitch?.click();
     flushSync();
-    expect(document.querySelector('button[data-tab="hotkeys"] .nav-badge')).toBeNull();
 
     document.querySelector<HTMLButtonElement>('button[data-config-plugin="dev.tomoyo.ocr"]')?.click();
     flushSync();

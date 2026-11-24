@@ -1,6 +1,5 @@
 <script lang="ts">
   import { Crosshair, FolderOpen, RefreshCw } from '@lucide/svelte';
-  import { isPluginEnabled, PLUGIN_CLIPBOARD } from '../../lib/defaults';
   import { postHost } from '../../lib/ipc';
   import { tr, type Lang } from '../../lib/i18n';
   import type {
@@ -63,8 +62,7 @@
 
   let slots = $derived([
     { id: 'main' as const, label: isEn ? 'Main Launcher' : '主启动器唤起', spec: cfg.hotkey, st: health.main, on: true, presets: slotPresets.main },
-    { id: 'clipboard' as const, label: isEn ? 'Clipboard Center' : '剪贴板管理中心', spec: cfg.clipboard.hotkey, st: health.clipboard, on: isPluginEnabled(cfg, PLUGIN_CLIPBOARD), presets: slotPresets.clipboard },
-  ].filter((s) => s.on));
+  ]);
 
   let filteredMatrix = $derived.by(() => {
     const list = audit?.items || [];

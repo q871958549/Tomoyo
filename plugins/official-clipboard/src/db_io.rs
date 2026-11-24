@@ -1,7 +1,7 @@
-//! SQLite schema bootstrap, row decoding, and bounded JSON backup/restore helpers for ClipboardStore.
+//! SQLite schema bootstrap, row decoding, and bounded JSON backup/restore helpers.
 
-use super::filter::{classify_text_subtype, matches_clip_tokens, ClipboardSubtype, ParsedClipQuery};
-use super::store::{ClipboardEntry, ClipboardPayload, MAX_DISK_IMAGES, MAX_ITEM_BYTES, MAX_RAM_ITEMS};
+use crate::filter::{classify_text_subtype, matches_clip_tokens, ClipboardSubtype, ParsedClipQuery};
+use crate::store::{ClipboardEntry, ClipboardPayload, MAX_DISK_IMAGES, MAX_ITEM_BYTES, MAX_RAM_ITEMS};
 use chrono::Local;
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
@@ -10,7 +10,7 @@ use std::path::Path;
 use std::time::Duration;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(super) struct BackupRecord {
+pub(crate) struct BackupRecord {
     pub kind: String,
     pub text: String,
     pub captured_at: i64,
@@ -23,7 +23,7 @@ pub(super) struct BackupRecord {
     pub source_app: String,
 }
 
-pub(super) type RawDbRow = (
+pub(crate) type RawDbRow = (
     String,
     i64,
     bool,
@@ -38,7 +38,7 @@ pub(super) type RawDbRow = (
     Option<String>,
 );
 
-pub(super) fn parse_db_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RawDbRow> {
+pub(crate) fn parse_db_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RawDbRow> {
     Ok((
         row.get::<_, String>(0)?,
         row.get::<_, i64>(1)?,
@@ -55,7 +55,7 @@ pub(super) fn parse_db_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RawDbRow
     ))
 }
 
-pub(super) fn open_clipboard_db(
+pub(crate) fn open_clipboard_db(
     path: &Path,
     initial: &mut VecDeque<ClipboardEntry>,
 ) -> Option<Connection> {
@@ -106,7 +106,7 @@ pub(super) fn open_clipboard_db(
     Some(conn)
 }
 
-pub(super) fn load_recent_rows(
+pub(crate) fn load_recent_rows(
     conn: &Connection,
     limit: usize,
     out: &mut VecDeque<ClipboardEntry>,
@@ -122,7 +122,7 @@ pub(super) fn load_recent_rows(
         }
 }
 
-pub(super) fn row_to_entry(r: RawDbRow) -> Option<ClipboardEntry> {
+pub(crate) fn row_to_entry(r: RawDbRow) -> Option<ClipboardEntry> {
     let (key, ts, pinned, kind, img_path, img_w, img_h, raw_sub, tag, note, source_app, file_paths) = r;
     if kind == "image" {
         let p = img_path?;
@@ -182,7 +182,7 @@ pub(super) fn row_to_entry(r: RawDbRow) -> Option<ClipboardEntry> {
     })
 }
 
-pub(super) fn import_records_locked(conn: &Connection, raw: &str) -> Result<usize, String> {
+pub(crate) fn import_records_locked(conn: &Connection, raw: &str) -> Result<usize, String> {
     if raw.len() > 4 * 1024 * 1024 {
         return Err("导入文件超过 4 MB 上限".into());
     }
@@ -217,7 +217,7 @@ pub(super) fn import_records_locked(conn: &Connection, raw: &str) -> Result<usiz
     Ok(imported)
 }
 
-pub(super) fn prune_sqlite_locked(conn: &Connection, max_persisted: usize) {
+pub(crate) fn prune_sqlite_locked(conn: &Connection, max_persisted: usize) {
     if let Ok(mut stmt) = conn.prepare(
         "SELECT id, image_path FROM clipboard_history
          WHERE kind = 'image' AND pinned = 0 AND id NOT IN (
@@ -243,7 +243,7 @@ pub(super) fn prune_sqlite_locked(conn: &Connection, max_persisted: usize) {
     );
 }
 
-pub(super) fn query_sqlite_filtered(
+pub(crate) fn query_sqlite_filtered(
     conn: &Connection,
     q: &ParsedClipQuery,
     cap: usize,
@@ -287,7 +287,7 @@ pub(super) fn query_sqlite_filtered(
     Some(out)
 }
 
-pub(super) fn entry_matches_query(e: &ClipboardEntry, q: &ParsedClipQuery) -> bool {
+pub(crate) fn entry_matches_query(e: &ClipboardEntry, q: &ParsedClipQuery) -> bool {
     if q.pinned_only && !e.pinned {
         return false;
     }
@@ -325,11 +325,11 @@ pub fn sanitize_note(s: &str) -> String {
     s.trim().chars().filter(|c| !c.is_control()).take(160).collect()
 }
 
-pub(super) fn sanitize_source(s: &str) -> String {
+pub(crate) fn sanitize_source(s: &str) -> String {
     s.trim().chars().filter(|c| !c.is_control()).take(48).collect()
 }
 
-pub(super) fn make_files_preview(paths: &[String]) -> String {
+pub(crate) fn make_files_preview(paths: &[String]) -> String {
     let first = paths
         .first()
         .and_then(|p| Path::new(p).file_name())
@@ -342,7 +342,7 @@ pub(super) fn make_files_preview(paths: &[String]) -> String {
     }
 }
 
-pub(super) fn truncate_utf8(s: &str, max_bytes: usize) -> String {
+pub(crate) fn truncate_utf8(s: &str, max_bytes: usize) -> String {
     if s.len() <= max_bytes {
         return s.to_string();
     }
@@ -353,7 +353,7 @@ pub(super) fn truncate_utf8(s: &str, max_bytes: usize) -> String {
     s[..end].to_string()
 }
 
-pub(super) fn make_preview_line(s: &str) -> String {
+pub(crate) fn make_preview_line(s: &str) -> String {
     let single: String = s
         .chars()
         .map(|c| if matches!(c, '\r' | '\n' | '\t') { ' ' } else { c })

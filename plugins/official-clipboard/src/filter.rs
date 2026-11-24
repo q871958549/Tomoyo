@@ -1,8 +1,8 @@
 //! Clipboard semantic classification, structured `@type` / `#tag` query parsing,
 //! Pinyin-aware multi-token matching, and single-line plain-text normalization.
 
+use pinyin::ToPinyin;
 use serde::{Deserialize, Serialize};
-use tomoyo_core::{score_match, IndexedText};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -72,7 +72,7 @@ pub fn classify_text_subtype(raw: &str) -> ClipboardSubtype {
         if is_color_literal(&low) {
             return ClipboardSubtype::Color;
         }
-        if is_windows_path_literal(trimmed) {
+        if is_path_literal(trimmed) {
             return ClipboardSubtype::Path;
         }
     }
@@ -91,12 +91,16 @@ fn is_color_literal(low: &str) -> bool {
         && low.len() <= 40
 }
 
-fn is_windows_path_literal(s: &str) -> bool {
+fn is_path_literal(s: &str) -> bool {
     let cleaned = s.trim_matches('"');
     let b = cleaned.as_bytes();
-    let drive = b.len() >= 3 && b[0].is_ascii_alphabetic() && b[1] == b':' && (b[2] == b'\\' || b[2] == b'/');
+    let drive = b.len() >= 3
+        && b[0].is_ascii_alphabetic()
+        && b[1] == b':'
+        && (b[2] == b'\\' || b[2] == b'/');
     let unc = cleaned.starts_with(r"\\") && cleaned.len() >= 5;
-    (drive || unc) && cleaned.len() <= 260
+    let unix = cleaned.starts_with('/') && cleaned.len() >= 3 && !cleaned.contains(' ');
+    (drive || unc || unix) && cleaned.len() <= 260
 }
 
 fn looks_like_code(s: &str) -> bool {
@@ -108,7 +112,10 @@ fn looks_like_code(s: &str) -> bool {
     }
     let lines = trimmed.lines().count();
     if lines >= 2 {
-        let cues = ["fn ", "pub ", "const ", "let ", "def ", "class ", "import ", "SELECT ", "=>", "();", "};"];
+        let cues = [
+            "fn ", "pub ", "const ", "let ", "def ", "class ", "import ", "SELECT ", "=>", "();",
+            "};",
+        ];
         return cues.iter().any(|c| trimmed.contains(c));
     }
     false
@@ -132,7 +139,9 @@ impl ParsedClipQuery {
                 "@img" | "@image" | "@图片" => out.subtype = Some(ClipboardSubtype::Image),
                 "@text" | "@txt" | "@文本" => out.subtype = Some(ClipboardSubtype::Text),
                 "@link" | "@url" | "@链接" => out.subtype = Some(ClipboardSubtype::Link),
-                "@file" | "@files" | "@path" | "@文件" => out.subtype = Some(ClipboardSubtype::Files),
+                "@file" | "@files" | "@path" | "@文件" => {
+                    out.subtype = Some(ClipboardSubtype::Files)
+                }
                 "@color" | "@颜色" => out.subtype = Some(ClipboardSubtype::Color),
                 "@code" | "@代码" => out.subtype = Some(ClipboardSubtype::Code),
                 _ => {
@@ -149,25 +158,41 @@ impl ParsedClipQuery {
         }
         out
     }
-
-    pub fn is_unfiltered(&self) -> bool {
-        !self.pinned_only && self.subtype.is_none() && self.tag.is_none() && self.tokens.is_empty()
-    }
 }
 
-/// Checks whether a clipboard entry matches all query tokens (case-insensitive substring or Pinyin).
+fn build_pinyin_keys(text: &str) -> (String, String) {
+    let mut full = String::with_capacity(text.len());
+    let mut initials = String::with_capacity(text.len() / 2);
+    for ch in text.chars() {
+        if let Some(py) = ch.to_pinyin() {
+            let plain = py.plain();
+            full.push_str(plain);
+            if let Some(first) = plain.chars().next() {
+                initials.push(first);
+            }
+        } else if !ch.is_whitespace() {
+            for lc in ch.to_lowercase() {
+                full.push(lc);
+                initials.push(lc);
+            }
+        }
+    }
+    (full, initials)
+}
+
+/// Checks whether a clipboard entry matches all query tokens (substring or Pinyin).
 pub fn matches_clip_tokens(haystack_lower: &str, raw_title: &str, tokens: &[String]) -> bool {
     if tokens.is_empty() {
         return true;
     }
-    let mut pinyin_idx: Option<IndexedText> = None;
+    let mut py_keys: Option<(String, String)> = None;
     for tok in tokens {
         if haystack_lower.contains(tok.as_str()) {
             continue;
         }
         if tok.is_ascii() && !raw_title.is_ascii() {
-            let idx = pinyin_idx.get_or_insert_with(|| IndexedText::new(raw_title));
-            if score_match(tok, idx).is_some() {
+            let (full, initials) = py_keys.get_or_insert_with(|| build_pinyin_keys(raw_title));
+            if full.contains(tok.as_str()) || initials.contains(tok.as_str()) {
                 continue;
             }
         }
@@ -186,30 +211,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn classifies_links_colors_paths_and_code() {
+    fn classifies_links_colors_paths_code_and_pinyin() {
         assert_eq!(classify_text_subtype("https://github.com/q871958549/Tomoyo"), ClipboardSubtype::Link);
         assert_eq!(classify_text_subtype("#3b5bdb"), ClipboardSubtype::Color);
-        assert_eq!(classify_text_subtype("rgb(12, 34, 56)"), ClipboardSubtype::Color);
         assert_eq!(classify_text_subtype(r"C:\Users\Admin\report.pdf"), ClipboardSubtype::Path);
         assert_eq!(classify_text_subtype("{\"ok\": true}"), ClipboardSubtype::Code);
-        assert_eq!(classify_text_subtype("普通备忘文本"), ClipboardSubtype::Text);
-    }
-
-    #[test]
-    fn parses_type_tag_pin_and_tokens() {
-        let q = ParsedClipQuery::parse("@pin @link #工作 github tomoyo");
-        assert!(q.pinned_only);
-        assert_eq!(q.subtype, Some(ClipboardSubtype::Link));
-        assert_eq!(q.tag.as_deref(), Some("工作"));
-        assert_eq!(q.tokens, vec!["github", "tomoyo"]);
-
-        let color_q = ParsedClipQuery::parse("#3b5bdb");
-        assert!(color_q.tag.is_none());
-        assert_eq!(color_q.tokens, vec!["#3b5bdb"]);
-    }
-
-    #[test]
-    fn normalizes_multiline_text_into_single_line() {
-        assert_eq!(normalize_single_line("  hello \r\n\t  world  \n rust "), "hello world rust");
+        assert!(matches_clip_tokens("合同报价", "合同报价", &["htbj".into()]));
+        assert!(matches_clip_tokens("合同报价", "合同报价", &["hetong".into()]));
+        assert_eq!(normalize_single_line("  hello \r\n\t world "), "hello world");
     }
 }

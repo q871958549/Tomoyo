@@ -31,7 +31,6 @@ use std::time::Instant;
 use tomoyo_core::{Lang, QueryRouter, ResolvedPreview, TomoyoConfig, TypographyConfig, UpdateManager};
 use tomoyo_plugin_host::PluginHost;
 use tomoyo_protocol::{AttachedContext, ClipboardSnapshot, ResultItem, SearchFilter};
-use tomoyo_providers::ClipboardProvider;
 use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 use windows::Win32::Graphics::Gdi::{DeleteObject, InvalidateRect, HBRUSH, HFONT};
@@ -42,7 +41,6 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 
 pub(super) const HOTKEY_ID: i32 = 1;
-pub(super) const HOTKEY_CLIPBOARD_ID: i32 = 2;
 pub(super) const EDIT_CTRL_ID: usize = 101;
 pub(super) const EDIT_SUBCLASS_ID: usize = 1;
 pub(super) const WM_APP_RESULTS_READY: u32 = WM_APP + 1;
@@ -132,7 +130,8 @@ pub struct AppShell {
     pub(super) theme_name: String,
     pub(super) router: Arc<QueryRouter>,
     pub(super) plugin_host: Arc<PluginHost>,
-    pub(super) clipboard: Arc<ClipboardProvider>,
+    pub(super) last_clip_snapshot: Option<ClipboardSnapshot>,
+    pub(super) clip_listener_active: bool,
     pub(super) updater: Arc<UpdateManager>,
     pub(super) query_tx: Sender<QueryJob>,
     pub(super) result_rx: Receiver<QueryOutcome>,

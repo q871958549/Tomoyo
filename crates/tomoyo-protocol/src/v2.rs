@@ -5,6 +5,7 @@
 use crate::v3::SettingVisibleIf;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::BTreeMap;
 
 /// Declarative global hotkey registered & governed centrally by Tomoyo's microkernel.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -41,6 +42,19 @@ pub struct PluginEventPayload {
     pub event: PluginEventKind,
     #[serde(default)]
     pub data: Value,
+    /// Protocol v3: merged plugin settings injected by `PluginHost`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub plugin_settings: BTreeMap<String, Value>,
+}
+
+impl PluginEventPayload {
+    pub fn new(event: PluginEventKind, data: Value) -> Self {
+        Self {
+            event,
+            data,
+            plugin_settings: BTreeMap::new(),
+        }
+    }
 }
 
 /// Select dropdown option inside a declarative `PluginSettingField`.

@@ -27,8 +27,8 @@ use tomoyo_core::{
     trim_working_set, Lang, QueryRouter, ResolvedPreview, TomoyoConfig, TypographyConfig, UpdateManager,
 };
 use tomoyo_plugin_host::{ActivePluginTrayAction, PluginHost};
-use tomoyo_protocol::{AttachedContext, ResultItem, SearchFilter};
-use tomoyo_providers::{everything_linux::is_linux_file_search_available, ClipboardProvider};
+use tomoyo_protocol::{AttachedContext, ClipboardSnapshot, PluginEventKind, ResultItem, SearchFilter};
+use tomoyo_providers::everything_linux::is_linux_file_search_available;
 
 thread_local! {
     static CURRENT_CORE: RefCell<Option<Weak<RefCell<AppCore>>>> = const { RefCell::new(None) };
@@ -49,7 +49,8 @@ pub struct AppCore {
     pub(super) config: Arc<RwLock<TomoyoConfig>>,
     pub(super) router: Arc<QueryRouter>,
     pub(super) plugin_host: Arc<PluginHost>,
-    pub(super) clipboard: Arc<ClipboardProvider>,
+    pub(super) last_clip_snapshot: Option<ClipboardSnapshot>,
+    pub(super) wl_clip_active: bool,
     pub(super) updater: Arc<UpdateManager>,
     pub(super) renderer: LinuxRenderer,
     pub(super) preview_loader: AsyncPreviewLoader,
@@ -108,7 +109,6 @@ impl AppCore {
         config: Arc<RwLock<TomoyoConfig>>,
         router: Arc<QueryRouter>,
         plugin_host: Arc<PluginHost>,
-        clipboard: Arc<ClipboardProvider>,
         updater: Arc<UpdateManager>,
         font_regular: &'static str,
         install_tray: bool,
@@ -124,7 +124,8 @@ impl AppCore {
             config: Arc::clone(&config),
             router: Arc::clone(&router),
             plugin_host: Arc::clone(&plugin_host),
-            clipboard,
+            last_clip_snapshot: None,
+            wl_clip_active: false,
             updater,
             renderer: LinuxRenderer::new(font_regular),
             preview_loader: AsyncPreviewLoader::new(),
@@ -206,7 +207,6 @@ impl AppCore {
                 c.hotkeys.set_handler(|act| {
                     with_current_core(|st| match act {
                         HotkeyAction::ToggleMain => st.toggle_launcher(),
-                        HotkeyAction::Clipboard => st.toggle_clipboard_launcher(),
                         HotkeyAction::Plugin(hk) => st.handle_plugin_hotkey(hk),
                         HotkeyAction::Flow(id) => st.execute_workflow(&id, ""),
                     });
@@ -231,10 +231,22 @@ impl AppCore {
             start_ipc_listeners(alive, |line| {
                 with_current_core(|st| st.handle_ipc_line(&line));
             });
-            unsafe { tomoyo_wl_clip_start(shell_events::on_wl_clip_cb); }
+            core.borrow_mut().sync_clipboard_watcher();
         }
 
         Ok(core)
+    }
+
+    pub(super) fn sync_clipboard_watcher(&mut self) {
+        let need = self.plugin_host.has_event_subscriber(PluginEventKind::ClipboardText)
+            || self.plugin_host.has_event_subscriber(PluginEventKind::ClipboardImage);
+        if need && !self.wl_clip_active {
+            unsafe { tomoyo_wl_clip_start(shell_events::on_wl_clip_cb); }
+            self.wl_clip_active = true;
+        } else if !need && self.wl_clip_active {
+            unsafe { tomoyo_wl_clip_stop(); }
+            self.wl_clip_active = false;
+        }
     }
 
     pub(super) fn apply_entry_theme_and_placeholder(&self) {
@@ -406,9 +418,11 @@ impl AppCore {
         self.alive.store(false, Ordering::Release);
         self.hotkeys.unregister_all();
         self.plugin_host.shutdown_all();
-        self.clipboard.shutdown_checkpoint();
         self.preview_loader.cancel_all();
-        unsafe { tomoyo_wl_clip_stop(); }
+        if self.wl_clip_active {
+            unsafe { tomoyo_wl_clip_stop(); }
+            self.wl_clip_active = false;
+        }
         if !self.ui.is_null() {
             unsafe { tomoyo_linux_ui_destroy(self.ui); }
             self.ui = std::ptr::null_mut();

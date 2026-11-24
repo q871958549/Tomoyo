@@ -29,7 +29,7 @@ $version = if ($cargoToml -match '(?ms)\[workspace\.package\][^\[]*?^\s*version\
 Write-Host "=== Installing Tomoyo v$version ($Profile profile) -> $InstallDir ===" -ForegroundColor Cyan
 
 # Stop any running instances before replacing binaries
-Stop-Process -Name "tomoyo","tomoyo-webview-host","tomoyo-capture","tomoyo-plugin-ocr","tomoyo-plugin-notes","tomoyo-plugin-md-editor","tomoyo-plugin-translate","tomoyo-plugin-capture","tomoyo-plugin-hello","tomoyo-cli" -Force -ErrorAction SilentlyContinue
+Stop-Process -Name "tomoyo","tomoyo-webview-host","tomoyo-capture","tomoyo-plugin-ocr","tomoyo-plugin-notes","tomoyo-plugin-md-editor","tomoyo-plugin-translate","tomoyo-plugin-capture","tomoyo-plugin-clipboard","tomoyo-plugin-hello","tomoyo-cli" -Force -ErrorAction SilentlyContinue
 Start-Sleep -Milliseconds 300
 
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
@@ -41,7 +41,7 @@ New-Item -ItemType Directory -Force -Path (Join-Path $InstallDir "registry") | O
 $isCore = $CoreOnly -or ($Profile -eq "Core")
 $bins = @("tomoyo.exe", "tomoyo-webview-host.exe", "tomoyo-cli.exe")
 if (-not $isCore) {
-    $bins += @("tomoyo-capture.exe", "tomoyo-plugin-ocr.exe", "tomoyo-plugin-notes.exe", "tomoyo-plugin-md-editor.exe", "tomoyo-plugin-translate.exe", "tomoyo-plugin-capture.exe")
+    $bins += @("tomoyo-capture.exe", "tomoyo-plugin-ocr.exe", "tomoyo-plugin-notes.exe", "tomoyo-plugin-md-editor.exe", "tomoyo-plugin-translate.exe", "tomoyo-plugin-capture.exe", "tomoyo-plugin-clipboard.exe")
 }
 if ($WithExamples) {
     $bins += @("tomoyo-plugin-hello.exe")
@@ -64,7 +64,7 @@ Copy-Item (Join-Path $PSScriptRoot "uninstall-local.ps1") (Join-Path $InstallDir
 # Copy optional bundled plugins (opt-out with -Profile Core / -CoreOnly; developer examples opt-in via -WithExamples)
 $pluginsToCopy = @()
 if (-not $isCore) {
-    $pluginsToCopy += @("builtin-ocr", "official-notes", "official-md-editor", "official-translate", "official-capture")
+    $pluginsToCopy += @("builtin-ocr", "official-notes", "official-md-editor", "official-translate", "official-capture", "official-clipboard")
 }
 if ($WithExamples) {
     $pluginsToCopy += @("example-hello", "example-python", "example-wasm", "example-webview-json")

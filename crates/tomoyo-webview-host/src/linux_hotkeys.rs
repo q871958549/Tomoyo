@@ -3,7 +3,7 @@
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::ffi::{c_char, c_int, CStr};
-use tomoyo_core::{parse_hotkey, TomoyoConfig, PLUGIN_CLIPBOARD};
+use tomoyo_core::{parse_hotkey, TomoyoConfig};
 
 unsafe extern "C" {
     fn tomoyo_kga_query_owner(
@@ -127,7 +127,6 @@ pub fn audit_system_hotkeys() -> HotkeyAuditReport {
     let cfg = TomoyoConfig::load_or_create();
     let tomoyo_slots: Vec<(&str, String)> = vec![
         ("main", cfg.hotkey.trim().to_string()),
-        ("clipboard", if cfg.is_plugin_enabled(PLUGIN_CLIPBOARD) { cfg.clipboard.hotkey.trim().to_string() } else { String::new() }),
     ];
 
     let mut ordered = Vec::new();

@@ -1,11 +1,11 @@
-//! Strictly bounded SQLite WAL + RAM ring-buffer storage for CopyQ-grade Clipboard History.
+//! Strictly bounded SQLite WAL + RAM ring-buffer storage for Clipboard Center.
 
-use super::db_io::{
+use crate::db_io::{
     entry_matches_query, import_records_locked, load_recent_rows, make_files_preview,
     make_preview_line, open_clipboard_db, prune_sqlite_locked, query_sqlite_filtered,
     sanitize_note, sanitize_source, sanitize_tag, truncate_utf8, BackupRecord,
 };
-use super::filter::{classify_text_subtype, ClipboardSubtype, ParsedClipQuery};
+use crate::filter::{classify_text_subtype, ClipboardSubtype, ParsedClipQuery};
 use chrono::Local;
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
@@ -74,10 +74,6 @@ impl ClipboardStore {
         }
     }
 
-    pub fn push_text(&self, raw: String) {
-        self.push_text_with_source(raw, "");
-    }
-
     pub fn push_text_with_source(&self, raw: String, source_app: &str) {
         if raw.trim().is_empty() {
             return;
@@ -105,22 +101,19 @@ impl ClipboardStore {
         });
 
         if let Some(db_lock) = &self.db
-            && let Ok(conn) = db_lock.lock() {
-                let _ = conn.execute(
-                    "INSERT INTO clipboard_history (text, captured_at, pinned, kind, subtype, source_app)
-                     VALUES (?1, ?2, 0, 'text', ?3, ?4)
-                     ON CONFLICT(text) DO UPDATE SET
-                       captured_at = excluded.captured_at,
-                       subtype = excluded.subtype,
-                       source_app = CASE WHEN excluded.source_app != '' THEN excluded.source_app ELSE clipboard_history.source_app END",
-                    params![truncated, now, subtype.as_str(), src],
-                );
-                prune_sqlite_locked(&conn, self.max_persisted);
-            }
-    }
-
-    pub fn push_image(&self, path: String, width: u32, height: u32, digest_key: String) {
-        self.push_image_with_source(path, width, height, digest_key, "");
+            && let Ok(conn) = db_lock.lock()
+        {
+            let _ = conn.execute(
+                "INSERT INTO clipboard_history (text, captured_at, pinned, kind, subtype, source_app)
+                 VALUES (?1, ?2, 0, 'text', ?3, ?4)
+                 ON CONFLICT(text) DO UPDATE SET
+                   captured_at = excluded.captured_at,
+                   subtype = excluded.subtype,
+                   source_app = CASE WHEN excluded.source_app != '' THEN excluded.source_app ELSE clipboard_history.source_app END",
+                params![truncated, now, subtype.as_str(), src],
+            );
+            prune_sqlite_locked(&conn, self.max_persisted);
+        }
     }
 
     pub fn push_image_with_source(
@@ -148,18 +141,19 @@ impl ClipboardStore {
         });
 
         if let Some(db_lock) = &self.db
-            && let Ok(conn) = db_lock.lock() {
-                let _ = conn.execute(
-                    "INSERT INTO clipboard_history (text, captured_at, pinned, kind, subtype, image_path, img_w, img_h, source_app)
-                     VALUES (?1, ?2, 0, 'image', 'image', ?3, ?4, ?5, ?6)
-                     ON CONFLICT(text) DO UPDATE SET
-                       captured_at = excluded.captured_at,
-                       image_path = excluded.image_path,
-                       source_app = CASE WHEN excluded.source_app != '' THEN excluded.source_app ELSE clipboard_history.source_app END",
-                    params![key, now, path, width as i64, height as i64, src],
-                );
-                prune_sqlite_locked(&conn, self.max_persisted);
-            }
+            && let Ok(conn) = db_lock.lock()
+        {
+            let _ = conn.execute(
+                "INSERT INTO clipboard_history (text, captured_at, pinned, kind, subtype, image_path, img_w, img_h, source_app)
+                 VALUES (?1, ?2, 0, 'image', 'image', ?3, ?4, ?5, ?6)
+                 ON CONFLICT(text) DO UPDATE SET
+                   captured_at = excluded.captured_at,
+                   image_path = excluded.image_path,
+                   source_app = CASE WHEN excluded.source_app != '' THEN excluded.source_app ELSE clipboard_history.source_app END",
+                params![key, now, path, width as i64, height as i64, src],
+            );
+            prune_sqlite_locked(&conn, self.max_persisted);
+        }
     }
 
     pub fn push_files_with_source(&self, mut paths: Vec<String>, source_app: &str) {
@@ -186,38 +180,41 @@ impl ClipboardStore {
         });
 
         if let Some(db_lock) = &self.db
-            && let Ok(conn) = db_lock.lock() {
-                let _ = conn.execute(
-                    "INSERT INTO clipboard_history (text, captured_at, pinned, kind, subtype, file_paths, source_app)
-                     VALUES (?1, ?2, 0, 'files', 'files', ?3, ?4)
-                     ON CONFLICT(text) DO UPDATE SET captured_at = excluded.captured_at, file_paths = excluded.file_paths",
-                    params![key, now, paths_json, src],
-                );
-                prune_sqlite_locked(&conn, self.max_persisted);
-            }
+            && let Ok(conn) = db_lock.lock()
+        {
+            let _ = conn.execute(
+                "INSERT INTO clipboard_history (text, captured_at, pinned, kind, subtype, file_paths, source_app)
+                 VALUES (?1, ?2, 0, 'files', 'files', ?3, ?4)
+                 ON CONFLICT(text) DO UPDATE SET captured_at = excluded.captured_at, file_paths = excluded.file_paths",
+                params![key, now, paths_json, src],
+            );
+            prune_sqlite_locked(&conn, self.max_persisted);
+        }
     }
 
     pub fn toggle_pin(&self, id_key: &str) -> bool {
         let mut new_pinned = false;
         if let Ok(mut guard) = self.history.write()
-            && let Some(item) = guard.iter_mut().find(|e| e.key == id_key) {
-                item.pinned = !item.pinned;
-                new_pinned = item.pinned;
-            }
+            && let Some(item) = guard.iter_mut().find(|e| e.key == id_key)
+        {
+            item.pinned = !item.pinned;
+            new_pinned = item.pinned;
+        }
         if let Some(db_lock) = &self.db
             && let Ok(conn) = db_lock.lock()
-                && let Ok(cur) = conn.query_row(
-                    "SELECT pinned FROM clipboard_history WHERE text = ?1",
-                    params![id_key],
-                    |r| r.get::<_, i64>(0),
-                ) {
-                    let target = if cur == 0 { 1i64 } else { 0i64 };
-                    new_pinned = target != 0;
-                    let _ = conn.execute(
-                        "UPDATE clipboard_history SET pinned = ?1 WHERE text = ?2",
-                        params![target, id_key],
-                    );
-                }
+            && let Ok(cur) = conn.query_row(
+                "SELECT pinned FROM clipboard_history WHERE text = ?1",
+                params![id_key],
+                |r| r.get::<_, i64>(0),
+            )
+        {
+            let target = if cur == 0 { 1i64 } else { 0i64 };
+            new_pinned = target != 0;
+            let _ = conn.execute(
+                "UPDATE clipboard_history SET pinned = ?1 WHERE text = ?2",
+                params![target, id_key],
+            );
+        }
         new_pinned
     }
 
@@ -225,25 +222,27 @@ impl ClipboardStore {
         let mut deleted = false;
         if let Ok(mut guard) = self.history.write()
             && let Some(pos) = guard.iter().position(|e| e.key == id_key)
-                && let Some(removed) = guard.remove(pos) {
-                    deleted = true;
-                    if let ClipboardPayload::Image { path, .. } = removed.payload {
-                        let _ = std::fs::remove_file(path);
-                    }
-                }
-        if let Some(db_lock) = &self.db
-            && let Ok(conn) = db_lock.lock() {
-                if let Ok(Some(img_path)) = conn.query_row(
-                    "SELECT image_path FROM clipboard_history WHERE text = ?1 AND kind = 'image'",
-                    params![id_key],
-                    |r| r.get::<_, Option<String>>(0),
-                ) {
-                    let _ = std::fs::remove_file(img_path);
-                }
-                if let Ok(n) = conn.execute("DELETE FROM clipboard_history WHERE text = ?1", params![id_key]) {
-                    deleted = deleted || n > 0;
-                }
+            && let Some(removed) = guard.remove(pos)
+        {
+            deleted = true;
+            if let ClipboardPayload::Image { path, .. } = removed.payload {
+                let _ = std::fs::remove_file(path);
             }
+        }
+        if let Some(db_lock) = &self.db
+            && let Ok(conn) = db_lock.lock()
+        {
+            if let Ok(Some(img_path)) = conn.query_row(
+                "SELECT image_path FROM clipboard_history WHERE text = ?1 AND kind = 'image'",
+                params![id_key],
+                |r| r.get::<_, Option<String>>(0),
+            ) {
+                let _ = std::fs::remove_file(img_path);
+            }
+            if let Ok(n) = conn.execute("DELETE FROM clipboard_history WHERE text = ?1", params![id_key]) {
+                deleted = deleted || n > 0;
+            }
+        }
         deleted
     }
 
@@ -255,12 +254,12 @@ impl ClipboardStore {
         let Ok(conn) = db_lock.lock() else { return 0 };
         if let Ok(mut stmt) = conn.prepare(
             "SELECT image_path FROM clipboard_history WHERE pinned = 0 AND kind = 'image' AND image_path IS NOT NULL",
-        )
-            && let Ok(rows) = stmt.query_map([], |r| r.get::<_, Option<String>>(0)) {
-                for path in rows.flatten().flatten() {
-                    let _ = std::fs::remove_file(path);
-                }
+        ) && let Ok(rows) = stmt.query_map([], |r| r.get::<_, Option<String>>(0))
+        {
+            for path in rows.flatten().flatten() {
+                let _ = std::fs::remove_file(path);
             }
+        }
         conn.execute("DELETE FROM clipboard_history WHERE pinned = 0", []).unwrap_or(0)
     }
 
@@ -287,7 +286,10 @@ impl ClipboardStore {
             let conn = db_lock.lock().map_err(|_| "数据库锁定失败".to_string())?;
             if next_key != id_key {
                 let sub = classify_text_subtype(&next_key);
-                let _ = conn.execute("DELETE FROM clipboard_history WHERE text = ?1 AND text != ?2", params![next_key, id_key]);
+                let _ = conn.execute(
+                    "DELETE FROM clipboard_history WHERE text = ?1 AND text != ?2",
+                    params![next_key, id_key],
+                );
                 conn.execute(
                     "UPDATE clipboard_history SET text = ?1, subtype = ?2, tag = ?3, note = ?4 WHERE text = ?5",
                     params![next_key, sub.as_str(), clean_tag, clean_note, id_key],
@@ -308,12 +310,13 @@ impl ClipboardStore {
     pub fn list_tags(&self) -> Vec<(String, usize)> {
         if let Some(db_lock) = &self.db
             && let Ok(conn) = db_lock.lock()
-                && let Ok(mut stmt) = conn.prepare(
-                    "SELECT tag, COUNT(*) FROM clipboard_history WHERE tag != '' GROUP BY tag ORDER BY COUNT(*) DESC, tag ASC LIMIT 32",
-                )
-                    && let Ok(rows) = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)? as usize))) {
-                        return rows.flatten().collect();
-                    }
+            && let Ok(mut stmt) = conn.prepare(
+                "SELECT tag, COUNT(*) FROM clipboard_history WHERE tag != '' GROUP BY tag ORDER BY COUNT(*) DESC, tag ASC LIMIT 32",
+            )
+            && let Ok(rows) = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)? as usize)))
+        {
+            return rows.flatten().collect();
+        }
         let mut map: HashMap<String, usize> = HashMap::new();
         if let Ok(g) = self.history.read() {
             for e in g.iter().filter(|e| !e.tag.is_empty()) {
@@ -371,9 +374,10 @@ impl ClipboardStore {
     pub fn item_count(&self) -> usize {
         if let Some(db_lock) = &self.db
             && let Ok(conn) = db_lock.lock()
-                && let Ok(n) = conn.query_row("SELECT COUNT(*) FROM clipboard_history", [], |r| r.get::<_, i64>(0)) {
-                    return n.max(0) as usize;
-                }
+            && let Ok(n) = conn.query_row("SELECT COUNT(*) FROM clipboard_history", [], |r| r.get::<_, i64>(0))
+        {
+            return n.max(0) as usize;
+        }
         self.history.read().map(|g| g.len()).unwrap_or(0)
     }
 
@@ -381,31 +385,15 @@ impl ClipboardStore {
         let cap = cap.clamp(1, 500);
         if let Some(db_lock) = &self.db
             && let Ok(conn) = db_lock.lock()
-                && let Some(db_items) = query_sqlite_filtered(&conn, q, cap) {
-                    return db_items;
-                }
+            && let Some(db_items) = query_sqlite_filtered(&conn, q, cap)
+        {
+            return db_items;
+        }
         let Ok(guard) = self.history.read() else { return Vec::new() };
         let mut v: Vec<ClipboardEntry> = guard.iter().filter(|e| entry_matches_query(e, q)).cloned().collect();
         v.sort_by(|a, b| b.pinned.cmp(&a.pinned).then_with(|| b.captured_at_unix.cmp(&a.captured_at_unix)));
         v.truncate(cap);
         v
-    }
-
-    pub fn trim_memory(&self) {
-        if let Ok(mut guard) = self.history.write() {
-            guard.shrink_to_fit();
-        }
-        if let Some(db_lock) = &self.db
-            && let Ok(conn) = db_lock.lock() {
-                let _ = conn.execute_batch("PRAGMA shrink_memory;");
-            }
-    }
-
-    pub fn shutdown_checkpoint(&self) {
-        if let Some(db_lock) = &self.db
-            && let Ok(conn) = db_lock.lock() {
-                let _ = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
-            }
     }
 
     fn insert_ram_entry(&self, mut entry: ClipboardEntry) {

@@ -12,7 +12,6 @@ mod backup;
 mod bridge;
 mod bridge_ops;
 mod bridge_os;
-mod clip_view;
 mod db;
 #[cfg(windows)]
 mod folder_picker;
@@ -148,7 +147,7 @@ fn parse_args() -> LaunchArgs {
     let settings_mode = args.iter().any(|a| a == "--settings");
     let entry = val("--entry").unwrap_or_default();
     let plugin_id = val("--plugin-id").unwrap_or_else(|| "dev.tomoyo.webview".into());
-    let cfg_theme = if settings_mode || clip_view::is_clip_manager_entry(&entry) {
+    let cfg_theme = if settings_mode {
         TomoyoConfig::load_or_create().theme
     } else if args.iter().any(|a| a == "--light") {
         "light".into()
@@ -252,12 +251,7 @@ pub fn build_settings_init_script_for(initial_route: &str) -> String {
         .collect();
     host.shutdown_all();
 
-    let mut official_icons = serde_json::Map::new();
-    if let Some(url) = tomoyo_core::resolve_bundled_module_icon(tomoyo_core::PLUGIN_CLIPBOARD)
-        .and_then(|ip| tomoyo_core::read_icon_data_url(&ip))
-    {
-        official_icons.insert(tomoyo_core::PLUGIN_CLIPBOARD.to_string(), serde_json::Value::String(url));
-    }
+    let official_icons = serde_json::Map::new();
 
     let plugins_dir = tomoyo_core::data_dir().join("plugins");
     let _ = std::fs::create_dir_all(&plugins_dir);
@@ -277,7 +271,7 @@ pub fn build_settings_init_script_for(initial_route: &str) -> String {
         "plugins_dir": plugins_dir.to_string_lossy(),
         "logs_dir": logs_dir().to_string_lossy(),
         "log_issues": { "warnings": log_warns, "errors": log_errs, "has_crash_report": log_crash },
-        "running_apps": clip_view::enumerate_running_app_exes(),
+        "running_apps": bridge_os::enumerate_running_app_exes(),
         "secrets_status": plugin_rpc::secrets_status_json(),
         "hotkey_health": tomoyo_core::load_hotkey_health(),
         "cached_update": cached_update,
@@ -329,14 +323,6 @@ fn main() {
         assert!(html.contains("save_settings"));
         assert!(!html.contains("type=\"number\""));
         assert!(!html.contains("<textarea"));
-        assert!(clip_view::assemble_clip_manager_html().contains("__TOMOYO_CLIP_INIT__"));
-        assert!(handle_host_message(
-            r#"{"cmd":"clip_list","query":""}"#,
-            &mut pdb,
-            None
-        )
-        .reply_json
-        .is_some());
         assert!(handle_host_message(
             r#"{"cmd":"read_logs","source":"tomoyo.log","errors_only":false}"#,
             &mut pdb,

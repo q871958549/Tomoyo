@@ -123,8 +123,16 @@ impl PluginHost {
                 && p.manifest.events.contains(&payload.event)
         });
         if !has_sub { return Vec::new(); }
-        let HostState { plugins, disabled_ids, perms, .. } = &mut *st;
-        let (res, spawned) = dispatch_plugin_event(plugins, disabled_ids, perms, target_plugin, payload, interactive);
+        let HostState { plugins, disabled_ids, perms, plugin_settings, .. } = &mut *st;
+        let (res, spawned) = dispatch_plugin_event(
+            plugins,
+            disabled_ids,
+            perms,
+            plugin_settings,
+            target_plugin,
+            payload,
+            interactive,
+        );
         if spawned { cvar.notify_one(); }
         res
     }

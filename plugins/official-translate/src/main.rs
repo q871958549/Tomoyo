@@ -363,10 +363,10 @@ mod tests {
     #[test]
     fn parses_prefix_and_handles_selection_hotkey_event() {
         assert_eq!(parse_translate_args("ja hello"), (Some("ja".into()), "hello".into()));
-        let resp = TranslatePlugin.on_event(&PluginEventPayload {
-            event: PluginEventKind::HotkeyTriggered,
-            data: json!({ "hotkey_id": "selection_translate", "selected_text": "resilient" }),
-        });
+        let resp = TranslatePlugin.on_event(&PluginEventPayload::new(
+            PluginEventKind::HotkeyTriggered,
+            json!({ "hotkey_id": "selection_translate", "selected_text": "resilient" }),
+        ));
         assert!(resp.hide_window);
         assert!(resp.open_webview.is_some());
     }

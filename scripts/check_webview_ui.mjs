@@ -10,7 +10,7 @@ import { pathToFileURL } from 'node:url';
 const BUNDLES = [
   'frontend/dist/settings.html',
   'plugins/official-translate/ui/index.html',
-  'frontend/dist/clipboard.html',
+  'plugins/official-clipboard/ui/index.html',
   'plugins/builtin-ocr/ui/index.html',
 ];
 
@@ -94,14 +94,16 @@ const settingsPosted = await runCompiledHtml(
       update: { auto_check: true, check_interval_hours: 24, repo: 'q871958549/Tomoyo', last_checked_unix: 0 },
       web_searches: [{ keyword: 'g', name: 'Google', url: 'https://www.google.com/search?q={q}' }],
     },
-    plugins: [{ id: 'dev.tomoyo.ocr', name: 'OCR', runtime: 'STDIO', keywords: ['ocr'], max_memory_mb: 128, declared_permissions: [], granted_permissions: [] }],
+    plugins: [{
+      id: 'dev.tomoyo.clipboard', name: '剪贴板管理中心', version: '3.0.0', runtime: 'STDIO', keywords: ['cb'], max_memory_mb: 96,
+      declared_permissions: ['clipboard'], granted_permissions: ['clipboard'],
+      declared_hotkeys: [{ id: 'open_cb', label: '剪贴板历史快捷搜索', default_hotkey: 'Alt+V', trigger_query: 'cb ' }],
+      settings_schema: [{ key: 'capture_enabled', label: '后台自动采集剪贴板', type: 'bool', default: true }],
+    }],
     running_apps: ['code.exe', 'notepad.exe'],
     secrets_status: { deepl: false, openai: true },
     hotkey_health: {
-      main: { spec: 'Alt+Space', active: 'Alt+Space', ok: true, disabled: false, reason: '' },
-      clipboard: { spec: 'Alt+C', active: '', ok: false, disabled: false, reason: '已被系统或其他软件占用（Alt+C）' },
-      translate: { spec: 'Alt+T', active: '', ok: false, disabled: false, reason: '已被系统或其他软件占用（Alt+T）' },
-      capture: { spec: 'Alt+1', active: 'Alt+1', ok: true, disabled: false, reason: '' },
+      main: { spec: 'Alt+Space', active: '', ok: false, disabled: false, reason: '已被系统或其他软件占用（Alt+Space）' },
     },
     config_path: 'C:\\Tomoyo\\config.toml',
     plugins_dir: 'C:\\Tomoyo\\plugins',
@@ -122,8 +124,8 @@ const settingsPosted = await runCompiledHtml(
       if (btn.dataset.tab === 'plugins') {
         win.document.querySelector('button[data-config-plugin="dev.tomoyo.clipboard"]')?.click();
         await new Promise((r) => setTimeout(r, 5));
-        if (!win.document.body.textContent.includes('Alt+C')) {
-          throw new Error('settings.html: clipboard hotkey conflict badge not rendered in plugin drawer');
+        if (!win.document.body.textContent.includes('剪贴板历史快捷搜索')) {
+          throw new Error('settings.html: clipboard Protocol v3 drawer failed to expand');
         }
       }
     }
@@ -173,13 +175,43 @@ await runCompiledHtml(
 );
 
 await runCompiledHtml(
-  'frontend/dist/clipboard.html',
-  '__TOMOYO_CLIP_INIT__',
-  { theme: 'light', capture_enabled: true, total: 0, items: [], tags: [], focus_key: '' },
+  'plugins/official-clipboard/ui/index.html',
+  null,
+  null,
   (win) => {
     if (!win.document.body.textContent.includes('剪贴板工作台')) {
-      throw new Error('clipboard.html: failed to mount header');
+      throw new Error('official-clipboard/ui/index.html: failed to mount header');
     }
+    if (!win.document.body.textContent.includes('Hybrid Clipboard Ready')) {
+      throw new Error('official-clipboard/ui/index.html: failed to hydrate via window.tomoyo.callPlugin');
+    }
+  },
+  (win) => {
+    win.tomoyo = {
+      theme: 'light',
+      initialQuery: '',
+      callPlugin: async (method) => {
+        if (method !== 'list') throw new Error(`unexpected clipboard RPC method: ${method}`);
+        return {
+          total: 1,
+          capture_enabled: true,
+          tags: [{ tag: 'work', count: 1 }],
+          items: [{
+            key: 'Hybrid Clipboard Ready',
+            kind: 'text',
+            subtype: 'text',
+            preview: 'Hybrid Clipboard Ready',
+            text: 'Hybrid Clipboard Ready',
+            ts: 1700000000,
+            pinned: true,
+            tag: 'work',
+            note: '',
+            source_app: 'code',
+          }],
+        };
+      },
+      onEnter: () => {},
+    };
   }
 );
 

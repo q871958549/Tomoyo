@@ -30,18 +30,16 @@ pub(crate) fn run_self_test(fonts: &PrivateFonts, strict_budget: bool) {
         fonts.has_alibaba_regular()
     );
     log_mem("0. process startup");
-    let (config, router, plugin_host, clipboard, apps, updater) = build_engine();
+    let (config, router, plugin_host, apps, updater) = build_engine();
     plugin_host.set_interactive_prompts(false);
-    log_mem("1. after build_engine (UWP+SQLite)");
+    log_mem("1. after build_engine (Microkernel)");
     println!("Indexed installed apps (incl. UWP): {}", apps.app_count());
-    println!("Clipboard SQLite persisted items: {}", clipboard.item_count());
     println!("Discovered plugins: {}", plugin_host.list_plugins().len());
 
     let mut shell = AppShell::create(
         config,
         router.clone(),
         plugin_host.clone(),
-        clipboard,
         updater,
         fonts.regular_family(),
         fonts.medium_family(),

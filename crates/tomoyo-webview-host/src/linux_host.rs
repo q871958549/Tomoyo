@@ -1,8 +1,7 @@
 //! Native Linux GTK3 + WebKitGTK 4.1 container window, single-instance Unix socket,
-//! custom image URI schemes, hotkey capture & async worker relay.
+//! hotkey capture & async worker relay.
 
 use crate::bridge::handle_host_message;
-use crate::clip_view::{assemble_clip_manager_html, is_clip_manager_entry, load_clip_manager_bootstrap};
 use crate::db::PluginDb;
 use crate::linux_hotkeys::{format_gdk_hotkey, set_global_shortcuts_blocked};
 use crate::linux_workers::{
@@ -13,7 +12,6 @@ use crate::shim_js::build_init_script;
 use crate::{assemble_settings_html, build_settings_init_script_for, LaunchArgs};
 use std::cell::RefCell;
 use std::ffi::{c_char, c_int, c_void, CStr, CString};
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -22,11 +20,9 @@ const EMBEDDED_ICON_PNG: &[u8] = include_bytes!("../../../frontend/src/assets/to
 
 type WvMsgCb = unsafe extern "C" fn(*mut c_void, *const c_char);
 type WvKeyCb = unsafe extern "C" fn(*mut c_void, u32, u32) -> c_int;
-type WvUriCb = unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char, *mut *mut u8, *mut usize) -> c_int;
 type WvVoidCb = unsafe extern "C" fn(*mut c_void);
 
 unsafe extern "C" {
-    fn malloc(size: usize) -> *mut c_void;
     fn tomoyo_wv_apply_theme(h: *mut c_void, mode: c_int);
     fn tomoyo_wv_create(
         title: *const c_char,
@@ -39,7 +35,6 @@ unsafe extern "C" {
         extra_init_js: *const c_char,
         on_msg: WvMsgCb,
         on_key: WvKeyCb,
-        on_uri: WvUriCb,
         on_focus_in: WvVoidCb,
         on_close: WvVoidCb,
         ctx: *mut c_void,
@@ -61,29 +56,6 @@ struct LinuxHostCtx {
     settings_mode: bool,
     capturing_hotkey: AtomicBool,
     last_activate_probe: RefCell<Instant>,
-    clip_dir: Option<PathBuf>,
-}
-
-fn percent_decode(raw: &str) -> String {
-    let bytes = raw.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'%'
-            && i + 2 < bytes.len()
-            && let (Some(h), Some(l)) = (
-                (bytes[i + 1] as char).to_digit(16),
-                (bytes[i + 2] as char).to_digit(16),
-            )
-        {
-            out.push(((h << 4) | l) as u8);
-            i += 3;
-            continue;
-        }
-        out.push(bytes[i]);
-        i += 1;
-    }
-    String::from_utf8_lossy(&out).into_owned()
 }
 
 fn theme_mode(name: &str) -> c_int {
@@ -179,43 +151,6 @@ unsafe extern "C" fn on_key_cb(ctx: *mut c_void, keyval: u32, state: u32) -> c_i
     1
 }
 
-unsafe extern "C" fn on_uri_cb(
-    ctx: *mut c_void,
-    scheme_ptr: *const c_char,
-    path_ptr: *const c_char,
-    out_data: *mut *mut u8,
-    out_len: *mut usize,
-) -> c_int {
-    if ctx.is_null() || scheme_ptr.is_null() || path_ptr.is_null() {
-        return 0;
-    }
-    let st = unsafe { &*(ctx as *const LinuxHostCtx) };
-    let scheme = unsafe { CStr::from_ptr(scheme_ptr) }.to_string_lossy();
-    let raw_path = unsafe { CStr::from_ptr(path_ptr) }.to_string_lossy();
-    let base_dir = match scheme.as_ref() {
-        "tomoyo-clip-img" => st.clip_dir.as_ref(),
-        _ => None,
-    };
-    let Some(dir) = base_dir else { return 0; };
-    let decoded = percent_decode(raw_path.trim_start_matches('/'));
-    let Some(fname) = std::path::Path::new(&decoded).file_name() else { return 0; };
-    let full = dir.join(fname);
-    let Ok(bytes) = std::fs::read(&full) else { return 0; };
-    if bytes.is_empty() {
-        return 0;
-    }
-    let buf = unsafe { malloc(bytes.len()) }.cast::<u8>();
-    if buf.is_null() {
-        return 0;
-    }
-    unsafe {
-        std::ptr::copy_nonoverlapping(bytes.as_ptr(), buf, bytes.len());
-        *out_data = buf;
-        *out_len = bytes.len();
-    }
-    1
-}
-
 unsafe extern "C" fn on_focus_in_cb(ctx: *mut c_void) {
     if ctx.is_null() {
         return;
@@ -254,23 +189,20 @@ unsafe extern "C" fn on_close_cb(ctx: *mut c_void) {
 }
 
 pub fn run_linux_host(opts: LaunchArgs) {
-    let clip_mode = is_clip_manager_entry(&opts.entry);
     let channel = HostChannel::new(opts.notify_hwnd, opts.plugin_id.clone());
 
     let plugin_tag;
     let mode_tag = if opts.settings_mode {
         Some("settings")
-    } else if clip_mode {
-        Some("clipboard")
     } else if !opts.self_test && !opts.plugin_id.is_empty() {
         plugin_tag = format!("plugin-{}", tomoyo_core::linux_launch::sanitize_instance_tag(&opts.plugin_id));
         Some(plugin_tag.as_str())
     } else {
         None
     };
-    let plugin_query = (!opts.settings_mode && !clip_mode).then_some(opts.query.as_str());
+    let plugin_query = (!opts.settings_mode).then_some(opts.query.as_str());
     let _sock_guard = match mode_tag {
-        Some(tag) => match try_acquire_instance(tag, clip_mode, plugin_query, &channel) {
+        Some(tag) => match try_acquire_instance(tag, plugin_query, &channel) {
             Ok(g) => Some(g),
             Err(()) => return,
         },
@@ -278,13 +210,10 @@ pub fn run_linux_host(opts: LaunchArgs) {
     };
 
     let db = PluginDb::open(&opts.plugin_id);
-    let (init_script, clip_dir) = if opts.settings_mode {
-        (build_settings_init_script_for(&opts.query), None)
-    } else if clip_mode {
-        let b = load_clip_manager_bootstrap(&opts.theme, &opts.query);
-        (b.init_script, Some(b.images_dir))
+    let init_script = if opts.settings_mode {
+        build_settings_init_script_for(&opts.query)
     } else {
-        (build_init_script(&opts.plugin_id, &opts.query, &opts.theme, opts.utools_compat, &db.snapshot_json()), None)
+        build_init_script(&opts.plugin_id, &opts.query, &opts.theme, opts.utools_compat, &db.snapshot_json())
     };
 
     let mut ctx = Box::new(LinuxHostCtx {
@@ -295,7 +224,6 @@ pub fn run_linux_host(opts: LaunchArgs) {
         settings_mode: opts.settings_mode,
         capturing_hotkey: AtomicBool::new(false),
         last_activate_probe: RefCell::new(Instant::now()),
-        clip_dir,
     });
     let ctx_ptr = &mut *ctx as *mut LinuxHostCtx;
     let c_title = CString::new(opts.title.as_str()).unwrap_or_else(|_| CString::new("Tomoyo").unwrap());
@@ -316,7 +244,7 @@ pub fn run_linux_host(opts: LaunchArgs) {
         tomoyo_wv_create(
             c_title.as_ptr(), opts.width, opts.height, mode,
             icon_ptr, icon_w, icon_h,
-            c_init.as_ptr(), on_msg_cb, on_key_cb, on_uri_cb, on_focus_in_cb, on_close_cb,
+            c_init.as_ptr(), on_msg_cb, on_key_cb, on_focus_in_cb, on_close_cb,
             ctx_ptr as *mut c_void,
         )
     };
@@ -330,12 +258,8 @@ pub fn run_linux_host(opts: LaunchArgs) {
         unsafe { tomoyo_wv_enable_devtools(wv); }
     }
 
-    if opts.settings_mode || clip_mode {
-        let html = if opts.settings_mode {
-            assemble_settings_html()
-        } else {
-            assemble_clip_manager_html()
-        };
+    if opts.settings_mode {
+        let html = assemble_settings_html();
         if let Ok(ch) = CString::new(html) {
             unsafe { tomoyo_wv_load_html(wv, ch.as_ptr()); }
         }

@@ -1,6 +1,5 @@
 //! Native Win32 WebView2 container window, DWM titlebar theme sync, topmost pin & async worker relay.
 
-use crate::clip_view::is_clip_manager_entry;
 use crate::db::PluginDb;
 use crate::hotkey_capture::HotkeyCaptureController;
 use crate::inline_dock::{
@@ -8,9 +7,8 @@ use crate::inline_dock::{
     prepare_host_bootstrap, write_inline_hwnd_marker,
 };
 use crate::single_instance::{
-    acquire_or_activate_clipboard, acquire_or_activate_settings,
-    CLIPBOARD_WINDOW_CLASS, EPHEMERAL_WINDOW_CLASS, SETTINGS_WINDOW_CLASS,
-    WM_APP_ACTIVATE_CLIPBOARD, WM_APP_ACTIVATE_SETTINGS,
+    acquire_or_activate_settings, EPHEMERAL_WINDOW_CLASS, SETTINGS_WINDOW_CLASS,
+    WM_APP_ACTIVATE_SETTINGS,
 };
 use crate::win_msg::{dispatch_webview_message, pick_builtin_html};
 use crate::win_theme::{
@@ -125,7 +123,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             }
             LRESULT(0)
         }
-        WM_APP_ACTIVATE_SETTINGS | WM_APP_ACTIVATE_CLIPBOARD => {
+        WM_APP_ACTIVATE_SETTINGS => {
             unsafe {
                 if IsIconic(hwnd).as_bool() {
                     let _ = ShowWindow(hwnd, SW_RESTORE);
@@ -197,12 +195,8 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
 }
 
 pub fn run_windows_host(opts: LaunchArgs) {
-    let clip_mode = is_clip_manager_entry(&opts.entry);
     let _singleton_guard = if opts.settings_mode {
         let Some(g) = acquire_or_activate_settings() else { return };
-        Some(g)
-    } else if clip_mode {
-        let Some(g) = acquire_or_activate_clipboard() else { return };
         Some(g)
     } else {
         None
@@ -213,10 +207,10 @@ pub fn run_windows_host(opts: LaunchArgs) {
         let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
     }
 
-    let cls = match (opts.settings_mode, clip_mode) {
-        (true, _) => SETTINGS_WINDOW_CLASS,
-        (_, true) => CLIPBOARD_WINDOW_CLASS,
-        _ => EPHEMERAL_WINDOW_CLASS,
+    let cls = if opts.settings_mode {
+        SETTINGS_WINDOW_CLASS
+    } else {
+        EPHEMERAL_WINDOW_CLASS
     };
     let hinst = unsafe { windows::Win32::System::LibraryLoader::GetModuleHandleW(None).unwrap() };
     let icons = load_window_icons(hinst, opts.icon.as_deref());
@@ -267,11 +261,7 @@ pub fn run_windows_host(opts: LaunchArgs) {
     let settings_mode = opts.settings_mode;
     let notify_hwnd = opts.notify_hwnd;
     let boot = prepare_host_bootstrap(&opts, &plugin_db.borrow());
-    let (init_script, clip_img_dir, entry_url) = (
-        boot.init_script,
-        boot.clip_img_dir,
-        boot.entry_url,
-    );
+    let (init_script, entry_url) = (boot.init_script, boot.entry_url);
 
     let user_data_dir = tomoyo_core::data_dir().join("webview-cache");
     let _ = std::fs::create_dir_all(&user_data_dir);
@@ -290,7 +280,6 @@ pub fn run_windows_host(opts: LaunchArgs) {
             let init_script_inner = init_script.clone();
             let entry_url_inner = entry_url.clone();
             let fonts_inner = fonts_dir_opt.clone();
-            let clip_dir_inner = clip_img_dir.clone();
             let db_inner = Rc::clone(&db_for_msg);
             let tx_inner = event_tx.clone();
             let theme_inner = theme_clone.clone();
@@ -320,7 +309,6 @@ pub fn run_windows_host(opts: LaunchArgs) {
                         if let Ok(webview) = controller.CoreWebView2() {
                             if let Ok(wv3) = webview.cast::<ICoreWebView2_3>() {
                                 map_vdir(&wv3, w!("tomoyo-fonts.local"), fonts_inner.as_ref());
-                                map_vdir(&wv3, w!("tomoyo-clip-img.local"), clip_dir_inner.as_ref());
                             }
                             let script_w = HSTRING::from(&init_script_inner);
                             let _ = webview.AddScriptToExecuteOnDocumentCreated(PCWSTR(script_w.as_ptr()), None);
@@ -347,7 +335,7 @@ pub fn run_windows_host(opts: LaunchArgs) {
                             ));
                             let _ = webview.add_WebMessageReceived(&msg_handler, &mut token);
 
-                            if let Some(html) = pick_builtin_html(settings_mode, clip_mode) {
+                            if let Some(html) = pick_builtin_html(settings_mode) {
                                 let hw = HSTRING::from(html);
                                 let _ = webview.NavigateToString(PCWSTR(hw.as_ptr()));
                             } else {

@@ -4,7 +4,7 @@ use crate::actions::{
     clipboard_source_app_name, execute_action, is_clipboard_confidential, kill_process_by_pid,
     paste_into_previous_window_async, read_clipboard_files, read_clipboard_image_png,
     read_clipboard_text, send_ctrl_c_cleanly, set_clipboard_text, shell_open,
-    spawn_clipboard_manager_window, spawn_settings_window,
+    spawn_settings_window,
 };
 use crate::linux::{tomoyo_linux_tray_set_menu, tomoyo_linux_ui_quit, LinuxTrayMenuItem};
 use crate::linux::ipc::schedule_on_ui;
@@ -21,8 +21,8 @@ use tomoyo_core::{
 };
 use tomoyo_plugin_host::ActivePluginHotkey;
 use tomoyo_protocol::{
-    ActionKind, ExecuteResponse, InternalCommandKind, OpenWebViewRequest, Permission,
-    PluginEventKind, PluginEventPayload,
+    ActionKind, ClipboardSnapshot, ExecuteResponse, InternalCommandKind, OpenWebViewRequest,
+    Permission, PluginEventKind, PluginEventPayload,
 };
 
 impl AppCore {
@@ -34,6 +34,7 @@ impl AppCore {
         if let Some(cmd) = outcome.internal { self.handle_internal_command(cmd); return; }
         if let Some(q) = outcome.fill_query { self.set_query_text(&q); return; }
         if let Some(t) = outcome.toast { self.show_toast(&t); }
+        if outcome.refresh_query { self.dispatch_query(); }
         if outcome.hide_window { self.hide_launcher(); }
         if outcome.paste_after_hide { paste_into_previous_window_async(0); }
     }
@@ -49,14 +50,6 @@ impl AppCore {
             InternalCommandKind::ResetWindowGeometry => { self.custom_pos = None; self.resize_to_fit(); }
             InternalCommandKind::SetTheme { theme } => self.apply_theme(&theme, true),
             InternalCommandKind::SetLanguage { lang } => self.apply_language(&lang, true),
-            InternalCommandKind::ToggleClipboardPin { id_key } => { self.clipboard.toggle_pin(&id_key); self.dispatch_query(); }
-            InternalCommandKind::DeleteClipboardItem { id_key } => { self.clipboard.delete_item(&id_key); self.dispatch_query(); }
-            InternalCommandKind::ClearUnpinnedClipboard => { let n = self.clipboard.clear_unpinned(); self.show_toast(&format!("已清空 {n} 条未固定剪贴板")); self.dispatch_query(); }
-            InternalCommandKind::OpenClipboardManager { focus_key } => self.open_clipboard_workbench(focus_key.as_deref()),
-            InternalCommandKind::ToggleClipboardCapture => {
-                if let Ok(mut cfg) = self.config.write() { cfg.clipboard.capture_enabled = !cfg.clipboard.capture_enabled; let _ = cfg.save(); }
-                self.dispatch_query();
-            }
             InternalCommandKind::CheckForUpdates => self.trigger_update_check_async(),
             InternalCommandKind::InstallUpdate => self.trigger_update_install_async(),
             InternalCommandKind::ClearAttachedContext => { self.attached = None; self.dispatch_query(); }
@@ -85,29 +78,54 @@ impl AppCore {
         } else { self.hide_launcher(); }
     }
 
-    pub(super) fn open_clipboard_workbench(&mut self, focus: Option<&str>) {
-        if let Err(e) = spawn_clipboard_manager_window(std::process::id() as isize, &self.theme_name, focus) {
-            self.show_toast(&format!("剪贴板工作台启动失败: {e}"));
-        } else { self.hide_launcher(); }
+    pub(super) fn on_clipboard_update(&mut self) {
+        let sub_text = self.plugin_host.has_event_subscriber(PluginEventKind::ClipboardText);
+        let sub_img = self.plugin_host.has_event_subscriber(PluginEventKind::ClipboardImage);
+        if (!sub_text && !sub_img)
+            || self.suppress_clipboard.load(Ordering::Acquire)
+            || is_clipboard_confidential()
+        {
+            return;
+        }
+        let src = clipboard_source_app_name();
+        if sub_text && let Some(files) = read_clipboard_files() {
+            self.dispatch_clipboard_event(
+                PluginEventKind::ClipboardText,
+                serde_json::json!({ "kind": "files", "paths": files, "source_app": src }),
+            );
+        } else if let Some(txt) = read_clipboard_text() {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0);
+            self.last_clip_snapshot = Some(ClipboardSnapshot {
+                text: txt.chars().take(2048).collect(),
+                captured_at_unix: now,
+            });
+            if sub_text {
+                self.dispatch_clipboard_event(
+                    PluginEventKind::ClipboardText,
+                    serde_json::json!({ "kind": "text", "text": txt, "source_app": src }),
+                );
+            }
+        } else if sub_img && let Some((path, w, h, digest)) = read_clipboard_image_png() {
+            self.dispatch_clipboard_event(
+                PluginEventKind::ClipboardImage,
+                serde_json::json!({
+                    "path": path, "width": w, "height": h, "digest": digest, "source_app": src
+                }),
+            );
+        }
     }
 
-    pub(super) fn on_clipboard_update(&mut self) {
-        if self.suppress_clipboard.load(Ordering::Acquire) { return; }
-        let (on, imgs, excl) = self.config.read().map(|c| (c.clipboard.capture_enabled, c.clipboard.capture_images, c.clipboard.excluded_apps.clone())).unwrap_or((true, true, vec![]));
-        if !on || is_clipboard_confidential() { return; }
-        let src = clipboard_source_app_name();
-        if !src.is_empty() && excl.iter().any(|e| e.eq_ignore_ascii_case(&src)) { return; }
-        if let Some(files) = read_clipboard_files() { self.clipboard.push_files_with_source(files, &src); }
-        else if let Some(txt) = read_clipboard_text() {
-            if self.plugin_host.has_event_subscriber(PluginEventKind::ClipboardText) {
-                let host = Arc::clone(&self.plugin_host);
-                let payload = PluginEventPayload { event: PluginEventKind::ClipboardText, data: serde_json::json!({ "text": txt, "source_app": src }) };
-                let _ = std::thread::Builder::new().name("tomoyo-clip-ev".into()).spawn(move || { let _ = host.dispatch_event(None, &payload); });
-            }
-            self.clipboard.push_text_with_source(txt, &src);
-        } else if imgs && let Some((path, w, h, digest)) = read_clipboard_image_png() {
-            self.clipboard.push_image_with_source(path, w, h, digest, &src);
-        }
+    fn dispatch_clipboard_event(&self, kind: PluginEventKind, data: serde_json::Value) {
+        let host = Arc::clone(&self.plugin_host);
+        let payload = PluginEventPayload::new(kind, data);
+        let _ = std::thread::Builder::new()
+            .name("tomoyo-clip-ev".into())
+            .spawn(move || {
+                let _ = host.dispatch_event(None, &payload);
+            });
     }
 
     pub(super) fn apply_plugin_exec_response(&mut self, plugin_id: &str, r: ExecuteResponse) {
@@ -146,10 +164,10 @@ impl AppCore {
                 let cap = read_clipboard_text().unwrap_or_default();
                 if let Some(old) = prev.as_deref().filter(|o| *o != cap) { let _ = set_clipboard_text(old); }
                 sup.store(false, Ordering::Release);
-                let payload = PluginEventPayload {
-                    event: PluginEventKind::HotkeyTriggered,
-                    data: serde_json::json!({ "hotkey_id": hk.hotkey_id, "spec": hk.spec, "selected_text": cap.trim() }),
-                };
+                let payload = PluginEventPayload::new(
+                    PluginEventKind::HotkeyTriggered,
+                    serde_json::json!({ "hotkey_id": hk.hotkey_id, "spec": hk.spec, "selected_text": cap.trim() }),
+                );
                 if let Some(r) = host.dispatch_event(Some(&hk.plugin_id), &payload).into_iter().next() {
                     let pid = hk.plugin_id.clone();
                     schedule_on_ui(move || with_current_core(|st| st.apply_plugin_exec_response(&pid, r)));
@@ -157,7 +175,10 @@ impl AppCore {
             });
             return;
         }
-        let payload = PluginEventPayload { event: PluginEventKind::HotkeyTriggered, data: serde_json::json!({ "hotkey_id": hk.hotkey_id, "spec": hk.spec }) };
+        let payload = PluginEventPayload::new(
+            PluginEventKind::HotkeyTriggered,
+            serde_json::json!({ "hotkey_id": hk.hotkey_id, "spec": hk.spec }),
+        );
         if let Some(r) = self.plugin_host.dispatch_event(Some(&hk.plugin_id), &payload).into_iter().next() {
             self.apply_plugin_exec_response(&hk.plugin_id, r);
         }
@@ -165,14 +186,12 @@ impl AppCore {
 
     pub(super) fn rebuild_tray_menu(&mut self) {
         if self.ui.is_null() { return; }
-        let clip_on = self.config.read().map(|c| c.is_plugin_enabled(tomoyo_core::PLUGIN_CLIPBOARD)).unwrap_or(true);
         self.tray_plugin_actions = self.plugin_host.active_tray_actions();
         let l = self.lang;
         let mut raw: Vec<(String, u32)> = vec![
             (l.pick("显示 Tomoyo", "Show Tomoyo").into(), 1),
             (l.pick("设置中心...", "Settings...").into(), 2),
         ];
-        if clip_on { raw.push((l.pick("剪贴板历史", "Clipboard History").into(), 3)); }
         if !self.tray_plugin_actions.is_empty() {
             raw.push(("---".into(), 0));
             for (idx, act) in self.tray_plugin_actions.iter().enumerate() {
@@ -295,7 +314,7 @@ impl AppCore {
             "show" => self.show_launcher_with_query(None),
             "reload:0" => self.reload_config_and_all(false),
             "reload:1" => self.reload_config_and_all(true),
-            "reload:2" => { self.clipboard.reload_from_db(); if self.is_visible() { self.dispatch_query(); } }
+            "reload:2" => { if self.is_visible() { self.dispatch_query(); } }
             "reload:3" => self.hotkeys.unregister_all(),
             "reload:4" => {
                 let cfg = self.config.read().map(|c| c.clone()).unwrap_or_default();
@@ -340,6 +359,7 @@ impl AppCore {
         let cfg_clone = fresh.clone();
         if let Ok(mut w) = self.config.write() { *w = fresh; }
         if force_providers { self.router.reload_all(); }
+        self.sync_clipboard_watcher();
         self.hotkeys.register_all(&cfg_clone, &self.plugin_host);
         self.rebuild_tray_menu();
         if self.is_visible() { self.dispatch_query(); }

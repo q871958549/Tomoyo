@@ -211,7 +211,7 @@ fn run_dev_cycle(
                 if !manifest.events.contains(&kind) {
                     println!("[WARN] `{}` does not list `{ev_name}` in `events = [...]`; add it in tomoyo-plugin.toml to receive runtime events.", manifest.id);
                 }
-                let payload = PluginEventPayload { event: kind, data: serde_json::json!({ "text": event_data }) };
+                let payload = PluginEventPayload::new(kind, serde_json::json!({ "text": event_data }));
                 let resps = host.dispatch_event(Some(&manifest.id), &payload);
                 println!("[OK] Event `{ev_name}` -> {} response(s): {:?}", resps.len(), resps.first().and_then(|r| r.toast.as_deref()));
             } else {

@@ -33,60 +33,10 @@ pub fn spawn_settings_window(parent_hwnd: isize, theme_name: &str) -> Result<boo
     Ok(true)
 }
 
-pub fn spawn_clipboard_manager_window(
-    parent_hwnd: isize,
-    theme_name: &str,
-    focus_key: Option<&str>,
-) -> Result<(), String> {
-    if focus_key.is_none() && try_focus_existing_clipboard_window() {
-        return Ok(());
-    }
-    let host_exe = locate_webview_host()?;
-    let mut cmd = Command::new(&host_exe);
-    cmd.args([
-        "--plugin-id",
-        "builtin.clipboard",
-        "--title",
-        "Tomoyo 剪贴板工作台",
-        "--entry",
-        "__tomoyo_clipboard_manager__",
-        "--notify-hwnd",
-        &parent_hwnd.to_string(),
-        "--theme",
-        theme_name,
-        "--width",
-        "1060",
-        "--height",
-        "680",
-        "--query",
-        focus_key.unwrap_or(""),
-    ]);
-    if theme_name.eq_ignore_ascii_case("light") {
-        cmd.arg("--light");
-    }
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| format!("failed to launch clipboard workbench {}: {e}", host_exe.display()))?;
-    let job = JobGuard::assign_webview_child(&child, 512).ok();
-    let _ = std::thread::Builder::new()
-        .name("tomoyo-clipmgr-reaper".into())
-        .spawn(move || {
-            let _keep_job = job;
-            let _ = child.wait();
-        });
-    Ok(())
-}
-
 #[cfg(windows)]
 fn try_focus_existing_settings_window() -> bool {
     use windows::core::w;
     try_focus_existing_window(w!("TomoyoSettingsCenterWindowClass"), 0x8000 + 32)
-}
-
-#[cfg(windows)]
-fn try_focus_existing_clipboard_window() -> bool {
-    use windows::core::w;
-    try_focus_existing_window(w!("TomoyoClipboardManagerWindowClass"), 0x8000 + 34)
 }
 
 #[cfg(windows)]

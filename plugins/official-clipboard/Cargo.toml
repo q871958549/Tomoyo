@@ -1,0 +1,19 @@
+[package]
+name = "tomoyo-plugin-clipboard"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Official Tomoyo Protocol v3 Hybrid Plugin: CopyQ-grade SQLite Clipboard History & Ephemeral Workbench"
+
+[[bin]]
+name = "tomoyo-plugin-clipboard"
+path = "src/main.rs"
+
+[dependencies]
+tomoyo-sdk = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+rusqlite = { workspace = true }
+chrono = { workspace = true }
+base64 = { workspace = true }
+pinyin = { workspace = true }

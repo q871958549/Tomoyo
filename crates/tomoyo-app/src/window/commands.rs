@@ -7,11 +7,11 @@ use crate::actions::{
     paste_into_previous_window_async, read_clipboard_files, read_clipboard_image_png,
 };
 use crate::tray::{
-    MENU_ID_CLIPBOARD, MENU_ID_CONFIG, MENU_ID_GC, MENU_ID_PLUGIN_TRAY_BASE, MENU_ID_QUIT,
-    MENU_ID_RELOAD, MENU_ID_SETTINGS, MENU_ID_SHOW, MENU_ID_STATS, MENU_ID_UPDATE,
+    MENU_ID_CONFIG, MENU_ID_GC, MENU_ID_PLUGIN_TRAY_BASE, MENU_ID_QUIT, MENU_ID_RELOAD,
+    MENU_ID_SETTINGS, MENU_ID_SHOW, MENU_ID_STATS, MENU_ID_UPDATE,
 };
 use tomoyo_core::{is_autostart_enabled, set_autostart_enabled, Lang};
-use tomoyo_protocol::{ActionKind, AttachedContext, InternalCommandKind};
+use tomoyo_protocol::{ActionKind, AttachedContext, InternalCommandKind, PluginEventKind};
 use windows::Win32::Foundation::{HWND, LRESULT, WPARAM};
 use windows::Win32::UI::WindowsAndMessaging::{DestroyWindow, EN_CHANGE};
 
@@ -30,7 +30,6 @@ pub(super) fn dispatch_menu_id(hwnd: HWND, app: &mut AppShell, id: u32) {
     match id {
         MENU_ID_SHOW => app.show_launcher(),
         MENU_ID_SETTINGS => app.open_settings_center(),
-        MENU_ID_CLIPBOARD => app.open_clipboard_workbench(None),
         MENU_ID_UPDATE => {
             app.show_launcher();
             app.set_query_text(":update");
@@ -109,7 +108,11 @@ impl AppShell {
             return;
         }
         if let Some((path, w, h, digest)) = read_clipboard_image_png() {
-            self.clipboard.push_image(path.clone(), w, h, digest);
+            super::plugin_hotkeys::dispatch_clipboard_event(
+                self,
+                PluginEventKind::ClipboardImage,
+                serde_json::json!({ "path": path, "width": w, "height": h, "digest": digest, "source_app": "" }),
+            );
             self.attached = Some(AttachedContext::Image {
                 path,
                 width: w,
@@ -170,7 +173,11 @@ impl AppShell {
         if let Some(toast) = outcome.toast {
             self.show_toast(&toast);
         }
-        if outcome.hide_window {
+        if outcome.refresh_query {
+            self.action_menu_open = false;
+            self.dispatch_query();
+            self.invalidate();
+        } else if outcome.hide_window {
             let prev = self.inter.prev_foreground_hwnd;
             self.hide_launcher();
             if outcome.paste_after_hide {
@@ -215,47 +222,6 @@ impl AppShell {
             InternalCommandKind::SetLanguage { lang } => {
                 self.apply_language(&lang, true);
                 self.show_toast(self.lang.pick("已切换界面语言", "Display language updated"));
-            }
-            InternalCommandKind::ToggleClipboardPin { id_key } => {
-                let pinned = self.clipboard.toggle_pin(&id_key);
-                self.show_toast(if pinned {
-                    self.lang.pick("已置顶该剪贴板记录", "Clipboard entry pinned")
-                } else {
-                    self.lang.pick("已取消置顶", "Clipboard entry unpinned")
-                });
-                self.dispatch_query();
-            }
-            InternalCommandKind::DeleteClipboardItem { id_key } => {
-                if self.clipboard.delete_item(&id_key) {
-                    self.show_toast(self.lang.pick("已删除该条剪贴板记录", "Deleted clipboard entry"));
-                }
-                self.dispatch_query();
-            }
-            InternalCommandKind::ClearUnpinnedClipboard => {
-                let n = self.clipboard.clear_unpinned();
-                self.show_toast(&match self.lang {
-                    Lang::Zh => format!("已清理 {n} 条非置顶剪贴板记录（置顶已保留）"),
-                    Lang::En => format!("Cleared {n} unpinned clipboard entries"),
-                });
-                self.dispatch_query();
-            }
-            InternalCommandKind::OpenClipboardManager { focus_key } => {
-                self.open_clipboard_workbench(focus_key.as_deref());
-            }
-            InternalCommandKind::ToggleClipboardCapture => {
-                let enabled = if let Ok(mut cfg) = self.config.write() {
-                    cfg.clipboard.capture_enabled = !cfg.clipboard.capture_enabled;
-                    let _ = cfg.save();
-                    cfg.clipboard.capture_enabled
-                } else {
-                    true
-                };
-                self.show_toast(if enabled {
-                    self.lang.pick("已恢复后台剪贴板采集", "Clipboard capture resumed")
-                } else {
-                    self.lang.pick("已暂停后台剪贴板采集", "Clipboard capture paused")
-                });
-                self.dispatch_query();
             }
             InternalCommandKind::CheckForUpdates => self.trigger_update_check_async(),
             InternalCommandKind::InstallUpdate => self.trigger_update_install_async(),

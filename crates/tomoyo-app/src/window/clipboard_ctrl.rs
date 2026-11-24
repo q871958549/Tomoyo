@@ -1,44 +1,33 @@
-//! Clipboard Center Win32 event handling: privacy filtering, confidential format guard,
-//! dedicated `Alt+V` launcher toggle, and ephemeral Clipboard Workbench spawning.
+//! Zero-overhead conditional OS clipboard event dispatcher & generic result-action shortcuts.
 
 use super::AppShell;
 use crate::actions::{
-    clipboard_source_app_name, is_clipboard_confidential, read_clipboard_files,
-    read_clipboard_image_png, read_clipboard_text, spawn_clipboard_manager_window,
+    clipboard_source_app_name, execute_action, is_clipboard_confidential, read_clipboard_files,
+    read_clipboard_image_png, read_clipboard_text,
+};
+use tomoyo_protocol::{ClipboardSnapshot, OpenWebViewRequest, PluginEventKind};
+use windows::Win32::System::DataExchange::{
+    AddClipboardFormatListener, RemoveClipboardFormatListener,
 };
 use windows::Win32::UI::WindowsAndMessaging::IsWindowVisible;
 
 impl AppShell {
-    pub fn open_clipboard_workbench(&mut self, focus_key: Option<&str>) {
-        match spawn_clipboard_manager_window(self.hwnd.0 as isize, &self.theme_name, focus_key) {
-            Ok(()) => self.hide_launcher(),
-            Err(e) => self.show_toast(&format!("剪贴板工作台启动失败: {e}")),
-        }
-    }
-
-    pub fn toggle_clipboard_launcher(&mut self) {
-        let enabled = self
-            .config
-            .read()
-            .map(|c| c.is_plugin_enabled(tomoyo_core::PLUGIN_CLIPBOARD))
-            .unwrap_or(true);
-        if !enabled {
+    pub(super) fn sync_clipboard_listener(&mut self) {
+        if self.tray.is_none() {
             return;
         }
-        let visible = unsafe { IsWindowVisible(self.hwnd).as_bool() };
-        let q_low = self.current_query.trim_start().to_ascii_lowercase();
-        let in_cb = q_low.starts_with("cb") || q_low.starts_with("clip");
-        if visible && in_cb {
-            self.hide_launcher();
-        } else if visible {
-            self.set_query_text("cb ");
-        } else {
-            self.show_launcher_with_query(Some("cb "));
+        let need = self.plugin_host.has_event_subscriber(PluginEventKind::ClipboardText)
+            || self.plugin_host.has_event_subscriber(PluginEventKind::ClipboardImage);
+        if need && !self.clip_listener_active {
+            unsafe { let _ = AddClipboardFormatListener(self.hwnd); }
+            self.clip_listener_active = true;
+        } else if !need && self.clip_listener_active {
+            unsafe { let _ = RemoveClipboardFormatListener(self.hwnd); }
+            self.clip_listener_active = false;
         }
     }
 
     pub(super) fn on_clipboard_db_external_change(&mut self) {
-        self.clipboard.reload_from_db();
         if unsafe { IsWindowVisible(self.hwnd).as_bool() } {
             self.dispatch_query();
             self.invalidate();
@@ -46,60 +35,69 @@ impl AppShell {
     }
 
     pub(super) fn on_clipboard_update(&mut self) {
-        if self.suppress_clipboard_capture.load(std::sync::atomic::Ordering::Acquire) {
-            return;
-        }
-        let (capture_enabled, capture_images, excluded) = self
-            .config
-            .read()
-            .map(|c| {
-                (
-                    c.clipboard.capture_enabled,
-                    c.clipboard.capture_images,
-                    c.clipboard.excluded_apps.clone(),
-                )
-            })
-            .unwrap_or((true, true, Vec::new()));
-
-        if !capture_enabled {
-            return;
-        }
-        if is_clipboard_confidential() {
-            tracing::debug!("Skipped confidential clipboard item (password manager marker)");
+        let sub_text = self.plugin_host.has_event_subscriber(PluginEventKind::ClipboardText);
+        let sub_img = self.plugin_host.has_event_subscriber(PluginEventKind::ClipboardImage);
+        if (!sub_text && !sub_img)
+            || self.suppress_clipboard_capture.load(std::sync::atomic::Ordering::Acquire)
+            || is_clipboard_confidential()
+        {
             return;
         }
         let src_app = clipboard_source_app_name();
-        if !src_app.is_empty() && excluded.iter().any(|e| e.eq_ignore_ascii_case(&src_app)) {
-            tracing::debug!(source_app = %src_app, "Skipped clipboard from privacy-excluded app");
-            return;
-        }
-
-        if let Some(files) = read_clipboard_files() {
+        if sub_text && let Some(files) = read_clipboard_files() {
             self.inter.suppress_next_clip_img = false;
-            self.clipboard.push_files_with_source(files, &src_app);
+            super::plugin_hotkeys::dispatch_clipboard_event(
+                self,
+                PluginEventKind::ClipboardText,
+                serde_json::json!({ "kind": "files", "paths": files, "source_app": src_app }),
+            );
         } else if let Some(txt) = read_clipboard_text() {
             self.inter.suppress_next_clip_img = false;
-            super::plugin_hotkeys::dispatch_clipboard_text_event(self, &txt, &src_app);
-            self.clipboard.push_text_with_source(txt, &src_app);
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0);
+            self.last_clip_snapshot = Some(ClipboardSnapshot {
+                text: txt.chars().take(2048).collect(),
+                captured_at_unix: now,
+            });
+            if sub_text {
+                super::plugin_hotkeys::dispatch_clipboard_event(
+                    self,
+                    PluginEventKind::ClipboardText,
+                    serde_json::json!({ "kind": "text", "text": txt, "source_app": src_app }),
+                );
+            }
         } else if self.inter.suppress_next_clip_img {
             self.inter.suppress_next_clip_img = false;
-        } else if capture_images
-            && let Some((path, w, h, digest)) = read_clipboard_image_png() {
-                self.clipboard.push_image_with_source(path, w, h, digest, &src_app);
-            }
+        } else if sub_img && let Some((path, w, h, digest)) = read_clipboard_image_png() {
+            super::plugin_hotkeys::dispatch_clipboard_event(
+                self,
+                PluginEventKind::ClipboardImage,
+                serde_json::json!({
+                    "path": path, "width": w, "height": h, "digest": digest, "source_app": src_app
+                }),
+            );
+        }
     }
 
-    pub(super) fn trigger_selected_clipboard_shortcut(&mut self, action_id: &str) -> bool {
+    pub(super) fn trigger_selected_action_by_id(&mut self, action_id: &str) -> bool {
         let Some(item) = self.results.get(self.selected) else {
             return false;
         };
-        if item.provider_id != "builtin.clipboard" {
-            return false;
-        }
         if let Some(idx) = item.actions.iter().position(|a| a.id == action_id) {
             self.execute_selected(idx);
             return true;
         }
         false
+    }
+
+    pub(super) fn open_clipboard_plugin_ui_if_installed(&mut self) {
+        let req = OpenWebViewRequest::default();
+        if let Some(wv_act) = self.plugin_host.resolve_webview_open(tomoyo_core::PLUGIN_CLIPBOARD, &req) {
+            let out = execute_action(&wv_act, "shortcut:ctrl_e", &self.plugin_host, self.theme.is_dark);
+            if let Some(t) = out.toast { self.show_toast(&t); }
+            if out.hide_window { self.hide_launcher(); }
+        }
     }
 }

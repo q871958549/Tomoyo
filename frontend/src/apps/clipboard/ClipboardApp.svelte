@@ -1,28 +1,10 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import {
-    Code2,
-    Copy,
-    Download,
-    ExternalLink,
-    FileText,
-    FolderOpen,
-    Hash,
-    Image,
-    Languages,
-    Layers,
-    Link2,
-    Palette,
-    Pin,
-    Save,
-    Settings,
-    Star,
-    Trash2,
-    Upload,
-    WrapText,
-    X,
+    Code2, Copy, Download, ExternalLink, FileText, FolderOpen, Hash, Image, Languages, Layers,
+    Link2, Palette, Pin, Save, Settings, Star, Trash2, Upload, WrapText, X,
   } from '@lucide/svelte';
-  import { applyThemeClass, installErrorTelemetry, postHost, subscribeHost } from '../../lib/ipc';
+  import { applyThemeClass, installErrorTelemetry, postHost } from '../../lib/ipc';
   import type { ContextMenuItem } from '../../lib/types';
   import Button from '../../lib/ui/Button.svelte';
   import ContextMenu from '../../lib/ui/ContextMenu.svelte';
@@ -38,8 +20,11 @@
     theme?: string; focus_key?: string; total?: number; capture_enabled?: boolean;
     items?: ClipItem[]; tags?: TagCount[];
   }
+  interface ClipMutateRes {
+    ok?: boolean; action?: string; key?: string; pinned?: boolean; count?: number; message?: string;
+  }
 
-  const boot = (window.__TOMOYO_CLIP_INIT__ ?? {}) as ClipBoot;
+  const initialBoot = (window.__TOMOYO_CLIP_INIT__ ?? {}) as ClipBoot;
 
   const typeFilters = [
     { tok: '', label: '全部记录', icon: Layers },
@@ -52,13 +37,13 @@
     { tok: '@color', label: '色值', icon: Palette },
   ];
 
-  let items = $state<ClipItem[]>(boot.items || []);
-  let tags = $state<TagCount[]>(boot.tags || []);
-  let total = $state(boot.total ?? (boot.items?.length || 0));
-  let captureEnabled = $state(boot.capture_enabled !== false);
+  let items = $state<ClipItem[]>(initialBoot.items || []);
+  let tags = $state<TagCount[]>(initialBoot.tags || []);
+  let total = $state(initialBoot.total ?? (initialBoot.items?.length || 0));
+  let captureEnabled = $state(initialBoot.capture_enabled !== false);
   let activeFilter = $state('');
   let query = $state('');
-  let selectedKey = $state(boot.focus_key || boot.items?.[0]?.key || '');
+  let selectedKey = $state(initialBoot.focus_key || initialBoot.items?.[0]?.key || '');
   let draftText = $state('');
   let draftTag = $state('');
   let draftNote = $state('');
@@ -87,25 +72,66 @@
     return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
   }
 
-  function reloadList() {
+  async function reloadList(focusKey?: string) {
+    if (!window.tomoyo?.callPlugin) return;
     const q = [activeFilter, query.trim()].filter(Boolean).join(' ');
-    postHost({ cmd: 'clip_list', query: q });
+    try {
+      const d = await window.tomoyo.callPlugin<ClipBoot>('list', {
+        query: q,
+        focus_key: focusKey ?? '',
+      });
+      items = Array.isArray(d?.items) ? d.items : [];
+      tags = Array.isArray(d?.tags) ? d.tags : [];
+      total = d?.total ?? items.length;
+      captureEnabled = d?.capture_enabled !== false;
+      if (focusKey && items.some((i) => i.key === focusKey)) selectedKey = focusKey;
+      else if (!items.some((i) => i.key === selectedKey)) selectedKey = items[0]?.key || '';
+    } catch (err) {
+      toast = `✗ 加载剪贴板失败：${String(err)}`;
+    }
   }
 
   function onSearchInput() {
     if (searchTimer) clearTimeout(searchTimer);
-    searchTimer = setTimeout(reloadList, 130);
+    searchTimer = setTimeout(() => { void reloadList(); }, 130);
+  }
+
+  async function runMutation(method: string, params: Record<string, unknown> = {}) {
+    if (!window.tomoyo?.callPlugin) return;
+    try {
+      const msg = await window.tomoyo.callPlugin<ClipMutateRes>(method, params);
+      if (typeof msg?.key === 'string' && msg.key) selectedKey = msg.key;
+      if (msg?.ok === false) toast = `✗ ${msg.message || '操作失败'}`;
+      else if (msg?.action === 'update') toast = '✓ 已保存修改并同步剪贴板库';
+      else if (msg?.action === 'delete') toast = '✓ 已删除记录';
+      else if (msg?.action === 'clear') toast = `✓ 已清理 ${msg.count || 0} 条非置顶记录`;
+      else if (msg?.action === 'import') toast = `✓ 已导入 ${msg.count || 0} 条记录`;
+      else if (msg?.action === 'pin') toast = msg.pinned ? '★ 已置顶收藏' : '已取消置顶';
+      await reloadList();
+    } catch (err) {
+      toast = `✗ 操作失败：${String(err)}`;
+    }
   }
 
   function saveDetail() {
     if (!current) return;
-    postHost({
-      cmd: 'clip_update',
+    void runMutation('update', {
       id_key: current.key,
       text: current.kind === 'text' ? draftText : null,
       tag: draftTag.trim(),
       note: draftNote.trim(),
     });
+  }
+
+  async function exportBackup() {
+    if (!window.tomoyo?.callPlugin) return;
+    try {
+      const res = await window.tomoyo.callPlugin<{ json?: string }>('export', {});
+      postHost({ cmd: 'copy_text', text: String(res?.json || '[]') });
+      toast = '✓ JSON 备份已复制到剪贴板';
+    } catch (err) {
+      toast = `✗ 导出失败：${String(err)}`;
+    }
   }
 
   function copyItem(it: ClipItem | null, singleLine = false) {
@@ -136,7 +162,7 @@
       return;
     }
     clearArmed = false;
-    postHost({ cmd: 'clip_clear_unpinned' });
+    void runMutation('clear_unpinned');
   }
 
   let ctxItems = $derived.by<ContextMenuItem[]>(() => {
@@ -158,36 +184,19 @@
     if (id === 'copy') copyItem(it, false);
     else if (id === 'single') copyItem(it, true);
     else if (id === 'translate') translateItem(it);
-    else if (id === 'pin') postHost({ cmd: 'clip_toggle_pin', id_key: it.key });
-    else if (id === 'delete') postHost({ cmd: 'clip_delete', id_key: it.key });
+    else if (id === 'pin') void runMutation('toggle_pin', { id_key: it.key });
+    else if (id === 'delete') void runMutation('delete', { id_key: it.key });
   }
 
   onMount(() => {
     installErrorTelemetry('clip_workbench');
-    applyThemeClass(boot.theme || 'dark');
+    applyThemeClass(initialBoot.theme || window.tomoyo?.theme || 'dark');
 
-    const unsub = subscribeHost((msg) => {
-      const ev = String(msg.event || '');
-      if (ev === 'clip_list_loaded' && msg.data) {
-        const d = msg.data as ClipBoot;
-        items = d.items || [];
-        tags = d.tags || [];
-        total = d.total ?? items.length;
-        captureEnabled = d.capture_enabled !== false;
-        if (!items.some((i) => i.key === selectedKey)) selectedKey = items[0]?.key || '';
-      } else if (ev === 'clip_mutated') {
-        if (typeof msg.key === 'string' && msg.key) selectedKey = msg.key;
-        if (msg.ok === false) toast = `✗ ${msg.message || '操作失败'}`;
-        else if (msg.action === 'update') toast = '✓ 已保存修改并同步主窗口';
-        else if (msg.action === 'delete') toast = '✓ 已删除记录';
-        else if (msg.action === 'clear') toast = `✓ 已清理 ${msg.count || 0} 条非置顶记录`;
-        else if (msg.action === 'import') toast = `✓ 已导入 ${msg.count || 0} 条记录`;
-        else if (msg.action === 'pin') toast = msg.pinned ? '★ 已置顶收藏' : '已取消置顶';
-        reloadList();
-      } else if (ev === 'clip_exported') {
-        postHost({ cmd: 'copy_text', text: String(msg.json || '[]') });
-        toast = '✓ JSON 备份已复制到剪贴板';
-      }
+    if (window.tomoyo?.callPlugin && !initialBoot.items) {
+      void reloadList(window.tomoyo.initialQuery || '');
+    }
+    window.tomoyo?.onEnter?.((action) => {
+      void reloadList(action?.payload || '');
     });
 
     const onKey = (e: KeyboardEvent) => {
@@ -220,7 +229,7 @@
       }
     };
     window.addEventListener('keydown', onKey);
-    return () => { unsub(); window.removeEventListener('keydown', onKey); };
+    return () => { window.removeEventListener('keydown', onKey); };
   });
 </script>
 
@@ -232,7 +241,7 @@
       <span class="t-pill" style:color={captureEnabled ? 'var(--ok)' : 'var(--warn)'}>{captureEnabled ? '采集中' : '已暂停'}</span>
     </div>
     <div class="cb-head-r">
-      <Button variant="secondary" size="sm" onclick={() => postHost({ cmd: 'clip_export' })}><Download size={13} />导出 JSON</Button>
+      <Button variant="secondary" size="sm" onclick={exportBackup}><Download size={13} />导出 JSON</Button>
       <Button variant="secondary" size="sm" onclick={() => (importOpen = true)}><Upload size={13} />导入</Button>
       <Button variant="danger" size="sm" onclick={clearUnpinned}>{clearArmed ? '确认清空' : '清空非置顶'}</Button>
       <Button variant="icon" size="sm" title="剪贴板插件设置" onclick={() => postHost({ cmd: 'open_settings', target: 'plugins:dev.tomoyo.clipboard' })}><Settings size={14} /></Button>
@@ -249,7 +258,7 @@
         <button
           type="button"
           class="rail-btn {activeFilter === f.tok ? 'is-active' : ''}"
-          onclick={() => { activeFilter = f.tok; reloadList(); }}
+          onclick={() => { activeFilter = f.tok; void reloadList(); }}
         >
           <Icon size={14} /><span>{f.label}</span>
         </button>
@@ -261,7 +270,7 @@
         <button
           type="button"
           class="rail-btn {activeFilter === tok ? 'is-active' : ''}"
-          onclick={() => { activeFilter = tok; reloadList(); }}
+          onclick={() => { activeFilter = tok; void reloadList(); }}
         >
           <Hash size={13} /><span style="flex:1;overflow:hidden;text-overflow:ellipsis">{t.tag}</span><span class="cnt">{t.count}</span>
         </button>
@@ -321,10 +330,10 @@
             {#if current.kind === 'text'}
               <Button variant="secondary" size="sm" onclick={() => translateItem(current)}><Languages size={13} />翻译</Button>
             {/if}
-            <Button variant="secondary" size="sm" active={current.pinned} onclick={() => postHost({ cmd: 'clip_toggle_pin', id_key: current.key })}>
+            <Button variant="secondary" size="sm" active={current.pinned} onclick={() => void runMutation('toggle_pin', { id_key: current.key })}>
               <Star size={13} />{current.pinned ? '取消置顶' : '置顶'}
             </Button>
-            <Button variant="danger" size="sm" onclick={() => postHost({ cmd: 'clip_delete', id_key: current.key })}><Trash2 size={13} /></Button>
+            <Button variant="danger" size="sm" onclick={() => void runMutation('delete', { id_key: current.key })}><Trash2 size={13} /></Button>
           </div>
         </div>
 
@@ -366,7 +375,7 @@
       <textarea class="modal-ta" bind:value={importJson} placeholder="粘贴导出的 JSON 数组…"></textarea>
       <div style="display:flex;justify-content:flex-end;gap:8px">
         <Button variant="secondary" size="sm" onclick={() => (importOpen = false)}>取消</Button>
-        <Button variant="primary" size="sm" onclick={() => { if (importJson.trim()) { postHost({ cmd: 'clip_import', json: importJson.trim() }); importJson = ''; importOpen = false; } }}>确认导入</Button>
+        <Button variant="primary" size="sm" onclick={() => { if (importJson.trim()) { void runMutation('import', { json: importJson.trim() }); importJson = ''; importOpen = false; } }}>确认导入</Button>
       </div>
     </div>
   </div>

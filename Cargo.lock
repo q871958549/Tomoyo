@@ -874,6 +874,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "tomoyo-plugin-clipboard"
+version = "3.0.0"
+dependencies = [
+ "base64",
+ "chrono",
+ "pinyin",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tomoyo-sdk",
+]
+
+[[package]]
 name = "tomoyo-plugin-hello"
 version = "3.0.0"
 dependencies = [
@@ -947,7 +960,6 @@ version = "3.0.0"
 dependencies = [
  "base64",
  "chrono",
- "rusqlite",
  "serde",
  "serde_json",
  "sha2",
@@ -1014,7 +1026,6 @@ dependencies = [
  "tomoyo-core",
  "tomoyo-plugin-host",
  "tomoyo-protocol",
- "tomoyo-providers",
  "tracing",
  "tracing-subscriber",
  "webview2-com",

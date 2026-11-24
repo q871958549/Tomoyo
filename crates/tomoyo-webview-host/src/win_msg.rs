@@ -1,7 +1,6 @@
 //! WebView2 incoming JSON message dispatcher and built-in HTML bundle router.
 
 use crate::bridge::handle_host_message;
-use crate::clip_view::assemble_clip_manager_html;
 use crate::db::PluginDb;
 use crate::inline_dock::promote_inline_to_window;
 use crate::win_host::{HostWindowState, TIMER_REVEAL_FALLBACK, WM_APP_PICK_FOLDER, WM_APP_WEBVIEW_EVENT};
@@ -16,17 +15,8 @@ use windows::core::{HSTRING, PCWSTR};
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 use windows::Win32::UI::WindowsAndMessaging::{PostMessageW, WM_CLOSE};
 
-pub(crate) fn pick_builtin_html(
-    settings_mode: bool,
-    clip_mode: bool,
-) -> Option<String> {
-    if settings_mode {
-        Some(assemble_settings_html())
-    } else if clip_mode {
-        Some(assemble_clip_manager_html())
-    } else {
-        None
-    }
+pub(crate) fn pick_builtin_html(settings_mode: bool) -> Option<String> {
+    settings_mode.then(assemble_settings_html)
 }
 
 pub(crate) unsafe fn dispatch_webview_message(

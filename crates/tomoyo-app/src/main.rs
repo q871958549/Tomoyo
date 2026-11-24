@@ -35,9 +35,8 @@ use tomoyo_core::{
 };
 use tomoyo_plugin_host::{default_plugin_dirs, PluginHost};
 use tomoyo_providers::{
-    AppsProvider, CalcProvider, ClipboardProvider, EverythingProvider,
-    ProcessProvider, SnippetsProvider, SystemProvider, WebSearchProvider,
-    WindowsSwitcherProvider,
+    AppsProvider, CalcProvider, EverythingProvider, ProcessProvider, SnippetsProvider,
+    SystemProvider, WebSearchProvider, WindowsSwitcherProvider,
 };
 #[cfg(windows)]
 use window::{AppShell, WM_APP_UPDATE_READY, WM_APP_WAKE_EXISTING};
@@ -110,19 +109,12 @@ type EngineBundle = (
     Arc<RwLock<TomoyoConfig>>,
     Arc<QueryRouter>,
     Arc<PluginHost>,
-    Arc<ClipboardProvider>,
     Arc<AppsProvider>,
     Arc<UpdateManager>,
 );
 
 fn build_engine() -> EngineBundle {
     let loaded_cfg = TomoyoConfig::load_or_create();
-    let clip_db_path = if loaded_cfg.clipboard.persist_sqlite {
-        Some(data_dir().join("clipboard.db"))
-    } else {
-        None
-    };
-    let clip_max = loaded_cfg.clipboard.max_persisted_items;
     let updater = UpdateManager::with_cached(&loaded_cfg.update.repo);
     let config = Arc::new(RwLock::new(loaded_cfg));
 
@@ -134,11 +126,6 @@ fn build_engine() -> EngineBundle {
     let frecency = Arc::new(RwLock::new(FrecencyStore::load_or_default(frecency_path)));
 
     let apps = Arc::new(AppsProvider::with_frecency(config.clone(), frecency.clone()));
-    let clipboard = Arc::new(ClipboardProvider::with_sqlite(
-        clip_db_path,
-        clip_max,
-        config.clone(),
-    ));
     let everything = Arc::new(EverythingProvider::new(config.clone()));
     let calc = Arc::new(CalcProvider::new());
     let snippets = Arc::new(SnippetsProvider::new(config.clone()));
@@ -159,14 +146,13 @@ fn build_engine() -> EngineBundle {
         flows,
         web,
         everything,
-        clipboard.clone(),
         windows,
         processes,
         system,
     ];
 
     let router = Arc::new(QueryRouter::new(providers, Some(bridge), frecency).with_config(config.clone()));
-    (config, router, plugin_host, clipboard, apps, updater)
+    (config, router, plugin_host, apps, updater)
 }
 
 #[cfg(windows)]
@@ -247,13 +233,12 @@ fn main() {
     };
 
     tracing::info!("Starting Tomoyo v{CURRENT_VERSION} (args={args:?})");
-    let (config, router, plugin_host, clipboard, _apps, updater) = build_engine();
+    let (config, router, plugin_host, _apps, updater) = build_engine();
 
     let mut shell = match AppShell::create(
         Arc::clone(&config),
         router,
         plugin_host,
-        clipboard,
         Arc::clone(&updater),
         fonts.regular_family(),
         fonts.medium_family(),

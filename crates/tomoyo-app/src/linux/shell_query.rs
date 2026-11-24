@@ -177,7 +177,7 @@ impl AppCore {
             &self.current_query,
             qgen,
             30,
-            self.clipboard.latest_snapshot(),
+            self.last_clip_snapshot.clone(),
             self.attached.clone(),
             self.active_filter,
         );
@@ -212,7 +212,7 @@ impl AppCore {
                 .send(QueryJob {
                     query: self.current_query.clone(),
                     generation: qgen,
-                    clipboard: self.clipboard.latest_snapshot(),
+                    clipboard: self.last_clip_snapshot.clone(),
                     attached: self.attached.clone(),
                     filter: self.active_filter,
                     immediate,
@@ -274,7 +274,7 @@ impl AppCore {
             query,
             qgen,
             20,
-            self.clipboard.latest_snapshot(),
+            self.last_clip_snapshot.clone(),
             self.attached.clone(),
             self.active_filter,
         );
@@ -350,28 +350,6 @@ impl AppCore {
         match cr {
             Some(c) => self.renderer.paint_cairo(c, w, h, &state),
             None => self.renderer.paint_offscreen_for_test(w, h, &state),
-        }
-    }
-
-    pub(super) fn toggle_clipboard_launcher(&mut self) {
-        let enabled = self
-            .config
-            .read()
-            .map(|c| c.is_plugin_enabled(tomoyo_core::PLUGIN_CLIPBOARD))
-            .unwrap_or(true);
-        if !enabled {
-            return;
-        }
-        let vis = self.is_visible();
-        let q_low = self.current_query.trim_start().to_ascii_lowercase();
-        if vis && (q_low.starts_with("cb") || q_low.starts_with("clip")) {
-            self.hide_launcher();
-        } else if vis {
-            self.active_filter = SearchFilter::All;
-            self.set_query_text("cb ");
-        } else {
-            self.active_filter = SearchFilter::All;
-            self.show_launcher_with_query(Some("cb "));
         }
     }
 }

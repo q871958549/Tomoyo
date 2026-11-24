@@ -19,8 +19,7 @@ use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 use tomoyo_core::{Lang, QueryRouter, TomoyoConfig, UpdateManager};
 use tomoyo_plugin_host::PluginHost;
-use tomoyo_protocol::SearchFilter;
-use tomoyo_providers::ClipboardProvider;
+use tomoyo_protocol::{PluginEventKind, SearchFilter};
 use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 use windows::Win32::Graphics::Dwm::{
@@ -49,7 +48,6 @@ impl AppShell {
         config: Arc<RwLock<TomoyoConfig>>,
         router: Arc<QueryRouter>,
         plugin_host: Arc<PluginHost>,
-        clipboard: Arc<ClipboardProvider>,
         updater: Arc<UpdateManager>,
         font_regular: &'static str,
         font_medium: &'static str,
@@ -150,9 +148,13 @@ impl AppShell {
         let mut hotkey_conflict = None;
         let mut plugin_hotkeys = Vec::new();
         let mut flow_hotkeys = Vec::new();
+        let has_clip_subs = plugin_host.has_event_subscriber(PluginEventKind::ClipboardText)
+            || plugin_host.has_event_subscriber(PluginEventKind::ClipboardImage);
+        let mut clip_listener_active = false;
         let tray = if install_tray_and_hotkey {
-            if cfg_snap.is_plugin_enabled(tomoyo_core::PLUGIN_CLIPBOARD) {
+            if has_clip_subs {
                 unsafe { let _ = AddClipboardFormatListener(hwnd); }
+                clip_listener_active = true;
             }
             let (active, conflict, plug_hks, flow_hks) = register_all_hotkeys(hwnd, &cfg_snap, &plugin_host);
             hotkey_label = active;
@@ -184,7 +186,8 @@ impl AppShell {
             theme_name: cfg_snap.theme,
             router,
             plugin_host,
-            clipboard,
+            last_clip_snapshot: None,
+            clip_listener_active,
             updater,
             query_tx,
             result_rx,
@@ -225,10 +228,16 @@ impl AppShell {
         unsafe {
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, &mut *app as *mut AppShell as isize);
         }
-        if app.config.read().map(|c| c.is_plugin_enabled(tomoyo_core::PLUGIN_CLIPBOARD)).unwrap_or(true)
-            && let Some(txt) = read_clipboard_text() {
-                app.clipboard.push_text(txt);
-            }
+        if has_clip_subs && let Some(txt) = read_clipboard_text() {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0);
+            app.last_clip_snapshot = Some(tomoyo_protocol::ClipboardSnapshot {
+                text: txt.chars().take(2048).collect(),
+                captured_at_unix: now,
+            });
+        }
         Ok(app)
     }
 }

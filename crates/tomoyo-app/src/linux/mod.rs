@@ -24,7 +24,6 @@ use std::time::Duration;
 use tomoyo_core::{QueryRouter, TomoyoConfig, UpdateManager};
 use tomoyo_plugin_host::PluginHost;
 use tomoyo_protocol::AttachedContext;
-use tomoyo_providers::ClipboardProvider;
 
 #[repr(C)]
 pub struct LinuxTrayMenuItem {
@@ -86,7 +85,6 @@ impl AppShell {
         config: Arc<RwLock<TomoyoConfig>>,
         router: Arc<QueryRouter>,
         plugin_host: Arc<PluginHost>,
-        clipboard: Arc<ClipboardProvider>,
         updater: Arc<UpdateManager>,
         font_regular: &'static str,
         _font_medium: &'static str,
@@ -96,7 +94,6 @@ impl AppShell {
             config,
             router,
             plugin_host,
-            clipboard,
             updater,
             font_regular,
             install_tray,

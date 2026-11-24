@@ -14,7 +14,7 @@ impl AppShell {
         let _ = self.query_tx.send(QueryJob {
             generation,
             query: self.current_query.clone(),
-            clipboard: self.clipboard.latest_snapshot(),
+            clipboard: self.last_clip_snapshot.clone(),
             attached: self.attached.clone(),
             filter: self.active_filter,
         });

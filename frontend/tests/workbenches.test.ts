@@ -126,17 +126,30 @@ describe('Tomoyo Workbenches & FlowsTab interactions', () => {
     unmount(app);
   });
 
-  it('ClipboardApp filters by category/tag, pins, copies, and deletes items', () => {
+  it('ClipboardApp filters by category/tag, pins, copies, and deletes items via Hybrid RPC', async () => {
     const wv = setupMockWebView();
+    const calls: Array<{ method: string; params: unknown }> = [];
+    const sampleItems = [
+      { key: 'k1', kind: 'text', subtype: 'text', preview: 'hello\nworld', text: 'hello\nworld', ts: 1700000000, pinned: false, tag: 'work', note: 'memo', source_app: 'code.exe' },
+      { key: 'k2', kind: 'text', subtype: 'link', preview: 'https://tomoyo.dev', text: 'https://tomoyo.dev', ts: 1700000010, pinned: true, tag: '', note: '', source_app: 'msedge.exe' },
+    ];
     window.__TOMOYO_CLIP_INIT__ = {
       theme: 'light',
       capture_enabled: true,
       total: 2,
       tags: [{ tag: 'work', count: 1 }],
-      items: [
-        { key: 'k1', kind: 'text', subtype: 'text', preview: 'hello\nworld', text: 'hello\nworld', ts: 1700000000, pinned: false, tag: 'work', note: 'memo', source_app: 'code.exe' },
-        { key: 'k2', kind: 'text', subtype: 'link', preview: 'https://tomoyo.dev', text: 'https://tomoyo.dev', ts: 1700000010, pinned: true, tag: '', note: '', source_app: 'msedge.exe' },
-      ],
+      items: sampleItems,
+    };
+    window.tomoyo = {
+      theme: 'light',
+      callPlugin: (async (method: string, params?: unknown) => {
+        calls.push({ method, params });
+        if (method === 'list') {
+          return { total: 2, capture_enabled: true, tags: [{ tag: 'work', count: 1 }], items: sampleItems };
+        }
+        if (method === 'toggle_pin') return { ok: true, action: 'pin', pinned: true, key: 'k1' };
+        return { ok: true };
+      }) as <T = unknown>(method: string, params?: unknown) => Promise<T>,
     };
 
     const app = mount(ClipboardApp, { target: document.getElementById('app')! });
@@ -146,8 +159,9 @@ describe('Tomoyo Workbenches & FlowsTab interactions', () => {
     const tagBtn = [...document.querySelectorAll<HTMLButtonElement>('aside.cb-rail button')].find((b) => b.textContent?.includes('work'));
     expect(tagBtn).toBeDefined();
     tagBtn?.click();
+    await new Promise((r) => setTimeout(r, 5));
     flushSync();
-    expect(wv.posted.some((m) => m.cmd === 'clip_list' && m.query === '#work')).toBe(true);
+    expect(calls.some((c) => c.method === 'list' && (c.params as { query?: string })?.query === '#work')).toBe(true);
 
     // Single-line copy emits merged text
     const singleBtn = [...document.querySelectorAll<HTMLButtonElement>('.det-head button')].find((b) => b.textContent?.includes('单行'));
@@ -158,8 +172,9 @@ describe('Tomoyo Workbenches & FlowsTab interactions', () => {
     // Toggle pin
     const pinBtn = [...document.querySelectorAll<HTMLButtonElement>('.det-head button')].find((b) => b.textContent?.includes('置顶'));
     pinBtn?.click();
+    await new Promise((r) => setTimeout(r, 5));
     flushSync();
-    expect(wv.posted.some((m) => m.cmd === 'clip_toggle_pin' && m.id_key === 'k1')).toBe(true);
+    expect(calls.some((c) => c.method === 'toggle_pin' && (c.params as { id_key?: string })?.id_key === 'k1')).toBe(true);
 
     // Keyboard ergonomics: Ctrl+F focuses search, ArrowDown cycles to k2, Enter copies k2
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', ctrlKey: true }));
@@ -174,6 +189,7 @@ describe('Tomoyo Workbenches & FlowsTab interactions', () => {
     flushSync();
     expect(wv.posted.some((m) => m.cmd === 'copy_text' && m.text === 'https://tomoyo.dev')).toBe(true);
 
+    window.tomoyo = undefined;
     unmount(app);
   });
 

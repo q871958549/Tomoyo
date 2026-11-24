@@ -122,7 +122,6 @@ impl AppShell {
         self.shutting_down = true;
         self.close_inline_dock();
         self.plugin_host.shutdown_all();
-        self.clipboard.shutdown_checkpoint();
         self.preview_loader.cancel_all();
         self.tray = None;
     }
@@ -143,7 +142,7 @@ impl AppShell {
             query,
             generation,
             20,
-            self.clipboard.latest_snapshot(),
+            self.last_clip_snapshot.clone(),
             self.attached.clone(),
             self.active_filter,
         );
@@ -195,7 +194,7 @@ impl AppShell {
         self.geom.max_visible_rows = fresh.window.max_visible_rows.clamp(4, 18);
         self.geom.preview_width_dip = fresh.window.preview_width_dip.clamp(220, 620);
         self.geom.custom_pos = fresh.window.custom_x.zip(fresh.window.custom_y);
-        let (apps_changed, plugins_changed, clip_was_on, hotkeys_changed, avoidance_changed) = self
+        let (apps_changed, plugins_changed, hotkeys_changed, avoidance_changed) = self
             .config
             .read()
             .map(|old| {
@@ -206,13 +205,11 @@ impl AppShell {
                     old.disabled_plugins != fresh.disabled_plugins
                         || old.plugin_settings != fresh.plugin_settings
                         || old.plugin_hotkeys != fresh.plugin_hotkeys,
-                    old.is_plugin_enabled(tomoyo_core::PLUGIN_CLIPBOARD),
                     hotkeys_config_changed(&old, &fresh),
                     avoidance_config_changed(&old, &fresh),
                 )
             })
-            .unwrap_or((true, true, true, true, true));
-        let clip_now_on = fresh.is_plugin_enabled(tomoyo_core::PLUGIN_CLIPBOARD);
+            .unwrap_or((true, true, true, true));
         let cfg_for_hk = fresh.clone();
         if let Ok(mut cfg) = self.config.write() {
             *cfg = fresh;
@@ -227,15 +224,7 @@ impl AppShell {
             self.router.reload_all();
         }
         if self.tray.is_some() {
-            if clip_was_on != clip_now_on {
-                unsafe {
-                    if clip_now_on {
-                        let _ = windows::Win32::System::DataExchange::AddClipboardFormatListener(self.hwnd);
-                    } else {
-                        let _ = windows::Win32::System::DataExchange::RemoveClipboardFormatListener(self.hwnd);
-                    }
-                }
-            }
+            self.sync_clipboard_listener();
             if force_provider_reload || hotkeys_changed {
                 unregister_all_hotkeys(self.hwnd);
                 let (active, conflict, plug_hks, flow_hks) = register_all_hotkeys(self.hwnd, &cfg_for_hk, &self.plugin_host);
@@ -274,7 +263,6 @@ pub(super) fn restore_launcher_opacity(hwnd: HWND) {
 fn hotkeys_config_changed(old: &TomoyoConfig, fresh: &TomoyoConfig) -> bool {
     old.hotkey != fresh.hotkey
         || old.override_conflict_hotkeys != fresh.override_conflict_hotkeys
-        || old.clipboard.hotkey != fresh.clipboard.hotkey
         || old.disabled_plugins != fresh.disabled_plugins
         || old.plugin_hotkeys != fresh.plugin_hotkeys
 }
@@ -303,7 +291,7 @@ mod tests {
         assert!(avoidance_config_changed(&base, &avoid_only));
 
         let mut hk_edit = base.clone();
-        hk_edit.capture.pin_hotkey = "F4".into();
+        hk_edit.plugin_hotkeys.insert("dev.tomoyo.capture:pin".into(), "F4".into());
         assert!(hotkeys_config_changed(&base, &hk_edit));
     }
 }

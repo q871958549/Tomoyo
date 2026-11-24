@@ -21,7 +21,6 @@ pub const WM_TRAY_CALLBACK: u32 = WM_APP + 10;
 
 pub const MENU_ID_SHOW: u32 = 2001;
 pub const MENU_ID_SETTINGS: u32 = 2002;
-pub const MENU_ID_CLIPBOARD: u32 = 2009;
 pub const MENU_ID_UPDATE: u32 = 2008;
 pub const MENU_ID_STATS: u32 = 2003;
 pub const MENU_ID_CONFIG: u32 = 2004;
@@ -100,7 +99,6 @@ impl TrayIcon {
         dpi_scale: f32,
         font_regular: &str,
         font_medium: &str,
-        clip_on: bool,
         plugin_actions: &[tomoyo_plugin_host::ActivePluginTrayAction],
     ) -> Option<u32> {
         let mut entries = vec![
@@ -112,14 +110,6 @@ impl TrayIcon {
                 false,
             ),
         ];
-        if clip_on {
-            entries.push(PopupEntry::item(
-                MENU_ID_CLIPBOARD,
-                lang.pick("剪贴板工作台...", "Clipboard Workbench..."),
-                Some("Ctrl+E"),
-                false,
-            ));
-        }
         if !plugin_actions.is_empty() {
             entries.push(PopupEntry::Separator);
             for (idx, act) in plugin_actions.iter().enumerate() {

@@ -5,7 +5,7 @@ use std::ffi::{c_char, c_int, c_void, CStr, CString};
 use std::sync::{Arc, Mutex};
 use tomoyo_core::{
     load_or_init_flows, parse_hotkey, save_hotkey_health, HotkeyHealthReport, HotkeySlotStatus,
-    TomoyoConfig, PLUGIN_CLIPBOARD,
+    TomoyoConfig,
 };
 use tomoyo_plugin_host::{ActivePluginHotkey, PluginHost};
 
@@ -27,7 +27,6 @@ unsafe extern "C" {
 #[derive(Clone)]
 pub enum HotkeyAction {
     ToggleMain,
-    Clipboard,
     Plugin(ActivePluginHotkey),
     Flow(String),
 }
@@ -131,11 +130,7 @@ impl HotkeyManager {
         self.active_label = active_spec;
         self.conflict_msg = (!health.main.ok).then(|| health.main.reason.clone()).filter(|s| !s.is_empty());
 
-        health.clipboard = if cfg.is_plugin_enabled(PLUGIN_CLIPBOARD) {
-            self.try_slot("clipboard", "打开剪贴板中心", &cfg.clipboard.hotkey, ov, HotkeyAction::Clipboard)
-        } else {
-            HotkeySlotStatus { disabled: true, ..Default::default() }
-        };
+        health.clipboard = HotkeySlotStatus { disabled: true, ..Default::default() };
         health.translate = HotkeySlotStatus { disabled: true, ..Default::default() };
         health.capture = HotkeySlotStatus { disabled: true, ..Default::default() };
         health.pin = HotkeySlotStatus { disabled: true, ..Default::default() };

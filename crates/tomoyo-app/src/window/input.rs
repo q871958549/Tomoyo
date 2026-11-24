@@ -1,11 +1,10 @@
 //! Keyboard navigation, filter shortcuts, global hotkey registration, and EDIT subclassing.
 
 use super::hotkey_override::{sync_conflict_override_hook, uninstall_conflict_override_hook};
-use super::{AppShell, EM_GETSEL, HOTKEY_CLIPBOARD_ID, HOTKEY_ID};
+use super::{AppShell, EM_GETSEL, HOTKEY_ID};
 use crate::actions::set_clipboard_text;
 use tomoyo_core::{
     parse_hotkey, save_hotkey_health, HotkeyHealthReport, HotkeySlotStatus, Lang, TomoyoConfig,
-    PLUGIN_CLIPBOARD,
 };
 use tomoyo_protocol::SearchFilter;
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
@@ -49,19 +48,19 @@ impl AppShell {
         }
 
         if ctrl_down && shift_down && vk == b'P' as u16
-            && self.trigger_selected_clipboard_shortcut("pin") {
+            && self.trigger_selected_action_by_id("pin") {
                 return;
             }
 
         if ctrl_down && vk == b'E' as u16 {
-            if !self.trigger_selected_clipboard_shortcut("edit_workbench") {
-                self.open_clipboard_workbench(None);
+            if !self.trigger_selected_action_by_id("edit_workbench") {
+                self.open_clipboard_plugin_ui_if_installed();
             }
             return;
         }
 
         if ctrl_down && vk == b'D' as u16
-            && self.trigger_selected_clipboard_shortcut("delete") {
+            && self.trigger_selected_action_by_id("delete") {
                 return;
             }
 
@@ -241,9 +240,7 @@ pub(super) fn unregister_all_hotkeys(hwnd: HWND) {
     uninstall_conflict_override_hook();
     super::plugin_hotkeys::unregister_plugin_hotkeys(hwnd);
     unsafe {
-        for id in [HOTKEY_ID, HOTKEY_CLIPBOARD_ID] {
-            let _ = UnregisterHotKey(Some(hwnd), id);
-        }
+        let _ = UnregisterHotKey(Some(hwnd), HOTKEY_ID);
     }
 }
 
@@ -289,51 +286,19 @@ pub(super) fn register_all_hotkeys(
         HotkeySlotStatus { spec: cfg.hotkey.clone(), active: active.clone(), ok: true, disabled: false, overridden: false, reason: String::new() }
     };
 
-    let mut reg_opt = |id: i32, spec: &str, label: &str| -> HotkeySlotStatus {
-        let trimmed = spec.trim();
-        if trimmed.is_empty() {
-            return HotkeySlotStatus { spec: String::new(), active: String::new(), ok: true, disabled: true, overridden: false, reason: String::new() };
-        }
-        if register_optional_hotkey(hwnd, id, trimmed) {
-            return HotkeySlotStatus { spec: trimmed.to_string(), active: trimmed.to_string(), ok: true, disabled: false, overridden: false, reason: String::new() };
-        }
-        if allow_override
-            && let Some(p) = parse_hotkey(trimmed) {
-                override_entries.push((id, p.modifiers, p.vk));
-                tracing::info!(hotkey = %trimmed, id = id, "Hotkey occupied externally; queued for high-priority override");
-                return HotkeySlotStatus {
-                    spec: trimmed.to_string(), active: trimmed.to_string(), ok: true, disabled: false, overridden: true,
-                    reason: lang.pick("已高优先级接管生效", "Overridden via high-priority hook").into(),
-                };
-            }
-        tracing::warn!(hotkey = %trimmed, id = id, "Optional hotkey registration failed (already in use; override disabled)");
-        let reason = match lang {
-            Lang::Zh => format!("已被系统或其他软件占用（{trimmed}）"),
-            Lang::En => format!("Occupied by OS or another app ({trimmed})"),
-        };
-        issues.push(match lang {
-            Lang::Zh => format!("{label}热键 {trimmed} 被其他软件占用"),
-            Lang::En => format!("{label} hotkey {trimmed} is busy"),
-        });
-        HotkeySlotStatus { spec: trimmed.to_string(), active: String::new(), ok: false, disabled: false, overridden: false, reason }
-    };
-
-    let clip_spec = if cfg.is_plugin_enabled(PLUGIN_CLIPBOARD) { cfg.clipboard.hotkey.as_str() } else { "" };
-    let mut clip_status = reg_opt(HOTKEY_CLIPBOARD_ID, clip_spec, lang.pick("剪贴板", "Clipboard"));
     let disabled_slot = || HotkeySlotStatus { disabled: true, ..Default::default() };
-    let (tr_status, cap_status, pin_status, ocr_status, rec_status) = (
-        disabled_slot(), disabled_slot(), disabled_slot(), disabled_slot(), disabled_slot(),
+    let (clip_status, tr_status, cap_status, pin_status, ocr_status, rec_status) = (
+        disabled_slot(), disabled_slot(), disabled_slot(), disabled_slot(), disabled_slot(), disabled_slot(),
     );
     let plug_hks = super::plugin_hotkeys::register_plugin_hotkeys(hwnd, cfg, plugin_host, &mut override_entries);
     let flow_hks = super::plugin_hotkeys::register_flow_hotkeys(hwnd, cfg, &mut override_entries);
 
     if !sync_conflict_override_hook(hwnd, &override_entries) {
         tracing::warn!("Failed to install low-level conflict override hook; conflicted hotkeys inactive");
-        for slot in [&mut main_status, &mut clip_status] {
-            if slot.overridden {
-                slot.ok = false; slot.overridden = false;
-                slot.reason = lang.pick("底层接管钩子挂载失败", "Override hook installation failed").into();
-            }
+        if main_status.overridden {
+            main_status.ok = false;
+            main_status.overridden = false;
+            main_status.reason = lang.pick("底层接管钩子挂载失败", "Override hook installation failed").into();
         }
     }
 

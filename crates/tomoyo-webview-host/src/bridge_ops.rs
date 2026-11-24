@@ -1,7 +1,7 @@
-//! Extracted WebView host command handlers for Store, Permissions, Diagnostics, and Clipboard Workbench.
+//! Extracted WebView host command handlers for Store, Permissions, and Diagnostics.
 
 use crate::bridge::{notify_parent_reload, HostAction};
-use crate::bridge_os::{notify_parent_mode, set_clipboard_text, shell_open};
+use crate::bridge_os::{set_clipboard_text, shell_open};
 use crate::store::{install_plugin_from_source, uninstall_user_plugin};
 
 pub(crate) fn handle_install_plugin(
@@ -147,36 +147,4 @@ pub(crate) fn handle_open_logs_dir() -> HostAction {
     let _ = std::fs::create_dir_all(&dir);
     shell_open(&dir.to_string_lossy());
     HostAction::default()
-}
-
-pub(crate) fn handle_open_clipboard_manager(notify_hwnd: Option<isize>) -> HostAction {
-    if let Ok(exe) = std::env::current_exe() {
-        let theme = tomoyo_core::TomoyoConfig::load_or_create().theme;
-        let mut cmd = std::process::Command::new(exe);
-        cmd.args([
-            "--plugin-id", "builtin.clipboard",
-            "--title", "Tomoyo 剪贴板工作台",
-            "--entry", crate::clip_view::CLIP_MANAGER_ENTRY,
-            "--theme", &theme,
-            "--width", "1060", "--height", "680",
-        ]);
-        if let Some(h) = notify_hwnd {
-            cmd.args(["--notify-hwnd", &h.to_string()]);
-        }
-        let _ = cmd.spawn();
-    }
-    HostAction::default()
-}
-
-pub(crate) fn finish_clip_mutation(
-    reply: String,
-    mutated: bool,
-    notify_hwnd: Option<isize>,
-) -> HostAction {
-    if mutated
-        && let Some(t) = notify_hwnd
-    {
-        notify_parent_mode(t, 2);
-    }
-    HostAction { reply_json: Some(reply), ..Default::default() }
 }

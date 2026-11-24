@@ -302,11 +302,6 @@ pub enum InternalCommandKind {
     ResetWindowGeometry,
     SetTheme { theme: String },
     SetLanguage { lang: String },
-    ToggleClipboardPin { id_key: String },
-    DeleteClipboardItem { id_key: String },
-    ClearUnpinnedClipboard,
-    OpenClipboardManager { focus_key: Option<String> },
-    ToggleClipboardCapture,
     CheckForUpdates,
     InstallUpdate,
     ClearAttachedContext,
@@ -362,6 +357,9 @@ pub struct ExecuteResponse {
     /// Whether Tomoyo should hide after executing this action (defaults to true).
     #[serde(default = "default_true")]
     pub hide_window: bool,
+    /// Protocol v3: if true (with `hide_window: false`), re-runs the current launcher query immediately.
+    #[serde(default)]
+    pub refresh_query: bool,
     /// Optional status/toast message displayed in the footer.
     #[serde(default)]
     pub toast: Option<String>,

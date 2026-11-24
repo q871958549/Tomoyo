@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { hydrateSettingsInit, isPluginEnabled, PLUGIN_CLIPBOARD } from '../../lib/defaults';
+  import { hydrateSettingsInit } from '../../lib/defaults';
   import { assignCoreHotkeyWithSwap, type CoreHotkeySlot } from '../../lib/hotkeys';
   import { applyThemeClass, installErrorTelemetry, postHost, subscribeHost } from '../../lib/ipc';
   import { OFFICIAL_REPO, tr, type Lang } from '../../lib/i18n';
@@ -76,7 +76,6 @@
   let conflictSlots = $derived.by(() => {
     const entries = [
       { label: lang === 'en' ? 'Launcher' : '主启动器', st: hotkeyHealth.main, on: true },
-      { label: lang === 'en' ? 'Clipboard' : '剪贴板', st: hotkeyHealth.clipboard, on: isPluginEnabled(cfg, PLUGIN_CLIPBOARD) },
     ];
     return entries.filter((e) => e.on && e.st && !e.st.disabled && !e.st.ok && e.st.spec);
   });
@@ -119,7 +118,7 @@
   function probeHotkeyOwner(spec: string) { probingSpec = spec; probeResult = null; postHost({ cmd: 'probe_hotkey_owner', spec }); }
   function applyFreeKey(slot: CoreHotkeySlot, key: string) {
     const swapped = assignCoreHotkeyWithSwap(cfg, slot, key, {
-      main: true, clipboard: isPluginEnabled(cfg, PLUGIN_CLIPBOARD),
+      main: true, clipboard: false,
       translate: false, capture: false, pin: false, ocr: false, record: false,
     });
     scheduleSave(0);
@@ -374,7 +373,7 @@
             <Segmented value={subPlugins} options={[{ value: 'installed', label: lang === 'en' ? 'Modules & Plugins' : '已安装与插件设置' }, { value: 'store', label: tr(lang, 'nav_store') }]} onchange={(v) => { subPlugins = v; if (v === 'store' && !storeLoaded) { storeLoaded = true; fetchStore(); } }} />
           </div>
           {#if subPlugins === 'installed'}
-            <PluginsTab {cfg} {lang} {plugins} officialIcons={init.official_icons || {}} {configPath} pluginsDir={init.plugins_dir} runningApps={init.running_apps} {secretsStatus} {hotkeyHealth} expandedId={expandedPlugin} healthReport={pluginHealth} checkingHealth={checkingPluginHealth} onCheckHealth={checkPluginHealth} onToggleExpand={(id) => (expandedPlugin = id)} {onTogglePlugin} {onUpdatePluginConfig} onJumpDoctor={() => switchTab('hotkeys')} onSave={scheduleSave} />
+            <PluginsTab {cfg} {lang} {plugins} officialIcons={init.official_icons || {}} {configPath} pluginsDir={init.plugins_dir} {secretsStatus} expandedId={expandedPlugin} healthReport={pluginHealth} checkingHealth={checkingPluginHealth} onCheckHealth={checkPluginHealth} onToggleExpand={(id) => (expandedPlugin = id)} {onTogglePlugin} {onUpdatePluginConfig} />
           {:else}
             <StoreTab {lang} items={storeItems} meta={storeMeta} statusText={storeStatus} loading={storeLoading} detail={storeDetail} detailLoading={storeDetailLoading} onQuery={fetchStore} onInspectDetail={inspectStoreDetail} onCloseDetail={() => (storeDetail = null)} />
           {/if}

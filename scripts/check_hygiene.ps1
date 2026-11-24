@@ -87,9 +87,9 @@ if (Test-Path $pkgPath) {
     }
 }
 $bundleBudgets = [ordered]@{
-    "frontend\dist\settings.html"               = 320 * 1024
+    "frontend\dist\settings.html"               = 300 * 1024
     "plugins\official-translate\ui\index.html"  = 150 * 1024
-    "frontend\dist\clipboard.html"              = 150 * 1024
+    "plugins\official-clipboard\ui\index.html"  = 150 * 1024
     "plugins\builtin-ocr\ui\index.html"         = 150 * 1024
 }
 $bundleSummary = @()
@@ -199,14 +199,15 @@ if ($nodeCmd) {
 if ($CheckBinaries) {
     Write-Host "=== [7/$totalSteps] Checking release binary size ceilings ==="
     $binBudgets = [ordered]@{
-        "target\release\tomoyo.exe"              = 6.5
-        "target\release\tomoyo-webview-host.exe" = 5.5
+        "target\release\tomoyo.exe"              = 5.8
+        "target\release\tomoyo-webview-host.exe" = 4.2
         "target\release\tomoyo-capture.exe"      = 1.5
         "target\release\tomoyo-plugin-ocr.exe"       = 0.8
         "target\release\tomoyo-plugin-notes.exe"     = 0.8
         "target\release\tomoyo-plugin-md-editor.exe" = 0.8
         "target\release\tomoyo-plugin-translate.exe" = 0.8
         "target\release\tomoyo-plugin-capture.exe"   = 0.8
+        "target\release\tomoyo-plugin-clipboard.exe" = 2.5
     }
     $binViolations = 0
     $binSummary = @()

@@ -1,0 +1,91 @@
+id = "dev.tomoyo.clipboard"
+name = "剪贴板管理中心 (官方插件)"
+version = "3.0.0"
+description = "CopyQ 级本地 SQLite 剪贴板历史、图片与文件采集、标签备注、隐私屏蔽及按需工作台（关闭即卸载系统剪贴板监听与热键）"
+author = "Tomoyo Contributors"
+license = "MIT OR Apache-2.0"
+homepage = "https://github.com/q871958549/Tomoyo"
+icon = "icon.png"
+category = "productivity"
+display_mode = "window"
+tags = ["clipboard", "history", "sqlite", "images", "snippets", "privacy"]
+permissions = ["clipboard", "filesystem_read", "filesystem_write"]
+events = ["clipboard_text", "clipboard_image", "hotkey_triggered"]
+
+[runtime]
+kind = "stdio_jsonrpc"
+command = "tomoyo-plugin-clipboard"
+args = []
+
+[ui]
+entry = "ui/index.html"
+width = 1060
+height = 680
+utools_compat = false
+
+[triggers]
+keywords = ["cb", "clip"]
+
+[resources]
+max_memory_mb = 96
+idle_timeout_secs = 120
+query_timeout_ms = 2000
+
+[[hotkeys]]
+id = "open_cb"
+label = "剪贴板历史快捷搜索"
+default_hotkey = "Alt+V"
+trigger_query = "cb "
+
+[[tray_actions]]
+id = "open_workbench"
+label = "剪贴板工作台"
+open_ui = true
+
+[[settings]]
+key = "capture_enabled"
+label = "后台自动采集剪贴板"
+description = "关闭后暂停记录新复制的文本、图片与文件（可在搜索框输入 cb :pause 临时切换）"
+section = "采集与持久化"
+type = "bool"
+default = true
+
+[[settings]]
+key = "capture_images"
+label = "采集剪贴板图片与截图"
+description = "将复制的图片以无损 PNG 缓存到磁盘并支持预览与一键 OCR"
+section = "采集与持久化"
+type = "bool"
+default = true
+
+[[settings]]
+key = "persist_sqlite"
+label = "使用本地 SQLite 持久化历史"
+description = "关闭后仅保留内存历史，退出或休眠后不落盘"
+section = "采集与持久化"
+type = "bool"
+default = true
+
+[[settings]]
+key = "max_persisted_items"
+label = "最大保留历史条数"
+description = "超出上限后自动清理最早的非置顶记录（置顶记录永久保留）"
+section = "采集与持久化"
+type = "select"
+default = "500"
+options = [
+  { value = "100", label = "100 条" },
+  { value = "200", label = "200 条" },
+  { value = "500", label = "500 条（推荐）" },
+  { value = "1000", label = "1000 条" },
+  { value = "2000", label = "2000 条" },
+]
+
+[[settings]]
+key = "excluded_apps"
+label = "隐私应用屏蔽名单"
+description = "逗号分隔的应用进程名（如 keepass.exe, bitwarden.exe, 1password）；命中时自动跳过采集"
+section = "隐私安全屏蔽"
+type = "text"
+placeholder = "keepass.exe, keepassxc.exe, bitwarden.exe, 1password.exe"
+default = ""

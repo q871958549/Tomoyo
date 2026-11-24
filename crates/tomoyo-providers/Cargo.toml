@@ -3,13 +3,12 @@ name = "tomoyo-providers"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Built-in zero-overhead providers for Tomoyo: Everything, Apps (incl. UWP), Calculator, SQLite Text+Image Clipboard, Process Killer, Web Search, Window Switcher, Super Match, and System/Update Diagnostics"
+description = "Built-in zero-overhead providers for Tomoyo: Everything, Apps (incl. UWP), Calculator, Process Killer, Web Search, Window Switcher, Super Match, Flows, and System/Update Diagnostics"
 
 [dependencies]
 tomoyo-protocol = { workspace = true }
 tomoyo-core = { workspace = true }
 tomoyo-everything = { workspace = true }
-rusqlite = { workspace = true }
 sha2 = { workspace = true }
 chrono = { workspace = true }
 base64 = { workspace = true }

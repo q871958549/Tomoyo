@@ -9,10 +9,9 @@ use super::wndproc_mouse::{
     hit_test_window_chrome,
 };
 use super::{
-    AppShell, HOTKEY_CLIPBOARD_ID, HOTKEY_ID, TIMER_CLEAR_TOAST,
-    TIMER_FADE_HIDE, TIMER_FOCUS_GUARD, TIMER_HIBERNATE, TIMER_LAUNCH_HIDE, TIMER_SETTINGS_HIDE,
-    WM_APP_CONFIG_SAVED, WM_APP_EDIT_KEY, WM_APP_FLOW_DONE, WM_APP_LAUNCH_DONE,
-    WM_APP_PASTE_INTERCEPT, WM_APP_PLUGIN_EVENT_DONE, WM_APP_RESULTS_READY,
+    AppShell, HOTKEY_ID, TIMER_CLEAR_TOAST, TIMER_FADE_HIDE, TIMER_FOCUS_GUARD, TIMER_HIBERNATE,
+    TIMER_LAUNCH_HIDE, TIMER_SETTINGS_HIDE, WM_APP_CONFIG_SAVED, WM_APP_EDIT_KEY, WM_APP_FLOW_DONE,
+    WM_APP_LAUNCH_DONE, WM_APP_PASTE_INTERCEPT, WM_APP_PLUGIN_EVENT_DONE, WM_APP_RESULTS_READY,
     WM_APP_SHOW_CONTEXT_MENU, WM_APP_UPDATE_INSTALLED, WM_APP_UPDATE_READY, WM_APP_WAKE_EXISTING,
 };
 use crate::icons::WM_APP_ICON_READY;
@@ -141,7 +140,6 @@ pub(super) unsafe extern "system" fn main_wndproc(
             }
             match wparam.0 as i32 {
                 HOTKEY_ID => app.toggle_launcher(),
-                HOTKEY_CLIPBOARD_ID => app.toggle_clipboard_launcher(),
                 id if id >= super::plugin_hotkeys::FLOW_HOTKEY_BASE => {
                     super::plugin_hotkeys::handle_flow_hotkey(app, id);
                 }
@@ -299,15 +297,10 @@ fn handle_tray_callback(hwnd: HWND, app: &mut AppShell, lparam: LPARAM) -> LRESU
     if ev == WM_LBUTTONUP || ev == WM_LBUTTONDBLCLK {
         app.toggle_launcher();
     } else if ev == WM_RBUTTONUP {
-        let clip_on = app
-            .config
-            .read()
-            .map(|c| c.is_plugin_enabled(tomoyo_core::PLUGIN_CLIPBOARD))
-            .unwrap_or(true);
         app.tray_plugin_actions = app.plugin_host.active_tray_actions();
         let chosen = app.tray.as_ref().and_then(|tray| {
             tray.show_context_menu(
-                app.lang, app.theme, app.dpi_scale, app.font_regular, app.font_medium, clip_on,
+                app.lang, app.theme, app.dpi_scale, app.font_regular, app.font_medium,
                 &app.tray_plugin_actions,
             )
         });
