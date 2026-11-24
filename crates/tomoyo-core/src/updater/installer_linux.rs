@@ -59,8 +59,8 @@ pub(super) fn launch_linux_update(installer_path: &Path) -> Result<bool, String>
              done\n\
              rm -rf \"{stage}\" \"{arch}\"\n\
              if [ -x \"{exe}\" ]; then\n\
-               if ! (command -v systemd-run >/dev/null 2>&1 && systemd-run --user --unit=app-tomoyo@launcher.service --collect --quiet --slice=app.slice --description=\"Tomoyo\" --property=ExitType=cgroup --working-directory=\"${{HOME:-/}}\" -- \"{exe}\" --updated >/dev/null 2>&1); then\n\
-                 nohup \"{exe}\" --updated </dev/null >/dev/null 2>&1 &\n\
+               if ! (command -v systemd-run >/dev/null 2>&1 && systemd-run --user --unit=app-tomoyo@launcher.service --collect --quiet --slice=app.slice --description=\"Tomoyo\" --property=ExitType=cgroup --setenv=MALLOC_ARENA_MAX=2 --working-directory=\"${{HOME:-/}}\" -- \"{exe}\" --updated >/dev/null 2>&1); then\n\
+                 MALLOC_ARENA_MAX=2 nohup \"{exe}\" --updated </dev/null >/dev/null 2>&1 &\n\
                fi\n\
              fi\n",
             inst = install_dir.display(),

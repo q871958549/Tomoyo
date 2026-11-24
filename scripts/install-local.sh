@@ -69,7 +69,7 @@ for proc in tomoyo tomoyo-webview-host tomoyo-capture; do
 done
 sleep 0.3
 
-mkdir -p "$BIN_DIR" "$DATA_DIR/fonts" "$DATA_DIR/assets" "$DATA_DIR/registry" \
+mkdir -p "$BIN_DIR" "$DATA_DIR/fonts" "$DATA_DIR/plugin-icons" "$DATA_DIR/assets" "$DATA_DIR/registry" \
   "$XDG_DATA/applications" \
   "$XDG_DATA/icons/hicolor/256x256/apps" \
   "$XDG_DATA/icons/hicolor/scalable/apps"
@@ -145,9 +145,9 @@ if [ "$NO_LAUNCH" -eq 0 ]; then
   fi
   if ! (command -v systemd-run >/dev/null 2>&1 \
     && systemd-run --user --unit=app-tomoyo@launcher.service --collect --quiet --slice=app.slice \
-      --description="Tomoyo" --property=ExitType=cgroup --working-directory="$HOME" \
-      -- "$BIN_DIR/tomoyo" --silent >/dev/null 2>&1); then
-    nohup "$BIN_DIR/tomoyo" --silent </dev/null >/dev/null 2>&1 &
+      --description="Tomoyo" --property=ExitType=cgroup --setenv=MALLOC_ARENA_MAX=2 \
+      --working-directory="$HOME" -- "$BIN_DIR/tomoyo" --silent >/dev/null 2>&1); then
+    MALLOC_ARENA_MAX=2 nohup "$BIN_DIR/tomoyo" --silent </dev/null >/dev/null 2>&1 &
   fi
   sleep 1.0
   if pid=$(pgrep -x tomoyo | head -n1); then

@@ -1,8 +1,26 @@
 #include <gtk/gtk.h>
 #include <cairo.h>
 #include <pango/pangocairo.h>
+#include <dlfcn.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
+#include <strings.h>
+
+#if defined(__GLIBC__)
+#include <malloc.h>
+static void __attribute__((constructor)) tomoyo_linux_tune_glibc_malloc(void) {
+    if (!getenv("MALLOC_ARENA_MAX")) {
+        (void)mallopt(M_ARENA_MAX, 2);
+    }
+    if (!getenv("MALLOC_TRIM_THRESHOLD_")) {
+        (void)mallopt(M_TRIM_THRESHOLD, 128 * 1024);
+    }
+    if (!getenv("MALLOC_MMAP_THRESHOLD_")) {
+        (void)mallopt(M_MMAP_THRESHOLD, 128 * 1024);
+    }
+}
+#endif
 
 static void rounded_rect_path(cairo_t *cr, double x, double y, double w, double h, double r) {
     if (r > w * 0.5) r = w * 0.5;
@@ -130,11 +148,75 @@ int tomoyo_linux_resolve_icon_path(const char *icon_name, int sz, char *out, siz
     return ok;
 }
 
+typedef struct {
+    double x;
+    double y;
+    double width;
+    double height;
+} tomoyo_rsvg_rect_t;
+
+typedef void *(*rsvg_new_from_file_fn)(const char *filename, GError **error);
+typedef gboolean (*rsvg_render_doc_fn)(void *handle, cairo_t *cr, const tomoyo_rsvg_rect_t *viewport, GError **error);
+
+static int has_svg_suffix(const char *path) {
+    if (!path) return 0;
+    size_t n = strlen(path);
+    return (n >= 4 && strcasecmp(path + n - 4, ".svg") == 0)
+        || (n >= 5 && strcasecmp(path + n - 5, ".svgz") == 0);
+}
+
+static int tomoyo_render_svg_bgra(const char *path, int sz, uint8_t *out, size_t out_len) {
+    static gsize rsvg_once = 0;
+    static rsvg_new_from_file_fn fn_new = NULL;
+    static rsvg_render_doc_fn fn_render = NULL;
+    if (g_once_init_enter(&rsvg_once)) {
+        void *lib = dlopen("librsvg-2.so.2", RTLD_LAZY | RTLD_LOCAL);
+        if (!lib) lib = dlopen("librsvg-2.so", RTLD_LAZY | RTLD_LOCAL);
+        if (lib) {
+            void *s_new = dlsym(lib, "rsvg_handle_new_from_file");
+            void *s_ren = dlsym(lib, "rsvg_handle_render_document");
+            if (s_new && s_ren) {
+                memcpy(&fn_new, &s_new, sizeof(fn_new));
+                memcpy(&fn_render, &s_ren, sizeof(fn_render));
+            }
+        }
+        g_once_init_leave(&rsvg_once, 1);
+    }
+    if (!fn_new || !fn_render || !path || sz <= 0 || out_len < (size_t)sz * (size_t)sz * 4) return 0;
+    void *handle = fn_new(path, NULL);
+    if (!handle) return 0;
+    memset(out, 0, (size_t)sz * (size_t)sz * 4);
+    cairo_surface_t *surf = cairo_image_surface_create_for_data(out, CAIRO_FORMAT_ARGB32, sz, sz, sz * 4);
+    if (cairo_surface_status(surf) != CAIRO_STATUS_SUCCESS) {
+        cairo_surface_destroy(surf);
+        g_object_unref(handle);
+        return 0;
+    }
+    cairo_t *cr = cairo_create(surf);
+    tomoyo_rsvg_rect_t vp = { 0.0, 0.0, (double)sz, (double)sz };
+    gboolean ok = fn_render(handle, cr, &vp, NULL);
+    cairo_surface_flush(surf);
+    cairo_destroy(cr);
+    cairo_surface_destroy(surf);
+    g_object_unref(handle);
+    return ok ? 1 : 0;
+}
+
 int tomoyo_linux_load_icon_bgra(const char *icon_name_or_path, int sz, uint8_t *out, size_t out_len) {
-    if (!icon_name_or_path || !icon_name_or_path[0] || !out || out_len < (size_t)(sz * sz * 4)) return 0;
-    GdkPixbuf *pb = NULL;
+    if (!icon_name_or_path || !icon_name_or_path[0] || !out || sz <= 0 || out_len < (size_t)(sz * sz * 4)) return 0;
+    char resolved[512];
+    const char *path = NULL;
     if (icon_name_or_path[0] == '/') {
-        pb = gdk_pixbuf_new_from_file_at_scale(icon_name_or_path, sz, sz, TRUE, NULL);
+        path = icon_name_or_path;
+    } else if (tomoyo_linux_resolve_icon_path(icon_name_or_path, sz, resolved, sizeof(resolved))) {
+        path = resolved;
+    }
+    if (path && has_svg_suffix(path) && tomoyo_render_svg_bgra(path, sz, out, out_len)) {
+        return 1;
+    }
+    GdkPixbuf *pb = NULL;
+    if (path) {
+        pb = gdk_pixbuf_new_from_file_at_scale(path, sz, sz, TRUE, NULL);
     } else if (gdk_screen_get_default() != NULL) {
         GtkIconTheme *th = gtk_icon_theme_get_default();
         if (th) pb = gtk_icon_theme_load_icon(th, icon_name_or_path, sz, GTK_ICON_LOOKUP_FORCE_SIZE, NULL);

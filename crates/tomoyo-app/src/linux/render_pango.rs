@@ -187,7 +187,8 @@ impl LinuxRenderer {
                 .and_then(|p| tomoyo_core::wic_thumb::decode_png_file_bgra_square(p, sz as u32))
                 .or_else(|| {
                     let mut buf = vec![0u8; (sz * sz * 4) as usize];
-                    let ok = CString::new(hint)
+                    let target = resolved.as_deref().and_then(|p| p.to_str()).unwrap_or(hint);
+                    let ok = CString::new(target)
                         .ok()
                         .is_some_and(|cs| unsafe {
                             tomoyo_linux_load_icon_bgra(cs.as_ptr(), sz, buf.as_mut_ptr(), buf.len()) != 0
