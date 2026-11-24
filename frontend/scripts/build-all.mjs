@@ -13,7 +13,7 @@ fs.mkdirSync(distDir, { recursive: true });
 const viteBin = path.join(root, 'node_modules', 'vite', 'bin', 'vite.js');
 const targets = [
   { entry: 'settings', outFile: path.join(distDir, 'settings.html'), label: 'settings.html' },
-  { entry: 'translator', outFile: path.join(distDir, 'translator.html'), label: 'translator.html' },
+  { entry: 'translator', outFile: path.join(repoRoot, 'plugins', 'official-translate', 'ui', 'index.html'), label: 'official-translate/ui/index.html' },
   { entry: 'clipboard', outFile: path.join(distDir, 'clipboard.html'), label: 'clipboard.html' },
   { entry: 'ocr', outFile: path.join(repoRoot, 'plugins', 'builtin-ocr', 'ui', 'index.html'), label: 'builtin-ocr/ui/index.html' },
 ];

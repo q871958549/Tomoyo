@@ -9,7 +9,7 @@ import { pathToFileURL } from 'node:url';
 
 const BUNDLES = [
   'frontend/dist/settings.html',
-  'frontend/dist/translator.html',
+  'plugins/official-translate/ui/index.html',
   'frontend/dist/clipboard.html',
   'plugins/builtin-ocr/ui/index.html',
 ];
@@ -137,11 +137,38 @@ const settingsPosted = await runCompiledHtml(
 );
 
 await runCompiledHtml(
-  'frontend/dist/translator.html',
-  '__TOMOYO_TR_INIT__',
-  { theme: 'dark', text: '', target_lang: 'auto', engines: ['google'], history: [], wordbook: [] },
+  'plugins/official-translate/ui/index.html',
+  null,
+  null,
   (win) => {
-    if (!win.document.querySelector('textarea')) throw new Error('translator.html: missing source textarea');
+    const ta = win.document.querySelector('textarea');
+    if (!ta) throw new Error('official-translate/ui/index.html: missing source textarea');
+    if (!win.document.body.textContent.includes('优雅解耦')) {
+      throw new Error('official-translate/ui/index.html: failed to hydrate translation via window.tomoyo.callPlugin');
+    }
+  },
+  (win) => {
+    win.tomoyo = {
+      theme: 'dark',
+      initialQuery: 'decouple',
+      callPlugin: async (method) => {
+        if (method === 'get_init') {
+          return { text: 'decouple', target_lang: 'zh-Hans', engines: ['google'], history: [], wordbook: [] };
+        }
+        if (method === 'translate') {
+          return {
+            data: {
+              source_text: 'decouple',
+              target_lang: 'zh-Hans',
+              results: [{ engine_name: 'Google', ok: true, translated: '优雅解耦', elapsed_ms: 42 }],
+            },
+            store: { history: [], wordbook: [] },
+          };
+        }
+        return { ok: true, history: [], wordbook: [] };
+      },
+      onEnter: () => {},
+    };
   }
 );
 

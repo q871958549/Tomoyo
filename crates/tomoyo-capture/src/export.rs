@@ -260,32 +260,63 @@ pub use crate::linux_clip::{
     copy_bgra_to_clipboard, copy_text_to_clipboard, read_clipboard_image_bgra,
 };
 
-#[cfg(target_os = "linux")]
-pub fn handoff_text_to_translator(text: &str) {
+#[cfg(any(windows, target_os = "linux"))]
+pub fn locate_plugin_ui(folder_name: &str) -> Option<PathBuf> {
+    let mut dirs = vec![data_dir().join("plugins")];
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(dir) = exe.parent()
+    {
+        dirs.push(dir.join("plugins"));
+        if let Some(p) = dir.parent().and_then(|d| d.parent()) {
+            dirs.push(p.join("plugins"));
+        }
+    }
+    if let Ok(cwd) = std::env::current_dir() {
+        dirs.push(cwd.join("plugins"));
+    }
+    for root in dirs {
+        let ui = root.join(folder_name).join("ui").join("index.html");
+        if ui.is_file() {
+            return Some(ui);
+        }
+    }
+    None
+}
+
+#[cfg(any(windows, target_os = "linux"))]
+pub fn spawn_translate_hybrid_viewer(text: &str) -> Result<(), String> {
     let trimmed = text.trim();
     if trimmed.is_empty() {
-        return;
+        return Ok(());
     }
     let cfg = TomoyoConfig::load_or_create();
     let req_dir = logs_dir();
     let _ = std::fs::create_dir_all(&req_dir);
-    let payload = serde_json::json!({
-        "text": trimmed,
-        "target_lang": cfg.translate.target_lang,
-    });
+    let payload = serde_json::json!({ "text": trimmed, "target_lang": cfg.translate.target_lang });
     let _ = std::fs::write(req_dir.join("last_translate_req.json"), payload.to_string());
+    let ui_entry = locate_plugin_ui("official-translate")
+        .ok_or("未安装官方翻译插件（请在设置中心→插件市场安装「多源对照翻译」）")?;
     let host_name = if cfg!(windows) { "tomoyo-webview-host.exe" } else { "tomoyo-webview-host" };
-    if let Some(host_exe) = find_sibling_exe(host_name) {
-        let _ = std::process::Command::new(host_exe)
-            .args([
-                "--entry", "__tomoyo_translator__",
-                "--title", "Tomoyo 多源翻译",
-                "--theme", &cfg.theme,
-                "--width", "860",
-                "--height", "640",
-            ])
-            .spawn();
+    let host_exe = find_sibling_exe(host_name).ok_or_else(|| format!("未找到 {host_name}"))?;
+    let mut cmd = std::process::Command::new(host_exe);
+    cmd.args([
+        "--plugin-id", "dev.tomoyo.translate",
+        "--entry", &ui_entry.to_string_lossy(),
+        "--title", "Tomoyo 多源翻译",
+        "--theme", &cfg.theme,
+        "--width", "820",
+        "--height", "620",
+    ]);
+    if trimmed.chars().count() <= 2000 {
+        cmd.args(["--query", trimmed]);
     }
+    cmd.spawn().map_err(|e| format!("拉起翻译窗口失败: {e}"))?;
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+pub fn handoff_text_to_translator(text: &str) {
+    let _ = spawn_translate_hybrid_viewer(text);
 }
 
 #[cfg(any(windows, target_os = "linux"))]
@@ -401,22 +432,7 @@ pub fn handoff_to_ocr_or_translate(width: u32, height: u32, bgra: &[u8], transla
         .ok_or_else(|| format!("未找到 {host_name}"))?;
 
     if translate {
-        let req_path = logs_dir().join("last_translate_req.json");
-        let payload = serde_json::json!({
-            "text": recognized,
-            "target_lang": cfg.translate.target_lang,
-        });
-        let _ = std::fs::write(&req_path, payload.to_string());
-        std::process::Command::new(host_exe)
-            .args([
-                "--entry", "__tomoyo_translator__",
-                "--title", "Tomoyo 截图翻译",
-                "--theme", &cfg.theme,
-                "--width", "860",
-                "--height", "640",
-            ])
-            .spawn()
-            .map_err(|e| format!("拉起翻译窗口失败: {e}"))?;
+        spawn_translate_hybrid_viewer(&recognized)?;
     } else {
         spawn_ocr_hybrid_viewer(&host_exe, &cfg.theme, &img_path)?;
     }

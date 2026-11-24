@@ -10,9 +10,6 @@ use crate::linux_workers::{
     HostChannel,
 };
 use crate::shim_js::build_init_script;
-use crate::tr_view::{
-    assemble_translator_html, is_translator_entry, load_translator_bootstrap,
-};
 use crate::{assemble_settings_html, build_settings_init_script_for, LaunchArgs};
 use std::cell::RefCell;
 use std::ffi::{c_char, c_int, c_void, CStr, CString};
@@ -258,7 +255,6 @@ unsafe extern "C" fn on_close_cb(ctx: *mut c_void) {
 
 pub fn run_linux_host(opts: LaunchArgs) {
     let clip_mode = is_clip_manager_entry(&opts.entry);
-    let tr_mode = is_translator_entry(&opts.entry);
     let channel = HostChannel::new(opts.notify_hwnd, opts.plugin_id.clone());
 
     let plugin_tag;
@@ -266,18 +262,15 @@ pub fn run_linux_host(opts: LaunchArgs) {
         Some("settings")
     } else if clip_mode {
         Some("clipboard")
-    } else if tr_mode {
-        Some("translate")
     } else if !opts.self_test && !opts.plugin_id.is_empty() {
         plugin_tag = format!("plugin-{}", tomoyo_core::linux_launch::sanitize_instance_tag(&opts.plugin_id));
         Some(plugin_tag.as_str())
     } else {
         None
     };
-    let plugin_query = (!opts.settings_mode && !clip_mode && !tr_mode)
-        .then_some(opts.query.as_str());
+    let plugin_query = (!opts.settings_mode && !clip_mode).then_some(opts.query.as_str());
     let _sock_guard = match mode_tag {
-        Some(tag) => match try_acquire_instance(tag, tr_mode, clip_mode, plugin_query, &channel) {
+        Some(tag) => match try_acquire_instance(tag, clip_mode, plugin_query, &channel) {
             Ok(g) => Some(g),
             Err(()) => return,
         },
@@ -290,8 +283,6 @@ pub fn run_linux_host(opts: LaunchArgs) {
     } else if clip_mode {
         let b = load_clip_manager_bootstrap(&opts.theme, &opts.query);
         (b.init_script, Some(b.images_dir))
-    } else if tr_mode {
-        (load_translator_bootstrap(&opts.theme), None)
     } else {
         (build_init_script(&opts.plugin_id, &opts.query, &opts.theme, opts.utools_compat, &db.snapshot_json()), None)
     };
@@ -339,13 +330,11 @@ pub fn run_linux_host(opts: LaunchArgs) {
         unsafe { tomoyo_wv_enable_devtools(wv); }
     }
 
-    if opts.settings_mode || clip_mode || tr_mode {
+    if opts.settings_mode || clip_mode {
         let html = if opts.settings_mode {
             assemble_settings_html()
-        } else if clip_mode {
-            assemble_clip_manager_html()
         } else {
-            assemble_translator_html()
+            assemble_clip_manager_html()
         };
         if let Ok(ch) = CString::new(html) {
             unsafe { tomoyo_wv_load_html(wv, ch.as_ptr()); }

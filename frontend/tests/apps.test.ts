@@ -42,8 +42,8 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
     const origHealth = {
       main: { spec: 'Alt+Space', active: 'Alt+Space', ok: true, disabled: false, reason: '' },
       clipboard: { spec: 'Alt+C', active: '', ok: false, disabled: false, reason: '已被系统或其他软件占用（Alt+C）' },
-      translate: { spec: 'Alt+T', active: '', ok: false, disabled: false, reason: '已被系统或其他软件占用（Alt+T）' },
-      capture: { spec: 'Alt+1', active: 'Alt+1', ok: true, disabled: false, reason: '' },
+      translate: { spec: '', active: '', ok: true, disabled: true, reason: '' },
+      capture: { spec: 'Alt+1', active: '', ok: false, disabled: false, reason: '已被系统或其他软件占用（Alt+1）' },
       pin: { spec: 'F3', active: 'F3', ok: true, disabled: false, reason: '' },
     };
     window.__TOMOYO_SETTINGS_INIT__ = {
@@ -155,18 +155,14 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
     flushSync();
     expect(document.body.textContent).toContain('已被系统或其他软件占用（Alt+C）');
 
-    document.querySelector<HTMLButtonElement>('button[data-config-plugin="dev.tomoyo.translate"]')?.click();
-    flushSync();
-    expect(document.querySelectorAll('input[type="password"]').length).toBe(2);
-
     document.querySelector<HTMLButtonElement>('button[data-config-plugin="dev.tomoyo.capture"]')?.click();
     flushSync();
     expect(document.body.textContent).toContain('全局一键贴图快捷键');
     expect(document.body.textContent).toContain('录屏默认格式与帧率');
     expect(document.body.textContent).toContain('F3');
 
-    const trSwitch = document.querySelector<HTMLButtonElement>('button[role="switch"][aria-label="多源划词翻译"]');
-    trSwitch?.click();
+    const capSwitch = document.querySelector<HTMLButtonElement>('button[role="switch"][aria-label="原生截图与贴图"]');
+    capSwitch?.click();
     flushSync();
     expect(document.querySelector('button[data-tab="hotkeys"] .nav-badge')?.textContent).toBe('1');
 
@@ -287,7 +283,7 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
       plugin_settings?: Record<string, Record<string, unknown>>;
     };
     expect(savedCfg.custom_filters?.some((t) => t.id === 'code')).toBe(true);
-    expect(savedCfg.disabled_plugins).toContain('dev.tomoyo.translate');
+    expect(savedCfg.disabled_plugins).toContain('dev.tomoyo.capture');
     expect(savedCfg.plugin_settings?.['dev.tomoyo.ocr']?.raw_output).toBe(true);
 
     unmount(app);

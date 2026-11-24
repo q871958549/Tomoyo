@@ -1,11 +1,11 @@
 //! Keyboard navigation, filter shortcuts, global hotkey registration, and EDIT subclassing.
 
 use super::hotkey_override::{sync_conflict_override_hook, uninstall_conflict_override_hook};
-use super::{AppShell, EM_GETSEL, HOTKEY_CLIPBOARD_ID, HOTKEY_ID, HOTKEY_TRANSLATE_ID};
+use super::{AppShell, EM_GETSEL, HOTKEY_CLIPBOARD_ID, HOTKEY_ID};
 use crate::actions::set_clipboard_text;
 use tomoyo_core::{
     parse_hotkey, save_hotkey_health, HotkeyHealthReport, HotkeySlotStatus, Lang, TomoyoConfig,
-    PLUGIN_CAPTURE, PLUGIN_CLIPBOARD, PLUGIN_TRANSLATE,
+    PLUGIN_CAPTURE, PLUGIN_CLIPBOARD,
 };
 use tomoyo_protocol::SearchFilter;
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
@@ -246,7 +246,7 @@ pub(super) fn unregister_all_hotkeys(hwnd: HWND) {
     uninstall_conflict_override_hook();
     super::plugin_hotkeys::unregister_plugin_hotkeys(hwnd);
     unsafe {
-        for id in [HOTKEY_ID, HOTKEY_CLIPBOARD_ID, HOTKEY_TRANSLATE_ID, HOTKEY_CAPTURE_ID, HOTKEY_PIN_ID, HOTKEY_OCR_ID, HOTKEY_RECORD_ID] {
+        for id in [HOTKEY_ID, HOTKEY_CLIPBOARD_ID, HOTKEY_CAPTURE_ID, HOTKEY_PIN_ID, HOTKEY_OCR_ID, HOTKEY_RECORD_ID] {
             let _ = UnregisterHotKey(Some(hwnd), id);
         }
     }
@@ -325,13 +325,12 @@ pub(super) fn register_all_hotkeys(
 
     let cap_on = cfg.is_plugin_enabled(PLUGIN_CAPTURE);
     let clip_spec = if cfg.is_plugin_enabled(PLUGIN_CLIPBOARD) { cfg.clipboard.hotkey.as_str() } else { "" };
-    let tr_spec = if cfg.is_plugin_enabled(PLUGIN_TRANSLATE) { cfg.translate.hotkey.as_str() } else { "" };
     let cap_spec = if cap_on { cfg.capture.hotkey.as_str() } else { "" };
     let pin_spec = if cap_on { cfg.capture.pin_hotkey.as_str() } else { "" };
     let ocr_spec = if cap_on { cfg.capture.ocr_hotkey.as_str() } else { "" };
     let rec_spec = if cap_on { cfg.capture.record_hotkey.as_str() } else { "" };
     let mut clip_status = reg_opt(HOTKEY_CLIPBOARD_ID, clip_spec, lang.pick("剪贴板", "Clipboard"));
-    let mut tr_status = reg_opt(HOTKEY_TRANSLATE_ID, tr_spec, lang.pick("划词翻译", "Translate"));
+    let tr_status = HotkeySlotStatus { disabled: true, ..Default::default() };
     let mut cap_status = reg_opt(HOTKEY_CAPTURE_ID, cap_spec, lang.pick("截图", "Capture"));
     let mut pin_status = reg_opt(HOTKEY_PIN_ID, pin_spec, lang.pick("贴图", "Pin"));
     let mut ocr_status = reg_opt(HOTKEY_OCR_ID, ocr_spec, lang.pick("截图识字", "Screenshot OCR"));
@@ -341,7 +340,7 @@ pub(super) fn register_all_hotkeys(
 
     if !sync_conflict_override_hook(hwnd, &override_entries) {
         tracing::warn!("Failed to install low-level conflict override hook; conflicted hotkeys inactive");
-        for slot in [&mut main_status, &mut clip_status, &mut tr_status, &mut cap_status, &mut pin_status, &mut ocr_status, &mut rec_status] {
+        for slot in [&mut main_status, &mut clip_status, &mut cap_status, &mut pin_status, &mut ocr_status, &mut rec_status] {
             if slot.overridden {
                 slot.ok = false; slot.overridden = false;
                 slot.reason = lang.pick("底层接管钩子挂载失败", "Override hook installation failed").into();

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { AppWindow, FolderOpen, KeyRound, Keyboard, SlidersHorizontal, Trash2, Zap } from '@lucide/svelte';
+  import { AppWindow, ExternalLink, FolderOpen, KeyRound, Keyboard, SlidersHorizontal, Trash2, Zap } from '@lucide/svelte';
   import { postHost } from '../../lib/ipc';
   import type { PluginEntry, PluginHotkeyDecl, PluginSettingField, SelectOption, TomoyoConfig } from '../../lib/types';
   import type { Lang } from '../../lib/i18n';
@@ -102,6 +102,15 @@
 </script>
 
 <div class="v2-drawer" data-plugin-drawer={plugin.id}>
+  {#if plugin.has_ui}
+    <div class="v3-ui-launch">
+      <Button variant="secondary" size="sm" onclick={() => postHost({ cmd: 'open_plugin_ui', plugin_id: plugin.id, query: '' })}>
+        <ExternalLink size={12} />
+        {isEn ? 'Open Plugin Window' : '打开插件工作台'}
+      </Button>
+    </div>
+  {/if}
+
   <div class="v2-sec">
     <div class="v2-sec-title">
       <AppWindow size={13} />
@@ -270,6 +279,7 @@
   .v2-input { width: 250px; }
   .v2-input.sm { width: 196px; }
   .v3-inline { display: flex; align-items: center; gap: 6px; }
+  .v3-ui-launch { display: flex; justify-content: flex-end; }
   .v2-events { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding-top: 8px; border-top: 1px dashed var(--border); font-size: 11.5px; color: var(--muted); }
   .t-pill.is-ok { color: var(--ok); border-color: rgba(16, 185, 129, 0.35); background: rgba(16, 185, 129, 0.1); }
 </style>

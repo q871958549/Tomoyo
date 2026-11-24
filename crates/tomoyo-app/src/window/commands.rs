@@ -9,8 +9,7 @@ use crate::actions::{
 };
 use crate::tray::{
     MENU_ID_CAPTURE, MENU_ID_CLIPBOARD, MENU_ID_CONFIG, MENU_ID_GC, MENU_ID_PLUGIN_TRAY_BASE,
-    MENU_ID_QUIT, MENU_ID_RELOAD, MENU_ID_SETTINGS, MENU_ID_SHOW, MENU_ID_STATS,
-    MENU_ID_TRANSLATE, MENU_ID_UPDATE,
+    MENU_ID_QUIT, MENU_ID_RELOAD, MENU_ID_SETTINGS, MENU_ID_SHOW, MENU_ID_STATS, MENU_ID_UPDATE,
 };
 use tomoyo_core::{is_autostart_enabled, set_autostart_enabled, Lang};
 use tomoyo_protocol::{ActionKind, AttachedContext, InternalCommandKind};
@@ -33,7 +32,6 @@ pub(super) fn dispatch_menu_id(hwnd: HWND, app: &mut AppShell, id: u32) {
         MENU_ID_SHOW => app.show_launcher(),
         MENU_ID_SETTINGS => app.open_settings_center(),
         MENU_ID_CLIPBOARD => app.open_clipboard_workbench(None),
-        MENU_ID_TRANSLATE => app.open_translator_window("", None),
         MENU_ID_CAPTURE => app.trigger_capture("region"),
         MENU_ID_UPDATE => {
             app.show_launcher();
@@ -260,9 +258,6 @@ impl AppShell {
                     self.lang.pick("已暂停后台剪贴板采集", "Clipboard capture paused")
                 });
                 self.dispatch_query();
-            }
-            InternalCommandKind::OpenTranslator { text, target_lang } => {
-                self.open_translator_window(&text, target_lang.as_deref());
             }
             InternalCommandKind::StartCapture { mode } => self.trigger_capture(&mode),
             InternalCommandKind::CheckForUpdates => self.trigger_update_check_async(),

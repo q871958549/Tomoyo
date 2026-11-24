@@ -7,7 +7,6 @@
     OFFICIAL_PLUGINS,
     PLUGIN_CAPTURE,
     PLUGIN_CLIPBOARD,
-    PLUGIN_TRANSLATE,
   } from '../../lib/defaults';
   import { postHost } from '../../lib/ipc';
   import { tr, type Lang } from '../../lib/i18n';
@@ -19,7 +18,6 @@
   import CaptureTab from './CaptureTab.svelte';
   import ClipboardPluginCard from './ClipboardPluginCard.svelte';
   import PluginConfigDrawer from './PluginConfigDrawer.svelte';
-  import TranslateTab from './TranslateTab.svelte';
 
   interface Props {
     cfg: TomoyoConfig;
@@ -84,7 +82,7 @@
   }
 
   function hasOfficialDrawer(id: string, entry?: PluginEntry): boolean {
-    return id === PLUGIN_CLIPBOARD || id === PLUGIN_TRANSLATE || id === PLUGIN_CAPTURE || !!entry;
+    return id === PLUGIN_CLIPBOARD || id === PLUGIN_CAPTURE || !!entry;
   }
 
   function resolveIcon(id: string, entry?: PluginEntry): string {
@@ -221,8 +219,6 @@
         <div class="mod-drawer" data-plugin-drawer={item.id}>
           {#if item.id === PLUGIN_CLIPBOARD}
             <ClipboardPluginCard {cfg} {lang} {runningApps} clipHotkeyStatus={hotkeyHealth.clipboard} {onJumpDoctor} {onSave} />
-          {:else if item.id === PLUGIN_TRANSLATE}
-            <TranslateTab embedded {cfg} {lang} {secretsStatus} trHotkeyStatus={hotkeyHealth.translate} {onJumpDoctor} {onToast} {onSave} />
           {:else if item.id === PLUGIN_CAPTURE}
             <CaptureTab embedded {cfg} {lang} capHotkeyStatus={hotkeyHealth.capture} pinHotkeyStatus={hotkeyHealth.pin} ocrHotkeyStatus={hotkeyHealth.ocr} recordHotkeyStatus={hotkeyHealth.record} {showRecord} {onJumpDoctor} {onSave} />
           {:else if entry}

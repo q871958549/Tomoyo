@@ -49,36 +49,6 @@ pub fn spawn_clipboard_manager_window(
     spawn_ephemeral_singleton("clipboard", parent_pid, theme_name, &args, 1060, 680)
 }
 
-pub fn spawn_translator_window(
-    parent_pid: isize,
-    theme_name: &str,
-    text: &str,
-    target_lang: Option<&str>,
-) -> Result<(), String> {
-    let req_dir = tomoyo_core::logs_dir();
-    let _ = std::fs::create_dir_all(&req_dir);
-    let payload = serde_json::json!({
-        "text": text,
-        "target_lang": target_lang.unwrap_or(""),
-    });
-    let _ = std::fs::write(req_dir.join("last_translate_req.json"), payload.to_string());
-    spawn_ephemeral_singleton(
-        "translate",
-        parent_pid,
-        theme_name,
-        &[
-            "--plugin-id",
-            "builtin.translate",
-            "--title",
-            "Tomoyo 多源翻译",
-            "--entry",
-            "__tomoyo_translator__",
-        ],
-        780,
-        620,
-    )
-}
-
 fn try_wake_singleton_socket(mode_tag: &str, payload: &str) -> bool {
     if mode_tag.is_empty() {
         return false;

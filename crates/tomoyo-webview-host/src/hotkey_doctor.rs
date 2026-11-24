@@ -18,7 +18,7 @@ use crate::hotkey_signatures::{
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::ffi::c_void;
-use tomoyo_core::{parse_hotkey, TomoyoConfig, PLUGIN_CAPTURE, PLUGIN_CLIPBOARD, PLUGIN_TRANSLATE};
+use tomoyo_core::{parse_hotkey, TomoyoConfig, PLUGIN_CAPTURE, PLUGIN_CLIPBOARD};
 use windows::core::PWSTR;
 use windows::Win32::Foundation::{CloseHandle, FILETIME, HWND, LPARAM};
 use windows::Win32::System::DataExchange::GetClipboardSequenceNumber;
@@ -97,7 +97,6 @@ pub fn audit_system_hotkeys(parent_hwnd: Option<isize>) -> HotkeyAuditReport {
     let tomoyo_slots: Vec<(&str, String)> = vec![
         ("main", cfg.hotkey.trim().to_string()),
         ("clipboard", if cfg.is_plugin_enabled(PLUGIN_CLIPBOARD) { cfg.clipboard.hotkey.trim().to_string() } else { String::new() }),
-        ("translate", if cfg.is_plugin_enabled(PLUGIN_TRANSLATE) { cfg.translate.hotkey.trim().to_string() } else { String::new() }),
         ("capture", if cap_on { cfg.capture.hotkey.trim().to_string() } else { String::new() }),
         ("pin", if cap_on { cfg.capture.pin_hotkey.trim().to_string() } else { String::new() }),
         ("ocr", if cap_on { cfg.capture.ocr_hotkey.trim().to_string() } else { String::new() }),

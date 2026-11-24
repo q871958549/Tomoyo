@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { hydrateSettingsInit, isPluginEnabled, PLUGIN_CAPTURE, PLUGIN_CLIPBOARD, PLUGIN_TRANSLATE } from '../../lib/defaults';
+  import { hydrateSettingsInit, isPluginEnabled, PLUGIN_CAPTURE, PLUGIN_CLIPBOARD } from '../../lib/defaults';
   import { assignCoreHotkeyWithSwap, type CoreHotkeySlot } from '../../lib/hotkeys';
   import { applyThemeClass, installErrorTelemetry, postHost, subscribeHost } from '../../lib/ipc';
   import { OFFICIAL_REPO, tr, type Lang } from '../../lib/i18n';
@@ -78,7 +78,6 @@
     const entries = [
       { label: lang === 'en' ? 'Launcher' : '主启动器', st: hotkeyHealth.main, on: true },
       { label: lang === 'en' ? 'Clipboard' : '剪贴板', st: hotkeyHealth.clipboard, on: isPluginEnabled(cfg, PLUGIN_CLIPBOARD) },
-      { label: lang === 'en' ? 'Translate' : '划词翻译', st: hotkeyHealth.translate, on: isPluginEnabled(cfg, PLUGIN_TRANSLATE) },
       { label: lang === 'en' ? 'Capture' : '截图', st: hotkeyHealth.capture, on: capOn },
       { label: lang === 'en' ? 'Pin' : '全局贴图', st: hotkeyHealth.pin, on: capOn },
       { label: lang === 'en' ? 'Screenshot OCR' : '截图识字', st: hotkeyHealth.ocr, on: capOn },
@@ -127,7 +126,7 @@
     const capOn = isPluginEnabled(cfg, PLUGIN_CAPTURE);
     const swapped = assignCoreHotkeyWithSwap(cfg, slot, key, {
       main: true, clipboard: isPluginEnabled(cfg, PLUGIN_CLIPBOARD),
-      translate: isPluginEnabled(cfg, PLUGIN_TRANSLATE), capture: capOn, pin: capOn, ocr: capOn, record: capOn,
+      translate: false, capture: capOn, pin: capOn, ocr: capOn, record: capOn,
     });
     scheduleSave(0);
     if (swapped) setToast(lang === 'en' ? '✓ Updated & swapped duplicate key cleanly' : '✓ 已生效（检测到重复绑定，已自动与原槽位互换）');

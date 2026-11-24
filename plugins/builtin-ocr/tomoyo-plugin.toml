@@ -7,6 +7,7 @@ license = "MIT OR Apache-2.0"
 icon = "icon.png"
 category = "ai"
 display_mode = "window"
+permissions = ["filesystem_read", "clipboard"]
 
 [runtime]
 kind = "stdio_jsonrpc"
@@ -23,8 +24,6 @@ height = 680
 keywords = ["ocr"]
 clipboard_types = ["image"]
 file_extensions = ["png", "jpg", "jpeg", "webp", "bmp", "gif", "ico"]
-
-permissions = ["filesystem_read", "clipboard"]
 
 [resources]
 max_memory_mb = 192

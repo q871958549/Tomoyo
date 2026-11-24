@@ -207,7 +207,6 @@ impl AppCore {
                     with_current_core(|st| match act {
                         HotkeyAction::ToggleMain => st.toggle_launcher(),
                         HotkeyAction::Clipboard => st.toggle_clipboard_launcher(),
-                        HotkeyAction::Translate => st.trigger_selection_translate(),
                         HotkeyAction::Capture => st.trigger_capture_ex("region", false),
                         HotkeyAction::Pin => st.trigger_capture("pin_clipboard"),
                         HotkeyAction::Ocr => st.trigger_capture_ex("ocr", false),

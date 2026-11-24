@@ -8,11 +8,10 @@ use crate::inline_dock::{
     prepare_host_bootstrap, write_inline_hwnd_marker,
 };
 use crate::single_instance::{
-    acquire_or_activate_clipboard, acquire_or_activate_settings, acquire_or_activate_translator,
-    CLIPBOARD_WINDOW_CLASS, EPHEMERAL_WINDOW_CLASS, SETTINGS_WINDOW_CLASS, TRANSLATOR_WINDOW_CLASS,
-    WM_APP_ACTIVATE_CLIPBOARD, WM_APP_ACTIVATE_SETTINGS, WM_APP_ACTIVATE_TRANSLATOR,
+    acquire_or_activate_clipboard, acquire_or_activate_settings,
+    CLIPBOARD_WINDOW_CLASS, EPHEMERAL_WINDOW_CLASS, SETTINGS_WINDOW_CLASS,
+    WM_APP_ACTIVATE_CLIPBOARD, WM_APP_ACTIVATE_SETTINGS,
 };
-use crate::tr_view::{is_translator_entry, read_latest_translate_req_event};
 use crate::win_msg::{dispatch_webview_message, pick_builtin_html};
 use crate::win_theme::{
     configure_controller_visuals, create_themed_host_window, destroy_owned_icons, load_window_icons,
@@ -128,20 +127,13 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             }
             LRESULT(0)
         }
-        WM_APP_ACTIVATE_SETTINGS | WM_APP_ACTIVATE_CLIPBOARD | WM_APP_ACTIVATE_TRANSLATOR => {
+        WM_APP_ACTIVATE_SETTINGS | WM_APP_ACTIVATE_CLIPBOARD => {
             unsafe {
                 if IsIconic(hwnd).as_bool() {
                     let _ = ShowWindow(hwnd, SW_RESTORE);
                 }
                 let _ = ShowWindow(hwnd, SW_SHOW);
                 let _ = SetForegroundWindow(hwnd);
-                if msg == WM_APP_ACTIVATE_TRANSLATOR && !ptr.is_null() {
-                    let st = &*ptr;
-                    if let Some(wv) = &st.webview {
-                        let evt = HSTRING::from(read_latest_translate_req_event());
-                        let _ = wv.PostWebMessageAsJson(PCWSTR(evt.as_ptr()));
-                    }
-                }
             }
             LRESULT(0)
         }
@@ -208,15 +200,11 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
 
 pub fn run_windows_host(opts: LaunchArgs) {
     let clip_mode = is_clip_manager_entry(&opts.entry);
-    let tr_mode = is_translator_entry(&opts.entry);
     let _singleton_guard = if opts.settings_mode {
         let Some(g) = acquire_or_activate_settings() else { return };
         Some(g)
     } else if clip_mode {
         let Some(g) = acquire_or_activate_clipboard() else { return };
-        Some(g)
-    } else if tr_mode {
-        let Some(g) = acquire_or_activate_translator() else { return };
         Some(g)
     } else {
         None
@@ -227,10 +215,9 @@ pub fn run_windows_host(opts: LaunchArgs) {
         let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
     }
 
-    let cls = match (opts.settings_mode, clip_mode, tr_mode) {
-        (true, _, _) => SETTINGS_WINDOW_CLASS,
-        (_, true, _) => CLIPBOARD_WINDOW_CLASS,
-        (_, _, true) => TRANSLATOR_WINDOW_CLASS,
+    let cls = match (opts.settings_mode, clip_mode) {
+        (true, _) => SETTINGS_WINDOW_CLASS,
+        (_, true) => CLIPBOARD_WINDOW_CLASS,
         _ => EPHEMERAL_WINDOW_CLASS,
     };
     let hinst = unsafe { windows::Win32::System::LibraryLoader::GetModuleHandleW(None).unwrap() };
@@ -362,7 +349,7 @@ pub fn run_windows_host(opts: LaunchArgs) {
                             ));
                             let _ = webview.add_WebMessageReceived(&msg_handler, &mut token);
 
-                            if let Some(html) = pick_builtin_html(settings_mode, clip_mode, tr_mode) {
+                            if let Some(html) = pick_builtin_html(settings_mode, clip_mode) {
                                 let hw = HSTRING::from(html);
                                 let _ = webview.NavigateToString(PCWSTR(hw.as_ptr()));
                             } else {

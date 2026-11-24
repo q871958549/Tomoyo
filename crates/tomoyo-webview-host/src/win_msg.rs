@@ -4,7 +4,6 @@ use crate::bridge::handle_host_message;
 use crate::clip_view::assemble_clip_manager_html;
 use crate::db::PluginDb;
 use crate::inline_dock::promote_inline_to_window;
-use crate::tr_view::assemble_translator_html;
 use crate::win_host::{HostWindowState, TIMER_REVEAL_FALLBACK, WM_APP_PICK_FOLDER, WM_APP_WEBVIEW_EVENT};
 use crate::win_theme::{
     apply_host_window_theme, reveal_host_window_and_notify, toggle_pin_topmost_window,
@@ -20,14 +19,11 @@ use windows::Win32::UI::WindowsAndMessaging::{PostMessageW, WM_CLOSE};
 pub(crate) fn pick_builtin_html(
     settings_mode: bool,
     clip_mode: bool,
-    tr_mode: bool,
 ) -> Option<String> {
     if settings_mode {
         Some(assemble_settings_html())
     } else if clip_mode {
         Some(assemble_clip_manager_html())
-    } else if tr_mode {
-        Some(assemble_translator_html())
     } else {
         None
     }

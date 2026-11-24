@@ -103,7 +103,7 @@ if (fs.existsSync("frontend/package.json")) {
 }
 const bundleBudgets = {
   "frontend/dist/settings.html": 320 * 1024,
-  "frontend/dist/translator.html": 150 * 1024,
+  "plugins/official-translate/ui/index.html": 150 * 1024,
   "frontend/dist/clipboard.html": 150 * 1024,
   "plugins/builtin-ocr/ui/index.html": 150 * 1024,
 };
@@ -208,6 +208,7 @@ if (checkBinaries) {
     [`target/release/tomoyo-plugin-ocr${ext}`]: 0.8,
     [`target/release/tomoyo-plugin-notes${ext}`]: 0.8,
     [`target/release/tomoyo-plugin-md-editor${ext}`]: 0.8,
+    [`target/release/tomoyo-plugin-translate${ext}`]: 0.8,
   };
   let binViolations = 0;
   const binSummary = [];

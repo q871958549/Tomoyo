@@ -77,62 +77,6 @@ pub fn spawn_clipboard_manager_window(
     Ok(())
 }
 
-pub fn spawn_translator_window(
-    parent_hwnd: isize,
-    theme_name: &str,
-    text: &str,
-    target_lang: Option<&str>,
-) -> Result<(), String> {
-    let req_dir = tomoyo_core::logs_dir();
-    let req_json = serde_json::json!({
-        "text": text,
-        "target_lang": target_lang.unwrap_or(""),
-    });
-    let _ = std::fs::write(req_dir.join("last_translate_req.json"), req_json.to_string());
-
-    if try_focus_existing_translator_window() {
-        return Ok(());
-    }
-    let host_exe = locate_webview_host()?;
-    let mut cmd = Command::new(&host_exe);
-    cmd.args([
-        "--plugin-id",
-        "builtin.translate",
-        "--title",
-        "Tomoyo 多源翻译",
-        "--entry",
-        "__tomoyo_translator__",
-        "--notify-hwnd",
-        &parent_hwnd.to_string(),
-        "--theme",
-        theme_name,
-        "--width",
-        "780",
-        "--height",
-        "620",
-    ]);
-    if theme_name.eq_ignore_ascii_case("light") {
-        cmd.arg("--light");
-    }
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| format!("failed to launch translator {}: {e}", host_exe.display()))?;
-    let job = JobGuard::assign_webview_child(&child, 512).ok();
-    let _ = std::thread::Builder::new()
-        .name("tomoyo-tr-reaper".into())
-        .spawn(move || {
-            let _keep_job = job;
-            let _ = child.wait();
-        });
-    Ok(())
-}
-
-#[cfg(windows)]
-fn try_focus_existing_translator_window() -> bool {
-    use windows::core::w;
-    try_focus_existing_window(w!("TomoyoTranslatorWindowClass"), 0x8000 + 35)
-}
-
 #[cfg(windows)]
 fn try_focus_existing_settings_window() -> bool {
     use windows::core::w;

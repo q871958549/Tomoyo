@@ -1,0 +1,15 @@
+[package]
+name = "tomoyo-plugin-translate"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Official Tomoyo Protocol v3 Hybrid plugin: Multi-Engine Bilingual Translator (Google, MyMemory/Youdao, DeepL, OpenAI, Ollama)"
+
+[[bin]]
+name = "tomoyo-plugin-translate"
+path = "src/main.rs"
+
+[dependencies]
+tomoyo-sdk = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

@@ -13,7 +13,7 @@
     Volume2,
     X,
   } from '@lucide/svelte';
-  import { applyThemeClass, installErrorTelemetry, postHost, subscribeHost } from '../../lib/ipc';
+  import { applyThemeClass, installErrorTelemetry, postHost } from '../../lib/ipc';
   import type { ContextMenuItem, SelectOption } from '../../lib/types';
   import Button from '../../lib/ui/Button.svelte';
   import ContextMenu from '../../lib/ui/ContextMenu.svelte';
@@ -83,12 +83,27 @@
     return !!low && wordbook.some((w) => w.word.toLowerCase() === low);
   }
 
-  function runTranslate() {
+  async function runTranslate() {
     const clean = sourceText.trim();
     if (!clean) { toast = '请先输入或粘贴待翻译文本'; return; }
+    if (!window.tomoyo?.callPlugin) { toast = '翻译插件后端未连接'; return; }
     loading = true;
     toast = '正在并行请求翻译引擎…';
-    postHost({ cmd: 'run_translate', text: clean, source_lang: srcLang, target_lang: tgtLang });
+    try {
+      const res = await window.tomoyo.callPlugin<{
+        data?: TranslateBatch;
+        store?: { history?: HistItem[]; wordbook?: WordItem[] };
+      }>('translate', { text: clean, source_lang: srcLang, target_lang: tgtLang });
+      if (Array.isArray(res?.store?.history)) history = res.store.history;
+      if (Array.isArray(res?.store?.wordbook)) wordbook = res.store.wordbook;
+      batch = res?.data || null;
+      const okCount = (batch?.results || []).filter((r) => r.ok).length;
+      toast = `✓ 翻译完成（${okCount}/${batch?.results?.length || 0} 引擎成功）`;
+    } catch (err) {
+      toast = `翻译失败：${String(err)}`;
+    } finally {
+      loading = false;
+    }
   }
 
   function onSourceInput() {
@@ -130,16 +145,34 @@
     } catch { toast = '朗读启动失败'; }
   }
 
-  function saveWord(r: EngineResult) {
+  async function saveWord(r: EngineResult) {
     const src = (batch?.source_text || sourceText).trim();
-    if (!src || !r.translated) return;
-    postHost({
-      cmd: 'tr_save_word',
-      word: src,
-      translation: r.translated,
-      phonetic: r.phonetic || '',
-      note: r.engine_name,
-    });
+    if (!src || !r.translated || !window.tomoyo?.callPlugin) return;
+    try {
+      const res = await window.tomoyo.callPlugin<{ history?: HistItem[]; wordbook?: WordItem[] }>('save_word', {
+        word: src,
+        translation: r.translated,
+        phonetic: r.phonetic || '',
+        note: r.engine_name,
+      });
+      if (Array.isArray(res?.history)) history = res.history;
+      if (Array.isArray(res?.wordbook)) wordbook = res.wordbook;
+      toast = '★ 已收藏到生词本';
+    } catch (err) {
+      toast = `收藏失败：${String(err)}`;
+    }
+  }
+
+  async function deleteWord(word: string) {
+    if (!window.tomoyo?.callPlugin) return;
+    try {
+      const res = await window.tomoyo.callPlugin<{ history?: HistItem[]; wordbook?: WordItem[] }>('delete_word', { word });
+      if (Array.isArray(res?.history)) history = res.history;
+      if (Array.isArray(res?.wordbook)) wordbook = res.wordbook;
+      toast = '已从生词本移除';
+    } catch (err) {
+      toast = `移除失败：${String(err)}`;
+    }
   }
 
   function togglePin() {
@@ -147,14 +180,22 @@
     postHost({ cmd: 'toggle_pin_topmost' });
   }
 
-  function clearHistory() {
+  async function clearHistory() {
     if (!clearArmed) {
       clearArmed = true;
       setTimeout(() => { clearArmed = false; }, 3500);
       return;
     }
     clearArmed = false;
-    postHost({ cmd: 'tr_clear_history' });
+    if (!window.tomoyo?.callPlugin) return;
+    try {
+      const res = await window.tomoyo.callPlugin<{ history?: HistItem[]; wordbook?: WordItem[] }>('clear_history', {});
+      if (Array.isArray(res?.history)) history = res.history;
+      if (Array.isArray(res?.wordbook)) wordbook = res.wordbook;
+      toast = '已清空翻译历史';
+    } catch (err) {
+      toast = `清空失败：${String(err)}`;
+    }
   }
 
   function loadEntry(text: string, target?: string) {
@@ -178,37 +219,44 @@
     else if (id === 'clear') { sourceText = ''; batch = null; srcEl?.focus(); }
   }
 
+  async function hydrateFromPlugin(initialQuery = '') {
+    if (!window.tomoyo?.callPlugin) return;
+    try {
+      const data = await window.tomoyo.callPlugin<{
+        text?: string; target_lang?: string; history?: HistItem[]; wordbook?: WordItem[];
+      }>('get_init', { initial_query: initialQuery });
+      if (data && typeof data === 'object') {
+        if (typeof data.target_lang === 'string' && data.target_lang) tgtLang = data.target_lang;
+        if (Array.isArray(data.history)) history = data.history;
+        if (Array.isArray(data.wordbook)) wordbook = data.wordbook;
+        if (typeof data.text === 'string' && data.text.trim()) {
+          sourceText = data.text;
+          void runTranslate();
+        } else {
+          srcEl?.focus();
+        }
+      }
+    } catch (err) {
+      toast = `初始化翻译插件失败：${String(err)}`;
+    }
+  }
+
   onMount(() => {
     installErrorTelemetry('translator');
-    applyThemeClass(boot.theme || 'dark');
-    if (sourceText.trim()) runTranslate();
-    else srcEl?.focus();
-
-    const unsub = subscribeHost((msg) => {
-      const ev = String(msg.event || '');
-      if (ev === 'translate_result') {
-        loading = false;
-        const st = msg.store as { history?: HistItem[]; wordbook?: WordItem[] } | undefined;
-        if (Array.isArray(st?.history)) history = st.history;
-        if (Array.isArray(st?.wordbook)) wordbook = st.wordbook;
-        batch = (msg.data as TranslateBatch) || null;
-        const okCount = (batch?.results || []).filter((r) => r.ok).length;
-        toast = `✓ 翻译完成（${okCount}/${batch?.results?.length || 0} 引擎成功）`;
-      } else if (ev === 'translate_reload_req') {
-        if (typeof msg.target_lang === 'string' && msg.target_lang) tgtLang = msg.target_lang;
-        if (typeof msg.text === 'string' && msg.text.trim()) loadEntry(msg.text, tgtLang);
-        else srcEl?.focus();
-      } else if (ev === 'tr_store_updated') {
-        if (Array.isArray(msg.history)) history = msg.history as HistItem[];
-        if (Array.isArray(msg.wordbook)) wordbook = msg.wordbook as WordItem[];
-        if (msg.action === 'save_word') toast = '★ 已收藏到生词本';
-        else if (msg.action === 'delete_word') toast = '已从生词本移除';
-        else if (msg.action === 'clear_history') toast = '已清空翻译历史';
-      }
-    });
+    applyThemeClass(window.tomoyo?.theme || boot.theme || 'dark');
+    if (window.tomoyo?.callPlugin) {
+      void hydrateFromPlugin(window.tomoyo.initialQuery || boot.text || '');
+      window.tomoyo.onEnter?.((action) => {
+        if (action && typeof action.payload === 'string') void hydrateFromPlugin(action.payload);
+      });
+    } else if (sourceText.trim()) {
+      void runTranslate();
+    } else {
+      srcEl?.focus();
+    }
 
     const onKey = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); runTranslate(); }
+      if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); void runTranslate(); }
       else if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 't') { e.preventDefault(); togglePin(); }
       else if (e.key === 'Escape' && !e.defaultPrevented) {
         if (drawer) drawer = null;
@@ -216,7 +264,7 @@
       }
     };
     window.addEventListener('keydown', onKey);
-    return () => { unsub(); window.removeEventListener('keydown', onKey); };
+    return () => { window.removeEventListener('keydown', onKey); };
   });
 </script>
 
@@ -348,6 +396,7 @@
         {history}
         {clearArmed}
         onClearHistory={clearHistory}
+        onDeleteWord={deleteWord}
         onLoadEntry={loadEntry}
         onClose={() => (drawer = null)}
       />

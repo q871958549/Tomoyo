@@ -15,7 +15,6 @@ pub mod flows;
 pub mod processes;
 pub mod snippets;
 pub mod system;
-pub mod translate;
 pub mod web;
 pub mod windows_switcher;
 
@@ -32,6 +31,5 @@ pub use flows::FlowsProvider;
 pub use processes::ProcessProvider;
 pub use snippets::SnippetsProvider;
 pub use system::SystemProvider;
-pub use translate::TranslateProvider;
 pub use web::WebSearchProvider;
 pub use windows_switcher::WindowsSwitcherProvider;

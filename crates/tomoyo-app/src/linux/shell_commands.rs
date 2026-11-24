@@ -4,7 +4,7 @@ use crate::actions::{
     clipboard_source_app_name, execute_action, is_clipboard_confidential, kill_process_by_pid,
     paste_into_previous_window_async, read_clipboard_files, read_clipboard_image_png,
     read_clipboard_text, send_ctrl_c_cleanly, set_clipboard_text, shell_open, spawn_capture_tool,
-    spawn_clipboard_manager_window, spawn_settings_window, spawn_translator_window,
+    spawn_clipboard_manager_window, spawn_settings_window,
 };
 use crate::linux::{tomoyo_linux_tray_set_menu, tomoyo_linux_ui_quit, LinuxTrayMenuItem};
 use crate::linux::ipc::schedule_on_ui;
@@ -21,8 +21,8 @@ use tomoyo_core::{
 };
 use tomoyo_plugin_host::ActivePluginHotkey;
 use tomoyo_protocol::{
-    ActionKind, ExecuteResponse, InternalCommandKind, Permission, PluginEventKind,
-    PluginEventPayload,
+    ActionKind, ExecuteResponse, InternalCommandKind, OpenWebViewRequest, Permission,
+    PluginEventKind, PluginEventPayload,
 };
 
 impl AppCore {
@@ -57,7 +57,6 @@ impl AppCore {
                 if let Ok(mut cfg) = self.config.write() { cfg.clipboard.capture_enabled = !cfg.clipboard.capture_enabled; let _ = cfg.save(); }
                 self.dispatch_query();
             }
-            InternalCommandKind::OpenTranslator { text, target_lang } => self.open_translator_window(&text, target_lang.as_deref()),
             InternalCommandKind::StartCapture { mode } => self.trigger_capture(&mode),
             InternalCommandKind::CheckForUpdates => self.trigger_update_check_async(),
             InternalCommandKind::InstallUpdate => self.trigger_update_install_async(),
@@ -91,12 +90,6 @@ impl AppCore {
     pub(super) fn open_clipboard_workbench(&mut self, focus: Option<&str>) {
         if let Err(e) = spawn_clipboard_manager_window(std::process::id() as isize, &self.theme_name, focus) {
             self.show_toast(&format!("剪贴板工作台启动失败: {e}"));
-        } else { self.hide_launcher(); }
-    }
-
-    pub(super) fn open_translator_window(&mut self, txt: &str, tgt: Option<&str>) {
-        if let Err(e) = spawn_translator_window(std::process::id() as isize, &self.theme_name, txt, tgt) {
-            self.show_toast(&format!("翻译窗口启动失败: {e}"));
         } else { self.hide_launcher(); }
     }
 
@@ -137,22 +130,6 @@ impl AppCore {
         } else if imgs && let Some((path, w, h, digest)) = read_clipboard_image_png() {
             self.clipboard.push_image_with_source(path, w, h, digest, &src);
         }
-    }
-
-    pub(super) fn trigger_selection_translate(&mut self) {
-        let theme = self.theme_name.clone();
-        let sup = Arc::clone(&self.suppress_clipboard);
-        let pid = std::process::id() as isize;
-        let _ = std::thread::Builder::new().name("tomoyo-sel-tr".into()).spawn(move || {
-            sup.store(true, Ordering::Release);
-            let prev = read_clipboard_text();
-            send_ctrl_c_cleanly();
-            std::thread::sleep(Duration::from_millis(120));
-            let cap = read_clipboard_text().unwrap_or_default();
-            if let Some(old) = prev.as_deref().filter(|o| *o != cap) { let _ = set_clipboard_text(old); }
-            sup.store(false, Ordering::Release);
-            let _ = spawn_translator_window(pid, &theme, cap.trim(), None);
-        });
     }
 
     pub(super) fn apply_plugin_exec_response(&mut self, plugin_id: &str, r: ExecuteResponse) {
@@ -210,11 +187,10 @@ impl AppCore {
 
     pub(super) fn rebuild_tray_menu(&mut self) {
         if self.ui.is_null() { return; }
-        let (clip_on, tr_on, cap_on) = self.config.read().map(|c| (
+        let (clip_on, cap_on) = self.config.read().map(|c| (
             c.is_plugin_enabled(tomoyo_core::PLUGIN_CLIPBOARD),
-            c.is_plugin_enabled(tomoyo_core::PLUGIN_TRANSLATE),
             c.is_plugin_enabled(tomoyo_core::PLUGIN_CAPTURE),
-        )).unwrap_or((true, true, true));
+        )).unwrap_or((true, true));
         self.tray_plugin_actions = self.plugin_host.active_tray_actions();
         let l = self.lang;
         let mut raw: Vec<(String, u32)> = vec![
@@ -222,7 +198,6 @@ impl AppCore {
             (l.pick("设置中心...", "Settings...").into(), 2),
         ];
         if clip_on { raw.push((l.pick("剪贴板历史", "Clipboard History").into(), 3)); }
-        if tr_on { raw.push((l.pick("多源翻译", "Translator").into(), 4)); }
         if cap_on {
             raw.push((l.pick("区域截图", "Region Capture").into(), 5));
             raw.push((l.pick("区域录屏", "Screen Record").into(), 6));
@@ -288,7 +263,17 @@ impl AppCore {
         if let Some(u) = plan.open_url.as_deref() && is_safe_http_url(u) { let _ = shell_open(u, None, None); }
         if let Some(p) = plan.open_path.as_deref() && std::path::Path::new(p).exists() { let _ = shell_open(p, None, None); }
         if let Some(m) = plan.capture_mode.as_deref() { self.trigger_capture(m); return; }
-        if let Some(t) = plan.launch_translate.as_deref() { self.open_translator_window(t, None); return; }
+        if let Some(t) = plan.launch_translate.as_deref() {
+            let req = OpenWebViewRequest { initial_query: t.to_string(), ..Default::default() };
+            if let Some(act) = self.plugin_host.resolve_webview_open(tomoyo_core::PLUGIN_TRANSLATE, &req) {
+                let out = execute_action(&act, "flow:translate", &self.plugin_host, self.theme.is_dark);
+                if let Some(msg) = out.toast { self.show_toast(&msg); }
+                if out.hide_window { self.hide_launcher(); }
+            } else {
+                self.show_toast("请先在设置中心→插件市场安装「多源对照翻译」插件");
+            }
+            return;
+        }
         if let Some(f) = plan.fill_query.as_deref() { self.show_launcher_with_query(Some(f)); return; }
         if let Some(t) = plan.toast { self.show_toast(&t); }
         if plan.hide_window { self.hide_launcher(); }

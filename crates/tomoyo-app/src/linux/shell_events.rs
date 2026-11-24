@@ -79,7 +79,6 @@ pub unsafe extern "C" fn on_tray_cmd_cb(ctx: *mut c_void, cmd: u32) {
             1 => st.toggle_launcher(),
             2 => st.open_settings_center(),
             3 => st.open_clipboard_workbench(None),
-            4 => st.open_translator_window("", None),
             5 => st.trigger_capture("region"),
             6 => st.trigger_capture("record"),
             9 => {

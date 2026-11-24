@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Crosshair, FolderOpen, RefreshCw } from '@lucide/svelte';
-  import { isPluginEnabled, PLUGIN_CAPTURE, PLUGIN_CLIPBOARD, PLUGIN_TRANSLATE } from '../../lib/defaults';
+  import { isPluginEnabled, PLUGIN_CAPTURE, PLUGIN_CLIPBOARD } from '../../lib/defaults';
   import { postHost } from '../../lib/ipc';
   import { tr, type Lang } from '../../lib/i18n';
   import type {
@@ -64,7 +64,6 @@
   let slots = $derived([
     { id: 'main' as const, label: isEn ? 'Main Launcher' : '主启动器唤起', spec: cfg.hotkey, st: health.main, on: true, presets: slotPresets.main },
     { id: 'clipboard' as const, label: isEn ? 'Clipboard Center' : '剪贴板管理中心', spec: cfg.clipboard.hotkey, st: health.clipboard, on: isPluginEnabled(cfg, PLUGIN_CLIPBOARD), presets: slotPresets.clipboard },
-    { id: 'translate' as const, label: isEn ? 'Selection Translate' : '全局划词翻译', spec: cfg.translate.hotkey, st: health.translate, on: isPluginEnabled(cfg, PLUGIN_TRANSLATE), presets: slotPresets.translate },
     { id: 'capture' as const, label: isEn ? 'Region Screenshot' : '全局区域截图', spec: cfg.capture.hotkey, st: health.capture, on: isPluginEnabled(cfg, PLUGIN_CAPTURE), presets: slotPresets.capture },
     { id: 'pin' as const, label: isEn ? 'Pin Latest Clipboard' : '全局一键贴图', spec: cfg.capture.pin_hotkey, st: health.pin, on: isPluginEnabled(cfg, PLUGIN_CAPTURE), presets: slotPresets.pin },
     { id: 'ocr' as const, label: isEn ? 'Screenshot OCR' : '全局截图识字', spec: cfg.capture.ocr_hotkey, st: health.ocr, on: isPluginEnabled(cfg, PLUGIN_CAPTURE), presets: slotPresets.ocr },

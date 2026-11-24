@@ -87,10 +87,10 @@ if (Test-Path $pkgPath) {
     }
 }
 $bundleBudgets = [ordered]@{
-    "frontend\dist\settings.html"     = 320 * 1024
-    "frontend\dist\translator.html"   = 150 * 1024
-    "frontend\dist\clipboard.html"    = 150 * 1024
-    "plugins\builtin-ocr\ui\index.html" = 150 * 1024
+    "frontend\dist\settings.html"               = 320 * 1024
+    "plugins\official-translate\ui\index.html"  = 150 * 1024
+    "frontend\dist\clipboard.html"              = 150 * 1024
+    "plugins\builtin-ocr\ui\index.html"         = 150 * 1024
 }
 $bundleSummary = @()
 foreach ($kv in $bundleBudgets.GetEnumerator()) {
@@ -205,6 +205,7 @@ if ($CheckBinaries) {
         "target\release\tomoyo-plugin-ocr.exe"       = 0.8
         "target\release\tomoyo-plugin-notes.exe"     = 0.8
         "target\release\tomoyo-plugin-md-editor.exe" = 0.8
+        "target\release\tomoyo-plugin-translate.exe" = 0.8
     }
     $binViolations = 0
     $binSummary = @()

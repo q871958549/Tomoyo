@@ -138,47 +138,6 @@ pub fn spawn_store_worker(
         });
 }
 
-pub fn spawn_translate_worker(
-    text: String,
-    source_lang: String,
-    target_lang: String,
-    tx: mpsc::Sender<String>,
-    hwnd_raw: usize,
-    notify_msg: u32,
-) {
-    let _ = std::thread::Builder::new()
-        .name("tomoyo-translator-worker".into())
-        .spawn(move || {
-            let cfg = TomoyoConfig::load_or_create();
-            let batch = tomoyo_core::translate::translate_parallel(
-                &cfg.translate,
-                &text,
-                &source_lang,
-                &target_lang,
-            );
-            let store = tomoyo_core::translate::TranslateStore::load_default();
-            let evt = serde_json::json!({
-                "event": "translate_result",
-                "data": batch,
-                "store": {
-                    "history": store.history,
-                    "wordbook": store.wordbook,
-                }
-            })
-            .to_string();
-            if tx.send(evt).is_ok() {
-                unsafe {
-                    let _ = PostMessageW(
-                        Some(HWND(hwnd_raw as *mut c_void)),
-                        notify_msg,
-                        WPARAM(0),
-                        LPARAM(0),
-                    );
-                }
-            }
-        });
-}
-
 /// Waits briefly for `tomoyo.exe` to re-register Win32 global hotkeys after `SaveSettings`,
 /// then pushes the authoritative `hotkey_status.json` health report back to Settings Center.
 pub fn spawn_hotkey_health_worker(tx: mpsc::Sender<String>, hwnd_raw: usize, notify_msg: u32) {
@@ -289,9 +248,6 @@ pub fn dispatch_async_workers(
         let _ = std::thread::Builder::new().name("tomoyo-plugin-health".into()).spawn(move || {
             push_evt(&t, hwnd_raw, notify_msg, crate::store_health::run_plugin_health_check_json(&sources));
         });
-    }
-    if let Some((txt, src, tgt)) = act.async_translate {
-        spawn_translate_worker(txt, src, tgt, tx.clone(), hwnd_raw, notify_msg);
     }
     if act.async_refresh_hotkey_health {
         spawn_hotkey_health_worker(tx.clone(), hwnd_raw, notify_msg);

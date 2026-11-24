@@ -38,7 +38,6 @@ mod store;
 mod store_cache;
 mod store_health;
 mod store_index;
-mod tr_view;
 #[cfg(windows)]
 mod win_host;
 #[cfg(windows)]
@@ -149,10 +148,7 @@ fn parse_args() -> LaunchArgs {
     let settings_mode = args.iter().any(|a| a == "--settings");
     let entry = val("--entry").unwrap_or_default();
     let plugin_id = val("--plugin-id").unwrap_or_else(|| "dev.tomoyo.webview".into());
-    let cfg_theme = if settings_mode
-        || clip_view::is_clip_manager_entry(&entry)
-        || tr_view::is_translator_entry(&entry)
-    {
+    let cfg_theme = if settings_mode || clip_view::is_clip_manager_entry(&entry) {
         TomoyoConfig::load_or_create().theme
     } else if args.iter().any(|a| a == "--light") {
         "light".into()
@@ -259,7 +255,6 @@ pub fn build_settings_init_script_for(initial_route: &str) -> String {
     let mut official_icons = serde_json::Map::new();
     for mid in [
         tomoyo_core::PLUGIN_CLIPBOARD,
-        tomoyo_core::PLUGIN_TRANSLATE,
         tomoyo_core::PLUGIN_CAPTURE,
     ] {
         if let Some(url) = tomoyo_core::resolve_bundled_module_icon(mid)
@@ -288,7 +283,7 @@ pub fn build_settings_init_script_for(initial_route: &str) -> String {
         "logs_dir": logs_dir().to_string_lossy(),
         "log_issues": { "warnings": log_warns, "errors": log_errs, "has_crash_report": log_crash },
         "running_apps": clip_view::enumerate_running_app_exes(),
-        "secrets_status": tr_view::secrets_status_json(),
+        "secrets_status": plugin_rpc::secrets_status_json(),
         "hotkey_health": tomoyo_core::load_hotkey_health(),
         "cached_update": cached_update,
         "has_bundled_alibaba_font": locate_fonts_dir().is_some(),
@@ -341,7 +336,6 @@ fn main() {
         assert!(!html.contains("type=\"number\""));
         assert!(!html.contains("<textarea"));
         assert!(clip_view::assemble_clip_manager_html().contains("__TOMOYO_CLIP_INIT__"));
-        assert!(tr_view::assemble_translator_html().contains("__TOMOYO_TR_INIT__"));
         assert!(handle_host_message(
             r#"{"cmd":"clip_list","query":""}"#,
             &mut pdb,

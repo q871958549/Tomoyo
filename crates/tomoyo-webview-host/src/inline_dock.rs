@@ -3,7 +3,6 @@
 use crate::clip_view::{is_clip_manager_entry, load_clip_manager_bootstrap};
 use crate::db::PluginDb;
 use crate::shim_js::build_init_script;
-use crate::tr_view::{is_translator_entry, load_translator_bootstrap};
 use crate::win_theme::{apply_host_window_theme, apply_window_icons, to_file_url};
 use crate::{build_settings_init_script_for, LaunchArgs};
 use std::path::PathBuf;
@@ -17,14 +16,11 @@ pub struct HostBootstrapData {
 pub fn prepare_host_bootstrap(opts: &LaunchArgs, db: &PluginDb) -> HostBootstrapData {
     let settings_mode = opts.settings_mode;
     let clip_mode = is_clip_manager_entry(&opts.entry);
-    let tr_mode = is_translator_entry(&opts.entry);
     let (init_script, clip_img_dir) = if settings_mode {
         (build_settings_init_script_for(&opts.query), None)
     } else if clip_mode {
         let boot = load_clip_manager_bootstrap(&opts.theme, &opts.query);
         (boot.init_script, Some(boot.images_dir))
-    } else if tr_mode {
-        (load_translator_bootstrap(&opts.theme), None)
     } else {
         (
             build_init_script(
@@ -37,7 +33,7 @@ pub fn prepare_host_bootstrap(opts: &LaunchArgs, db: &PluginDb) -> HostBootstrap
             None,
         )
     };
-    let entry_url = if settings_mode || clip_mode || tr_mode {
+    let entry_url = if settings_mode || clip_mode {
         String::new()
     } else {
         to_file_url(&opts.entry)

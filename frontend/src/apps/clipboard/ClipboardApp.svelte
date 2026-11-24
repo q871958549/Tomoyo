@@ -125,7 +125,7 @@
     if (!it || it.kind !== 'text') return;
     const txt = (it.key === current?.key ? draftText : (it.text || '')).trim();
     if (!txt) return;
-    postHost({ cmd: 'open_translator', text: txt, target_lang: '' });
+    postHost({ cmd: 'open_plugin_ui', plugin_id: 'dev.tomoyo.translate', query: txt });
     toast = `已发送 ${txt.length} 字到 Tomoyo 翻译`;
   }
 

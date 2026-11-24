@@ -29,15 +29,6 @@ export const OFFICIAL_PLUGINS: OfficialPluginMeta[] = [
     triggers: 'cb / clip',
   },
   {
-    id: PLUGIN_TRANSLATE,
-    category: 'ai',
-    zhName: '多源划词翻译',
-    enName: 'Multi-Source Translator',
-    zhDesc: '划词即译、中英词典音标与多引擎并行对比；关闭即释放热键与入口',
-    enDesc: 'Selection translate, dictionary & parallel engines; releases hotkey & commands when off',
-    triggers: 'tr / fy',
-  },
-  {
     id: PLUGIN_CAPTURE,
     category: 'media',
     zhName: '原生截图与贴图',

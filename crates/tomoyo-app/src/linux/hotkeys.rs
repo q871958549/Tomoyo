@@ -5,7 +5,7 @@ use std::ffi::{c_char, c_int, c_void, CStr, CString};
 use std::sync::{Arc, Mutex};
 use tomoyo_core::{
     load_or_init_flows, parse_hotkey, save_hotkey_health, HotkeyHealthReport, HotkeySlotStatus,
-    TomoyoConfig, PLUGIN_CAPTURE, PLUGIN_CLIPBOARD, PLUGIN_TRANSLATE,
+    TomoyoConfig, PLUGIN_CAPTURE, PLUGIN_CLIPBOARD,
 };
 use tomoyo_plugin_host::{ActivePluginHotkey, PluginHost};
 
@@ -28,7 +28,6 @@ unsafe extern "C" {
 pub enum HotkeyAction {
     ToggleMain,
     Clipboard,
-    Translate,
     Capture,
     Pin,
     Ocr,
@@ -141,11 +140,7 @@ impl HotkeyManager {
         } else {
             HotkeySlotStatus { disabled: true, ..Default::default() }
         };
-        health.translate = if cfg.is_plugin_enabled(PLUGIN_TRANSLATE) {
-            self.try_slot("translate", "划词/快捷翻译", &cfg.translate.hotkey, ov, HotkeyAction::Translate)
-        } else {
-            HotkeySlotStatus { disabled: true, ..Default::default() }
-        };
+        health.translate = HotkeySlotStatus { disabled: true, ..Default::default() };
         let cap_on = cfg.is_plugin_enabled(PLUGIN_CAPTURE);
         health.capture = if cap_on {
             self.try_slot("capture", "区域截图与标注", &cfg.capture.hotkey, ov, HotkeyAction::Capture)

@@ -50,12 +50,19 @@ pub fn secrets_file_path() -> PathBuf {
 }
 
 /// Loads all configured secrets belonging strictly to `plugin_id`'s declared `secret` fields.
+/// Includes seamless legacy-key fallback for `dev.tomoyo.translate` (`deepl_api_key`, `openai_api_key`).
 pub fn load_plugin_secrets(plugin_id: &str, field_keys: &[String]) -> BTreeMap<String, String> {
     let mut out = BTreeMap::new();
+    let is_tr = plugin_id.eq_ignore_ascii_case(crate::PLUGIN_TRANSLATE);
     for fk in field_keys {
         let full_key = plugin_secret_key(plugin_id, fk);
-        if let Some(val) = get_secret(&full_key) {
-            out.insert(fk.clone(), val);
+        let val = get_secret(&full_key).or_else(|| {
+            (is_tr && LEGACY_SECRET_KEYS.contains(&fk.as_str()))
+                .then(|| get_secret(fk))
+                .flatten()
+        });
+        if let Some(v) = val {
+            out.insert(fk.clone(), v);
         }
     }
     out
@@ -105,7 +112,16 @@ pub fn delete_secret(key: &str) -> Result<(), String> {
     if is_valid_secret_key(key) {
         let _ = crate::linux_sys::secret_clear(key);
     }
-    delete_secret_at(&secrets_file_path(), key)
+    let res = delete_secret_at(&secrets_file_path(), key);
+    // Keep legacy pre-v3 translator secret keys synchronized on delete.
+    if let Some(fk) = key.strip_prefix("plugin:dev.tomoyo.translate:")
+        && LEGACY_SECRET_KEYS.contains(&fk)
+    {
+        #[cfg(target_os = "linux")]
+        let _ = crate::linux_sys::secret_clear(fk);
+        let _ = delete_secret_at(&secrets_file_path(), fk);
+    }
+    res
 }
 
 pub fn set_secret_at(path: &Path, key: &str, plaintext: &str) -> Result<(), String> {

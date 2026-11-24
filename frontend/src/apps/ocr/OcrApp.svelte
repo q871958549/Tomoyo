@@ -88,7 +88,7 @@
     const sel = taEl ? text.substring(taEl.selectionStart, taEl.selectionEnd).trim() : '';
     const target = sel || text.trim();
     if (!target) { toast = '当前没有可翻译的文本'; return; }
-    postHost({ cmd: 'open_translator', text: target, target_lang: '' });
+    postHost({ cmd: 'open_plugin_ui', plugin_id: 'dev.tomoyo.translate', query: target });
     toast = `已发送 ${target.length} 字到 Tomoyo 多源翻译`;
   }
 

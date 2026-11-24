@@ -275,7 +275,6 @@ fn hotkeys_config_changed(old: &TomoyoConfig, fresh: &TomoyoConfig) -> bool {
     old.hotkey != fresh.hotkey
         || old.override_conflict_hotkeys != fresh.override_conflict_hotkeys
         || old.clipboard.hotkey != fresh.clipboard.hotkey
-        || old.translate.hotkey != fresh.translate.hotkey
         || old.capture.hotkey != fresh.capture.hotkey
         || old.capture.pin_hotkey != fresh.capture.pin_hotkey
         || old.capture.ocr_hotkey != fresh.capture.ocr_hotkey

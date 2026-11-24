@@ -12,7 +12,7 @@ use super::wndproc_mouse::{
     hit_test_window_chrome,
 };
 use super::{
-    AppShell, HOTKEY_CLIPBOARD_ID, HOTKEY_ID, HOTKEY_TRANSLATE_ID, TIMER_CLEAR_TOAST,
+    AppShell, HOTKEY_CLIPBOARD_ID, HOTKEY_ID, TIMER_CLEAR_TOAST,
     TIMER_FADE_HIDE, TIMER_FOCUS_GUARD, TIMER_HIBERNATE, TIMER_LAUNCH_HIDE, TIMER_SETTINGS_HIDE,
     WM_APP_CONFIG_SAVED, WM_APP_EDIT_KEY, WM_APP_FLOW_DONE, WM_APP_LAUNCH_DONE,
     WM_APP_PASTE_INTERCEPT, WM_APP_PLUGIN_EVENT_DONE, WM_APP_RESULTS_READY,
@@ -145,7 +145,6 @@ pub(super) unsafe extern "system" fn main_wndproc(
             match wparam.0 as i32 {
                 HOTKEY_ID => app.toggle_launcher(),
                 HOTKEY_CLIPBOARD_ID => app.toggle_clipboard_launcher(),
-                HOTKEY_TRANSLATE_ID => app.trigger_selection_translate(),
                 HOTKEY_CAPTURE_ID => app.trigger_capture_ex("region", false),
                 HOTKEY_PIN_ID => app.trigger_capture("pin_clipboard"),
                 HOTKEY_OCR_ID => app.trigger_capture_ex("ocr", false),
@@ -307,22 +306,21 @@ fn handle_tray_callback(hwnd: HWND, app: &mut AppShell, lparam: LPARAM) -> LRESU
     if ev == WM_LBUTTONUP || ev == WM_LBUTTONDBLCLK {
         app.toggle_launcher();
     } else if ev == WM_RBUTTONUP {
-        let (clip_on, tr_hk, cap_hk) = app
+        let (clip_on, cap_hk) = app
             .config
             .read()
             .map(|c| {
                 (
                     c.is_plugin_enabled(tomoyo_core::PLUGIN_CLIPBOARD),
-                    c.is_plugin_enabled(tomoyo_core::PLUGIN_TRANSLATE).then(|| c.translate.hotkey.clone()),
                     c.is_plugin_enabled(tomoyo_core::PLUGIN_CAPTURE).then(|| c.capture.hotkey.clone()),
                 )
             })
-            .unwrap_or_else(|_| (true, Some("Alt+T".into()), Some("Alt+S".into())));
+            .unwrap_or_else(|_| (true, Some("Alt+S".into())));
         app.tray_plugin_actions = app.plugin_host.active_tray_actions();
         let chosen = app.tray.as_ref().and_then(|tray| {
             tray.show_context_menu(
                 app.lang, app.theme, app.dpi_scale, app.font_regular, app.font_medium, clip_on,
-                tr_hk.as_deref(), cap_hk.as_deref(), &app.tray_plugin_actions,
+                cap_hk.as_deref(), &app.tray_plugin_actions,
             )
         });
         if let Some(id) = chosen {

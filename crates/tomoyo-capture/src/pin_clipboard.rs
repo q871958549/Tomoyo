@@ -240,31 +240,9 @@ fn load_any_image_bgra(path: &Path) -> Option<(u32, u32, Vec<u8>)> {
     })
 }
 
-/// Sends plain text directly from a pinned text card to Tomoyo's Translator window.
+/// Sends plain text directly from a pinned text card to Tomoyo's standalone Translator plugin.
 pub fn handoff_text_to_translator(text: &str) {
-    let cfg = tomoyo_core::TomoyoConfig::load_or_create();
-    let req_path = tomoyo_core::logs_dir().join("last_translate_req.json");
-    let payload = serde_json::json!({
-        "text": text,
-        "target_lang": cfg.translate.target_lang,
-    });
-    let _ = std::fs::write(&req_path, payload.to_string());
-    if let Ok(exe) = std::env::current_exe()
-        && let Some(dir) = exe.parent()
-    {
-        let host = dir.join("tomoyo-webview-host.exe");
-        if host.is_file() {
-            let _ = std::process::Command::new(host)
-                .args([
-                    "--entry", "__tomoyo_translator__",
-                    "--title", "Tomoyo 多源翻译",
-                    "--theme", &cfg.theme,
-                    "--width", "820",
-                    "--height", "620",
-                ])
-                .spawn();
-        }
-    }
+    let _ = crate::export::spawn_translate_hybrid_viewer(text);
 }
 
 /// Minimum visible strip (in px) preserved when dragging a pinned window past any screen edge.

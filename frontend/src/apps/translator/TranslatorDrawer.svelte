@@ -15,7 +15,6 @@
 
 <script lang="ts">
   import { X } from '@lucide/svelte';
-  import { postHost } from '../../lib/ipc';
   import Button from '../../lib/ui/Button.svelte';
   import Input from '../../lib/ui/Input.svelte';
 
@@ -25,11 +24,12 @@
     history: HistItem[];
     clearArmed: boolean;
     onClearHistory: () => void;
+    onDeleteWord: (word: string) => void;
     onLoadEntry: (text: string, targetLang: string) => void;
     onClose: () => void;
   }
 
-  let { mode, wordbook, history, clearArmed, onClearHistory, onLoadEntry, onClose }: Props = $props();
+  let { mode, wordbook, history, clearArmed, onClearHistory, onDeleteWord, onLoadEntry, onClose }: Props = $props();
   let query = $state('');
 
   let filteredWords = $derived(
@@ -68,7 +68,7 @@
           <div class="d-tr">{w.translation}</div>
           <div class="d-foot">
             <span>{w.note || '生词'}</span>
-            <Button variant="danger" size="sm" onclick={(e) => { e.stopPropagation(); postHost({ cmd: 'tr_delete_word', word: w.word }); }}>移除</Button>
+            <Button variant="danger" size="sm" onclick={(e) => { e.stopPropagation(); onDeleteWord(w.word); }}>移除</Button>
           </div>
         </div>
       {:else}

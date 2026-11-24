@@ -37,49 +37,78 @@ describe('Tomoyo Workbenches & FlowsTab interactions', () => {
     document.body.className = '';
   });
 
-  it('TranslatorApp translates, saves word, opens TranslatorDrawer, and deletes word', () => {
-    const wv = setupMockWebView();
-    window.__TOMOYO_TR_INIT__ = {
+  it('TranslatorApp translates, saves word, opens TranslatorDrawer, and deletes word via Protocol v3 callPlugin', async () => {
+    setupMockWebView();
+    const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+    window.__TOMOYO_TR_INIT__ = undefined;
+    window.tomoyo = {
       theme: 'dark',
-      text: 'serendipity',
-      target_lang: 'zh-Hans',
-      engines: ['google'],
-      history: [{ source: 'hello', translated: '你好', engine: 'google', target_lang: 'zh-Hans' }],
-      wordbook: [{ word: 'ephemeral', translation: '短暂的', phonetic: 'ɪˈfemərəl', note: 'google' }],
+      initialQuery: 'serendipity',
+      callPlugin: (async (method: string, params?: unknown) => {
+        const p = (params ?? {}) as Record<string, unknown>;
+        calls.push({ method, params: p });
+        if (method === 'get_init') {
+          return {
+            text: 'serendipity',
+            target_lang: 'zh-Hans',
+            engines: ['google'],
+            history: [{ source: 'hello', translated: '你好', engine: 'google', target_lang: 'zh-Hans' }],
+            wordbook: [{ word: 'ephemeral', translation: '短暂的', phonetic: 'ɪˈfemərəl', note: 'google' }],
+          };
+        }
+        if (method === 'translate') {
+          return {
+            data: {
+              source_text: 'serendipity',
+              target_lang: 'zh-Hans',
+              results: [{
+                engine_name: 'Google',
+                ok: true,
+                translated: '意外发现珍奇事物的运气',
+                detected_lang: 'en',
+                phonetic: 'ˌserənˈdɪpəti',
+                elapsed_ms: 85,
+              }],
+            },
+            store: {
+              history: [{ source: 'serendipity', translated: '意外发现珍奇事物的运气', engine: 'Google', target_lang: 'zh-Hans' }],
+              wordbook: [{ word: 'ephemeral', translation: '短暂的', phonetic: 'ɪˈfemərəl', note: 'google' }],
+            },
+          };
+        }
+        if (method === 'save_word') {
+          return {
+            ok: true,
+            history: [],
+            wordbook: [
+              { word: 'serendipity', translation: '意外发现珍奇事物的运气', phonetic: 'ˌserənˈdɪpəti', note: 'Google' },
+              { word: 'ephemeral', translation: '短暂的', phonetic: 'ɪˈfemərəl', note: 'google' },
+            ],
+          };
+        }
+        if (method === 'delete_word') {
+          return { ok: true, history: [], wordbook: [] };
+        }
+        return { ok: true, history: [], wordbook: [] };
+      }) as <T = unknown>(method: string, params?: unknown) => Promise<T>,
+      onEnter: () => {},
     };
 
     const app = mount(TranslatorApp, { target: document.getElementById('app')! });
+    await new Promise((r) => setTimeout(r, 10));
     flushSync();
 
-    // Auto-runs translation on initial non-empty text
-    expect(wv.posted.some((m) => m.cmd === 'run_translate' && m.text === 'serendipity')).toBe(true);
-
-    // Emit engine result and save to wordbook
-    wv.emit({
-      event: 'translate_result',
-      data: {
-        source_text: 'serendipity',
-        target_lang: 'zh-Hans',
-        results: [{
-          engine_name: 'Google',
-          ok: true,
-          translated: '意外发现珍奇事物的运气',
-          detected_lang: 'en',
-          phonetic: 'ˌserənˈdɪpəti',
-          elapsed_ms: 85,
-        }],
-      },
-    });
-    flushSync();
+    expect(calls.some((c) => c.method === 'get_init')).toBe(true);
+    expect(calls.some((c) => c.method === 'translate' && c.params.text === 'serendipity')).toBe(true);
     expect(document.body.textContent).toContain('意外发现珍奇事物的运气');
 
     const saveBtn = document.querySelector<HTMLButtonElement>('button[title="加入生词本"]');
     expect(saveBtn).not.toBeNull();
     saveBtn?.click();
+    await new Promise((r) => setTimeout(r, 5));
     flushSync();
-    expect(wv.posted.some((m) => m.cmd === 'tr_save_word' && m.word === 'serendipity')).toBe(true);
+    expect(calls.some((c) => c.method === 'save_word' && c.params.word === 'serendipity')).toBe(true);
 
-    // Open extracted TranslatorDrawer (wordbook mode) & delete an entry
     const wbBtn = [...document.querySelectorAll<HTMLButtonElement>('header button')].find((b) => b.textContent?.includes('生词本'));
     expect(wbBtn).toBeDefined();
     wbBtn?.click();
@@ -89,9 +118,11 @@ describe('Tomoyo Workbenches & FlowsTab interactions', () => {
     const delBtn = [...document.querySelectorAll<HTMLButtonElement>('aside.drawer button')].find((b) => b.textContent?.trim() === '移除');
     expect(delBtn).toBeDefined();
     delBtn?.click();
+    await new Promise((r) => setTimeout(r, 5));
     flushSync();
-    expect(wv.posted.some((m) => m.cmd === 'tr_delete_word' && m.word === 'ephemeral')).toBe(true);
+    expect(calls.some((c) => c.method === 'delete_word')).toBe(true);
 
+    window.tomoyo = undefined;
     unmount(app);
   });
 
@@ -174,7 +205,7 @@ describe('Tomoyo Workbenches & FlowsTab interactions', () => {
 
     findBtn('一键翻译')?.click();
     flushSync();
-    expect(wv.posted.some((m) => m.cmd === 'open_translator' && m.text === '第一行 第二行')).toBe(true);
+    expect(wv.posted.some((m) => m.cmd === 'open_plugin_ui' && m.plugin_id === 'dev.tomoyo.translate' && m.query === '第一行 第二行')).toBe(true);
 
     findBtn('原始输出')?.click();
     flushSync();

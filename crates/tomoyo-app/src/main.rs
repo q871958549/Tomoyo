@@ -36,7 +36,7 @@ use tomoyo_core::{
 use tomoyo_plugin_host::{default_plugin_dirs, PluginHost};
 use tomoyo_providers::{
     AppsProvider, CalcProvider, CaptureProvider, ClipboardProvider, EverythingProvider,
-    ProcessProvider, SnippetsProvider, SystemProvider, TranslateProvider, WebSearchProvider,
+    ProcessProvider, SnippetsProvider, SystemProvider, WebSearchProvider,
     WindowsSwitcherProvider,
 };
 #[cfg(windows)]
@@ -141,7 +141,6 @@ fn build_engine() -> EngineBundle {
     ));
     let everything = Arc::new(EverythingProvider::new(config.clone()));
     let calc = Arc::new(CalcProvider::new());
-    let translate = Arc::new(TranslateProvider::new(config.clone()));
     let capture = Arc::new(CaptureProvider::new(config.clone()));
     let snippets = Arc::new(SnippetsProvider::new(config.clone()));
     let flows = Arc::new(tomoyo_providers::FlowsProvider::new(config.clone()));
@@ -162,7 +161,6 @@ fn build_engine() -> EngineBundle {
         web,
         everything,
         clipboard.clone(),
-        translate,
         capture,
         windows,
         processes,

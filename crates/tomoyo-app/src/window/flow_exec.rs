@@ -89,7 +89,28 @@ impl AppShell {
             return;
         }
         if let Some(tr_text) = plan.launch_translate.as_deref() {
-            self.open_translator_window(tr_text, None);
+            let req = tomoyo_protocol::OpenWebViewRequest {
+                initial_query: tr_text.to_string(),
+                ..Default::default()
+            };
+            if let Some(wv_act) =
+                self.plugin_host.resolve_webview_open(tomoyo_core::PLUGIN_TRANSLATE, &req)
+            {
+                let out = crate::actions::execute_action(
+                    &wv_act,
+                    "flow:translate",
+                    &self.plugin_host,
+                    self.theme.is_dark,
+                );
+                if let Some(t) = out.toast {
+                    self.show_toast(&t);
+                }
+                if out.hide_window {
+                    self.hide_launcher();
+                }
+            } else {
+                self.show_toast("请先在设置中心→插件市场安装「多源对照翻译」插件");
+            }
             return;
         }
         if let Some(fill) = plan.fill_query.as_deref() {

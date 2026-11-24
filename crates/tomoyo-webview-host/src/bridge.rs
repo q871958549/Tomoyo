@@ -26,6 +26,7 @@ pub enum HostMessage {
     PickSyncDir,
     PickPluginPath { plugin_id: String, key: String, #[serde(default)] kind: String },
     PluginRpc { req_id: String, method: String, #[serde(default)] params: Value },
+    OpenPluginUi { plugin_id: String, #[serde(default)] query: String },
     ClearSyncDir,
     StartCapture { #[serde(default)] mode: String },
     SyncTheme { theme: String },
@@ -51,11 +52,6 @@ pub enum HostMessage {
     ClipClearUnpinned,
     ClipExport,
     ClipImport { json: String },
-    OpenTranslator { text: String, #[serde(default)] target_lang: String },
-    RunTranslate { text: String, #[serde(default)] source_lang: String, #[serde(default)] target_lang: String },
-    TrSaveWord { word: String, translation: String, #[serde(default)] phonetic: String, #[serde(default)] note: String },
-    TrDeleteWord { word: String },
-    TrClearHistory,
     SetSecret { key: String, value: String },
     DeleteSecret { key: String },
     CheckHotkeyHealth,
@@ -93,7 +89,6 @@ pub struct HostAction {
     pub async_fetch_store: Option<crate::store_index::StoreQuery>,
     pub async_fetch_plugin_detail: Option<(String, Vec<String>)>,
     pub async_check_plugin_health: Option<Vec<String>>,
-    pub async_translate: Option<(String, String, String)>,
     pub async_refresh_hotkey_health: bool,
     /// `1` = start temporary exclusive WH_KEYBOARD_LL capture, `-1` = stop.
     pub hotkey_capture_cmd: i8,
@@ -161,6 +156,10 @@ pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isi
             async_plugin_rpc: Some((req_id, method, params)),
             ..Default::default()
         },
+        HostMessage::OpenPluginUi { plugin_id, query } => {
+            crate::plugin_rpc::open_plugin_ui(&plugin_id, &query, notify_hwnd);
+            HostAction::default()
+        }
         HostMessage::ClearSyncDir => {
             let (reply, ok) = crate::backup::clear_sync_dir_reply();
             if ok && (notify_hwnd.is_some() || cfg!(target_os = "linux")) {
@@ -251,19 +250,8 @@ pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isi
             let (reply, mutated) = crate::clip_view::handle_clip_import(&json);
             finish_clip_mutation(reply, mutated, notify_hwnd)
         }
-        HostMessage::OpenTranslator { text, target_lang } => {
-            crate::tr_view::open_or_spawn_translator(&text, &target_lang, notify_hwnd);
-            HostAction::default()
-        }
-        HostMessage::RunTranslate { text, source_lang, target_lang } => HostAction {
-            async_translate: Some((text, source_lang, target_lang)),
-            ..Default::default()
-        },
-        HostMessage::TrSaveWord { word, translation, phonetic, note } => HostAction { reply_json: Some(crate::tr_view::handle_tr_word_save(&word, &translation, &phonetic, &note)), ..Default::default() },
-        HostMessage::TrDeleteWord { word } => HostAction { reply_json: Some(crate::tr_view::handle_tr_word_delete(&word)), ..Default::default() },
-        HostMessage::TrClearHistory => HostAction { reply_json: Some(crate::tr_view::handle_tr_history_clear()), ..Default::default() },
-        HostMessage::SetSecret { key, value } => HostAction { reply_json: Some(crate::tr_view::handle_set_secret(&key, &value)), ..Default::default() },
-        HostMessage::DeleteSecret { key } => HostAction { reply_json: Some(crate::tr_view::handle_delete_secret(&key)), ..Default::default() },
+        HostMessage::SetSecret { key, value } => HostAction { reply_json: Some(crate::plugin_rpc::handle_set_secret(&key, &value)), ..Default::default() },
+        HostMessage::DeleteSecret { key } => HostAction { reply_json: Some(crate::plugin_rpc::handle_delete_secret(&key)), ..Default::default() },
         HostMessage::CheckHotkeyHealth => HostAction {
             reply_json: Some(serde_json::json!({ "event": "hotkey_health", "health": tomoyo_core::load_hotkey_health() }).to_string()),
             ..Default::default()

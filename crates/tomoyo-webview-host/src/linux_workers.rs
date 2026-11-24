@@ -314,18 +314,6 @@ pub fn dispatch_async_workers(act: HostAction, ch: &Arc<HostChannel>) {
             c.push(crate::store_health::run_plugin_health_check_json(&sources));
         });
     }
-    if let Some((text, src, tgt)) = act.async_translate {
-        let c = Arc::clone(ch);
-        let _ = std::thread::Builder::new().name("tomoyo-wv-tr".into()).spawn(move || {
-            let cfg = TomoyoConfig::load_or_create();
-            let batch = tomoyo_core::translate::translate_parallel(&cfg.translate, &text, &src, &tgt);
-            let store = tomoyo_core::translate::TranslateStore::load_default();
-            c.push(serde_json::json!({
-                "event": "translate_result", "data": batch,
-                "store": { "history": store.history, "wordbook": store.wordbook }
-            }).to_string());
-        });
-    }
     if act.async_refresh_hotkey_health {
         spawn_hotkey_health_worker(Arc::clone(ch));
     }
@@ -367,7 +355,6 @@ impl Drop for SocketGuard {
 
 pub fn try_acquire_instance(
     mode_tag: &str,
-    tr_mode: bool,
     clip_mode: bool,
     plugin_query: Option<&str>,
     ch: &Arc<HostChannel>,
@@ -405,9 +392,7 @@ pub fn try_acquire_instance(
                 let t = TomoyoConfig::load_or_create().theme;
                 let mode = if t.eq_ignore_ascii_case("light") { 0 } else if t.eq_ignore_ascii_case("midnight") { 2 } else { 1 };
                 c.desired_theme.store(mode, Ordering::SeqCst);
-                if tr_mode {
-                    c.push(crate::tr_view::read_latest_translate_req_event());
-                } else if clip_mode {
+                if clip_mode {
                     let q = cmd.trim().strip_prefix("activate_clip:").unwrap_or("");
                     let _ = q;
                     c.push(crate::clip_view::handle_clip_list(""));

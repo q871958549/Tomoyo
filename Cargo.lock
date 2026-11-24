@@ -915,6 +915,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "tomoyo-plugin-translate"
+version = "3.0.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tomoyo-sdk",
+]
+
+[[package]]
 name = "tomoyo-protocol"
 version = "3.0.0"
 dependencies = [

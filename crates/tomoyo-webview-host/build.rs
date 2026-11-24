@@ -7,7 +7,7 @@ use std::process::Command;
 
 fn main() {
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR missing"));
-    for name in ["settings.html", "translator.html", "clipboard.html"] {
+    for name in ["settings.html", "clipboard.html"] {
         let src = format!("../../frontend/dist/{name}");
         println!("cargo:rerun-if-changed={src}");
         let raw = std::fs::read(&src).unwrap_or_else(|e| panic!("failed to read {src}: {e}"));

@@ -43,7 +43,6 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 pub(super) const HOTKEY_ID: i32 = 1;
 pub(super) const HOTKEY_CLIPBOARD_ID: i32 = 2;
-pub(super) const HOTKEY_TRANSLATE_ID: i32 = 3;
 pub(super) const EDIT_CTRL_ID: usize = 101;
 pub(super) const EDIT_SUBCLASS_ID: usize = 1;
 pub(super) const WM_APP_RESULTS_READY: u32 = WM_APP + 1;
