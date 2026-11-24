@@ -1,6 +1,8 @@
 //! Background threads for Settings Center updater checks, installer execution & Store loading.
 
-use crate::store_index::{make_install_quiet_md_event, query_store_page_json, StoreQuery};
+use crate::store_index::{
+    make_install_quiet_md_event, query_plugin_detail_json, query_store_page_json, StoreQuery,
+};
 use std::ffi::c_void;
 use std::sync::mpsc;
 use tomoyo_core::{
@@ -288,6 +290,12 @@ pub fn dispatch_async_workers(
     }
     if let Some(req) = act.async_fetch_store {
         spawn_store_worker(req, tx.clone(), hwnd_raw, notify_msg);
+    }
+    if let Some((plugin_id, sources)) = act.async_fetch_plugin_detail {
+        let t = tx.clone();
+        let _ = std::thread::Builder::new().name("tomoyo-store-detail".into()).spawn(move || {
+            push_evt(&t, hwnd_raw, notify_msg, query_plugin_detail_json(&plugin_id, &sources));
+        });
     }
     if act.async_install_quiet_md {
         spawn_quiet_md_install_worker(tx.clone(), hwnd_raw, notify_msg);

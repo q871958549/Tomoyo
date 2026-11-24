@@ -256,6 +256,12 @@ pub fn dispatch_async_workers(act: HostAction, ch: &Arc<HostChannel>) {
             c.push(crate::store_index::query_store_page_json(&req));
         });
     }
+    if let Some((plugin_id, sources)) = act.async_fetch_plugin_detail {
+        let c = Arc::clone(ch);
+        let _ = std::thread::Builder::new().name("tomoyo-store-detail".into()).spawn(move || {
+            c.push(crate::store_index::query_plugin_detail_json(&plugin_id, &sources));
+        });
+    }
     if act.async_install_quiet_md {
         let c = Arc::clone(ch);
         let _ = std::thread::Builder::new().name("tomoyo-quietmd-install".into()).spawn(move || {

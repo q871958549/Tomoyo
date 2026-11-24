@@ -200,6 +200,10 @@ export interface PluginEntry {
   id: string;
   name: string;
   version?: string;
+  latest_version?: string;
+  update_available?: boolean;
+  update_source?: string;
+  update_sha256?: string;
   description?: string;
   author?: string;
   license?: string;

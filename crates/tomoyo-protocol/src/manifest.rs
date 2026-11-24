@@ -286,6 +286,8 @@ pub struct RegistryPluginEntry {
     pub tags: Vec<String>,
     #[serde(default)]
     pub keywords: Vec<String>,
+    #[serde(default)]
+    pub permissions: Vec<String>,
     /// Local relative path or HTTPS download URL for plugin directory/bundle.
     pub source: String,
     /// Required SHA-256 hex digest of `tomoyo-plugin.toml` + primary payload for integrity verification.

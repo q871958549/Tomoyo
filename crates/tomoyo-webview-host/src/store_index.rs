@@ -1,8 +1,12 @@
 //! Scalable Store Catalog v2 index supporting sharded 10,000+ plugin registries,
-//! category/runtime filtering, multi-token search, and bounded per-page serialization.
+//! disk ETag/304 caching, parallel shard fetching, SemVer update detection, and lazy plugin details.
 
 use crate::store::candidate_local_paths;
-use std::collections::{BTreeMap, HashSet};
+use crate::store_cache::{
+    fetch_remote_index_cached, fetch_shards_parallel, is_newer_semver, read_cached_index_at,
+    store_cache_dir,
+};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::{Mutex, OnceLock};
 use tomoyo_core::{read_icon_data_url, resolve_bundled_module_icon};
 use tomoyo_plugin_host::{default_plugin_dirs, PluginHost};
@@ -37,15 +41,24 @@ pub fn invalidate_catalog_cache() {
     }
 }
 
-fn load_single_index(source: &str) -> Result<(PluginRegistryIndex, String), String> {
+fn load_single_index(
+    source: &str,
+    force_refresh: bool,
+    cache_only: bool,
+) -> Result<(PluginRegistryIndex, String), String> {
     if source.starts_with("https://") || source.starts_with("http://") {
-        let resp = tomoyo_core::http::http_get(source, 8000, 8 * 1024 * 1024)?;
-        if resp.status_code != 200 {
-            return Err(format!("HTTP {}", resp.status_code));
+        if cache_only {
+            let (idx, _, _) = read_cached_index_at(&store_cache_dir(), source)
+                .ok_or_else(|| "未命中本地磁盘缓存".to_string())?;
+            return Ok((idx, format!("{source} (cached)")));
         }
-        let idx: PluginRegistryIndex =
-            serde_json::from_slice(&resp.body).map_err(|e| e.to_string())?;
-        return Ok((idx, source.to_string()));
+        let (idx, from_cache) = fetch_remote_index_cached(source, force_refresh)?;
+        let origin = if from_cache {
+            format!("{source} (cached)")
+        } else {
+            source.to_string()
+        };
+        return Ok((idx, origin));
     }
     for cand in candidate_local_paths(source) {
         if cand.is_file() {
@@ -66,10 +79,29 @@ fn resolve_shard_source(parent: &str, shard_src: &str) -> String {
     {
         return format!("{prefix}/{}", shard_src.trim_start_matches('/'));
     }
+    if std::path::Path::new(shard_src).is_absolute() || std::path::Path::new(shard_src).exists() {
+        return shard_src.to_string();
+    }
+    if let Some(parent_dir) = std::path::Path::new(parent).parent() {
+        let rel = parent_dir.join(shard_src);
+        if rel.is_file() {
+            return rel.to_string_lossy().into_owned();
+        }
+        if let Some(root) = parent_dir.parent() {
+            let rel2 = root.join(shard_src);
+            if rel2.is_file() {
+                return rel2.to_string_lossy().into_owned();
+            }
+        }
+    }
     shard_src.to_string()
 }
 
-fn load_or_fetch_catalog(sources: &[String], force_refresh: bool) -> CachedCatalog {
+fn load_or_fetch_catalog(
+    sources: &[String],
+    force_refresh: bool,
+    cache_only: bool,
+) -> CachedCatalog {
     let eff: Vec<String> = if sources.is_empty() {
         vec!["registry/index.json".into()]
     } else {
@@ -91,7 +123,7 @@ fn load_or_fetch_catalog(sources: &[String], force_refresh: bool) -> CachedCatal
     let mut errors = Vec::new();
 
     for src in &eff {
-        match load_single_index(src) {
+        match load_single_index(src, force_refresh, cache_only) {
             Ok((idx, origin)) => {
                 loaded_from.push(origin.clone());
                 for p in idx.plugins {
@@ -99,20 +131,29 @@ fn load_or_fetch_catalog(sources: &[String], force_refresh: bool) -> CachedCatal
                         entries.push(p);
                     }
                 }
-                for shard in idx.shards {
-                    let s_url = resolve_shard_source(src, &shard.source);
-                    match load_single_index(&s_url) {
-                        Ok((sub, _)) => {
+                let shard_jobs: Vec<(String, String, String)> = idx
+                    .shards
+                    .into_iter()
+                    .map(|sh| {
+                        let resolved = resolve_shard_source(src, &sh.source);
+                        (sh.id, sh.category, resolved)
+                    })
+                    .collect();
+                for (shard_id, shard_cat, res) in fetch_shards_parallel(&shard_jobs, |u| {
+                    load_single_index(u, force_refresh, cache_only).map(|(i, _)| i)
+                }) {
+                    match res {
+                        Ok(sub) => {
                             for mut p in sub.plugins {
-                                if p.category.is_empty() && !shard.category.is_empty() {
-                                    p.category = shard.category.clone();
+                                if p.category.is_empty() && !shard_cat.is_empty() {
+                                    p.category = shard_cat.clone();
                                 }
                                 if seen_ids.insert(p.id.clone()) {
                                     entries.push(p);
                                 }
                             }
                         }
-                        Err(e) => errors.push(format!("shard `{}`: {e}", shard.id)),
+                        Err(e) => errors.push(format!("shard `{shard_id}`: {e}")),
                     }
                 }
             }
@@ -120,13 +161,8 @@ fn load_or_fetch_catalog(sources: &[String], force_refresh: bool) -> CachedCatal
         }
     }
 
-    let cached = CachedCatalog {
-        sources_key: key,
-        entries,
-        loaded_from,
-        errors,
-    };
-    if let Ok(mut g) = lock.lock() {
+    let cached = CachedCatalog { sources_key: key, entries, loaded_from, errors };
+    if !cache_only && let Ok(mut g) = lock.lock() {
         *g = Some(cached.clone());
     }
     cached
@@ -137,7 +173,9 @@ pub fn normalize_category(raw: &str, keywords: &[String], runtime: &str) -> Stri
     if !t.is_empty() {
         return t;
     }
-    if runtime.eq_ignore_ascii_case("webview") || keywords.iter().any(|k| matches!(k.as_str(), "json" | "wasm" | "jwt" | "py" | "hash" | "hi" | "case")) {
+    if runtime.eq_ignore_ascii_case("webview")
+        || keywords.iter().any(|k| matches!(k.as_str(), "json" | "wasm" | "jwt" | "py" | "hash" | "hi" | "case"))
+    {
         return "dev".into();
     }
     if keywords.iter().any(|k| matches!(k.as_str(), "note" | "memo" | "md" | "markdown" | "edit" | "quiet")) {
@@ -168,19 +206,25 @@ fn resolve_store_item_icon_url(p: &RegistryPluginEntry) -> Option<String> {
     None
 }
 
+/// Fast zero-network lookup of catalog entries for Settings Init SemVer upgrade badges.
+pub fn local_catalog_index_map(sources: &[String]) -> HashMap<String, RegistryPluginEntry> {
+    let catalog = load_or_fetch_catalog(sources, false, true);
+    catalog.entries.into_iter().map(|e| (e.id.to_ascii_lowercase(), e)).collect()
+}
+
 /// Queries indexed catalog items (O(N) scan with zero DOM bloat) and returns strictly 1 page.
 pub fn query_store_page_json(req: &StoreQuery) -> String {
-    let catalog = load_or_fetch_catalog(&req.sources, req.force_refresh);
+    let catalog = load_or_fetch_catalog(&req.sources, req.force_refresh, false);
     let host = PluginHost::new(default_plugin_dirs());
-    let installed_ids: HashSet<String> = host.list_plugins().into_iter().map(|p| p.id).collect();
+    let installed_versions: HashMap<String, String> = host
+        .list_plugins()
+        .into_iter()
+        .map(|p| (p.id.to_ascii_lowercase(), p.version))
+        .collect();
     host.shutdown_all();
     let user_plugins_dir = tomoyo_core::data_dir().join("plugins");
 
-    let tokens: Vec<String> = req
-        .query
-        .split_whitespace()
-        .map(|s| s.to_ascii_lowercase())
-        .collect();
+    let tokens: Vec<String> = req.query.split_whitespace().map(|s| s.to_ascii_lowercase()).collect();
     let want_rt = req.runtime.trim().to_ascii_lowercase();
     let want_cat = req.category.trim().to_ascii_lowercase();
 
@@ -231,46 +275,77 @@ pub fn query_store_page_json(req: &StoreQuery) -> String {
         .map(|(p, cat)| {
             let slug = p.id.replace('.', "-");
             let in_user_dir = user_plugins_dir.join(&slug).is_dir();
-            let is_installed = installed_ids.contains(&p.id) || in_user_dir;
+            let inst_ver = installed_versions.get(&p.id.to_ascii_lowercase()).cloned();
+            let is_installed = inst_ver.is_some() || in_user_dir;
+            let update_available = inst_ver.as_deref().is_some_and(|v| is_newer_semver(&p.version, v));
             serde_json::json!({
-                "id": p.id,
-                "name": p.name,
-                "version": p.version,
-                "description": p.description,
-                "author": p.author,
-                "license": p.license,
-                "runtime_kind": p.runtime_kind,
-                "category": cat,
+                "id": p.id, "name": p.name, "version": p.version,
+                "description": p.description, "author": p.author, "license": p.license,
+                "runtime_kind": p.runtime_kind, "category": cat,
                 "display_mode": p.display_mode.as_str(),
                 "icon_url": resolve_store_item_icon_url(p),
-                "tags": p.tags,
-                "keywords": p.keywords,
-                "homepage": p.homepage,
-                "downloads": p.downloads,
-                "updated_at": p.updated_at,
-                "source": p.source,
-                "sha256": p.sha256,
-                "installed": is_installed,
-                "removable": in_user_dir,
+                "tags": p.tags, "keywords": p.keywords, "permissions": p.permissions,
+                "homepage": p.homepage, "downloads": p.downloads, "updated_at": p.updated_at,
+                "source": p.source, "sha256": p.sha256,
+                "installed": is_installed, "removable": in_user_dir,
+                "installed_version": inst_ver, "update_available": update_available,
             })
         })
         .collect();
 
-    let quiet_md_ready = tomoyo_core::detect_quiet_md_binary(None)
-        .map(|p| p.to_string_lossy().into_owned());
-
+    let quiet_md_ready = tomoyo_core::detect_quiet_md_binary(None).map(|p| p.to_string_lossy().into_owned());
     serde_json::json!({
-        "event": "store_loaded",
-        "items": items,
-        "page": page,
-        "page_size": page_size,
-        "total": total,
-        "catalog_total": catalog.entries.len(),
-        "total_pages": total_pages,
-        "category_counts": cat_counts,
-        "sources": catalog.loaded_from,
-        "errors": catalog.errors,
+        "event": "store_loaded", "items": items, "page": page, "page_size": page_size,
+        "total": total, "catalog_total": catalog.entries.len(), "total_pages": total_pages,
+        "category_counts": cat_counts, "sources": catalog.loaded_from, "errors": catalog.errors,
         "quiet_md_path": quiet_md_ready,
+    })
+    .to_string()
+}
+
+/// Lazy single-plugin detail lookup for the Store Detail Drawer.
+pub fn query_plugin_detail_json(plugin_id: &str, sources: &[String]) -> String {
+    let catalog = load_or_fetch_catalog(sources, false, false);
+    let Some(p) = catalog.entries.iter().find(|e| e.id.eq_ignore_ascii_case(plugin_id)) else {
+        return serde_json::json!({
+            "event": "plugin_detail", "ok": false, "plugin_id": plugin_id,
+            "error": "未在插件市场索引中找到该插件详情"
+        })
+        .to_string();
+    };
+    let host = PluginHost::new(default_plugin_dirs());
+    let installed_entry = host.list_plugins().into_iter().find(|i| i.id.eq_ignore_ascii_case(&p.id));
+    host.shutdown_all();
+
+    let slug = p.id.replace('.', "-");
+    let in_user_dir = tomoyo_core::data_dir().join("plugins").join(&slug).is_dir();
+    let inst_ver = installed_entry.as_ref().map(|i| i.version.clone());
+    let update_available = inst_ver.as_deref().is_some_and(|v| is_newer_semver(&p.version, v));
+    let perms = if !p.permissions.is_empty() {
+        p.permissions.clone()
+    } else if let Some(inst) = &installed_entry {
+        inst.declared_permissions.clone()
+    } else {
+        Vec::new()
+    };
+    let cat = normalize_category(&p.category, &p.keywords, &p.runtime_kind);
+    serde_json::json!({
+        "event": "plugin_detail",
+        "ok": true,
+        "detail": {
+            "id": p.id, "name": p.name, "version": p.version,
+            "description": p.description, "author": p.author, "license": p.license,
+            "homepage": p.homepage, "runtime_kind": p.runtime_kind, "category": cat,
+            "display_mode": p.display_mode.as_str(),
+            "icon_url": resolve_store_item_icon_url(p),
+            "tags": p.tags, "keywords": p.keywords, "permissions": perms,
+            "source": p.source, "sha256": p.sha256,
+            "downloads": p.downloads, "updated_at": p.updated_at,
+            "installed": inst_ver.is_some() || in_user_dir,
+            "removable": in_user_dir,
+            "installed_version": inst_ver,
+            "update_available": update_available,
+        }
     })
     .to_string()
 }
@@ -281,21 +356,9 @@ pub fn make_install_quiet_md_event() -> String {
             let path = tomoyo_core::detect_quiet_md_binary(None)
                 .map(|p| p.to_string_lossy().into_owned())
                 .unwrap_or_default();
-            serde_json::json!({
-                "event": "quiet_md_status",
-                "ok": true,
-                "path": path,
-                "message": msg,
-            })
-            .to_string()
+            serde_json::json!({ "event": "quiet_md_status", "ok": true, "path": path, "message": msg }).to_string()
         }
-        Err(e) => serde_json::json!({
-            "event": "quiet_md_status",
-            "ok": false,
-            "path": "",
-            "message": e,
-        })
-        .to_string(),
+        Err(e) => serde_json::json!({ "event": "quiet_md_status", "ok": false, "path": "", "message": e }).to_string(),
     }
 }
 
@@ -316,12 +379,12 @@ mod tests {
                     "name": format!("Community Plugin #{i}"),
                     "version": "1.0.0",
                     "description": if i % 200 == 0 { "Markdown quiet helper" } else { "General utility tool" },
-                    "author": "Community",
-                    "license": "MIT",
+                    "author": "Community", "license": "MIT",
                     "runtime_kind": if i % 3 == 0 { "wasm" } else { "stdio_jsonrpc" },
                     "category": if i % 200 == 0 { "docs" } else { "productivity" },
                     "display_mode": if i % 2 == 0 { "inline" } else { "window" },
                     "keywords": ["tool", format!("k{i}")],
+                    "permissions": ["clipboard"],
                     "source": format!("plugins/community-{i}"),
                     "sha256": "0".repeat(64)
                 })
@@ -332,9 +395,7 @@ mod tests {
 
         let index_path = dir.join("index.json");
         std::fs::write(&index_path, serde_json::json!({
-            "schema_version": 2,
-            "name": "10K Benchmark Index",
-            "total_count": 10000,
+            "schema_version": 2, "name": "10K Benchmark Index", "total_count": 10000,
             "shards": [{ "id": "all", "category": "productivity", "source": shard_path.to_string_lossy() }],
             "plugins": []
         }).to_string()).unwrap();
@@ -343,11 +404,7 @@ mod tests {
         let started = std::time::Instant::now();
         let out_raw = query_store_page_json(&StoreQuery {
             sources: vec![index_path.to_string_lossy().into_owned()],
-            query: "quiet".into(),
-            category: "docs".into(),
-            page: 2,
-            page_size: 24,
-            force_refresh: true,
+            query: "quiet".into(), category: "docs".into(), page: 2, page_size: 24, force_refresh: true,
             ..Default::default()
         });
         assert!(started.elapsed().as_millis() < 2_500);
@@ -357,6 +414,13 @@ mod tests {
         assert_eq!(v["total_pages"].as_u64(), Some(3));
         assert_eq!(v["page"].as_u64(), Some(2));
         assert_eq!(v["items"].as_array().unwrap().len(), 24);
+
+        let detail_raw = query_plugin_detail_json("community.plugin.200", &[index_path.to_string_lossy().into_owned()]);
+        let dv: serde_json::Value = serde_json::from_str(&detail_raw).unwrap();
+        assert_eq!(dv["event"], "plugin_detail");
+        assert_eq!(dv["ok"], true);
+        assert_eq!(dv["detail"]["id"], "community.plugin.200");
+        assert_eq!(dv["detail"]["permissions"][0], "clipboard");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

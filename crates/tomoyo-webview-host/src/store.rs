@@ -130,13 +130,37 @@ fn collect_plugin_files(
 fn copy_plugin_files(src: &Path, dst: &Path) -> Result<(), std::io::Error> {
     let mut files = BTreeMap::new();
     collect_plugin_files(src, src, &mut files)?;
-    std::fs::create_dir_all(dst)?;
+    let parent = dst.parent().unwrap_or_else(|| Path::new("."));
+    std::fs::create_dir_all(parent)?;
+    let staging = parent.join(format!(
+        ".{}.staging-{}",
+        dst.file_name().and_then(|s| s.to_str()).unwrap_or("plugin"),
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&staging);
+    std::fs::create_dir_all(&staging)?;
     for (rel, path) in files {
-        let target = dst.join(&rel);
-        if let Some(parent) = target.parent() {
-            std::fs::create_dir_all(parent)?;
+        let target = staging.join(&rel);
+        if let Some(p) = target.parent() {
+            std::fs::create_dir_all(p)?;
         }
         std::fs::copy(&path, &target)?;
+    }
+    if dst.exists() {
+        let _ = std::fs::remove_dir_all(dst);
+    }
+    if std::fs::rename(&staging, dst).is_err() {
+        std::fs::create_dir_all(dst)?;
+        let mut staged = BTreeMap::new();
+        collect_plugin_files(&staging, &staging, &mut staged)?;
+        for (rel, path) in staged {
+            let target = dst.join(&rel);
+            if let Some(p) = target.parent() {
+                std::fs::create_dir_all(p)?;
+            }
+            std::fs::copy(&path, &target)?;
+        }
+        let _ = std::fs::remove_dir_all(&staging);
     }
     Ok(())
 }

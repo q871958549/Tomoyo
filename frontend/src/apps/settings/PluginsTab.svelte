@@ -187,6 +187,11 @@
           <div class="t-desc">{isEn ? item.enDesc : item.zhDesc}</div>
         </div>
         <div class="mod-acts">
+          {#if entry?.update_available && entry.update_source && entry.update_sha256}
+            <button type="button" class="cfg-pill upd-btn" onclick={() => postHost({ cmd: 'install_plugin', plugin_id: entry.id, source: entry.update_source!, sha256: entry.update_sha256! })}>
+              ↑ v{entry.latest_version}
+            </button>
+          {/if}
           {#if canConfig}
             <button type="button" class="cfg-pill {isOpen ? 'is-open' : ''}" data-config-plugin={item.id} onclick={() => onToggleExpand(isOpen ? null : item.id)}>
               <SlidersHorizontal size={11} />
@@ -258,6 +263,11 @@
               <div class="plug-title-row">
                 <span class="t-label">{p.name}</span>
                 {#if mTag}<span class="t-pill">{mTag}</span>{/if}
+                {#if p.update_available && p.update_source && p.update_sha256}
+                  <button type="button" class="cfg-pill upd-btn" onclick={() => postHost({ cmd: 'install_plugin', plugin_id: p.id, source: p.update_source!, sha256: p.update_sha256! })}>
+                    ↑ v{p.latest_version}
+                  </button>
+                {/if}
                 {#if configurable}
                   <button type="button" class="cfg-pill {isOpen ? 'is-open' : ''}" data-config-plugin={p.id} onclick={() => onToggleExpand(isOpen ? null : p.id)}>
                     <SlidersHorizontal size={11} />
@@ -341,6 +351,7 @@
     font-family: inherit; font-size: 11.5px; font-weight: 500; cursor: pointer; white-space: nowrap;
   }
   .cfg-pill:hover, .cfg-pill.is-open { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+  .upd-btn { border-color: var(--ok); color: var(--ok); background: var(--ok-soft); }
   .empty-plug { padding: 12px 0 4px; font-size: 12px; color: var(--muted); }
   .plug-id { font-size: 11px; color: var(--muted); font-family: "Cascadia Mono", Consolas, monospace; }
   .plug-kw { font-family: "Cascadia Mono", Consolas, monospace; font-size: 12px; color: var(--text-secondary); }

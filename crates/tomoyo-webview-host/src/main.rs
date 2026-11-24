@@ -35,6 +35,7 @@ mod shim_js;
 #[cfg(windows)]
 mod single_instance;
 mod store;
+mod store_cache;
 mod store_index;
 mod tr_view;
 #[cfg(windows)]
@@ -203,6 +204,7 @@ pub fn build_settings_init_script_for(initial_route: &str) -> String {
     let cfg = TomoyoConfig::load_or_create();
     let autostart = is_autostart_enabled();
     let host = PluginHost::new(default_plugin_dirs());
+    let catalog_map = store_index::local_catalog_index_map(&cfg.plugin_registries);
     let plugins: Vec<serde_json::Value> = host
         .list_plugins()
         .into_iter()
@@ -215,10 +217,16 @@ pub fn build_settings_init_script_for(initial_route: &str) -> String {
                     tomoyo_core::resolve_bundled_module_icon(&p.id)
                         .and_then(|ip| tomoyo_core::read_icon_data_url(&ip))
                 });
+            let cat_entry = catalog_map.get(&p.id.to_ascii_lowercase());
+            let upd_avail = cat_entry.is_some_and(|e| store_cache::is_newer_semver(&e.version, &p.version));
             serde_json::json!({
                 "id": p.id,
                 "name": p.name,
                 "version": p.version,
+                "latest_version": cat_entry.map(|e| e.version.as_str()),
+                "update_available": upd_avail,
+                "update_source": cat_entry.map(|e| e.source.as_str()),
+                "update_sha256": cat_entry.map(|e| e.sha256.as_str()),
                 "description": p.description,
                 "author": p.author,
                 "license": p.license,

@@ -95,6 +95,10 @@ install -Dm644 "$REPO_ROOT"/assets/fonts/*.ttf "$DATA_DIR/fonts/"
 install -Dm644 "$REPO_ROOT"/assets/plugin-icons/*.png "$DATA_DIR/plugin-icons/"
 install -Dm644 "$REPO_ROOT/assets/tomoyo-icon.png" "$DATA_DIR/assets/tomoyo-icon.png"
 install -Dm644 "$REPO_ROOT/registry/index.json" "$DATA_DIR/registry/index.json"
+if [ -d "$REPO_ROOT/registry/shards" ]; then
+  mkdir -p "$DATA_DIR/registry/shards"
+  install -Dm644 "$REPO_ROOT"/registry/shards/*.json "$DATA_DIR/registry/shards/"
+fi
 install -Dm755 "$REPO_ROOT/scripts/uninstall-local.sh" "$DATA_DIR/uninstall.sh"
 
 for p in example-hello example-python example-wasm example-webview-json builtin-ocr official-notes official-md-editor; do

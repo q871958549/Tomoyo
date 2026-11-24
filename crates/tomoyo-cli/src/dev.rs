@@ -1,8 +1,8 @@
 //! Developer hot-reload watcher (`tomoyo-cli dev`) & automated registry integrity verifier (`tomoyo-cli registry check`).
 
+use crate::flag_val;
 use crate::hash::compute_plugin_sha256;
 use crate::verify::{resolve_plugin_dir, validate_plugin_dir};
-use crate::{flag_val, load_registry};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -245,94 +245,6 @@ fn collect_mtimes(dir: &Path, map: &mut BTreeMap<PathBuf, u64>, depth: usize) {
                 .unwrap_or(0);
             map.insert(p, secs ^ meta.len());
         }
-    }
-}
-
-/// `tomoyo-cli registry check [--index registry/index.json] [--manifest-only]`
-/// Validates every registry entry: schema, manifest syntax, ID/version match, and SHA-256!
-pub(crate) fn cmd_registry_check(args: &[String]) -> i32 {
-    let index_source = flag_val(args, "--index").unwrap_or("registry/index.json");
-    let manifest_only = args.iter().any(|a| a == "--manifest-only");
-    let index_path = PathBuf::from(index_source);
-    let index = match load_registry(index_source) {
-        Ok(i) => i,
-        Err(e) => {
-            eprintln!("[FAIL] Cannot load registry `{index_source}`: {e}");
-            return 1;
-        }
-    };
-    let base_dir = index_path
-        .parent()
-        .and_then(|p| p.parent())
-        .filter(|p| !p.as_os_str().is_empty())
-        .unwrap_or_else(|| Path::new("."));
-
-    let mut errors = 0usize;
-    let mut seen_ids = std::collections::HashSet::new();
-    println!("=== Checking Tomoyo Plugin Registry ({} entries) ===", index.plugins.len());
-
-    for entry in &index.plugins {
-        if entry.id.trim().is_empty() || !seen_ids.insert(entry.id.to_ascii_lowercase()) {
-            eprintln!("  [FAIL] Empty or duplicate plugin id: `{}`", entry.id);
-            errors += 1;
-            continue;
-        }
-        if entry.sha256.len() != 64 || !entry.sha256.chars().all(|c| c.is_ascii_hexdigit()) {
-            eprintln!("  [FAIL] `{}` has invalid SHA-256 format: `{}`", entry.id, entry.sha256);
-            errors += 1;
-            continue;
-        }
-        if entry.source.starts_with("https://") || entry.source.starts_with("http://") {
-            println!("  [OK]   {:<28} v{} (remote URL, SHA-256 format valid)", entry.id, entry.version);
-            continue;
-        }
-
-        let src_dir = if Path::new(&entry.source).is_absolute() || Path::new(&entry.source).exists() {
-            PathBuf::from(&entry.source)
-        } else {
-            base_dir.join(&entry.source)
-        };
-        let manifest = match validate_plugin_dir(&src_dir) {
-            Ok((_, m, _)) => m,
-            Err(e) => {
-                eprintln!("  [FAIL] `{}`: {e}", entry.id);
-                errors += 1;
-                continue;
-            }
-        };
-        if manifest.id != entry.id || manifest.version != entry.version {
-            eprintln!(
-                "  [FAIL] `{}` mismatch: manifest has id=`{}` v{}, registry has id=`{}` v{}",
-                entry.id, manifest.id, manifest.version, entry.id, entry.version
-            );
-            errors += 1;
-            continue;
-        }
-        if manifest_only {
-            println!("  [OK]   {:<28} v{} [{}] manifest verified", entry.id, entry.version, manifest.runtime.kind_badge());
-            continue;
-        }
-        match compute_plugin_sha256(&src_dir) {
-            Ok(actual) if actual.eq_ignore_ascii_case(&entry.sha256) => {
-                println!("  [OK]   {:<28} v{} [{}] sha256={}…", entry.id, entry.version, manifest.runtime.kind_badge(), &actual[..16]);
-            }
-            Ok(actual) => {
-                eprintln!("  [FAIL] `{}` SHA-256 drift!\n         registry: {}\n         actual:   {}", entry.id, entry.sha256, actual);
-                errors += 1;
-            }
-            Err(e) => {
-                eprintln!("  [FAIL] `{}` hash error: {e}", entry.id);
-                errors += 1;
-            }
-        }
-    }
-
-    if errors == 0 {
-        println!("[PASS] All {} registry plugin(s) passed manifest & SHA-256 verification!", index.plugins.len());
-        0
-    } else {
-        eprintln!("[FAILED] Registry check found {errors} error(s).");
-        1
     }
 }
 

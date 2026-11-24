@@ -92,6 +92,10 @@ package() {
   install -Dm644 assets/fonts/*.ttf "$pkgdir/usr/share/tomoyo/fonts/"
   install -Dm644 assets/plugin-icons/*.png "$pkgdir/usr/share/tomoyo/plugin-icons/"
   install -Dm644 registry/index.json "$pkgdir/usr/share/tomoyo/registry/index.json"
+  if [ -d registry/shards ]; then
+    install -dm755 "$pkgdir/usr/share/tomoyo/registry/shards"
+    install -Dm644 registry/shards/*.json "$pkgdir/usr/share/tomoyo/registry/shards/"
+  fi
 
   for p in example-hello example-python example-wasm example-webview-json builtin-ocr official-notes official-md-editor; do
     mkdir -p "$pkgdir/usr/share/tomoyo/plugins/$p"

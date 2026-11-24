@@ -1,0 +1,59 @@
+{
+  "schema_version": 2,
+  "name": "Tomoyo 官方扩展分片 (Official)",
+  "updated_at": "2026-11-24",
+  "plugins": [
+    {
+      "id": "dev.tomoyo.markdown-editor",
+      "name": "Quiet.md Markdown 编辑器 (官方集成)",
+      "version": "2.6.0",
+      "description": "与备忘录分离的专业所见即所得 Markdown 编辑器（集成开源 s1dashu/quiet-md · MIT / GPUI）：支持 .md 文件直达、工作区新建与一键 SHA-256 校验安装",
+      "author": "Tomoyo 贡献者 · Quiet.md (MIT)",
+      "license": "MIT",
+      "runtime_kind": "stdio_jsonrpc",
+      "category": "docs",
+      "display_mode": "window",
+      "icon": "icon.png",
+      "tags": ["markdown", "editor", "quiet-md", "gpui"],
+      "keywords": ["md", "markdown", "quiet", "edit"],
+      "permissions": ["filesystem_read", "filesystem_write", "network", "shell_exec"],
+      "homepage": "https://github.com/s1dashu/quiet-md",
+      "source": "plugins/official-md-editor",
+      "sha256": "0b227a2fcd6758267263c78e3bed33c5fe6e2572ad4bf100e98f3d99e729b815"
+    },
+    {
+      "id": "dev.tomoyo.notes",
+      "name": "本地快速备忘录 (Quick Notes)",
+      "version": "2.6.0",
+      "description": "轻量即时备忘录插件（与 Markdown 编辑器分离）：支持 note/memo 秒级检索、#标签过滤、剪贴板一键记录与交付 Quiet.md 精编",
+      "author": "Tomoyo 贡献者",
+      "license": "MIT",
+      "runtime_kind": "stdio_jsonrpc",
+      "category": "docs",
+      "display_mode": "inline",
+      "icon": "icon.png",
+      "tags": ["notes", "memo", "tags"],
+      "keywords": ["note", "memo", "bw"],
+      "permissions": [],
+      "source": "plugins/official-notes",
+      "sha256": "599b24cf3cb74a0a9ab1b8966ce7c73203890a2ab15e0071add318314d1eb1a4"
+    },
+    {
+      "id": "dev.tomoyo.ocr",
+      "name": "离线识图取字 (Windows WinRT OCR)",
+      "version": "2.0.0",
+      "description": "基于系统原生 WinRT OcrEngine 离线识别图片文字（支持自适应放大、中英文清理与原图对照审校，用完即销毁 0 常驻内存）",
+      "author": "Tomoyo 贡献者",
+      "license": "MIT OR Apache-2.0",
+      "runtime_kind": "stdio_jsonrpc",
+      "category": "ai",
+      "display_mode": "window",
+      "icon": "icon.png",
+      "tags": ["ocr", "vision", "offline"],
+      "keywords": ["ocr"],
+      "permissions": [],
+      "source": "plugins/builtin-ocr",
+      "sha256": "24bef848835b600ee99d1c397d9657afd22650b480cc9ca265460e5e7b19ad64"
+    }
+  ]
+}

@@ -81,6 +81,10 @@ jobs:
           install -Dm644 assets/plugin-icons/*.png "$stage/assets/plugin-icons/"
           install -Dm644 assets/tomoyo-icon.png assets/tomoyo-icon.svg "$stage/assets/"
           install -Dm644 registry/index.json "$stage/registry/index.json"
+          if [ -d registry/shards ]; then
+            mkdir -p "$stage/registry/shards"
+            install -Dm644 registry/shards/*.json "$stage/registry/shards/"
+          fi
           install -Dm644 packaging/linux/tomoyo.desktop packaging/linux/PKGBUILD "$stage/packaging/linux/"
           install -Dm755 scripts/install-local.sh scripts/uninstall-local.sh "$stage/scripts/"
 
@@ -175,6 +179,10 @@ jobs:
           Copy-Item assets/plugin-icons/*.png "$stage/assets/plugin-icons/"
           Copy-Item assets/tomoyo.ico "$stage/assets/"
           Copy-Item registry/index.json "$stage/registry/"
+          if (Test-Path registry/shards) {
+            New-Item -ItemType Directory -Force -Path "$stage/registry/shards" | Out-Null
+            Copy-Item registry/shards/*.json "$stage/registry/shards/" -Force
+          }
 
           foreach ($p in @("example-hello", "example-python", "example-wasm", "example-webview-json", "builtin-ocr", "official-notes", "official-md-editor")) {
             New-Item -ItemType Directory -Force -Path "$stage/plugins/$p" | Out-Null
@@ -286,6 +294,10 @@ jobs:
           Copy-Item assets/plugin-icons/*.png "$stage/assets/plugin-icons/"
           Copy-Item assets/tomoyo.ico "$stage/assets/"
           Copy-Item registry/index.json "$stage/registry/"
+          if (Test-Path registry/shards) {
+            New-Item -ItemType Directory -Force -Path "$stage/registry/shards" | Out-Null
+            Copy-Item registry/shards/*.json "$stage/registry/shards/" -Force
+          }
           foreach ($p in @("example-hello", "example-python", "example-wasm", "example-webview-json", "builtin-ocr", "official-notes", "official-md-editor")) {
             New-Item -ItemType Directory -Force -Path "$stage/plugins/$p" | Out-Null
             Get-ChildItem "plugins/$p" -Exclude "target","__pycache__" | Copy-Item -Destination "$stage/plugins/$p" -Recurse -Force

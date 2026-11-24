@@ -53,6 +53,8 @@
   let storeItems = $state<StoreItem[]>([]);
   let storeMeta = $state<StorePageMeta>({ total: 0, catalogTotal: 0, page: 1, totalPages: 1, categoryCounts: {} });
   let storeStatus = $state('');
+  let storeDetail = $state<StoreItem | null>(null);
+  let storeDetailLoading = $state(false);
   let quietMdPath = $state(init.quiet_md_path || '');
   let installingQuietMd = $state(false);
   let logSource = $state('tomoyo.log');
@@ -177,6 +179,15 @@
       sort: p?.sort || 'default', page: p?.page || 1, page_size: 24, force_refresh: !!p?.force_refresh,
     });
   }
+  function inspectStoreDetail(pluginId: string) {
+    storeDetailLoading = true;
+    storeDetail = null;
+    postHost({
+      cmd: 'fetch_plugin_detail',
+      plugin_id: pluginId,
+      sources: cfg.plugin_registries?.length ? cfg.plugin_registries : ['registry/index.json'],
+    });
+  }
   function refreshLogs() { postHost({ cmd: 'read_logs', source: logSource, errors_only: logErrorsOnly }); }
   function checkUpdatesNow(manual = true) {
     if (checkTimer) { clearTimeout(checkTimer); checkTimer = null; }
@@ -250,6 +261,10 @@
         const srcs = Array.isArray(data.sources) ? (data.sources as string[]).join(' · ') : 'Registry';
         const errs = Array.isArray(data.errors) && data.errors.length ? ` (${(data.errors as string[]).join('; ')})` : '';
         storeStatus = srcs + errs;
+      } else if (ev === 'plugin_detail') {
+        storeDetailLoading = false;
+        if (data.ok && data.detail) storeDetail = data.detail as StoreItem;
+        else if (data.error) setToast(`✗ ${data.error}`, true);
       } else if (ev === 'quiet_md_status') {
         installingQuietMd = false;
         if (data.ok && typeof data.path === 'string' && data.path) quietMdPath = data.path;
@@ -352,7 +367,7 @@
           {#if subPlugins === 'installed'}
             <PluginsTab {cfg} {lang} {plugins} officialIcons={init.official_icons || {}} {quietMdPath} {installingQuietMd} {configPath} pluginsDir={init.plugins_dir} runningApps={init.running_apps} {secretsStatus} {hotkeyHealth} showRecord={true} expandedId={expandedPlugin} onToggleExpand={(id) => (expandedPlugin = id)} {onTogglePlugin} {onInstallQuietMd} {onUpdatePluginConfig} onJumpDoctor={() => switchTab('hotkeys')} onToast={setToast} onSave={scheduleSave} />
           {:else}
-            <StoreTab {lang} items={storeItems} meta={storeMeta} statusText={storeStatus} loading={storeLoading} onQuery={fetchStore} />
+            <StoreTab {lang} items={storeItems} meta={storeMeta} statusText={storeStatus} loading={storeLoading} detail={storeDetail} detailLoading={storeDetailLoading} onQuery={fetchStore} onInspectDetail={inspectStoreDetail} onCloseDetail={() => (storeDetail = null)} />
           {/if}
         {:else if activeTab === 'system'}
           <div class="subbar">

@@ -11,6 +11,7 @@
 mod dev;
 mod hash;
 mod pack;
+mod registry;
 mod scaffold;
 mod utools;
 mod verify;
@@ -138,22 +139,27 @@ fn cmd_hash(args: &[String]) -> i32 {
 fn cmd_registry(args: &[String]) -> i32 {
     let sub = args.first().map(|s| s.as_str()).unwrap_or("list");
     if sub == "check" {
-        return dev::cmd_registry_check(&args[1..]);
+        return registry::cmd_registry_check(&args[1..]);
     }
     if sub != "list" {
         eprintln!("Usage: tomoyo-cli registry list|check [--index <path-or-https-url>]");
         return 1;
     }
     let index_source = flag_val(args, "--index").unwrap_or("registry/index.json");
-    let index = match load_registry(index_source) {
+    let (index, all_plugins) = match registry::load_registry_all_entries(index_source) {
         Ok(i) => i,
         Err(e) => {
             eprintln!("Failed to load registry `{index_source}`: {e}");
             return 1;
         }
     };
-    println!("Registry: {} ({} plugins)\n", index.name, index.plugins.len());
-    for p in &index.plugins {
+    println!(
+        "Registry: {} ({} plugins, {} shard(s))\n",
+        index.name,
+        all_plugins.len(),
+        index.shards.len()
+    );
+    for p in &all_plugins {
         println!(
             "  {:<28} [{}] v{}  triggers={:?}\n    {}\n    sha256: {}\n",
             p.id, p.runtime_kind, p.version, p.keywords, p.description, p.sha256
@@ -180,14 +186,14 @@ fn cmd_install(args: &[String]) -> i32 {
 
     let index_source = flag_val(args, "--index").unwrap_or("registry/index.json");
     let index_path = PathBuf::from(index_source);
-    let index = match load_registry(index_source) {
+    let (_, all_plugins) = match registry::load_registry_all_entries(index_source) {
         Ok(i) => i,
         Err(e) => {
             eprintln!("Failed to load registry `{index_source}`: {e}");
             return 1;
         }
     };
-    let Some(entry) = index.plugins.iter().find(|p| p.id == *target) else {
+    let Some(entry) = all_plugins.iter().find(|p| p.id == *target) else {
         eprintln!("Plugin `{target}` not found in registry.");
         return 1;
     };

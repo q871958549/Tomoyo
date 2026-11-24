@@ -42,6 +42,10 @@ Copy-Item (Join-Path $repoRoot "assets\fonts\*.ttf") (Join-Path $InstallDir "ass
 Copy-Item (Join-Path $repoRoot "assets\plugin-icons\*.png") (Join-Path $InstallDir "assets\plugin-icons") -Force
 Copy-Item (Join-Path $repoRoot "assets\tomoyo.ico") (Join-Path $InstallDir "assets\tomoyo.ico") -Force
 Copy-Item (Join-Path $repoRoot "registry\index.json") (Join-Path $InstallDir "registry\index.json") -Force
+if (Test-Path (Join-Path $repoRoot "registry\shards")) {
+    New-Item -ItemType Directory -Force -Path (Join-Path $InstallDir "registry\shards") | Out-Null
+    Copy-Item (Join-Path $repoRoot "registry\shards\*.json") (Join-Path $InstallDir "registry\shards") -Force
+}
 Copy-Item (Join-Path $PSScriptRoot "uninstall-local.ps1") (Join-Path $InstallDir "uninstall.ps1") -Force
 
 # Copy bundled reference plugins (excluding build caches)
