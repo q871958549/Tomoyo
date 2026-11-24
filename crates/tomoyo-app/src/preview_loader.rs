@@ -190,6 +190,7 @@ impl AsyncPreviewLoader {
                         body.lines().count().max(1)
                     ),
                 },
+                badges: Vec::new(),
                 body: body.clone(),
                 is_monospace: body.contains('{') || body.contains('\n'),
                 image_rgba: None,
@@ -206,8 +207,38 @@ impl AsyncPreviewLoader {
                         Lang::Zh => format!("{} 项属性", entries.len()),
                         Lang::En => format!("{} properties", entries.len()),
                     },
+                    badges: Vec::new(),
                     body,
                     is_monospace: true,
+                    image_rgba: None,
+                })
+            }
+            PreviewSpec::RichCard { title, subtitle, badges, rows, body } => {
+                let mut sections = Vec::new();
+                if !rows.is_empty() {
+                    sections.push(
+                        rows.iter()
+                            .map(|(k, v)| format!("{k:<14} {v}"))
+                            .collect::<Vec<_>>()
+                            .join("\n"),
+                    );
+                }
+                if !body.trim().is_empty() {
+                    sections.push(body.trim().to_string());
+                }
+                Some(ResolvedPreview {
+                    title: title.clone(),
+                    meta_line: if subtitle.is_empty() {
+                        match lang {
+                            Lang::Zh => format!("富卡片 · {} 项属性", rows.len()),
+                            Lang::En => format!("Rich Card · {} fields", rows.len()),
+                        }
+                    } else {
+                        subtitle.clone()
+                    },
+                    badges: badges.iter().take(5).cloned().collect(),
+                    body: sections.join("\n\n"),
+                    is_monospace: !rows.is_empty(),
                     image_rgba: None,
                 })
             }

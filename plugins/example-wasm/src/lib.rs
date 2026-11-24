@@ -27,15 +27,17 @@ impl TomoyoWasmPlugin for WasmToolkit {
                     badge: Some("WASM".into()),
                     copy_text: Some(now.to_string()),
                     actions: vec![],
-                    preview: Some(PreviewSpec::KeyValue {
+                    preview: Some(PreviewSpec::RichCard {
                         title: "WASM Sandbox Isolation".into(),
-                        entries: vec![
-                            ("Engine".into(), "wasmi (Zero-JIT)".into()),
+                        subtitle: "Zero ambient permissions · Native RichCard preview".into(),
+                        badges: vec!["WASM".into(), "Zero-JIT".into(), "16 MB Cap".into()],
+                        rows: vec![
+                            ("Engine".into(), "wasmi (Pure Interpreter)".into()),
                             ("Fuel Cap".into(), "5,000,000 ops/call".into()),
-                            ("Memory Cap".into(), "16 MB linear memory".into()),
                             ("Permissions".into(), "None (Pure Compute)".into()),
                             ("Examples".into(), "unit 512mb  |  jwt eyJ...".into()),
                         ],
+                        body: "Declarative RichCard renders natively via Tomoyo's SDF+GDI/Pango pipeline with 0 MB WebView overhead.".into(),
                     }),
                 },
             ];
@@ -204,15 +206,18 @@ fn convert_byte_units(input: &str) -> Option<Vec<ResultItem>> {
                 paste_immediately: false,
             },
         }],
-        preview: Some(PreviewSpec::KeyValue {
+        preview: Some(PreviewSpec::RichCard {
             title: format!("Unit Conversion ({input})"),
-            entries: vec![
+            subtitle: "Binary IEC/JEDEC storage conversion".into(),
+            badges: vec!["WASM".into(), "CALC".into()],
+            rows: vec![
                 ("Bytes".into(), format!("{:.0} B", bytes)),
                 ("KiB / KB".into(), format!("{:.2} KB", kb)),
                 ("MiB / MB".into(), format!("{:.2} MB", mb)),
                 ("GiB / GB".into(), format!("{:.4} GB", gb)),
                 ("TiB / TB".into(), format!("{:.6} TB", tb)),
             ],
+            body: String::new(),
         }),
     }])
 }

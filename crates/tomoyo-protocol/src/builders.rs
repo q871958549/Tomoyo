@@ -128,6 +128,24 @@ impl ResultItem {
         });
         self
     }
+
+    pub fn with_rich_card(
+        mut self,
+        title: impl Into<String>,
+        subtitle: impl Into<String>,
+        badges: Vec<String>,
+        rows: Vec<(String, String)>,
+        body: impl Into<String>,
+    ) -> Self {
+        self.preview = Some(PreviewSpec::RichCard {
+            title: title.into(),
+            subtitle: subtitle.into(),
+            badges,
+            rows,
+            body: body.into(),
+        });
+        self
+    }
 }
 
 impl ActionSpec {

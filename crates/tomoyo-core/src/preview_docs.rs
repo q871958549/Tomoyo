@@ -139,6 +139,7 @@ fn preview_zip(path: &Path, title: &str, size_str: &str, modified: &str) -> Opti
         body: if lines.is_empty() { "（空压缩包）".into() } else { lines.join("\n") },
         is_monospace: true,
         image_rgba: None,
+        badges: Vec::new(),
     })
 }
 
@@ -154,6 +155,7 @@ fn preview_docx(path: &Path, title: &str, size_str: &str, modified: &str) -> Opt
         body: if body.is_empty() { "（Word 文档无纯文本段落，按回车打开查看）".into() } else { body },
         is_monospace: false,
         image_rgba: None,
+        badges: Vec::new(),
     })
 }
 
@@ -191,6 +193,7 @@ fn preview_xlsx(path: &Path, title: &str, size_str: &str, modified: &str) -> Opt
         body: if lines.is_empty() { "（Excel 表格，按回车打开查看）".into() } else { lines.join("\n") },
         is_monospace: false,
         image_rgba: None,
+        badges: Vec::new(),
     })
 }
 
@@ -223,6 +226,7 @@ fn preview_pptx(path: &Path, title: &str, size_str: &str, modified: &str) -> Opt
         body: if lines.is_empty() { format!("PowerPoint 演示文稿（共 {total} 页，按回车打开）") } else { lines.join("\n") },
         is_monospace: false,
         image_rgba: None,
+        badges: Vec::new(),
     })
 }
 
@@ -267,6 +271,7 @@ fn preview_pdf(path: &Path, title: &str, size_str: &str, modified: &str) -> Opti
         body: lines.join("\n"),
         is_monospace: false,
         image_rgba: None,
+        badges: Vec::new(),
     })
 }
 

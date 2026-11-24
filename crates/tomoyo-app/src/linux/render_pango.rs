@@ -317,15 +317,19 @@ impl LinuxRenderer {
             let (px0, px1) = (lay.list_w_dip + 14.0, lay.w_dip - 14.0);
             draw_pango(cr, &f_title, pal.text_primary, 0, true, &prev.title, px0, lay.header_h + 10.0, px1 - px0, 22.0, scale, &[], pal.accent);
             draw_pango(cr, &f_sub, pal.text_secondary, 0, true, &prev.meta_line, px0, lay.header_h + 32.0, px1 - px0, 18.0, scale, &[], pal.accent);
+            let mut bx = px0;
+            for b in prev.badges.iter().take(5) {
+                let bw = (b.chars().count() as f32 * 6.5 + 14.0).clamp(36.0, 110.0);
+                if bx + bw > px1 { break; }
+                draw_pango(cr, &f_badge, pal.accent, 1, true, b, bx, lay.header_h + 52.0, bw, 18.0, scale, &[], pal.accent);
+                bx += bw + 6.0;
+            }
+            let bshift = if prev.badges.is_empty() { 0.0 } else { 24.0 };
             let body_top = if let Some((iw, ih, _)) = &prev.image_rgba {
-                let aw = (px1 - px0).max(40.0);
-                let ah = (lay.fy0 - (lay.header_h + 60.0) - 52.0).clamp(60.0, 210.0);
+                let (aw, ah) = ((px1 - px0).max(40.0), (lay.fy0 - (lay.header_h + 60.0) - 52.0).clamp(60.0, 210.0));
                 lay.header_h + 66.0 + (*ih as f32 * (aw / *iw as f32).min(ah / *ih as f32).min(1.0)).max(16.0)
-            } else {
-                lay.header_h + 58.0
-            };
-            let bfont = if prev.is_monospace { &f_mono } else { &f_reg };
-            draw_pango(cr, bfont, pal.text_primary, 0, false, &prev.body, px0, body_top, (px1 - px0).max(20.0), (lay.fy0 - 10.0 - body_top).max(20.0), scale, &[], pal.accent);
+            } else { lay.header_h + 58.0 + bshift };
+            draw_pango(cr, if prev.is_monospace { &f_mono } else { &f_reg }, pal.text_primary, 0, false, &prev.body, px0, body_top, (px1 - px0).max(20.0), (lay.fy0 - 10.0 - body_top).max(20.0), scale, &[], pal.accent);
         }
 
         if state.action_menu_open && let Some(sel) = state.items.get(state.selected) {

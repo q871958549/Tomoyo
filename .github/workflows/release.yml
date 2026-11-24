@@ -214,32 +214,8 @@ jobs:
           Get-Content "dist/SHA256SUMS.txt"
 
           $releaseDate = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd")
-
-          $scoopOut = (Get-Content "packaging/scoop/tomoyo.json" -Raw) `
-            -replace 'PLACEHOLDER_UPDATED_BY_RELEASE_SHA256SUMS', $zipSha `
-            -replace '"version":\s*"[^"]+"', "`"version`": `"$ver`"" `
-            -replace '/releases/download/v[^/]+/Tomoyo-v[^-]+-', "/releases/download/v$ver/Tomoyo-v$ver-"
-          Set-Content -Path "dist/tomoyo.scoop.json" -Value $scoopOut -Encoding UTF8
-
-          $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
-          $distAbs = (Resolve-Path "dist").Path
-          foreach ($mf in @(
-            "TomoyoContributors.Tomoyo.yaml",
-            "TomoyoContributors.Tomoyo.installer.yaml",
-            "TomoyoContributors.Tomoyo.locale.en-US.yaml",
-            "TomoyoContributors.Tomoyo.locale.zh-CN.yaml"
-          )) {
-            $wingetOut = (Get-Content "packaging/winget/$mf" -Raw) `
-              -replace 'PLACEHOLDER_UPDATED_BY_RELEASE_SHA256SUMS', $setupSha `
-              -replace '(?m)^PackageVersion:\s*.+$', "PackageVersion: $ver" `
-              -replace '(?m)^ReleaseDate:\s*.+$', "ReleaseDate: $releaseDate" `
-              -replace '(?m)^(\s*-\s*DisplayName:\s*Tomoyo v).+$', "`${1}$ver" `
-              -replace '/releases/download/v[^/]+/Tomoyo-v[^-]+-', "/releases/download/v$ver/Tomoyo-v$ver-" `
-              -replace '/releases/tag/v[^\s]+', "/releases/tag/v$ver" `
-              -replace '/blob/v[^/]+/LICENSE-MIT', "/blob/v$ver/LICENSE-MIT"
-            $wingetOut = ($wingetOut -replace "`r`n", "`n") -replace "`n", "`r`n"
-            [System.IO.File]::WriteAllText((Join-Path $distAbs $mf), $wingetOut, $utf8NoBom)
-          }
+          node scripts/sync-release-manifests.mjs --version "$ver" --setup-sha256 "$setupSha" --zip-sha256 "$zipSha" --release-date "$releaseDate" --out-dir dist
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Attest x64 Release Build Provenance (SLSA)
         if: startsWith(github.ref, 'refs/tags/v')

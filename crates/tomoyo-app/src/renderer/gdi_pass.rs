@@ -137,6 +137,18 @@ pub(super) fn paint_gdi_pass(
                 let (px0, px1) = (lay.list_w_dip + 14.0, lay.w_dip - 14.0);
                 draw_text_gdi(dc, fonts.title, pal.text_primary, &prev.title, dip_rect(px0, lay.header_h + 10.0, px1, lay.header_h + 32.0, scale), DT_LEFT);
                 draw_text_gdi(dc, fonts.footer, pal.text_secondary, &prev.meta_line, dip_rect(px0, lay.header_h + 32.0, px1, lay.header_h + 50.0, scale), DT_LEFT);
+                let mut badge_shift = 0.0f32;
+                if !prev.badges.is_empty() {
+                    let mut bx = px0;
+                    let by = lay.header_h + 52.0;
+                    for b in prev.badges.iter().take(5) {
+                        let bw = (b.chars().count() as f32 * 6.5 + 14.0).clamp(36.0, 110.0);
+                        if bx + bw > px1 { break; }
+                        draw_text_gdi(dc, fonts.badge, pal.accent, b, dip_rect(bx, by, bx + bw, by + 18.0, scale), DT_CENTER);
+                        bx += bw + 6.0;
+                    }
+                    badge_shift = 24.0;
+                }
                 let body_font = if prev.is_monospace { fonts.preview_mono } else { fonts.preview_body };
                 let body_top = if let Some((iw, ih, _)) = &prev.image_rgba {
                     let avail_w = (px1 - px0).max(40.0);
@@ -144,7 +156,7 @@ pub(super) fn paint_gdi_pass(
                     let dh = (*ih as f32 * (avail_w / (*iw as f32)).min(avail_h / (*ih as f32)).min(1.0)).max(16.0);
                     lay.header_h + 66.0 + dh
                 } else {
-                    lay.header_h + 58.0
+                    lay.header_h + 58.0 + badge_shift
                 };
                 draw_multiline_gdi(dc, body_font, pal.text_primary, &prev.body, dip_rect(px0, body_top, px1, lay.fy0 - 10.0, scale));
             }

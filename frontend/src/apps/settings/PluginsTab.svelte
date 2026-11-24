@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ChevronDown, ChevronUp, FileCode, FolderOpen, Layers, SlidersHorizontal } from '@lucide/svelte';
+  import { ChevronDown, ChevronUp, FileCode, FolderOpen, Layers, ShieldCheck, SlidersHorizontal } from '@lucide/svelte';
   import {
     isPluginEnabled,
     localizePermission,
@@ -35,6 +35,9 @@
     hotkeyHealth: HotkeyHealthReport;
     showRecord: boolean;
     expandedId: string | null;
+    healthReport?: { summary?: { total: number; healthy: number; warnings: number; updates: number; mirrors_ok: number; mirrors_total: number }; mirrors?: Array<{ source: string; ok: boolean; latency_ms: number; detail: string }> } | null;
+    checkingHealth?: boolean;
+    onCheckHealth?: () => void;
     onToggleExpand: (id: string | null) => void;
     onTogglePlugin: (id: string, enabled: boolean) => void;
     onInstallQuietMd?: () => void;
@@ -51,6 +54,7 @@
   let {
     cfg, lang, plugins, officialIcons = {}, quietMdPath = '', installingQuietMd = false,
     configPath, pluginsDir, runningApps, secretsStatus, hotkeyHealth, showRecord, expandedId,
+    healthReport = null, checkingHealth = false, onCheckHealth,
     onToggleExpand, onTogglePlugin, onInstallQuietMd, onUpdatePluginConfig, onJumpDoctor, onToast, onSave,
   }: Props = $props();
 
@@ -146,7 +150,20 @@
       ]}
       onchange={(v) => (filterCat = v)}
     />
+    <Button variant="secondary" size="sm" disabled={checkingHealth} onclick={() => onCheckHealth?.()}>
+      <ShieldCheck size={13} />{checkingHealth ? (isEn ? 'Checking…' : '体检中…') : (isEn ? 'Health Check' : '一键体检')}
+    </Button>
   </div>
+  {#if healthReport?.summary}
+    {@const s = healthReport.summary}
+    <div class="health-bar">
+      <span class="t-pill {s.warnings === 0 ? 'upd-btn' : ''}">{isEn ? `${s.healthy}/${s.total} healthy` : `插件健康 ${s.healthy}/${s.total}`}</span>
+      {#if s.updates > 0}<span class="t-pill upd-btn">{isEn ? `${s.updates} update(s)` : `${s.updates} 项可升级`}</span>{/if}
+      {#each healthReport.mirrors || [] as m}
+        <span class="t-pill">{m.ok ? '✓' : '✗'} {m.detail} ({m.latency_ms}ms)</span>
+      {/each}
+    </div>
+  {/if}
 </div>
 
 <div class="t-card mod-card">
@@ -352,6 +369,7 @@
   }
   .cfg-pill:hover, .cfg-pill.is-open { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
   .upd-btn { border-color: var(--ok); color: var(--ok); background: var(--ok-soft); }
+  .health-bar { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
   .empty-plug { padding: 12px 0 4px; font-size: 12px; color: var(--muted); }
   .plug-id { font-size: 11px; color: var(--muted); font-family: "Cascadia Mono", Consolas, monospace; }
   .plug-kw { font-family: "Cascadia Mono", Consolas, monospace; font-size: 12px; color: var(--text-secondary); }

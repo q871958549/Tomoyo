@@ -110,17 +110,32 @@ fn paint_sdf_pass_inner(
 
     if lay.has_preview
         && let Some(prev) = state.preview
-            && let Some((iw, ih, rgba)) = &prev.image_rgba {
-                let (px0, px1) = (lay.list_w_dip + 14.0, lay.w_dip - 14.0);
-                let avail_w = (px1 - px0).max(40.0);
-                let avail_h = (lay.fy0 - (lay.header_h + 60.0) - 52.0).clamp(60.0, 210.0);
-                let img_scale = (avail_w / (*iw as f32)).min(avail_h / (*ih as f32)).min(1.0);
-                let (dw, dh) = ((*iw as f32 * img_scale).max(16.0), (*ih as f32 * img_scale).max(16.0));
-                let (dx, dy) = (px0 + (avail_w - dw) * 0.5, lay.header_h + 56.0);
-                canvas.fill_rounded_rect(dx - 3.0, dy - 3.0, dx + dw + 3.0, dy + dh + 3.0, 6.0, pal.pill_bg);
-                canvas.draw_rgba_image(dx, dy, dw, dh, *iw, *ih, rgba);
-                canvas.stroke_rounded_rect(dx - 3.0, dy - 3.0, dx + dw + 3.0, dy + dh + 3.0, 6.0, pal.border);
+    {
+        let (px0, px1) = (lay.list_w_dip + 14.0, lay.w_dip - 14.0);
+        if !prev.badges.is_empty() {
+            let mut bx = px0;
+            let by = lay.header_h + 52.0;
+            for b in prev.badges.iter().take(5) {
+                let bw = (b.chars().count() as f32 * 6.5 + 14.0).clamp(36.0, 110.0);
+                if bx + bw > px1 {
+                    break;
+                }
+                canvas.fill_rounded_rect(bx, by, bx + bw, by + 18.0, 9.0, pal.pill_bg);
+                canvas.stroke_rounded_rect(bx, by, bx + bw, by + 18.0, 9.0, pal.border);
+                bx += bw + 6.0;
             }
+        }
+        if let Some((iw, ih, rgba)) = &prev.image_rgba {
+            let avail_w = (px1 - px0).max(40.0);
+            let avail_h = (lay.fy0 - (lay.header_h + 60.0) - 52.0).clamp(60.0, 210.0);
+            let img_scale = (avail_w / (*iw as f32)).min(avail_h / (*ih as f32)).min(1.0);
+            let (dw, dh) = ((*iw as f32 * img_scale).max(16.0), (*ih as f32 * img_scale).max(16.0));
+            let (dx, dy) = (px0 + (avail_w - dw) * 0.5, lay.header_h + 56.0);
+            canvas.fill_rounded_rect(dx - 3.0, dy - 3.0, dx + dw + 3.0, dy + dh + 3.0, 6.0, pal.pill_bg);
+            canvas.draw_rgba_image(dx, dy, dw, dh, *iw, *ih, rgba);
+            canvas.stroke_rounded_rect(dx - 3.0, dy - 3.0, dx + dw + 3.0, dy + dh + 3.0, 6.0, pal.border);
+        }
+    }
 
     for slot in 0..lay.visible_count {
         let idx = state.scroll_offset + slot;

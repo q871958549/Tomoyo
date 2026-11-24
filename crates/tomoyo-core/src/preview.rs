@@ -9,10 +9,11 @@ use std::path::Path;
 const MAX_PREVIEW_READ_BYTES: usize = 8192;
 const MAX_PREVIEW_LINES: usize = 26;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ResolvedPreview {
     pub title: String,
     pub meta_line: String,
+    pub badges: Vec<String>,
     pub body: String,
     pub is_monospace: bool,
     /// Optional bounded RGBA thumbnail (`(width, height, rgba_bytes)`) for image previews.
@@ -46,13 +47,14 @@ pub fn read_image_thumbnail(path_str: &str, max_w: u32, max_h: u32) -> ResolvedP
             body: format!("路径：{path_str}"),
             is_monospace: false,
             image_rgba: Some((dw, dh, rgba)),
+            ..Default::default()
         },
         None => ResolvedPreview {
             title,
             meta_line: format!("图片 · {}", format_size(file_size)),
             body: format!("路径：{path_str}\n\n（暂不支持解码该图片格式缩略图，按回车可直接打开）"),
             is_monospace: false,
-            image_rgba: None,
+            ..Default::default()
         },
     }
 }
@@ -72,6 +74,7 @@ pub fn read_file_preview(path_str: &str) -> ResolvedPreview {
             body: format!("Path:\n{path_str}\n\nFile is not accessible or no longer exists."),
             is_monospace: false,
             image_rgba: None,
+            badges: Vec::new(),
         };
     };
 
@@ -112,6 +115,7 @@ pub fn read_file_preview(path_str: &str) -> ResolvedPreview {
             body,
             is_monospace: true,
             image_rgba: None,
+            badges: Vec::new(),
         };
     }
 
@@ -149,6 +153,7 @@ pub fn read_file_preview(path_str: &str) -> ResolvedPreview {
             body: "(Empty file)".into(),
             is_monospace: false,
             image_rgba: None,
+            badges: Vec::new(),
         };
     }
 
@@ -161,6 +166,7 @@ pub fn read_file_preview(path_str: &str) -> ResolvedPreview {
             body: format!("Path:\n{path_str}\n\n(Unable to read file contents)"),
             is_monospace: false,
             image_rgba: None,
+            badges: Vec::new(),
         };
     };
     let n = f.read(&mut buf).unwrap_or(0);
@@ -178,6 +184,7 @@ pub fn read_file_preview(path_str: &str) -> ResolvedPreview {
             ),
             is_monospace: false,
             image_rgba: None,
+            badges: Vec::new(),
         };
     }
 
@@ -197,6 +204,7 @@ pub fn read_file_preview(path_str: &str) -> ResolvedPreview {
         body: lines.join("\n"),
         is_monospace: true,
         image_rgba: None,
+        badges: Vec::new(),
     }
 }
 

@@ -1,75 +1,102 @@
 {
   "schema_version": 2,
-  "name": "Tomoyo 开发者参考示例分片 (Examples)",
+  "name": "Tomoyo Registry Shard (examples)",
   "updated_at": "2026-11-24",
+  "total_count": null,
+  "shards": [],
   "plugins": [
     {
       "id": "dev.tomoyo.example-hello",
       "name": "文本大小写转换示例 (Rust 原生)",
       "version": "0.1.0",
       "description": "基于 tomoyo-sdk 编写的 Rust 原生 STDIO 参考插件：即时完成大小写、蛇形/驼峰命名与反转转换",
-      "author": "Tomoyo 贡献者",
+      "author": "Tomoyo Contributors",
       "license": "MIT",
       "runtime_kind": "stdio_jsonrpc",
       "category": "dev",
-      "display_mode": "inline",
       "icon": "icon.png",
-      "tags": ["text", "case", "rust"],
-      "keywords": ["hi", "case"],
+      "display_mode": "auto",
+      "tags": [],
+      "keywords": [
+        "hi",
+        "case"
+      ],
       "permissions": [],
       "source": "plugins/example-hello",
-      "sha256": "11bab298906f86f3365f75079bda5c3945efd30906183cd1b4f0fb17254fdfd7"
+      "sha256": "11bab298906f86f3365f75079bda5c3945efd30906183cd1b4f0fb17254fdfd7",
+      "homepage": null,
+      "updated_at": "",
+      "downloads": 0
     },
     {
       "id": "dev.tomoyo.example-python",
       "name": "文本哈希与字数统计 (Python)",
       "version": "0.1.0",
       "description": "零第三方依赖 Python 3 参考插件：即时计算 SHA-256 / MD5 摘要与 UTF-8 字符字节统计",
-      "author": "Tomoyo 贡献者",
+      "author": "Tomoyo Contributors",
       "license": "MIT",
       "runtime_kind": "stdio_jsonrpc",
       "category": "dev",
-      "display_mode": "inline",
       "icon": "icon.png",
-      "tags": ["hash", "sha256", "python"],
-      "keywords": ["py", "hash"],
+      "display_mode": "auto",
+      "tags": [],
+      "keywords": [
+        "py",
+        "hash"
+      ],
       "permissions": [],
       "source": "plugins/example-python",
-      "sha256": "1a9a7e290d021790f772a00422e93e3d479d33ba0690c3cef32dedc8b684b28e"
+      "sha256": "1a9a7e290d021790f772a00422e93e3d479d33ba0690c3cef32dedc8b684b28e",
+      "homepage": null,
+      "updated_at": "",
+      "downloads": 0
     },
     {
       "id": "dev.tomoyo.example-wasm",
       "name": "JWT 解析与存储单位换算 (WASM 沙箱)",
       "version": "0.2.0",
       "description": "零环境权限与指令燃料计量的 WebAssembly 沙箱插件：即时解码 JWT 令牌与换算 B/KB/MB/GB/TB 单位",
-      "author": "Tomoyo 贡献者",
+      "author": "Tomoyo Contributors",
       "license": "MIT",
       "runtime_kind": "wasm",
       "category": "dev",
-      "display_mode": "inline",
       "icon": "icon.png",
-      "tags": ["wasm", "jwt", "unit"],
-      "keywords": ["wasm", "jwt", "unit"],
+      "display_mode": "auto",
+      "tags": [],
+      "keywords": [
+        "wasm",
+        "jwt",
+        "unit"
+      ],
       "permissions": [],
       "source": "plugins/example-wasm",
-      "sha256": "1d2b16426bc79be4a968c8e9f8c74e61c02a43b8648c55d425d29ee05029c3a0"
+      "sha256": "bd1c4e18f43ae0f8af1f58ca89c2e5cbab37be1b21e5ec897edd7b4d5bdb93d0",
+      "homepage": null,
+      "updated_at": "",
+      "downloads": 0
     },
     {
       "id": "dev.tomoyo.example-webview-json",
       "name": "JSON 格式化与树形检视器 (WebView)",
       "version": "0.2.0",
-      "description": "基于按需 WebView 宿主与 window.utools / window.tomoyo 桥接的交互式 JSON 美化与树形检视工具（支持搜索内嵌与独立窗口切换，退出释放内存）",
-      "author": "Tomoyo 贡献者",
+      "description": "基于按需 WebView 宿主与 window.utools / window.tomoyo 桥接的交互式 JSON 美化与树形检视工具（关闭即释放 0 常驻内存）",
+      "author": "Tomoyo Contributors",
       "license": "MIT",
       "runtime_kind": "webview",
       "category": "dev",
-      "display_mode": "inline",
       "icon": "icon.png",
-      "tags": ["json", "formatter", "webview"],
-      "keywords": ["json", "utools"],
+      "display_mode": "inline",
+      "tags": [],
+      "keywords": [
+        "json",
+        "utools"
+      ],
       "permissions": [],
       "source": "plugins/example-webview-json",
-      "sha256": "6312ef5634708315b78ca632c2f9356426d25e610490c8e8df445386b1cc4713"
+      "sha256": "6312ef5634708315b78ca632c2f9356426d25e610490c8e8df445386b1cc4713",
+      "homepage": null,
+      "updated_at": "",
+      "downloads": 0
     }
   ]
 }

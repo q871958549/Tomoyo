@@ -32,6 +32,7 @@ pub enum HostMessage {
     InstallUpdate { release: Box<tomoyo_core::ReleaseInfo> },
     FetchStore { sources: Vec<String>, #[serde(default)] query: String, #[serde(default)] category: String, #[serde(default)] runtime: String, #[serde(default)] sort: String, #[serde(default)] page: usize, #[serde(default)] page_size: usize, #[serde(default)] force_refresh: bool },
     FetchPluginDetail { plugin_id: String, #[serde(default)] sources: Vec<String> },
+    CheckPluginHealth { #[serde(default)] sources: Vec<String> },
     InstallPlugin { plugin_id: String, source: String, sha256: String },
     UninstallPlugin { plugin_id: String },
     InstallQuietMd,
@@ -86,6 +87,7 @@ pub struct HostAction {
     pub async_install_update: Option<tomoyo_core::ReleaseInfo>,
     pub async_fetch_store: Option<crate::store_index::StoreQuery>,
     pub async_fetch_plugin_detail: Option<(String, Vec<String>)>,
+    pub async_check_plugin_health: Option<Vec<String>>,
     pub async_install_quiet_md: bool,
     pub async_translate: Option<(String, String, String)>,
     pub async_refresh_hotkey_health: bool,
@@ -187,6 +189,10 @@ pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isi
         },
         HostMessage::FetchPluginDetail { plugin_id, sources } => HostAction {
             async_fetch_plugin_detail: Some((plugin_id, sources)),
+            ..Default::default()
+        },
+        HostMessage::CheckPluginHealth { sources } => HostAction {
+            async_check_plugin_health: Some(sources),
             ..Default::default()
         },
         HostMessage::InstallQuietMd => HostAction {

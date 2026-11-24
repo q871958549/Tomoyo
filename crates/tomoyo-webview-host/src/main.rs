@@ -36,6 +36,7 @@ mod shim_js;
 mod single_instance;
 mod store;
 mod store_cache;
+mod store_health;
 mod store_index;
 mod tr_view;
 #[cfg(windows)]

@@ -328,6 +328,18 @@ pub enum PreviewSpec {
         title: String,
         entries: Vec<(String, String)>,
     },
+    /// Declarative native Rich Card (title + subtitle + pill badges + key/value rows + body).
+    RichCard {
+        title: String,
+        #[serde(default)]
+        subtitle: String,
+        #[serde(default)]
+        badges: Vec<String>,
+        #[serde(default)]
+        rows: Vec<(String, String)>,
+        #[serde(default)]
+        body: String,
+    },
     /// Lazy bounded disk preview (max 8 KB text or binary metadata summary).
     FilePreview {
         path: String,

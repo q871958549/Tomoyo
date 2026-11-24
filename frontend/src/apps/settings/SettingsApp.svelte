@@ -55,6 +55,8 @@
   let storeStatus = $state('');
   let storeDetail = $state<StoreItem | null>(null);
   let storeDetailLoading = $state(false);
+  let pluginHealth = $state<Record<string, unknown> | null>(null);
+  let checkingPluginHealth = $state(false);
   let quietMdPath = $state(init.quiet_md_path || '');
   let installingQuietMd = $state(false);
   let logSource = $state('tomoyo.log');
@@ -189,6 +191,10 @@
       sources: cfg.plugin_registries?.length ? cfg.plugin_registries : ['registry/index.json'],
     });
   }
+  function checkPluginHealth() {
+    checkingPluginHealth = true;
+    postHost({ cmd: 'check_plugin_health', sources: cfg.plugin_registries?.length ? cfg.plugin_registries : ['registry/index.json'] });
+  }
   function refreshLogs() { postHost({ cmd: 'read_logs', source: logSource, errors_only: logErrorsOnly }); }
   function checkUpdatesNow(manual = true) {
     if (checkTimer) { clearTimeout(checkTimer); checkTimer = null; }
@@ -266,6 +272,11 @@
         storeDetailLoading = false;
         if (data.ok && data.detail) storeDetail = data.detail as StoreItem;
         else if (data.error) setToast(`✗ ${data.error}`, true);
+      } else if (ev === 'plugin_health_report') {
+        checkingPluginHealth = false;
+        pluginHealth = data;
+        const sm = (data.summary || {}) as { healthy?: number; total?: number; mirrors_ok?: number; mirrors_total?: number };
+        setToast(lang === 'en' ? `✓ Plugin health: ${sm.healthy ?? 0}/${sm.total ?? 0} healthy` : `✓ 插件体检完成：${sm.healthy ?? 0}/${sm.total ?? 0} 健康 · 镜像 ${sm.mirrors_ok ?? 0}/${sm.mirrors_total ?? 0} 可达`);
       } else if (ev === 'quiet_md_status') {
         installingQuietMd = false;
         if (data.ok && typeof data.path === 'string' && data.path) quietMdPath = data.path;
@@ -366,7 +377,7 @@
             <Segmented value={subPlugins} options={[{ value: 'installed', label: lang === 'en' ? 'Modules & Plugins' : '已安装与插件设置' }, { value: 'store', label: tr(lang, 'nav_store') }]} onchange={(v) => { subPlugins = v; if (v === 'store' && !storeLoaded) { storeLoaded = true; fetchStore(); } }} />
           </div>
           {#if subPlugins === 'installed'}
-            <PluginsTab {cfg} {lang} {plugins} officialIcons={init.official_icons || {}} {quietMdPath} {installingQuietMd} {configPath} pluginsDir={init.plugins_dir} runningApps={init.running_apps} {secretsStatus} {hotkeyHealth} showRecord={true} expandedId={expandedPlugin} onToggleExpand={(id) => (expandedPlugin = id)} {onTogglePlugin} {onInstallQuietMd} {onUpdatePluginConfig} onJumpDoctor={() => switchTab('hotkeys')} onToast={setToast} onSave={scheduleSave} />
+            <PluginsTab {cfg} {lang} {plugins} officialIcons={init.official_icons || {}} {quietMdPath} {installingQuietMd} {configPath} pluginsDir={init.plugins_dir} runningApps={init.running_apps} {secretsStatus} {hotkeyHealth} showRecord={true} expandedId={expandedPlugin} healthReport={pluginHealth} checkingHealth={checkingPluginHealth} onCheckHealth={checkPluginHealth} onToggleExpand={(id) => (expandedPlugin = id)} {onTogglePlugin} {onInstallQuietMd} {onUpdatePluginConfig} onJumpDoctor={() => switchTab('hotkeys')} onToast={setToast} onSave={scheduleSave} />
           {:else}
             <StoreTab {lang} items={storeItems} meta={storeMeta} statusText={storeStatus} loading={storeLoading} detail={storeDetail} detailLoading={storeDetailLoading} onQuery={fetchStore} onInspectDetail={inspectStoreDetail} onCloseDetail={() => (storeDetail = null)} />
           {/if}

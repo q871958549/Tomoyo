@@ -9,6 +9,7 @@
 //! - `tomoyo-cli install <plugin-id> [--index <path-or-https-url>] [--dest <plugins-dir>]`
 
 mod dev;
+mod doctor;
 mod hash;
 mod pack;
 mod registry;
@@ -38,6 +39,7 @@ fn main() {
         "import-utools" => cmd_import_utools(&args[1..]),
         "registry" => cmd_registry(&args[1..]),
         "install" => cmd_install(&args[1..]),
+        "doctor" => doctor::cmd_doctor(&args[1..]),
         other => {
             eprintln!("Unknown command `{other}`.\n");
             print_usage();
@@ -61,8 +63,9 @@ fn print_usage() {
          \t tomoyo-cli pack <plugin-dir> [--out <bundle.zip>]\n\
          \t tomoyo-cli hash <plugin-dir>\n\
          \t tomoyo-cli import-utools <utools-plugin-dir>\n\
-         \t tomoyo-cli registry list|check [--index <path-or-https-url>]\n\
-         \t tomoyo-cli install <plugin-id> [--index <path-or-https-url>] [--dest <dir>]\n",
+         \t tomoyo-cli registry list|check|build-shards [--index <path-or-https-url>]\n\
+         \t tomoyo-cli install <plugin-id> [--index <path-or-https-url>] [--dest <dir>]\n\
+         \t tomoyo-cli doctor\n",
         env!("CARGO_PKG_VERSION")
     );
 }
@@ -141,8 +144,11 @@ fn cmd_registry(args: &[String]) -> i32 {
     if sub == "check" {
         return registry::cmd_registry_check(&args[1..]);
     }
+    if sub == "build-shards" {
+        return registry::cmd_registry_build_shards(&args[1..]);
+    }
     if sub != "list" {
-        eprintln!("Usage: tomoyo-cli registry list|check [--index <path-or-https-url>]");
+        eprintln!("Usage: tomoyo-cli registry list|check|build-shards [--index <path-or-https-url>]");
         return 1;
     }
     let index_source = flag_val(args, "--index").unwrap_or("registry/index.json");

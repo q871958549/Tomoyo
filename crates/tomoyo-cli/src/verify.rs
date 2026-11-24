@@ -52,6 +52,32 @@ pub(crate) fn validate_plugin_dir(dir: &Path) -> Result<(PathBuf, PluginManifest
     {
         warnings.push("`triggers.regex` is empty; remove it if unused".into());
     }
+    if let Some(cat) = manifest.category.as_deref() {
+        let low = cat.trim().to_ascii_lowercase();
+        if !low.is_empty() && !matches!(low.as_str(), "productivity" | "docs" | "dev" | "ai" | "media" | "system") {
+            warnings.push(format!(
+                "unrecognized `category` `{cat}` (recommended: productivity, docs, dev, ai, media, system)"
+            ));
+        }
+    }
+    let icon_rel = manifest.icon.as_deref().unwrap_or("icon.png");
+    if icon_rel.contains("..") {
+        return Err(format!("`icon` path `{icon_rel}` must not escape plugin directory"));
+    }
+    let icon_path = canon.join(icon_rel);
+    if icon_path.is_file() {
+        let bytes = std::fs::read(&icon_path).map_err(|e| format!("Failed to read icon `{icon_rel}`: {e}"))?;
+        if bytes.len() > 64 * 1024 {
+            return Err(format!("Plugin icon `{icon_rel}` is {} bytes (max 64 KB)", bytes.len()));
+        }
+        if icon_rel.to_ascii_lowercase().ends_with(".png") && bytes.get(..8) != Some(b"\x89PNG\r\n\x1a\n") {
+            return Err(format!("Plugin icon `{icon_rel}` is not a valid PNG image"));
+        }
+    } else if manifest.icon.is_some() {
+        return Err(format!("Declared plugin icon missing: {}", icon_path.display()));
+    } else {
+        warnings.push("missing dedicated `icon.png` (recommended 128x128 PNG <= 64 KB)".into());
+    }
 
     match &manifest.runtime {
         RuntimeConfig::Webview { entry, .. } => {
