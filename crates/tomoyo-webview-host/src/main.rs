@@ -253,15 +253,10 @@ pub fn build_settings_init_script_for(initial_route: &str) -> String {
     host.shutdown_all();
 
     let mut official_icons = serde_json::Map::new();
-    for mid in [
-        tomoyo_core::PLUGIN_CLIPBOARD,
-        tomoyo_core::PLUGIN_CAPTURE,
-    ] {
-        if let Some(url) = tomoyo_core::resolve_bundled_module_icon(mid)
-            .and_then(|ip| tomoyo_core::read_icon_data_url(&ip))
-        {
-            official_icons.insert(mid.to_string(), serde_json::Value::String(url));
-        }
+    if let Some(url) = tomoyo_core::resolve_bundled_module_icon(tomoyo_core::PLUGIN_CLIPBOARD)
+        .and_then(|ip| tomoyo_core::read_icon_data_url(&ip))
+    {
+        official_icons.insert(tomoyo_core::PLUGIN_CLIPBOARD.to_string(), serde_json::Value::String(url));
     }
 
     let plugins_dir = tomoyo_core::data_dir().join("plugins");
@@ -331,7 +326,6 @@ fn main() {
         assert!(html.contains("AlibabaPuHuiTi-3-55-Regular.ttf"));
         assert!(html.contains("__TOMOYO_SETTINGS_INIT__"));
         assert!(html.contains("check_hotkey_health"));
-        assert!(html.contains("start_capture"));
         assert!(html.contains("save_settings"));
         assert!(!html.contains("type=\"number\""));
         assert!(!html.contains("<textarea"));

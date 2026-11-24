@@ -5,7 +5,6 @@
     localizePermission,
     localizeRuntime,
     OFFICIAL_PLUGINS,
-    PLUGIN_CAPTURE,
     PLUGIN_CLIPBOARD,
   } from '../../lib/defaults';
   import { postHost } from '../../lib/ipc';
@@ -15,7 +14,6 @@
   import Input from '../../lib/ui/Input.svelte';
   import Select from '../../lib/ui/Select.svelte';
   import Switch from '../../lib/ui/Switch.svelte';
-  import CaptureTab from './CaptureTab.svelte';
   import ClipboardPluginCard from './ClipboardPluginCard.svelte';
   import PluginConfigDrawer from './PluginConfigDrawer.svelte';
 
@@ -29,7 +27,6 @@
     runningApps: string[];
     secretsStatus: { deepl: boolean; openai: boolean; plugins?: Record<string, boolean> };
     hotkeyHealth: HotkeyHealthReport;
-    showRecord: boolean;
     expandedId: string | null;
     healthReport?: { summary?: { total: number; healthy: number; warnings: number; updates: number; mirrors_ok: number; mirrors_total: number }; mirrors?: Array<{ source: string; ok: boolean; latency_ms: number; detail: string }> } | null;
     checkingHealth?: boolean;
@@ -42,15 +39,14 @@
       displayModes?: Record<string, string>
     ) => void;
     onJumpDoctor?: () => void;
-    onToast: (msg: string, warn?: boolean) => void;
     onSave: (delayMs?: number) => void;
   }
 
   let {
     cfg, lang, plugins, officialIcons = {},
-    configPath, pluginsDir, runningApps, secretsStatus, hotkeyHealth, showRecord, expandedId,
+    configPath, pluginsDir, runningApps, secretsStatus, hotkeyHealth, expandedId,
     healthReport = null, checkingHealth = false, onCheckHealth,
-    onToggleExpand, onTogglePlugin, onUpdatePluginConfig, onJumpDoctor, onToast, onSave,
+    onToggleExpand, onTogglePlugin, onUpdatePluginConfig, onJumpDoctor, onSave,
   }: Props = $props();
 
   let filterText = $state('');
@@ -82,7 +78,7 @@
   }
 
   function hasOfficialDrawer(id: string, entry?: PluginEntry): boolean {
-    return id === PLUGIN_CLIPBOARD || id === PLUGIN_CAPTURE || !!entry;
+    return id === PLUGIN_CLIPBOARD || !!entry;
   }
 
   function resolveIcon(id: string, entry?: PluginEntry): string {
@@ -219,8 +215,6 @@
         <div class="mod-drawer" data-plugin-drawer={item.id}>
           {#if item.id === PLUGIN_CLIPBOARD}
             <ClipboardPluginCard {cfg} {lang} {runningApps} clipHotkeyStatus={hotkeyHealth.clipboard} {onJumpDoctor} {onSave} />
-          {:else if item.id === PLUGIN_CAPTURE}
-            <CaptureTab embedded {cfg} {lang} capHotkeyStatus={hotkeyHealth.capture} pinHotkeyStatus={hotkeyHealth.pin} ocrHotkeyStatus={hotkeyHealth.ocr} recordHotkeyStatus={hotkeyHealth.record} {showRecord} {onJumpDoctor} {onSave} />
           {:else if entry}
             {#if (entry.declared_permissions || []).length > 0}
               <div class="perm-strip">

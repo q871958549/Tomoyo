@@ -114,7 +114,7 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
     const conflictBtn = document.querySelector<HTMLButtonElement>('button#toast.conflict-bar-btn');
     expect(conflictBtn).not.toBeNull();
     expect(conflictBtn?.textContent).toContain('Alt+C');
-    expect(document.querySelector('button[data-tab="hotkeys"] .nav-badge')?.textContent).toBe('2');
+    expect(document.querySelector('button[data-tab="hotkeys"] .nav-badge')?.textContent).toBe('1');
     conflictBtn?.click();
     flushSync();
     expect(document.querySelector('button[data-tab="hotkeys"]')?.classList.contains('is-active')).toBe(true);
@@ -155,16 +155,10 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
     flushSync();
     expect(document.body.textContent).toContain('已被系统或其他软件占用（Alt+C）');
 
-    document.querySelector<HTMLButtonElement>('button[data-config-plugin="dev.tomoyo.capture"]')?.click();
+    const cbSwitch = document.querySelector<HTMLButtonElement>('button[role="switch"][aria-label="剪贴板管理中心"]');
+    cbSwitch?.click();
     flushSync();
-    expect(document.body.textContent).toContain('全局一键贴图快捷键');
-    expect(document.body.textContent).toContain('录屏默认格式与帧率');
-    expect(document.body.textContent).toContain('F3');
-
-    const capSwitch = document.querySelector<HTMLButtonElement>('button[role="switch"][aria-label="原生截图与贴图"]');
-    capSwitch?.click();
-    flushSync();
-    expect(document.querySelector('button[data-tab="hotkeys"] .nav-badge')?.textContent).toBe('1');
+    expect(document.querySelector('button[data-tab="hotkeys"] .nav-badge')).toBeNull();
 
     document.querySelector<HTMLButtonElement>('button[data-config-plugin="dev.tomoyo.ocr"]')?.click();
     flushSync();
@@ -283,7 +277,7 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
       plugin_settings?: Record<string, Record<string, unknown>>;
     };
     expect(savedCfg.custom_filters?.some((t) => t.id === 'code')).toBe(true);
-    expect(savedCfg.disabled_plugins).toContain('dev.tomoyo.capture');
+    expect(savedCfg.disabled_plugins).toContain('dev.tomoyo.clipboard');
     expect(savedCfg.plugin_settings?.['dev.tomoyo.ocr']?.raw_output).toBe(true);
 
     unmount(app);

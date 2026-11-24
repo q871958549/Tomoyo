@@ -21,14 +21,12 @@ pub use clipboard_win::{
 };
 pub use file_ops::{
     compute_file_sha256_bounded, copy_file_contents_bounded, extract_zip_into_sibling_dir,
-    spawn_pin_image_file,
 };
 #[cfg(target_os = "linux")]
 pub use shell_win::send_ctrl_c_cleanly;
 pub use shell_win::{
     kill_process_by_pid, paste_into_previous_window_async, shell_open, shell_open_as_admin,
-    spawn_capture_tool, spawn_clipboard_manager_window, spawn_ephemeral_webview_ex,
-    spawn_settings_window,
+    spawn_clipboard_manager_window, spawn_ephemeral_webview_ex, spawn_settings_window,
 };
 
 use shell_win::{focus_window, open_terminal_at, reveal_in_file_manager, run_system_command};

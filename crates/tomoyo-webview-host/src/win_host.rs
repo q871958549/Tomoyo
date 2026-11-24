@@ -113,8 +113,6 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                         if changed
                             && let Some(t) = st.notify_hwnd { crate::bridge_os::notify_parent_mode(t, 1); }
                         r
-                    } else if wparam.0 == 2 {
-                        crate::folder_picker::pick_capture_save_folder(hwnd)
                     } else {
                         crate::folder_picker::pick_scan_folder(hwnd)
                     };

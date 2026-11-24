@@ -1,0 +1,232 @@
+id = "dev.tomoyo.capture"
+name = "原生截图、贴图与录屏 (官方插件)"
+version = "3.0.0"
+description = "多屏 DPI 精准选区截图、平滑矢量标注、取色放大镜、纵横向长截图、桌面悬浮贴图与 MP4/GIF 区域录屏（按需子进程，零后台常驻）"
+author = "Tomoyo Contributors"
+license = "MIT OR Apache-2.0"
+homepage = "https://github.com/q871958549/Tomoyo"
+icon = "icon.png"
+category = "media"
+display_mode = "window"
+tags = ["screenshot", "capture", "pin", "record", "gif", "annotate", "color-picker"]
+permissions = ["clipboard", "filesystem_read", "filesystem_write", "shell_exec"]
+events = ["hotkey_triggered"]
+
+[runtime]
+kind = "stdio_jsonrpc"
+command = "tomoyo-plugin-capture"
+args = []
+
+[triggers]
+keywords = ["cap", "shot", "jt", "pin", "jtocr", "jtfy", "rec", "lp"]
+
+[resources]
+max_memory_mb = 48
+idle_timeout_secs = 60
+query_timeout_ms = 800
+
+[[hotkeys]]
+id = "region"
+label = "全局区域截图"
+default_hotkey = "Alt+S"
+
+[[hotkeys]]
+id = "pin_clipboard"
+label = "全局一键贴图"
+default_hotkey = "F3"
+
+[[hotkeys]]
+id = "ocr"
+label = "全局截图识字 (OCR)"
+default_hotkey = ""
+
+[[hotkeys]]
+id = "record"
+label = "全局区域录屏 (MP4/GIF)"
+default_hotkey = ""
+
+[[tray_actions]]
+id = "region"
+label = "区域截图与标注"
+action_id = "run_region"
+
+[[tray_actions]]
+id = "record"
+label = "区域录屏 (MP4/GIF)"
+action_id = "run_record"
+
+[[file_actions]]
+id = "pin_image"
+label = "贴图到桌面 (Pin)"
+extensions = ["png", "jpg", "jpeg", "webp", "bmp", "gif", "ico"]
+
+[[settings]]
+key = "save_dir"
+label = "截图与录屏默认保存目录"
+description = "留空则默认保存到系统「图片/Tomoyo」目录"
+section = "截图与贴图"
+type = "dir"
+placeholder = "留空使用默认图片目录"
+default = ""
+
+[[settings]]
+key = "pin_opacity"
+label = "桌面贴图默认不透明度 (%)"
+description = "新建悬浮贴图窗口时的初始不透明度（滚轮或 Ctrl+滚轮可实时微调）"
+section = "截图与贴图"
+type = "number"
+min = 30
+max = 100
+step = 5
+default = 100
+
+[[settings]]
+key = "copy_hex_lowercase"
+label = "取色器默认复制小写 HEX 色值"
+description = "开启后按 C 复制 #7c6af7，关闭则复制 #7C6AF7"
+section = "截图与贴图"
+type = "bool"
+default = false
+
+[[settings]]
+key = "record_format"
+label = "录屏默认输出格式"
+description = "MP4（高画质低体积）或调色板高清 GIF 动图"
+section = "区域录屏"
+type = "select"
+default = "mp4"
+options = [
+  { value = "mp4", label = "MP4 视频 (H.264)" },
+  { value = "gif", label = "GIF 动图（自适应调色板）" },
+]
+
+[[settings]]
+key = "record_fps"
+label = "录屏默认帧率 (FPS)"
+section = "区域录屏"
+type = "select"
+default = "30"
+options = [
+  { value = "15", label = "15 FPS（超轻体积）" },
+  { value = "24", label = "24 FPS" },
+  { value = "30", label = "30 FPS（推荐）" },
+  { value = "60", label = "60 FPS（高帧率）" },
+]
+
+[[settings]]
+key = "record_audio"
+label = "录屏默认音频采集"
+section = "区域录屏"
+type = "select"
+default = "none"
+options = [
+  { value = "none", label = "静音（不录音）" },
+  { value = "system", label = "仅系统声音" },
+  { value = "mic", label = "仅麦克风" },
+  { value = "both", label = "系统声音 + 麦克风" },
+]
+
+[[settings]]
+key = "record_cursor"
+label = "录屏时包含鼠标指针"
+section = "区域录屏"
+type = "bool"
+default = true
+
+[[settings]]
+key = "tool_rect"
+label = "矩形框快捷键"
+section = "标注工具栏快捷键"
+type = "text"
+default = "R"
+
+[[settings]]
+key = "tool_ellipse"
+label = "椭圆圈快捷键"
+section = "标注工具栏快捷键"
+type = "text"
+default = "E"
+
+[[settings]]
+key = "tool_arrow"
+label = "箭头快捷键"
+section = "标注工具栏快捷键"
+type = "text"
+default = "A"
+
+[[settings]]
+key = "tool_pen"
+label = "平滑画笔快捷键"
+section = "标注工具栏快捷键"
+type = "text"
+default = "B"
+
+[[settings]]
+key = "tool_highlighter"
+label = "荧光高亮笔快捷键"
+section = "标注工具栏快捷键"
+type = "text"
+default = "H"
+
+[[settings]]
+key = "tool_mosaic"
+label = "马赛克快捷键"
+section = "标注工具栏快捷键"
+type = "text"
+default = "M"
+
+[[settings]]
+key = "tool_step"
+label = "序号标号快捷键"
+section = "标注工具栏快捷键"
+type = "text"
+default = "N"
+
+[[settings]]
+key = "tool_text"
+label = "文字批注快捷键"
+section = "标注工具栏快捷键"
+type = "text"
+default = "X"
+
+[[settings]]
+key = "tool_scroll"
+label = "长截图快捷键"
+section = "标注工具栏快捷键"
+type = "text"
+default = "L"
+
+[[settings]]
+key = "tool_pin"
+label = "桌面贴图快捷键"
+section = "标注工具栏快捷键"
+type = "text"
+default = "P"
+
+[[settings]]
+key = "tool_ocr"
+label = "OCR 审校快捷键"
+section = "标注工具栏快捷键"
+type = "text"
+default = "O"
+
+[[settings]]
+key = "tool_ocr_copy"
+label = "直接提取文字快捷键"
+section = "标注工具栏快捷键"
+type = "text"
+default = "Shift+C"
+
+[[settings]]
+key = "tool_translate"
+label = "截图翻译快捷键"
+section = "标注工具栏快捷键"
+type = "text"
+default = "T"
+
+[[settings]]
+key = "tool_record"
+label = "区域录屏快捷键"
+section = "标注工具栏快捷键"
+type = "text"
+default = "V"

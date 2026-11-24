@@ -120,24 +120,6 @@ pub fn set_clipboard_text(text: &str) {
 #[cfg(not(any(windows, target_os = "linux")))]
 pub fn set_clipboard_text(_text: &str) {}
 
-pub fn spawn_capture_tool(mode: &str) {
-    let Ok(exe) = std::env::current_exe() else { return };
-    let Some(dir) = exe.parent() else { return };
-    let bin_name = if cfg!(windows) { "tomoyo-capture.exe" } else { "tomoyo-capture" };
-    let cap_exe = dir.join(bin_name);
-    if !cap_exe.is_file() {
-        tracing::warn!("{bin_name} not found at {}", cap_exe.display());
-        return;
-    }
-    let flag = match mode {
-        "ocr" => "--ocr",
-        "translate" => "--translate",
-        "pin_clipboard" | "pin" => "--pin-clipboard",
-        _ => "--capture",
-    };
-    let _ = std::process::Command::new(cap_exe).arg(flag).spawn();
-}
-
 pub fn spawn_settings_center(target: &str, notify_hwnd: Option<isize>) {
     let Ok(exe) = std::env::current_exe() else { return };
     let cfg = tomoyo_core::TomoyoConfig::load_or_create();

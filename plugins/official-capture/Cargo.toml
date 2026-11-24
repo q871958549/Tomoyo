@@ -1,0 +1,14 @@
+[package]
+name = "tomoyo-plugin-capture"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Official Tomoyo Protocol v3 native plugin: Screenshot, Annotations, Pin-to-Desktop & Screen Recording"
+
+[[bin]]
+name = "tomoyo-plugin-capture"
+path = "src/main.rs"
+
+[dependencies]
+tomoyo-sdk = { workspace = true }
+serde_json = { workspace = true }

@@ -6,28 +6,9 @@ use sha2::{Digest, Sha256};
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 const MAX_COPY_TEXT_FILE_BYTES: u64 = 128 * 1024;
 const MAX_HASH_FILE_BYTES: u64 = 64 * 1024 * 1024;
-
-/// Launches `tomoyo-capture --pin <image_path>` to pin any image file onto the desktop.
-pub fn spawn_pin_image_file(path: &str) -> Result<(), String> {
-    if !Path::new(path).is_file() {
-        return Err("图片文件不存在".into());
-    }
-    let bin_name = if cfg!(windows) { "tomoyo-capture.exe" } else { "tomoyo-capture" };
-    let exe = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|d| d.join(bin_name)))
-        .filter(|p| p.exists())
-        .ok_or_else(|| format!("未找到 {bin_name}"))?;
-    Command::new(exe)
-        .args(["--pin", path])
-        .spawn()
-        .map(|_| ())
-        .map_err(|e| format!("启动贴图进程失败: {e}"))
-}
 
 /// Safely unpacks a `.zip` archive into a non-colliding sibling folder using Zip-Slip guards.
 pub fn extract_zip_into_sibling_dir(zip_path: &str) -> Result<String, String> {

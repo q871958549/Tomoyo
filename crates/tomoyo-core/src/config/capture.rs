@@ -2,7 +2,7 @@
 
 use super::{parse_hotkey, validate_scan_dir};
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CaptureToolHotkeys {
@@ -236,6 +236,68 @@ impl Default for CaptureConfig {
             record_cursor: default_record_cursor(),
             tool_hotkeys: CaptureToolHotkeys::default(),
         }
+    }
+}
+
+impl CaptureConfig {
+    /// Overlays Protocol v3 `plugin_settings["dev.tomoyo.capture"]` onto legacy `[capture]` fields
+    /// so existing users keep 100% of their settings while new edits in the Capture plugin drawer take effect live.
+    pub fn with_plugin_overrides(
+        &self,
+        bag: Option<&BTreeMap<String, serde_json::Value>>,
+    ) -> Self {
+        let mut out = self.clone();
+        let Some(map) = bag else { return out; };
+        if let Some(s) = map.get("save_dir").and_then(|v| v.as_str()) {
+            out.save_dir = s.trim().to_string();
+        }
+        if let Some(n) = map.get("pin_opacity").and_then(|v| v.as_u64()) {
+            out.pin_opacity = (n as u8).clamp(30, 100);
+        }
+        if let Some(b) = map.get("copy_hex_lowercase").and_then(|v| v.as_bool()) {
+            out.copy_hex_lowercase = b;
+        }
+        if let Some(s) = map.get("record_format").and_then(|v| v.as_str())
+            && matches!(s, "mp4" | "gif")
+        {
+            out.record_format = s.to_string();
+        }
+        if let Some(fps) = map.get("record_fps").and_then(|v| {
+            v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse::<u64>().ok()))
+        }) && matches!(fps, 15 | 24 | 30 | 60)
+        {
+            out.record_fps = fps as u8;
+        }
+        if let Some(s) = map.get("record_audio").and_then(|v| v.as_str())
+            && matches!(s, "none" | "system" | "mic" | "both")
+        {
+            out.record_audio = s.to_string();
+        }
+        if let Some(b) = map.get("record_cursor").and_then(|v| v.as_bool()) {
+            out.record_cursor = b;
+        }
+        let ov_hk = |k: &str, slot: &mut String| {
+            if let Some(raw) = map.get(k).and_then(|v| v.as_str())
+                && let Some(norm) = CaptureToolHotkeys::normalize_key(raw)
+            {
+                *slot = norm;
+            }
+        };
+        ov_hk("tool_rect", &mut out.tool_hotkeys.rect);
+        ov_hk("tool_ellipse", &mut out.tool_hotkeys.ellipse);
+        ov_hk("tool_arrow", &mut out.tool_hotkeys.arrow);
+        ov_hk("tool_pen", &mut out.tool_hotkeys.pen);
+        ov_hk("tool_highlighter", &mut out.tool_hotkeys.highlighter);
+        ov_hk("tool_mosaic", &mut out.tool_hotkeys.mosaic);
+        ov_hk("tool_step", &mut out.tool_hotkeys.step);
+        ov_hk("tool_text", &mut out.tool_hotkeys.text);
+        ov_hk("tool_scroll", &mut out.tool_hotkeys.scroll);
+        ov_hk("tool_pin", &mut out.tool_hotkeys.pin);
+        ov_hk("tool_ocr", &mut out.tool_hotkeys.ocr);
+        ov_hk("tool_ocr_copy", &mut out.tool_hotkeys.ocr_copy);
+        ov_hk("tool_translate", &mut out.tool_hotkeys.translate);
+        ov_hk("tool_record", &mut out.tool_hotkeys.record);
+        out
     }
 }
 

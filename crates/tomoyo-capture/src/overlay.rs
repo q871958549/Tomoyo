@@ -160,14 +160,15 @@ pub fn run_capture_overlay(mode: CaptureMode) -> Result<CaptureOutcome, String> 
             ..Default::default()
         });
         let (ox, oy, w, h) = (snap.origin_x, snap.origin_y, snap.width, snap.height);
-        let rec_is_gif = cfg.capture.record_format.eq_ignore_ascii_case("gif");
-        let rec_fps = cfg.capture.record_fps;
-        let rec_audio = match cfg.capture.record_audio.as_str() { "system" => 1, "mic" => 2, "both" => 3, _ => 0 };
-        let rec_cursor = cfg.capture.record_cursor;
+        let cap = cfg.capture.with_plugin_overrides(cfg.plugin_settings.get(tomoyo_core::PLUGIN_CAPTURE));
+        let rec_is_gif = cap.record_format.eq_ignore_ascii_case("gif");
+        let rec_fps = cap.record_fps;
+        let rec_audio = match cap.record_audio.as_str() { "system" => 1, "mic" => 2, "both" => 3, _ => 0 };
+        let rec_cursor = cap.record_cursor;
         let mut st = Box::new(OverlayState {
-            snap, dimmed, snap_ctx, mode, save_dir: cfg.capture.save_dir,
-            hex_lower: cfg.capture.copy_hex_lowercase, rgb_mode: false,
-            tool_hotkeys: cfg.capture.tool_hotkeys, sel: None, hover_snap,
+            snap, dimmed, snap_ctx, mode, save_dir: cap.save_dir,
+            hex_lower: cap.copy_hex_lowercase, rgb_mode: false,
+            tool_hotkeys: cap.tool_hotkeys, sel: None, hover_snap,
             tool: ToolKind::Select, color_idx: 0, thickness: 4, step_radius: 13, text_size: 20,
             shape_filled: false, mosaic_blur: false,
             record_open: mode == CaptureMode::Record, rec_is_gif, rec_fps, rec_audio, rec_cursor,

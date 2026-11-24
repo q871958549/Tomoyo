@@ -339,6 +339,7 @@ pub fn run_capture_overlay(mode: CaptureMode) -> Result<CaptureOutcome, String> 
     let cfg = TomoyoConfig::load_or_create();
     let frame_buf = vec![0u8; snap.bgra.len()];
     let (w, h) = (snap.width, snap.height);
+    let cap = cfg.capture.with_plugin_overrides(cfg.plugin_settings.get(tomoyo_core::PLUGIN_CAPTURE));
     let mut state = Box::new(OverlayState {
         mode,
         snap,
@@ -356,13 +357,13 @@ pub fn run_capture_overlay(mode: CaptureMode) -> Result<CaptureOutcome, String> 
         text_size: 20,
         shape_filled: false,
         mosaic_blur: false,
-        hex_lower: cfg.capture.copy_hex_lowercase,
+        hex_lower: cap.copy_hex_lowercase,
         rgb_mode: false,
         record_open: mode == CaptureMode::Record,
-        rec_is_gif: cfg.capture.record_format.eq_ignore_ascii_case("gif"),
-        rec_fps: cfg.capture.record_fps,
-        rec_audio: match cfg.capture.record_audio.as_str() { "system" => 1, "mic" => 2, "both" => 3, _ => 0 },
-        rec_cursor: cfg.capture.record_cursor,
+        rec_is_gif: cap.record_format.eq_ignore_ascii_case("gif"),
+        rec_fps: cap.record_fps,
+        rec_audio: match cap.record_audio.as_str() { "system" => 1, "mic" => 2, "both" => 3, _ => 0 },
+        rec_cursor: cap.record_cursor,
         has_monitor_token: has_valid_monitor_token(),
         ann_stack: AnnotationStack::default(),
         live_ann: None,
@@ -372,8 +373,8 @@ pub fn run_capture_overlay(mode: CaptureMode) -> Result<CaptureOutcome, String> 
         wheel_hud: None,
         layout: ToolbarLayout::default(),
         hovered_cmd: None,
-        save_dir: cfg.capture.save_dir,
-        hotkeys: cfg.capture.tool_hotkeys,
+        save_dir: cap.save_dir,
+        hotkeys: cap.tool_hotkeys,
         outcome: CaptureOutcome::Done,
         win_dims: (w.max(1), h.max(1)),
     });

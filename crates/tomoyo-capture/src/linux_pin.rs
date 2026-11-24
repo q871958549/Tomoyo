@@ -229,12 +229,13 @@ pub fn run_pin_window(width: u32, height: u32, bgra: Vec<u8>, sx: i32, sy: i32) 
 
 pub fn run_pin_window_with_text(width: u32, height: u32, bgra: Vec<u8>, sx: i32, sy: i32, source_text: Option<String>) {
     let cfg = TomoyoConfig::load_or_create();
+    let cap = cfg.capture.with_plugin_overrides(cfg.plugin_settings.get(tomoyo_core::PLUGIN_CAPTURE));
     let mut state = Box::new(PinState {
         w: width,
         h: height,
         bgra,
         zoom: 1.0,
-        save_dir: cfg.capture.save_dir,
+        save_dir: cap.save_dir,
         source_text,
     });
     let ptr = &mut *state as *mut PinState as *mut c_void;

@@ -201,27 +201,6 @@ fn locate_webview_host() -> Result<std::path::PathBuf, String> {
     locate_sibling_exe("tomoyo-webview-host.exe")
 }
 
-pub fn spawn_capture_tool(mode: &str) -> Result<(), String> {
-    let cap_exe = locate_sibling_exe("tomoyo-capture.exe")?;
-    let flag = match mode {
-        "ocr" => "--ocr",
-        "translate" => "--translate",
-        "record" => "--record",
-        "pin_clipboard" | "pin" => "--pin-clipboard",
-        _ => "--capture",
-    };
-    let mut child = Command::new(&cap_exe)
-        .arg(flag)
-        .spawn()
-        .map_err(|e| format!("failed to launch {}: {e}", cap_exe.display()))?;
-    let _ = std::thread::Builder::new()
-        .name("tomoyo-cap-reaper".into())
-        .spawn(move || {
-            let _ = child.wait();
-        });
-    Ok(())
-}
-
 /// Restores the previously focused window and simulates `Ctrl+V` via native `SendInput`.
 #[cfg(windows)]
 pub fn paste_into_previous_window_async(prev_hwnd: isize) {

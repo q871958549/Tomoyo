@@ -1,10 +1,7 @@
 //! Pure Win32 `main_wndproc` message dispatcher delegating into cohesive `AppShell` methods.
 
 use super::commands::{dispatch_menu_id, dispatch_wm_command};
-use super::input::{
-    register_all_hotkeys, unregister_all_hotkeys, HOTKEY_CAPTURE_ID, HOTKEY_OCR_ID, HOTKEY_PIN_ID,
-    HOTKEY_RECORD_ID,
-};
+use super::input::{register_all_hotkeys, unregister_all_hotkeys};
 use super::updater_ctrl::WM_APP_UPDATE_PROGRESS;
 use super::wndproc_mouse::{
     handle_lbutton_dblclk, handle_lbutton_up, handle_mouse_down, handle_mouse_leave,
@@ -145,10 +142,6 @@ pub(super) unsafe extern "system" fn main_wndproc(
             match wparam.0 as i32 {
                 HOTKEY_ID => app.toggle_launcher(),
                 HOTKEY_CLIPBOARD_ID => app.toggle_clipboard_launcher(),
-                HOTKEY_CAPTURE_ID => app.trigger_capture_ex("region", false),
-                HOTKEY_PIN_ID => app.trigger_capture("pin_clipboard"),
-                HOTKEY_OCR_ID => app.trigger_capture_ex("ocr", false),
-                HOTKEY_RECORD_ID => app.trigger_capture_ex("record", false),
                 id if id >= super::plugin_hotkeys::FLOW_HOTKEY_BASE => {
                     super::plugin_hotkeys::handle_flow_hotkey(app, id);
                 }
@@ -306,21 +299,16 @@ fn handle_tray_callback(hwnd: HWND, app: &mut AppShell, lparam: LPARAM) -> LRESU
     if ev == WM_LBUTTONUP || ev == WM_LBUTTONDBLCLK {
         app.toggle_launcher();
     } else if ev == WM_RBUTTONUP {
-        let (clip_on, cap_hk) = app
+        let clip_on = app
             .config
             .read()
-            .map(|c| {
-                (
-                    c.is_plugin_enabled(tomoyo_core::PLUGIN_CLIPBOARD),
-                    c.is_plugin_enabled(tomoyo_core::PLUGIN_CAPTURE).then(|| c.capture.hotkey.clone()),
-                )
-            })
-            .unwrap_or_else(|_| (true, Some("Alt+S".into())));
+            .map(|c| c.is_plugin_enabled(tomoyo_core::PLUGIN_CLIPBOARD))
+            .unwrap_or(true);
         app.tray_plugin_actions = app.plugin_host.active_tray_actions();
         let chosen = app.tray.as_ref().and_then(|tray| {
             tray.show_context_menu(
                 app.lang, app.theme, app.dpi_scale, app.font_regular, app.font_medium, clip_on,
-                cap_hk.as_deref(), &app.tray_plugin_actions,
+                &app.tray_plugin_actions,
             )
         });
         if let Some(id) = chosen {

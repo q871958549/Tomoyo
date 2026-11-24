@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { hydrateSettingsInit, isPluginEnabled, PLUGIN_CAPTURE, PLUGIN_CLIPBOARD } from '../../lib/defaults';
+  import { hydrateSettingsInit, isPluginEnabled, PLUGIN_CLIPBOARD } from '../../lib/defaults';
   import { assignCoreHotkeyWithSwap, type CoreHotkeySlot } from '../../lib/hotkeys';
   import { applyThemeClass, installErrorTelemetry, postHost, subscribeHost } from '../../lib/ipc';
   import { OFFICIAL_REPO, tr, type Lang } from '../../lib/i18n';
@@ -74,14 +74,9 @@
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
 
   let conflictSlots = $derived.by(() => {
-    const capOn = isPluginEnabled(cfg, PLUGIN_CAPTURE);
     const entries = [
       { label: lang === 'en' ? 'Launcher' : '主启动器', st: hotkeyHealth.main, on: true },
       { label: lang === 'en' ? 'Clipboard' : '剪贴板', st: hotkeyHealth.clipboard, on: isPluginEnabled(cfg, PLUGIN_CLIPBOARD) },
-      { label: lang === 'en' ? 'Capture' : '截图', st: hotkeyHealth.capture, on: capOn },
-      { label: lang === 'en' ? 'Pin' : '全局贴图', st: hotkeyHealth.pin, on: capOn },
-      { label: lang === 'en' ? 'Screenshot OCR' : '截图识字', st: hotkeyHealth.ocr, on: capOn },
-      { label: lang === 'en' ? 'Screen Record' : '区域录屏', st: hotkeyHealth.record, on: capOn },
     ];
     return entries.filter((e) => e.on && e.st && !e.st.disabled && !e.st.ok && e.st.spec);
   });
@@ -123,10 +118,9 @@
   function runHotkeyAudit() { auditingHotkeys = true; postHost({ cmd: 'audit_hotkeys' }); }
   function probeHotkeyOwner(spec: string) { probingSpec = spec; probeResult = null; postHost({ cmd: 'probe_hotkey_owner', spec }); }
   function applyFreeKey(slot: CoreHotkeySlot, key: string) {
-    const capOn = isPluginEnabled(cfg, PLUGIN_CAPTURE);
     const swapped = assignCoreHotkeyWithSwap(cfg, slot, key, {
       main: true, clipboard: isPluginEnabled(cfg, PLUGIN_CLIPBOARD),
-      translate: false, capture: capOn, pin: capOn, ocr: capOn, record: capOn,
+      translate: false, capture: false, pin: false, ocr: false, record: false,
     });
     scheduleSave(0);
     if (swapped) setToast(lang === 'en' ? '✓ Updated & swapped duplicate key cleanly' : '✓ 已生效（检测到重复绑定，已自动与原槽位互换）');
@@ -244,9 +238,6 @@
             scheduleSave(0);
           }
         } else if (data.error) folderErr = String(data.error);
-      } else if (ev === 'capture_dir_picked') {
-        if (!data.cancelled && data.ok && typeof data.path === 'string') { cfg.capture.save_dir = data.path; scheduleSave(0); }
-        else if (data.error) setToast(`✗ ${data.error}`, true);
       } else if (ev === 'plugin_path_picked') {
         if (!data.cancelled && data.ok && typeof data.path === 'string' && typeof data.plugin_id === 'string' && typeof data.key === 'string') {
           const pid = data.plugin_id.toLowerCase();
@@ -383,7 +374,7 @@
             <Segmented value={subPlugins} options={[{ value: 'installed', label: lang === 'en' ? 'Modules & Plugins' : '已安装与插件设置' }, { value: 'store', label: tr(lang, 'nav_store') }]} onchange={(v) => { subPlugins = v; if (v === 'store' && !storeLoaded) { storeLoaded = true; fetchStore(); } }} />
           </div>
           {#if subPlugins === 'installed'}
-            <PluginsTab {cfg} {lang} {plugins} officialIcons={init.official_icons || {}} {configPath} pluginsDir={init.plugins_dir} runningApps={init.running_apps} {secretsStatus} {hotkeyHealth} showRecord={true} expandedId={expandedPlugin} healthReport={pluginHealth} checkingHealth={checkingPluginHealth} onCheckHealth={checkPluginHealth} onToggleExpand={(id) => (expandedPlugin = id)} {onTogglePlugin} {onUpdatePluginConfig} onJumpDoctor={() => switchTab('hotkeys')} onToast={setToast} onSave={scheduleSave} />
+            <PluginsTab {cfg} {lang} {plugins} officialIcons={init.official_icons || {}} {configPath} pluginsDir={init.plugins_dir} runningApps={init.running_apps} {secretsStatus} {hotkeyHealth} expandedId={expandedPlugin} healthReport={pluginHealth} checkingHealth={checkingPluginHealth} onCheckHealth={checkPluginHealth} onToggleExpand={(id) => (expandedPlugin = id)} {onTogglePlugin} {onUpdatePluginConfig} onJumpDoctor={() => switchTab('hotkeys')} onSave={scheduleSave} />
           {:else}
             <StoreTab {lang} items={storeItems} meta={storeMeta} statusText={storeStatus} loading={storeLoading} detail={storeDetail} detailLoading={storeDetailLoading} onQuery={fetchStore} onInspectDetail={inspectStoreDetail} onCloseDetail={() => (storeDetail = null)} />
           {/if}

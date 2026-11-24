@@ -3,7 +3,7 @@
 use crate::actions::{
     clipboard_source_app_name, execute_action, is_clipboard_confidential, kill_process_by_pid,
     paste_into_previous_window_async, read_clipboard_files, read_clipboard_image_png,
-    read_clipboard_text, send_ctrl_c_cleanly, set_clipboard_text, shell_open, spawn_capture_tool,
+    read_clipboard_text, send_ctrl_c_cleanly, set_clipboard_text, shell_open,
     spawn_clipboard_manager_window, spawn_settings_window,
 };
 use crate::linux::{tomoyo_linux_tray_set_menu, tomoyo_linux_ui_quit, LinuxTrayMenuItem};
@@ -57,7 +57,6 @@ impl AppCore {
                 if let Ok(mut cfg) = self.config.write() { cfg.clipboard.capture_enabled = !cfg.clipboard.capture_enabled; let _ = cfg.save(); }
                 self.dispatch_query();
             }
-            InternalCommandKind::StartCapture { mode } => self.trigger_capture(&mode),
             InternalCommandKind::CheckForUpdates => self.trigger_update_check_async(),
             InternalCommandKind::InstallUpdate => self.trigger_update_install_async(),
             InternalCommandKind::ClearAttachedContext => { self.attached = None; self.dispatch_query(); }
@@ -73,7 +72,6 @@ impl AppCore {
             },
             InternalCommandKind::ToggleAutostart => { let next = !is_autostart_enabled(); let _ = set_autostart_enabled(next); self.dispatch_query(); }
             InternalCommandKind::TogglePreviewPane => { self.preview_enabled = !self.preview_enabled; self.resize_to_fit(); }
-            InternalCommandKind::PinImageFile { path } => { if let Err(e) = crate::actions::spawn_pin_image_file(&path) { self.show_toast(&e); } else { self.hide_launcher(); } }
             InternalCommandKind::ExtractZipHere { path } => { match crate::actions::extract_zip_into_sibling_dir(&path) { Ok(d) => self.show_toast(&format!("已解压至 {d}")), Err(e) => self.show_toast(&e) } }
             InternalCommandKind::CopyFileContents { path } => { match crate::actions::copy_file_contents_bounded(&path) { Ok(n) => self.show_toast(&format!("已复制文件文本 ({n} B)")), Err(e) => self.show_toast(&e) } }
             InternalCommandKind::ComputeFileSha256 { path } => { match crate::actions::compute_file_sha256_bounded(&path) { Ok(h) => { let _ = set_clipboard_text(&h); self.show_toast(&format!("SHA-256 已复制: {h}")); } Err(e) => self.show_toast(&e) } }
@@ -91,26 +89,6 @@ impl AppCore {
         if let Err(e) = spawn_clipboard_manager_window(std::process::id() as isize, &self.theme_name, focus) {
             self.show_toast(&format!("剪贴板工作台启动失败: {e}"));
         } else { self.hide_launcher(); }
-    }
-
-    pub(super) fn trigger_capture(&mut self, mode: &str) {
-        self.trigger_capture_ex(mode, true);
-    }
-
-    pub(super) fn trigger_capture_ex(&mut self, mode: &str, hide_launcher_first: bool) {
-        let was_visible = self.is_visible();
-        if hide_launcher_first {
-            self.hide_launcher();
-        }
-        if hide_launcher_first && was_visible {
-            let m = mode.to_string();
-            let _ = std::thread::Builder::new().name("tomoyo-cap-delay".into()).spawn(move || {
-                std::thread::sleep(std::time::Duration::from_millis(75));
-                let _ = spawn_capture_tool(&m);
-            });
-        } else if let Err(e) = spawn_capture_tool(mode) {
-            self.show_toast(&format!("截图工具启动失败: {e}"));
-        }
     }
 
     pub(super) fn on_clipboard_update(&mut self) {
@@ -187,10 +165,7 @@ impl AppCore {
 
     pub(super) fn rebuild_tray_menu(&mut self) {
         if self.ui.is_null() { return; }
-        let (clip_on, cap_on) = self.config.read().map(|c| (
-            c.is_plugin_enabled(tomoyo_core::PLUGIN_CLIPBOARD),
-            c.is_plugin_enabled(tomoyo_core::PLUGIN_CAPTURE),
-        )).unwrap_or((true, true));
+        let clip_on = self.config.read().map(|c| c.is_plugin_enabled(tomoyo_core::PLUGIN_CLIPBOARD)).unwrap_or(true);
         self.tray_plugin_actions = self.plugin_host.active_tray_actions();
         let l = self.lang;
         let mut raw: Vec<(String, u32)> = vec![
@@ -198,10 +173,6 @@ impl AppCore {
             (l.pick("设置中心...", "Settings...").into(), 2),
         ];
         if clip_on { raw.push((l.pick("剪贴板历史", "Clipboard History").into(), 3)); }
-        if cap_on {
-            raw.push((l.pick("区域截图", "Region Capture").into(), 5));
-            raw.push((l.pick("区域录屏", "Screen Record").into(), 6));
-        }
         if !self.tray_plugin_actions.is_empty() {
             raw.push(("---".into(), 0));
             for (idx, act) in self.tray_plugin_actions.iter().enumerate() {
@@ -262,7 +233,17 @@ impl AppCore {
         if let Some(t) = plan.copy_text.as_deref() { let _ = set_clipboard_text(t); }
         if let Some(u) = plan.open_url.as_deref() && is_safe_http_url(u) { let _ = shell_open(u, None, None); }
         if let Some(p) = plan.open_path.as_deref() && std::path::Path::new(p).exists() { let _ = shell_open(p, None, None); }
-        if let Some(m) = plan.capture_mode.as_deref() { self.trigger_capture(m); return; }
+        if let Some(m) = plan.capture_mode.as_deref() {
+            let act = ActionKind::PluginExecute {
+                plugin_id: tomoyo_core::PLUGIN_CAPTURE.into(),
+                action_id: format!("run_{m}"),
+                payload: serde_json::json!({ "mode": m, "from_launcher": true }),
+            };
+            let out = execute_action(&act, "flow:capture", &self.plugin_host, self.theme.is_dark);
+            if let Some(msg) = out.toast { self.show_toast(&msg); }
+            if out.hide_window { self.hide_launcher(); }
+            return;
+        }
         if let Some(t) = plan.launch_translate.as_deref() {
             let req = OpenWebViewRequest { initial_query: t.to_string(), ..Default::default() };
             if let Some(act) = self.plugin_host.resolve_webview_open(tomoyo_core::PLUGIN_TRANSLATE, &req) {
@@ -320,9 +301,15 @@ impl AppCore {
                 let cfg = self.config.read().map(|c| c.clone()).unwrap_or_default();
                 self.hotkeys.register_all(&cfg, &self.plugin_host);
             }
-            "capture:region" => self.trigger_capture("region"),
-            "capture:ocr" => self.trigger_capture("ocr"),
-            "capture:record" => self.trigger_capture("record"),
+            "capture:region" | "capture:ocr" | "capture:record" => {
+                let mode = line.strip_prefix("capture:").unwrap_or("region");
+                let act = ActionKind::PluginExecute {
+                    plugin_id: tomoyo_core::PLUGIN_CAPTURE.into(),
+                    action_id: format!("run_{mode}"),
+                    payload: serde_json::json!({ "mode": mode, "from_launcher": false }),
+                };
+                let _ = execute_action(&act, "ipc:capture", &self.plugin_host, self.theme.is_dark);
+            }
             _ => {
                 if let Some(png_path) = line.strip_prefix("clip_img:") {
                     crate::actions::set_clipboard_image_from_png(png_path);

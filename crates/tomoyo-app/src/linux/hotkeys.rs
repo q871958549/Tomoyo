@@ -5,7 +5,7 @@ use std::ffi::{c_char, c_int, c_void, CStr, CString};
 use std::sync::{Arc, Mutex};
 use tomoyo_core::{
     load_or_init_flows, parse_hotkey, save_hotkey_health, HotkeyHealthReport, HotkeySlotStatus,
-    TomoyoConfig, PLUGIN_CAPTURE, PLUGIN_CLIPBOARD,
+    TomoyoConfig, PLUGIN_CLIPBOARD,
 };
 use tomoyo_plugin_host::{ActivePluginHotkey, PluginHost};
 
@@ -28,10 +28,6 @@ unsafe extern "C" {
 pub enum HotkeyAction {
     ToggleMain,
     Clipboard,
-    Capture,
-    Pin,
-    Ocr,
-    Record,
     Plugin(ActivePluginHotkey),
     Flow(String),
 }
@@ -141,27 +137,10 @@ impl HotkeyManager {
             HotkeySlotStatus { disabled: true, ..Default::default() }
         };
         health.translate = HotkeySlotStatus { disabled: true, ..Default::default() };
-        let cap_on = cfg.is_plugin_enabled(PLUGIN_CAPTURE);
-        health.capture = if cap_on {
-            self.try_slot("capture", "区域截图与标注", &cfg.capture.hotkey, ov, HotkeyAction::Capture)
-        } else {
-            HotkeySlotStatus { disabled: true, ..Default::default() }
-        };
-        health.pin = if cap_on {
-            self.try_slot("pin", "剪贴板贴图到桌面", &cfg.capture.pin_hotkey, ov, HotkeyAction::Pin)
-        } else {
-            HotkeySlotStatus { disabled: true, ..Default::default() }
-        };
-        health.ocr = if cap_on {
-            self.try_slot("ocr", "截图文字识别 (OCR)", &cfg.capture.ocr_hotkey, ov, HotkeyAction::Ocr)
-        } else {
-            HotkeySlotStatus { disabled: true, ..Default::default() }
-        };
-        health.record = if cap_on {
-            self.try_slot("record", "区域录屏 (MP4/GIF)", &cfg.capture.record_hotkey, ov, HotkeyAction::Record)
-        } else {
-            HotkeySlotStatus { disabled: true, ..Default::default() }
-        };
+        health.capture = HotkeySlotStatus { disabled: true, ..Default::default() };
+        health.pin = HotkeySlotStatus { disabled: true, ..Default::default() };
+        health.ocr = HotkeySlotStatus { disabled: true, ..Default::default() };
+        health.record = HotkeySlotStatus { disabled: true, ..Default::default() };
 
         for (i, hk) in plugin_host.active_plugin_hotkeys(cfg).into_iter().take(16).enumerate() {
             let id = format!("plugin_{i}");

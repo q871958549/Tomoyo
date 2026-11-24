@@ -180,16 +180,6 @@ unsafe extern "C" fn pick_folder_idle_cb(ud: *mut c_void) {
             },
             None => serde_json::json!({ "event": "sync_dir_updated", "ok": false, "cancelled": true }).to_string(),
         },
-        2 => match chosen {
-            Some(p) if std::path::Path::new(&p).is_dir() => serde_json::json!({
-                "event": "capture_dir_picked", "ok": true, "cancelled": false, "path": p
-            }).to_string(),
-            Some(p) => serde_json::json!({
-                "event": "capture_dir_picked", "ok": false, "cancelled": false,
-                "error": format!("所选目录不可访问: {p}")
-            }).to_string(),
-            None => serde_json::json!({ "event": "capture_dir_picked", "ok": false, "cancelled": true }).to_string(),
-        },
         _ => match chosen {
             Some(p) => match validate_scan_dir(&p) {
                 Ok(clean) => serde_json::json!({

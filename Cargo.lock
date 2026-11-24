@@ -866,6 +866,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "tomoyo-plugin-capture"
+version = "3.0.0"
+dependencies = [
+ "serde_json",
+ "tomoyo-sdk",
+]
+
+[[package]]
 name = "tomoyo-plugin-hello"
 version = "3.0.0"
 dependencies = [

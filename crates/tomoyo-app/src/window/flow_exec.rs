@@ -85,7 +85,23 @@ impl AppShell {
                 let _ = shell_open(path, None, None);
             }
         if let Some(mode) = plan.capture_mode.as_deref() {
-            self.trigger_capture(mode);
+            let act = tomoyo_protocol::ActionKind::PluginExecute {
+                plugin_id: tomoyo_core::PLUGIN_CAPTURE.into(),
+                action_id: format!("run_{mode}"),
+                payload: serde_json::json!({ "mode": mode, "from_launcher": true }),
+            };
+            let out = crate::actions::execute_action(
+                &act,
+                "flow:capture",
+                &self.plugin_host,
+                self.theme.is_dark,
+            );
+            if let Some(t) = out.toast {
+                self.show_toast(&t);
+            }
+            if out.hide_window {
+                self.hide_launcher();
+            }
             return;
         }
         if let Some(tr_text) = plan.launch_translate.as_deref() {

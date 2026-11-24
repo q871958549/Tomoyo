@@ -5,16 +5,15 @@ use crate::actions::{
     compute_file_sha256_bounded, copy_file_contents_bounded, copy_image_as_base64_uri,
     execute_action, extract_zip_into_sibling_dir, kill_process_by_pid,
     paste_into_previous_window_async, read_clipboard_files, read_clipboard_image_png,
-    spawn_capture_tool, spawn_pin_image_file,
 };
 use crate::tray::{
-    MENU_ID_CAPTURE, MENU_ID_CLIPBOARD, MENU_ID_CONFIG, MENU_ID_GC, MENU_ID_PLUGIN_TRAY_BASE,
-    MENU_ID_QUIT, MENU_ID_RELOAD, MENU_ID_SETTINGS, MENU_ID_SHOW, MENU_ID_STATS, MENU_ID_UPDATE,
+    MENU_ID_CLIPBOARD, MENU_ID_CONFIG, MENU_ID_GC, MENU_ID_PLUGIN_TRAY_BASE, MENU_ID_QUIT,
+    MENU_ID_RELOAD, MENU_ID_SETTINGS, MENU_ID_SHOW, MENU_ID_STATS, MENU_ID_UPDATE,
 };
 use tomoyo_core::{is_autostart_enabled, set_autostart_enabled, Lang};
 use tomoyo_protocol::{ActionKind, AttachedContext, InternalCommandKind};
 use windows::Win32::Foundation::{HWND, LRESULT, WPARAM};
-use windows::Win32::UI::WindowsAndMessaging::{DestroyWindow, IsWindowVisible, EN_CHANGE};
+use windows::Win32::UI::WindowsAndMessaging::{DestroyWindow, EN_CHANGE};
 
 pub(super) fn dispatch_wm_command(hwnd: HWND, app: &mut AppShell, wparam: WPARAM) -> LRESULT {
     let id = (wparam.0 & 0xFFFF) as u32;
@@ -32,7 +31,6 @@ pub(super) fn dispatch_menu_id(hwnd: HWND, app: &mut AppShell, id: u32) {
         MENU_ID_SHOW => app.show_launcher(),
         MENU_ID_SETTINGS => app.open_settings_center(),
         MENU_ID_CLIPBOARD => app.open_clipboard_workbench(None),
-        MENU_ID_CAPTURE => app.trigger_capture("region"),
         MENU_ID_UPDATE => {
             app.show_launcher();
             app.set_query_text(":update");
@@ -259,7 +257,6 @@ impl AppShell {
                 });
                 self.dispatch_query();
             }
-            InternalCommandKind::StartCapture { mode } => self.trigger_capture(&mode),
             InternalCommandKind::CheckForUpdates => self.trigger_update_check_async(),
             InternalCommandKind::InstallUpdate => self.trigger_update_install_async(),
             InternalCommandKind::ClearAttachedContext => {
@@ -306,10 +303,6 @@ impl AppShell {
                 self.resize_to_fit_results();
                 self.invalidate();
             }
-            InternalCommandKind::PinImageFile { path } => match spawn_pin_image_file(&path) {
-                Ok(()) => self.hide_launcher(),
-                Err(e) => self.show_toast(&e),
-            },
             InternalCommandKind::ExtractZipHere { path } => match extract_zip_into_sibling_dir(&path) {
                 Ok(dest) => {
                     self.show_toast(&format!("已安全解压到 {dest}"));
@@ -332,35 +325,6 @@ impl AppShell {
                 Err(e) => self.show_toast(&e),
             },
             InternalCommandKind::RunFlow { flow_id, input } => self.execute_workflow(&flow_id, &input),
-        }
-    }
-
-    /// Launches the ephemeral `tomoyo-capture.exe` tool (hiding the launcher first when invoked as a command).
-    pub fn trigger_capture(&mut self, mode: &str) {
-        self.trigger_capture_ex(mode, true);
-    }
-
-    /// Launches `tomoyo-capture.exe`. Global hotkeys pass `hide_launcher_first = false` so users
-    /// can directly screenshot Tomoyo's search box when it is open on screen.
-    pub fn trigger_capture_ex(&mut self, mode: &str, hide_launcher_first: bool) {
-        let was_visible = unsafe { IsWindowVisible(self.hwnd).as_bool() };
-        if hide_launcher_first && was_visible {
-            self.hide_launcher();
-        }
-        let mode_owned = mode.to_string();
-        if hide_launcher_first && was_visible && mode_owned != "pin_clipboard" {
-            // Allow DWM 110ms to finish hiding Tomoyo's launcher before BitBlt captures the screen.
-            let _ = std::thread::Builder::new()
-                .name("tomoyo-cap-delay".into())
-                .spawn(move || {
-                    std::thread::sleep(std::time::Duration::from_millis(110));
-                    if let Err(e) = spawn_capture_tool(&mode_owned) {
-                        tracing::error!("Failed to launch tomoyo-capture.exe: {e}");
-                    }
-                });
-        } else if let Err(e) = spawn_capture_tool(&mode_owned) {
-            tracing::error!("Failed to launch tomoyo-capture.exe: {e}");
-            self.show_toast(&format!("截图工具启动失败: {e}"));
         }
     }
 }

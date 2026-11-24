@@ -32,14 +32,6 @@ pub(crate) fn append_contextual_file_actions(
 
     if matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "webp" | "bmp" | "gif" | "ico") {
         actions.push(ActionSpec {
-            id: "pin_image".into(),
-            label: lang.pick("贴图到桌面 (Pin)", "Pin Image to Desktop").into(),
-            shortcut: None,
-            kind: ActionKind::InternalCommand {
-                command: InternalCommandKind::PinImageFile { path: full_path.to_string() },
-            },
-        });
-        actions.push(ActionSpec {
             id: "copy_b64".into(),
             label: lang.pick("复制 Base64 Data URI", "Copy Base64 Data URI").into(),
             shortcut: None,

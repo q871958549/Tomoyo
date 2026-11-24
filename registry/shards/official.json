@@ -33,6 +33,50 @@
       "downloads": 0
     },
     {
+      "id": "dev.tomoyo.capture",
+      "name": "原生截图、贴图与录屏 (官方插件)",
+      "version": "3.0.0",
+      "description": "多屏 DPI 精准选区截图、平滑矢量标注、取色放大镜、纵横向长截图、桌面悬浮贴图与 MP4/GIF 区域录屏（按需子进程，零后台常驻）",
+      "author": "Tomoyo Contributors",
+      "license": "MIT OR Apache-2.0",
+      "runtime_kind": "stdio_jsonrpc",
+      "category": "media",
+      "icon": "icon.png",
+      "display_mode": "window",
+      "tags": [
+        "screenshot",
+        "capture",
+        "pin",
+        "record",
+        "gif",
+        "annotate",
+        "color-picker"
+      ],
+      "keywords": [
+        "cap",
+        "shot",
+        "jt",
+        "pin",
+        "jtocr",
+        "jtfy",
+        "rec",
+        "lp"
+      ],
+      "permissions": [
+        "clipboard",
+        "filesystem_read",
+        "filesystem_write",
+        "shell_exec"
+      ],
+      "source": "plugins/official-capture",
+      "sha256": "e1c4cadb09a76c5f91fe28b33683847870d89de7900819ff9737f7481e6e0f7d",
+      "platforms": {},
+      "min_tomoyo_version": null,
+      "homepage": "https://github.com/q871958549/Tomoyo",
+      "updated_at": "",
+      "downloads": 0
+    },
+    {
       "id": "dev.tomoyo.markdown-editor",
       "name": "Quiet.md Markdown 编辑器 (官方插件)",
       "version": "2.6.0",

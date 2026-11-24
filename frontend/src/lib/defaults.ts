@@ -28,15 +28,6 @@ export const OFFICIAL_PLUGINS: OfficialPluginMeta[] = [
     enDesc: 'History, image cache, privacy filter & workbench; unhooks OS listener & hotkey when off',
     triggers: 'cb / clip',
   },
-  {
-    id: PLUGIN_CAPTURE,
-    category: 'media',
-    zhName: '原生截图与贴图',
-    enName: 'Native Capture & Pin',
-    zhDesc: '区域截图、平滑标注、长截图实时预览、取色器与贴图（按需独立进程）',
-    enDesc: 'Region capture, smooth annotations, live long-capture & pins (ephemeral process)',
-    triggers: 'cap / pin',
-  },
 ];
 
 export function isPluginEnabled(cfg: Pick<TomoyoConfig, 'disabled_plugins'>, id: string): boolean {

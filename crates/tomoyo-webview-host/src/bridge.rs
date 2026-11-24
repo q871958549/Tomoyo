@@ -22,13 +22,11 @@ pub enum HostMessage {
     SaveSettings { config: Box<tomoyo_core::TomoyoConfig>, autostart: bool },
     SaveFlows { flows: Vec<tomoyo_core::WorkflowDef> },
     PickFolder,
-    PickCaptureDir,
     PickSyncDir,
     PickPluginPath { plugin_id: String, key: String, #[serde(default)] kind: String },
     PluginRpc { req_id: String, method: String, #[serde(default)] params: Value },
     OpenPluginUi { plugin_id: String, #[serde(default)] query: String },
     ClearSyncDir,
-    StartCapture { #[serde(default)] mode: String },
     SyncTheme { theme: String },
     TogglePinTopmost,
     CheckUpdates { repo: String },
@@ -77,7 +75,7 @@ pub struct HostAction {
     pub pop_out_window: bool,
     pub apply_theme: Option<String>,
     pub toggle_topmost: bool,
-    /// `0` = none, `1` = app scan folder, `2` = capture save folder, `3` = sync folder.
+    /// `0` = none, `1` = app scan folder, `3` = sync folder.
     pub pick_folder_mode: u8,
     /// Protocol v3: `(plugin_id, field_key, is_file)` picker request for plugin `dir` / `file` settings.
     pub pick_plugin_path: Option<(String, String, bool)>,
@@ -146,7 +144,6 @@ pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isi
             HostAction { reply_json: Some(reply), ..Default::default() }
         }
         HostMessage::PickFolder => HostAction { pick_folder_mode: 1, ..Default::default() },
-        HostMessage::PickCaptureDir => HostAction { pick_folder_mode: 2, ..Default::default() },
         HostMessage::PickSyncDir => HostAction { pick_folder_mode: 3, ..Default::default() },
         HostMessage::PickPluginPath { plugin_id, key, kind } => HostAction {
             pick_plugin_path: Some((plugin_id, key, kind.eq_ignore_ascii_case("file"))),
@@ -166,10 +163,6 @@ pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isi
                 notify_parent_reload(notify_hwnd.unwrap_or(0), true);
             }
             HostAction { reply_json: Some(reply), ..Default::default() }
-        }
-        HostMessage::StartCapture { mode } => {
-            crate::bridge_os::spawn_capture_tool(&mode);
-            HostAction::default()
         }
         HostMessage::SyncTheme { theme } => HostAction { apply_theme: Some(theme), ..Default::default() },
         HostMessage::TogglePinTopmost => HostAction { toggle_topmost: true, ..Default::default() },

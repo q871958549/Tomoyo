@@ -17,6 +17,7 @@ members = [
     "crates/tomoyo-ui-macos",
     "crates/tomoyo-ui-linux",
     "plugins/example-hello",
+    "plugins/official-capture",
     "plugins/official-md-editor",
     "plugins/official-notes",
     "plugins/official-translate",

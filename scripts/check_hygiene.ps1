@@ -206,6 +206,7 @@ if ($CheckBinaries) {
         "target\release\tomoyo-plugin-notes.exe"     = 0.8
         "target\release\tomoyo-plugin-md-editor.exe" = 0.8
         "target\release\tomoyo-plugin-translate.exe" = 0.8
+        "target\release\tomoyo-plugin-capture.exe"   = 0.8
     }
     $binViolations = 0
     $binSummary = @()

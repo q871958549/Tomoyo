@@ -169,25 +169,6 @@ fn locate_sibling_exe(name: &str) -> Result<PathBuf, String> {
     Err(format!("{name} not found next to tomoyo"))
 }
 
-pub fn spawn_capture_tool(mode: &str) -> Result<(), String> {
-    let cap_exe = locate_sibling_exe("tomoyo-capture")?;
-    let flag = match mode {
-        "ocr" => "--ocr",
-        "translate" => "--translate",
-        "record" => "--record",
-        "pin_clipboard" | "pin" => "--pin-clipboard",
-        _ => "--capture",
-    };
-    let mut child = Command::new(&cap_exe)
-        .arg(flag)
-        .spawn()
-        .map_err(|e| format!("failed to launch {}: {e}", cap_exe.display()))?;
-    let _ = std::thread::Builder::new().name("tomoyo-cap-reaper".into()).spawn(move || {
-        let _ = child.wait();
-    });
-    Ok(())
-}
-
 pub fn paste_into_previous_window_async(_prev_hwnd: isize) {
     let _ = std::thread::Builder::new().name("tomoyo-autopaste".into()).spawn(|| {
         std::thread::sleep(std::time::Duration::from_millis(85));

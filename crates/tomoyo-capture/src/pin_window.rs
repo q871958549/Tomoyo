@@ -215,15 +215,16 @@ pub fn run_pin_window_with_text(
         let px = raw_x.clamp(work.left + 16, (work.right - init_w - 16).max(work.left + 16));
         let py = raw_y.clamp(work.top + 16, (work.bottom - init_h - 16).max(work.top + 16));
 
+        let cap = cfg.capture.with_plugin_overrides(cfg.plugin_settings.get(tomoyo_core::PLUGIN_CAPTURE));
         let mut st = Box::new(PinState {
             img_w: width,
             img_h: height,
             bgra,
             source_text,
             scale: init_scale,
-            opacity_pct: cfg.capture.pin_opacity.clamp(30, 100),
+            opacity_pct: cap.pin_opacity.clamp(30, 100),
             topmost: true,
-            save_dir: cfg.capture.save_dir,
+            save_dir: cap.save_dir,
             drag: DragState::default(),
         });
 

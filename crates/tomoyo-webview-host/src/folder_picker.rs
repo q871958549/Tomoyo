@@ -42,31 +42,6 @@ pub fn pick_scan_folder(owner: HWND) -> String {
     }
 }
 
-pub fn pick_capture_save_folder(owner: HWND) -> String {
-    match show_folder_dialog(owner, w!("选择截图默认保存目录")) {
-        Some(raw_path) if std::path::Path::new(&raw_path).is_dir() => serde_json::json!({
-            "event": "capture_dir_picked",
-            "ok": true,
-            "cancelled": false,
-            "path": raw_path
-        })
-        .to_string(),
-        Some(raw_path) => serde_json::json!({
-            "event": "capture_dir_picked",
-            "ok": false,
-            "cancelled": false,
-            "error": format!("所选目录不可访问: {raw_path}")
-        })
-        .to_string(),
-        None => serde_json::json!({
-            "event": "capture_dir_picked",
-            "ok": false,
-            "cancelled": true
-        })
-        .to_string(),
-    }
-}
-
 pub fn pick_sync_folder(owner: HWND) -> (String, bool) {
     match show_folder_dialog(owner, w!("选择本地同步目录（OneDrive / 坚果云 / Git 等）")) {
         Some(raw_path) => match tomoyo_core::set_sync_dir(Some(&raw_path)) {
