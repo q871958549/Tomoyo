@@ -53,11 +53,6 @@ pub fn spawn_inline_translate(
 
 pub fn parse_translate_rpc_value(val: &Value, lang: Lang) -> InlineTransState {
     let data = val.get("data").unwrap_or(val);
-    let target_lang = data
-        .get("target_lang")
-        .and_then(Value::as_str)
-        .unwrap_or("auto")
-        .to_string();
     let results = data.get("results").and_then(Value::as_array);
     if let Some(arr) = results {
         if let Some(hit) = arr.iter().find(|r| {
@@ -76,7 +71,6 @@ pub fn parse_translate_rpc_value(val: &Value, lang: Lang) -> InlineTransState {
                 translated,
                 engine_name,
                 phonetic,
-                target_lang,
             };
         }
         if let Some(err_msg) = arr.iter().find_map(|r| r.get("error").and_then(Value::as_str)) {
@@ -106,11 +100,10 @@ mod tests {
             }
         });
         match parse_translate_rpc_value(&payload, Lang::Zh) {
-            InlineTransState::Ready { translated, engine_name, phonetic, target_lang, .. } => {
+            InlineTransState::Ready { translated, engine_name, phonetic } => {
                 assert_eq!(translated, "你好，世界");
                 assert_eq!(engine_name, "Google");
                 assert_eq!(phonetic.as_deref(), Some("həˈloʊ"));
-                assert_eq!(target_lang, "zh-Hans");
             }
             other => panic!("expected Ready, got {other:?}"),
         }

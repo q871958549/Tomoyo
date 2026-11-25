@@ -221,9 +221,6 @@ impl AppShell {
                     self.show_toast(&t);
                 }
             }
-            SuperActionKind::OpenSettings => {
-                self.open_settings_center();
-            }
         }
     }
 }

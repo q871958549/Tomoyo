@@ -97,8 +97,7 @@ export interface CaptureToolHotkeys {
 
 export interface SuperPanelConfig {
   enabled: boolean;
-  trigger_right_hold: boolean;
-  middle_trigger: 'hold' | 'click' | 'off' | string;
+  trigger_mode: 'right_hold' | 'middle_hold' | 'middle_click' | string;
   hold_ms: number;
   auto_translate_selection: boolean;
   excluded_apps: string[];

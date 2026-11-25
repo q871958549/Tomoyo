@@ -283,11 +283,11 @@ pub fn sanitize_config(cfg: &mut TomoyoConfig) -> Vec<String> {
 }
 
 fn sanitize_super_panel(sp: &mut super::SuperPanelConfig) {
-    sp.hold_ms = sp.hold_ms.clamp(180, 900);
-    let mt = sp.middle_trigger.trim().to_ascii_lowercase();
-    sp.middle_trigger = match mt.as_str() {
-        "hold" | "click" | "off" => mt,
-        _ => "hold".into(),
+    sp.hold_ms = sp.hold_ms.clamp(180, 800);
+    let mode = sp.trigger_mode.trim().to_ascii_lowercase();
+    sp.trigger_mode = match mode.as_str() {
+        "right_hold" | "middle_hold" | "middle_click" => mode,
+        _ => "right_hold".into(),
     };
     let mut seen = HashSet::new();
     let mut clean = Vec::new();
@@ -333,7 +333,7 @@ mod tests {
         cfg.capture.pin_opacity = 5;
         cfg.capture.save_dir = r"\\evil\share".into();
         cfg.super_panel.hold_ms = 50;
-        cfg.super_panel.middle_trigger = "invalid".into();
+        cfg.super_panel.trigger_mode = "invalid".into();
         cfg.super_panel.excluded_apps = vec!["Blender".into(), "blender.exe".into(), "..\\bad.exe".into()];
         cfg.update.repo = "https://evil.com/../../etc/passwd".into();
         cfg.web_searches.push(WebSearchEngine {
@@ -368,7 +368,7 @@ mod tests {
         assert_eq!(cfg.capture.pin_opacity, 30);
         assert!(cfg.capture.save_dir.is_empty());
         assert_eq!(cfg.super_panel.hold_ms, 180);
-        assert_eq!(cfg.super_panel.middle_trigger, "hold");
+        assert_eq!(cfg.super_panel.trigger_mode, "right_hold");
         if cfg!(windows) {
             assert_eq!(cfg.super_panel.excluded_apps, vec!["blender.exe"]);
         }

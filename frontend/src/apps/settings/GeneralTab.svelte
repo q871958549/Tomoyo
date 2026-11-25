@@ -27,8 +27,7 @@
   let sp = $derived(
     cfg.super_panel ?? {
       enabled: true,
-      trigger_right_hold: true,
-      middle_trigger: 'hold',
+      trigger_mode: 'right_hold',
       hold_ms: 320,
       auto_translate_selection: true,
       excluded_apps: [],
@@ -153,47 +152,41 @@
   {#if sp.enabled}
     <div class="t-row">
       <div>
-        <div class="t-label">{isEn ? 'Long-Press Right Mouse Button' : '长按鼠标右键唤起'}</div>
-        <div class="t-desc">{isEn ? 'Hold right button stationary to open Super Panel (moving >8px cancels; quick right-click stays native).' : '原地长按右键即弹出（移动超 8px 自动取消，不影响短按右键菜单与手势拖拽）。'}</div>
-      </div>
-      <Switch checked={sp.trigger_right_hold} onchange={(v) => patchSp({ trigger_right_hold: v })} />
-    </div>
-
-    <div class="t-row">
-      <div>
-        <div class="t-label">{isEn ? 'Middle Mouse Button Trigger' : '鼠标中键唤起方式'}</div>
-        <div class="t-desc">{isEn ? 'Hold keeps browser tab middle-click intact; Click summons immediately on tap.' : '默认「长按」不干扰浏览器中键开/关标签页；也可设为「单击」一键秒开。'}</div>
+        <div class="t-label">{isEn ? 'Trigger Gesture' : '唤起手势（右键 / 中键任选其一）'}</div>
+        <div class="t-desc">{isEn ? 'Hold modes keep quick right-click & browser middle-click intact; moving >8px cancels.' : '长按模式不干扰短按右键菜单与浏览器中键标签页；移动超 8px 自动取消。'}</div>
       </div>
       <Segmented
-        value={sp.middle_trigger || 'hold'}
+        value={sp.trigger_mode || 'right_hold'}
         options={[
-          { value: 'hold', label: isEn ? 'Hold' : '长按' },
-          { value: 'click', label: isEn ? 'Click' : '单击' },
-          { value: 'off', label: isEn ? 'Off' : '关闭' },
+          { value: 'right_hold', label: isEn ? 'Right Hold' : '长按右键' },
+          { value: 'middle_hold', label: isEn ? 'Middle Hold' : '长按中键' },
+          { value: 'middle_click', label: isEn ? 'Middle Click' : '单击中键' },
         ]}
-        onchange={(v) => patchSp({ middle_trigger: v })}
+        onchange={(v) => patchSp({ trigger_mode: v })}
       />
     </div>
 
-    <div class="t-row">
-      <div>
-        <div class="t-label">{isEn ? 'Long-Press Duration' : '长按触发时长'}</div>
-        <div class="t-desc">{isEn ? 'Stationary hold time before Super Panel pops up (180–800 ms).' : '鼠标静止按住达到该时长后自动呼出超级面板（推荐 280–360 ms）。'}</div>
+    {#if (sp.trigger_mode || 'right_hold') !== 'middle_click'}
+      <div class="t-row">
+        <div>
+          <div class="t-label">{isEn ? 'Long-Press Duration' : '长按触发时长'}</div>
+          <div class="t-desc">{isEn ? 'Stationary hold time before Super Panel pops up (180–800 ms).' : '鼠标静止按住达到该时长后自动呼出（推荐 280–360 ms）。'}</div>
+        </div>
+        <Slider
+          value={sp.hold_ms}
+          min={180}
+          max={800}
+          step={20}
+          format={(v) => `${v} ms`}
+          oninput={(v) => patchSp({ hold_ms: v }, 160)}
+        />
       </div>
-      <Slider
-        value={sp.hold_ms}
-        min={180}
-        max={800}
-        step={20}
-        format={(v) => `${v} ms`}
-        oninput={(v) => patchSp({ hold_ms: v }, 160)}
-      />
-    </div>
+    {/if}
 
     <div class="t-row">
       <div>
         <div class="t-label">{isEn ? 'Auto Inline Translate on Text Selection' : '选中文本时自动内联翻译'}</div>
-        <div class="t-desc">{isEn ? 'Streams multi-engine translation right inside the Super Panel card with one-click copy.' : '呼出超级面板若检测到划词文本，自动并行翻译并在顶部卡片直出译文与一键复制。'}</div>
+        <div class="t-desc">{isEn ? 'Streams multi-engine translation right inside the top of Super Panel with one-click copy.' : '检测到选中文本时在顶部极简卡片直出译文，点击译文即可复制。'}</div>
       </div>
       <Switch checked={sp.auto_translate_selection} onchange={(v) => patchSp({ auto_translate_selection: v })} />
     </div>

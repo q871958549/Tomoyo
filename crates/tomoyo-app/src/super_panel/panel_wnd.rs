@@ -1,5 +1,5 @@
-//! Non-blocking native Win32 Super Panel popup window (`TomoyoSuperPanelWindow`) with
-//! async inline translation streaming, keyboard/mouse ergonomics, and 0-byte idle release.
+//! Minimalist native Win32 Super Panel popup window (`TomoyoSuperPanelWindow`) with
+//! triple-redundant click-outside dismissal, async inline translation, and 0-byte idle release.
 
 use super::inline_trans::{spawn_inline_translate, TransOutcome};
 use super::panel_layout::{apply_panel_dwm, compute_layout, place_near_cursor, SuperHit, SuperPanelLayout};
@@ -20,18 +20,19 @@ use windows::Win32::UI::Controls::WM_MOUSELEAVE;
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetKeyState, TrackMouseEvent, TME_LEAVE, TRACKMOUSEEVENT, VK_CONTROL, VK_DOWN, VK_ESCAPE,
-    VK_LEFT, VK_RETURN, VK_RIGHT, VK_UP,
+    VK_RETURN, VK_UP,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, GetClientRect, GetWindowLongPtrW, LoadCursorW,
     PostMessageW, RegisterClassExW, SetCursor, SetWindowLongPtrW, SetWindowPos, ShowWindow,
     CS_DROPSHADOW, GWLP_USERDATA, HWND_TOPMOST, IDC_ARROW, IDC_HAND, SWP_NOACTIVATE,
-    SWP_SHOWWINDOW, SW_SHOW, WM_ACTIVATE, WM_APP, WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONUP,
-    WM_MOUSEMOVE, WM_NCDESTROY, WM_PAINT, WM_SETCURSOR, WNDCLASSEXW, WS_CLIPCHILDREN,
-    WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
+    SWP_SHOWWINDOW, SW_SHOW, WM_ACTIVATE, WM_ACTIVATEAPP, WM_APP, WM_ERASEBKGND, WM_KEYDOWN,
+    WM_KILLFOCUS, WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCDESTROY, WM_PAINT, WM_SETCURSOR, WNDCLASSEXW,
+    WS_CLIPCHILDREN, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
 };
 
 const WM_APP_SP_TRANS_READY: u32 = WM_APP + 60;
+const WM_APP_SP_DISMISS: u32 = WM_APP + 61;
 
 static REGISTER_CLASS: Once = Once::new();
 static ACTIVE_PANEL_HWND: AtomicIsize = AtomicIsize::new(0);
@@ -79,15 +80,14 @@ struct PanelState {
     actions: Vec<SuperAction>,
     layout: SuperPanelLayout,
     hovered: Option<SuperHit>,
-    selected_tile: Option<usize>,
+    selected_row: Option<usize>,
     mouse_tracked: bool,
-    copied_flash: bool,
     surface: Option<DibSurface>,
 }
 
 pub fn close_active_panel() {
     let raw = ACTIVE_PANEL_HWND.swap(0, Ordering::AcqRel);
-    trigger::set_panel_open(false);
+    trigger::clear_panel_open();
     if raw != 0 {
         unsafe {
             let _ = DestroyWindow(HWND(raw as *mut c_void));
@@ -101,11 +101,7 @@ pub fn open_super_panel(cfg: SuperPanelLaunch) {
 
     let seq = PANEL_GEN.fetch_add(1, Ordering::AcqRel).wrapping_add(1);
     let want_auto_tr = cfg.auto_translate && cfg.translate_enabled && cfg.ctx.selected_text().is_some();
-    let initial_trans = if want_auto_tr {
-        InlineTransState::Loading
-    } else {
-        InlineTransState::Hidden
-    };
+    let initial_trans = if want_auto_tr { InlineTransState::Loading } else { InlineTransState::Hidden };
 
     let layout = compute_layout(&cfg.ctx, &initial_trans, cfg.actions.len());
     let Ok(hinst) = (unsafe { GetModuleHandleW(None) }) else {
@@ -155,9 +151,8 @@ pub fn open_super_panel(cfg: SuperPanelLaunch) {
         actions: cfg.actions,
         layout,
         hovered: None,
-        selected_tile: None,
+        selected_row: None,
         mouse_tracked: false,
-        copied_flash: false,
         surface: None,
     });
 
@@ -182,7 +177,7 @@ pub fn open_super_panel(cfg: SuperPanelLaunch) {
         let _ = ShowWindow(hwnd, SW_SHOW);
     }
     ACTIVE_PANEL_HWND.store(hwnd.0 as isize, Ordering::Release);
-    trigger::set_panel_open(true);
+    trigger::set_panel_bounds(hwnd, px, py, w_px, h_px, WM_APP_SP_DISMISS, true);
     crate::window::hotkey_override::force_foreground_window(hwnd);
     unsafe {
         let _ = InvalidateRect(Some(hwnd), None, false);
@@ -195,6 +190,7 @@ impl PanelState {
         let w_px = (self.layout.w_dip * self.scale).round() as i32;
         let h_px = (self.layout.h_dip * self.scale).round() as i32;
         let (x, y) = place_near_cursor(self.anchor, w_px, h_px);
+        trigger::set_panel_bounds(self.hwnd, x, y, w_px, h_px, WM_APP_SP_DISMISS, false);
         unsafe {
             let _ = SetWindowPos(self.hwnd, Some(HWND_TOPMOST), x, y, w_px, h_px, SWP_NOACTIVATE);
             let _ = InvalidateRect(Some(self.hwnd), None, false);
@@ -216,7 +212,6 @@ impl PanelState {
             SuperHit::CopyTranslation => {
                 if let InlineTransState::Ready { translated, .. } = &self.trans {
                     let txt = translated.clone();
-                    self.copied_flash = true;
                     let toast = self.lang.pick("✓ 已复制译文", "✓ Copied translation").to_string();
                     self.dispatch_and_close(SuperActionKind::CopyText { text: txt, toast });
                 }
@@ -225,7 +220,7 @@ impl PanelState {
                 let src = self.ctx.selected_text().unwrap_or_default().to_string();
                 self.dispatch_and_close(SuperActionKind::OpenTranslator(src));
             }
-            SuperHit::Tile(idx) => {
+            SuperHit::Row(idx) => {
                 let Some(act) = self.actions.get(idx).cloned() else {
                     return;
                 };
@@ -274,10 +269,10 @@ impl PanelState {
             }
             return;
         }
-        if (b'1' as u16..=b'9' as u16).contains(&vk) {
+        if (b'1' as u16..=b'6' as u16).contains(&vk) {
             let idx = (vk - b'1' as u16) as usize;
             if idx < self.actions.len() {
-                self.trigger_hit(SuperHit::Tile(idx));
+                self.trigger_hit(SuperHit::Row(idx));
             }
             return;
         }
@@ -286,25 +281,22 @@ impl PanelState {
             return;
         }
         if vk == VK_RETURN.0 {
-            if let Some(idx) = self.selected_tile {
-                self.trigger_hit(SuperHit::Tile(idx));
+            if let Some(idx) = self.selected_row {
+                self.trigger_hit(SuperHit::Row(idx));
             } else if matches!(self.trans, InlineTransState::Ready { .. }) {
                 self.trigger_hit(SuperHit::CopyTranslation);
             } else {
-                self.trigger_hit(SuperHit::Tile(0));
+                self.trigger_hit(SuperHit::Row(0));
             }
             return;
         }
-        let cur = self.selected_tile.unwrap_or(0);
         let next = match vk {
-            x if x == VK_RIGHT.0 => (cur + 1) % n,
-            x if x == VK_LEFT.0 => (cur + n - 1) % n,
-            x if x == VK_DOWN.0 => if cur + 2 < n { cur + 2 } else { cur % 2 },
-            x if x == VK_UP.0 => if cur >= 2 { cur - 2 } else { n.saturating_sub(1) },
+            x if x == VK_DOWN.0 => self.selected_row.map(|c| (c + 1) % n).unwrap_or(0),
+            x if x == VK_UP.0 => self.selected_row.map(|c| (c + n - 1) % n).unwrap_or(n - 1),
             _ => return,
         };
-        self.selected_tile = Some(next);
-        self.hovered = Some(SuperHit::Tile(next));
+        self.selected_row = Some(next);
+        self.hovered = Some(SuperHit::Row(next));
         unsafe { let _ = InvalidateRect(Some(self.hwnd), None, false); }
     }
 }
@@ -331,7 +323,7 @@ unsafe extern "system" fn super_panel_wndproc(
             paint_super_panel(
                 hdc, rc.right - rc.left, rc.bottom - rc.top, st.scale, st.pal, st.lang,
                 &st.fonts, &mut st.surface, &st.ctx, &st.trans, &st.actions, &st.layout,
-                st.hovered, st.selected_tile, st.copied_flash,
+                st.hovered, st.selected_row,
             );
             let _ = unsafe { EndPaint(hwnd, &ps) };
             LRESULT(0)
@@ -342,6 +334,10 @@ unsafe extern "system" fn super_panel_wndproc(
                 st.trans = out.state;
                 st.relayout_and_repaint();
             }
+            LRESULT(0)
+        }
+        WM_APP_SP_DISMISS => {
+            close_active_panel();
             LRESULT(0)
         }
         WM_MOUSEMOVE => {
@@ -360,9 +356,10 @@ unsafe extern "system" fn super_panel_wndproc(
             let next = st.layout.hit_test(x_dip, y_dip);
             if next != st.hovered {
                 st.hovered = next;
-                if let Some(SuperHit::Tile(i)) = next {
-                    st.selected_tile = Some(i);
-                }
+                st.selected_row = match next {
+                    Some(SuperHit::Row(i)) => Some(i),
+                    _ => None,
+                };
                 unsafe { let _ = InvalidateRect(Some(hwnd), None, false); }
             }
             LRESULT(0)
@@ -392,7 +389,19 @@ unsafe extern "system" fn super_panel_wndproc(
         }
         WM_KEYDOWN => { st.handle_key((wparam.0 & 0xFFFF) as u16); LRESULT(0) }
         WM_ACTIVATE => {
-            if (wparam.0 & 0xFFFF) == 0 && st.opened_at.elapsed().as_millis() >= 140 {
+            if (wparam.0 & 0xFFFF) == 0 && st.opened_at.elapsed().as_millis() >= 80 {
+                close_active_panel();
+            }
+            LRESULT(0)
+        }
+        WM_ACTIVATEAPP => {
+            if wparam.0 == 0 && st.opened_at.elapsed().as_millis() >= 80 {
+                close_active_panel();
+            }
+            LRESULT(0)
+        }
+        WM_KILLFOCUS => {
+            if st.opened_at.elapsed().as_millis() >= 80 {
                 close_active_panel();
             }
             LRESULT(0)
@@ -400,7 +409,7 @@ unsafe extern "system" fn super_panel_wndproc(
         WM_NCDESTROY => {
             if ACTIVE_PANEL_HWND.load(Ordering::Acquire) == hwnd.0 as isize {
                 ACTIVE_PANEL_HWND.store(0, Ordering::Release);
-                trigger::set_panel_open(false);
+                trigger::clear_panel_open();
             }
             unsafe {
                 SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);

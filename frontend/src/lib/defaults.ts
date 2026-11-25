@@ -90,8 +90,7 @@ export function makeDefaultConfig(): TomoyoConfig {
     },
     super_panel: {
       enabled: true,
-      trigger_right_hold: true,
-      middle_trigger: 'hold',
+      trigger_mode: 'right_hold',
       hold_ms: 320,
       auto_translate_selection: true,
       excluded_apps: [],

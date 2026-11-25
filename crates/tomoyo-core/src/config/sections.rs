@@ -181,14 +181,10 @@ pub struct SuperPanelConfig {
     /// Master switch for the zero-polling mouse Super Panel hook.
     #[serde(default = "default_true")]
     pub enabled: bool,
-    /// Summon Super Panel when holding right mouse button stationary for `hold_ms`.
-    #[serde(default = "default_true")]
-    pub trigger_right_hold: bool,
-    /// Middle mouse button trigger mode: `"hold"` (default, keeps browser tab click intact),
-    /// `"click"` (single stationary middle-click), or `"off"`.
-    #[serde(default = "default_middle_trigger")]
-    pub middle_trigger: String,
-    /// Stationary press duration in milliseconds before triggering (`180..=900`, default `320`).
+    /// Single-choice mouse trigger: `"right_hold"` (default), `"middle_hold"`, or `"middle_click"`.
+    #[serde(default = "default_super_trigger_mode")]
+    pub trigger_mode: String,
+    /// Stationary press duration in milliseconds for hold modes (`180..=800`, default `320`).
     #[serde(default = "default_super_hold_ms")]
     pub hold_ms: u32,
     /// Automatically run parallel translation inside the Super Panel when text is selected.
@@ -199,15 +195,14 @@ pub struct SuperPanelConfig {
     pub excluded_apps: Vec<String>,
 }
 
-fn default_middle_trigger() -> String { "hold".into() }
+fn default_super_trigger_mode() -> String { "right_hold".into() }
 fn default_super_hold_ms() -> u32 { 320 }
 
 impl Default for SuperPanelConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            trigger_right_hold: true,
-            middle_trigger: default_middle_trigger(),
+            trigger_mode: default_super_trigger_mode(),
             hold_ms: default_super_hold_ms(),
             auto_translate_selection: true,
             excluded_apps: Vec::new(),
