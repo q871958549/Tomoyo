@@ -171,6 +171,17 @@ fn run_windows_main() {
         return;
     }
 
+    if let Some(pos) = args.iter().position(|a| a == "--pin-text") {
+        if let Some(txt) = args.get(pos + 1).map(|s| s.trim()).filter(|s| !s.is_empty()) {
+            let cfg = tomoyo_core::TomoyoConfig::load_or_create();
+            let scale = pin_clipboard::active_cursor_dpi_scale();
+            if let Some(p) = render_text_or_color_pin_card(txt, &cfg.theme, scale) {
+                let _ = run_pin_window_with_text(p.width, p.height, p.bgra, i32::MIN, i32::MIN, p.source_text);
+            }
+        }
+        return;
+    }
+
     if let Some(pos) = args.iter().position(|a| a == "--pin") {
         if let Some(p) = args.get(pos + 1) {
             let img_path = Path::new(p);
@@ -281,6 +292,16 @@ fn run_windows_main() {
     if args.iter().any(|a| a == "--pin-clipboard") {
         let cfg = tomoyo_core::TomoyoConfig::load_or_create();
         if let Some(p) = read_latest_clipboard_for_pin(&cfg.theme) {
+            run_pin_window_with_text(p.width, p.height, p.bgra, i32::MIN, i32::MIN, p.source_text);
+        }
+        return;
+    }
+
+    if let Some(pos) = args.iter().position(|a| a == "--pin-text")
+        && let Some(txt) = args.get(pos + 1).map(|s| s.trim()).filter(|s| !s.is_empty())
+    {
+        let cfg = tomoyo_core::TomoyoConfig::load_or_create();
+        if let Some(p) = render_text_or_color_pin_card(txt, &cfg.theme, 1.0) {
             run_pin_window_with_text(p.width, p.height, p.bgra, i32::MIN, i32::MIN, p.source_text);
         }
         return;

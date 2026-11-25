@@ -64,6 +64,9 @@ impl TomoyoPlugin for OcrPlugin {
     }
 
     fn execute(&self, req: &ExecuteRequest) -> ExecuteResponse {
+        if req.action_id == "ocr_file" {
+            return ocr_rpc::execute_ocr_file_action(req);
+        }
         if req.action_id == "open_viewer" {
             let img_path = req
                 .payload

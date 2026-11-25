@@ -1,9 +1,69 @@
 //! Protocol v3 Hybrid RPC backend for the standalone Offline OCR Inspector WebView (`ui/index.html`).
 
-use crate::ocr_engine::{tomoyo_data_dir, OcrOutput};
+use crate::ocr_engine::{recognize_image, tomoyo_data_dir, LangPref, OcrOutput};
 use base64::Engine;
 use serde_json::{json, Value};
 use std::path::Path;
+use tomoyo_sdk::{ExecuteRequest, ExecuteResponse, OpenWebViewRequest};
+
+/// Executes direct `ocr_file` action (e.g. from Super Panel on a selected image file),
+/// runs offline WinRT/Tesseract OCR, persists the snapshot, copies text, and opens the reviewer.
+pub fn execute_ocr_file_action(req: &ExecuteRequest) -> ExecuteResponse {
+    let raw = req
+        .payload
+        .get("path")
+        .or_else(|| req.payload.get("image_path"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .unwrap_or("");
+    let img_path = Path::new(raw);
+    if raw.is_empty() || !img_path.is_file() {
+        return ExecuteResponse {
+            hide_window: false,
+            toast: Some(format!("图片文件不存在: {raw}")),
+            ..Default::default()
+        };
+    }
+    let pref = match req.plugin_settings.get("default_lang").and_then(Value::as_str) {
+        Some("zh") => LangPref::Zh,
+        Some("en") => LangPref::En,
+        _ => LangPref::Auto,
+    };
+    let raw_mode = req
+        .plugin_settings
+        .get("raw_output")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    match recognize_image(img_path, pref, raw_mode) {
+        Ok(out) => {
+            if out.text.trim().is_empty() {
+                return ExecuteResponse {
+                    hide_window: false,
+                    toast: Some("未在图片中识别到可读文本".into()),
+                    ..Default::default()
+                };
+            }
+            persist_last_ocr_snapshot(img_path, &out);
+            ExecuteResponse {
+                hide_window: true,
+                copy_text: Some(out.text),
+                open_webview: Some(OpenWebViewRequest {
+                    entry: None,
+                    title: Some("Tomoyo OCR 审校窗口".into()),
+                    initial_query: raw.to_string(),
+                    width: Some(1080),
+                    height: Some(680),
+                }),
+                ..Default::default()
+            }
+        }
+        Err(err) => ExecuteResponse {
+            hide_window: false,
+            toast: Some(format!("OCR 识别失败: {err}")),
+            ..Default::default()
+        },
+    }
+}
 
 const MAX_INLINE_IMG_BYTES: u64 = 10 * 1024 * 1024;
 

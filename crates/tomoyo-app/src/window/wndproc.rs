@@ -3,7 +3,8 @@
 use super::commands::{dispatch_menu_id, dispatch_wm_command};
 use super::input::{register_all_hotkeys, unregister_all_hotkeys};
 use super::super_panel_ctrl::{
-    TIMER_SP_HOLD, WM_APP_SP_ARM, WM_APP_SP_EXEC, WM_APP_SP_FIRE, WM_APP_SP_PROBED,
+    TIMER_SP_HOLD, WM_APP_SP_ARM, WM_APP_SP_EXEC, WM_APP_SP_EXEC_DONE, WM_APP_SP_FIRE,
+    WM_APP_SP_PROBED,
 };
 use super::updater_ctrl::WM_APP_UPDATE_PROGRESS;
 use super::wndproc_mouse::{
@@ -206,6 +207,7 @@ pub(super) unsafe extern "system" fn main_wndproc(
         WM_APP_SP_FIRE => { app.on_super_panel_fire_click(); LRESULT(0) }
         WM_APP_SP_PROBED => { app.on_super_panel_probed(); LRESULT(0) }
         WM_APP_SP_EXEC => { app.on_super_panel_exec(); LRESULT(0) }
+        WM_APP_SP_EXEC_DONE => { app.on_super_panel_exec_done(); LRESULT(0) }
         WM_DPICHANGED => {
             let new_dpi = (wparam.0 & 0xFFFF) as u32;
             let suggested = (lparam.0 != 0).then(|| unsafe { &*(lparam.0 as *const RECT) });

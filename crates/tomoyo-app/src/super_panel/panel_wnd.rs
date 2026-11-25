@@ -10,25 +10,26 @@ use std::ffi::c_void;
 use std::sync::atomic::{AtomicIsize, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Once};
 use std::time::Instant;
+use tomoyo_core::translate::TranslateConfig;
 use tomoyo_core::{Lang, TypographyConfig};
-use tomoyo_plugin_host::PluginHost;
 use windows::core::w;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
-use windows::Win32::Graphics::Gdi::{BeginPaint, EndPaint, InvalidateRect, PAINTSTRUCT};
+use windows::Win32::Graphics::Gdi::{BeginPaint, EndPaint, InvalidateRect, ScreenToClient, PAINTSTRUCT};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Controls::WM_MOUSELEAVE;
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    GetKeyState, TrackMouseEvent, TME_LEAVE, TRACKMOUSEEVENT, VK_CONTROL, VK_DOWN, VK_ESCAPE,
-    VK_RETURN, VK_UP,
+    GetKeyState, SetFocus, TrackMouseEvent, TME_LEAVE, TRACKMOUSEEVENT, VK_CONTROL, VK_DOWN,
+    VK_ESCAPE, VK_RETURN, VK_UP,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, GetClientRect, GetWindowLongPtrW, LoadCursorW,
-    PostMessageW, RegisterClassExW, SetCursor, SetWindowLongPtrW, SetWindowPos, ShowWindow,
-    CS_DROPSHADOW, GWLP_USERDATA, HWND_TOPMOST, IDC_ARROW, IDC_HAND, SWP_NOACTIVATE,
-    SWP_SHOWWINDOW, SW_SHOW, WM_ACTIVATE, WM_ACTIVATEAPP, WM_APP, WM_ERASEBKGND, WM_KEYDOWN,
-    WM_KILLFOCUS, WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCDESTROY, WM_PAINT, WM_SETCURSOR, WNDCLASSEXW,
-    WS_CLIPCHILDREN, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
+    CreateWindowExW, DefWindowProcW, DestroyWindow, GetClientRect, GetCursorPos,
+    GetWindowLongPtrW, GetWindowRect, LoadCursorW, PostMessageW, RegisterClassExW, SetCursor,
+    SetWindowLongPtrW, SetWindowPos, ShowWindow, CS_DROPSHADOW, GWLP_USERDATA, HWND_TOPMOST,
+    IDC_ARROW, IDC_HAND, SWP_NOACTIVATE, SWP_SHOWWINDOW, SW_SHOW, WM_ACTIVATE, WM_ACTIVATEAPP,
+    WM_APP, WM_ERASEBKGND, WM_KEYDOWN, WM_KILLFOCUS, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE,
+    WM_NCDESTROY, WM_PAINT, WM_SETCURSOR, WNDCLASSEXW, WS_CLIPCHILDREN, WS_EX_TOOLWINDOW,
+    WS_EX_TOPMOST, WS_POPUP,
 };
 
 const WM_APP_SP_TRANS_READY: u32 = WM_APP + 60;
@@ -48,7 +49,7 @@ pub struct SuperPanelLaunch {
     pub host_hwnd: HWND,
     pub exec_msg: u32,
     pub exec_slot: Arc<Mutex<Option<SuperPanelExec>>>,
-    pub plugin_host: Arc<PluginHost>,
+    pub translate_cfg: TranslateConfig,
     pub pal: ThemePalette,
     pub lang: Lang,
     pub font_regular: &'static str,
@@ -65,7 +66,7 @@ struct PanelState {
     host_hwnd: HWND,
     exec_msg: u32,
     exec_slot: Arc<Mutex<Option<SuperPanelExec>>>,
-    plugin_host: Arc<PluginHost>,
+    translate_cfg: TranslateConfig,
     pal: ThemePalette,
     lang: Lang,
     fonts: FontPack,
@@ -80,6 +81,7 @@ struct PanelState {
     actions: Vec<SuperAction>,
     layout: SuperPanelLayout,
     hovered: Option<SuperHit>,
+    pressed_hit: Option<SuperHit>,
     selected_row: Option<usize>,
     mouse_tracked: bool,
     surface: Option<DibSurface>,
@@ -132,41 +134,17 @@ pub fn open_super_panel(cfg: SuperPanelLaunch) {
     let fonts = FontPack::create(scale, cfg.font_regular, cfg.font_medium, &cfg.typography);
     let trans_slot = Arc::new(Mutex::new(None));
     let state = Box::new(PanelState {
-        hwnd,
-        host_hwnd: cfg.host_hwnd,
-        exec_msg: cfg.exec_msg,
-        exec_slot: cfg.exec_slot,
-        plugin_host: cfg.plugin_host,
-        pal: cfg.pal,
-        lang: cfg.lang,
-        fonts,
-        scale,
-        anchor: cfg.anchor,
-        opened_at: Instant::now(),
-        seq,
-        ctx: cfg.ctx,
-        trans: initial_trans,
-        trans_slot,
-        translate_enabled: cfg.translate_enabled,
-        actions: cfg.actions,
-        layout,
-        hovered: None,
-        selected_row: None,
-        mouse_tracked: false,
-        surface: None,
+        hwnd, host_hwnd: cfg.host_hwnd, exec_msg: cfg.exec_msg, exec_slot: cfg.exec_slot,
+        translate_cfg: cfg.translate_cfg, pal: cfg.pal, lang: cfg.lang, fonts, scale,
+        anchor: cfg.anchor, opened_at: Instant::now(), seq, ctx: cfg.ctx, trans: initial_trans,
+        trans_slot, translate_enabled: cfg.translate_enabled, actions: cfg.actions, layout,
+        hovered: None, pressed_hit: None, selected_row: None, mouse_tracked: false, surface: None,
     });
 
-    if want_auto_tr
-        && let Some(text) = state.ctx.selected_text().map(str::to_string)
-    {
+    if want_auto_tr && let Some(text) = state.ctx.selected_text().map(str::to_string) {
         spawn_inline_translate(
-            text,
-            Arc::clone(&state.plugin_host),
-            Arc::clone(&state.trans_slot),
-            hwnd,
-            WM_APP_SP_TRANS_READY,
-            seq,
-            state.lang,
+            text, state.translate_cfg.clone(), Arc::clone(&state.trans_slot),
+            hwnd, WM_APP_SP_TRANS_READY, seq, state.lang,
         );
     }
 
@@ -177,11 +155,21 @@ pub fn open_super_panel(cfg: SuperPanelLaunch) {
         let _ = ShowWindow(hwnd, SW_SHOW);
     }
     ACTIVE_PANEL_HWND.store(hwnd.0 as isize, Ordering::Release);
-    trigger::set_panel_bounds(hwnd, px, py, w_px, h_px, WM_APP_SP_DISMISS, true);
+    sync_actual_panel_bounds(hwnd, px, py, w_px, h_px, true);
     crate::window::hotkey_override::force_foreground_window(hwnd);
     unsafe {
         let _ = InvalidateRect(Some(hwnd), None, false);
     }
+}
+
+fn sync_actual_panel_bounds(hwnd: HWND, fx: i32, fy: i32, fw: i32, fh: i32, fresh: bool) {
+    let mut wr = RECT::default();
+    let (bx, by, bw, bh) = if unsafe { GetWindowRect(hwnd, &mut wr).is_ok() } {
+        (wr.left, wr.top, wr.right - wr.left, wr.bottom - wr.top)
+    } else {
+        (fx, fy, fw, fh)
+    };
+    trigger::set_panel_bounds(hwnd, bx, by, bw, bh, WM_APP_SP_DISMISS, fresh);
 }
 
 impl PanelState {
@@ -190,11 +178,15 @@ impl PanelState {
         let w_px = (self.layout.w_dip * self.scale).round() as i32;
         let h_px = (self.layout.h_dip * self.scale).round() as i32;
         let (x, y) = place_near_cursor(self.anchor, w_px, h_px);
-        trigger::set_panel_bounds(self.hwnd, x, y, w_px, h_px, WM_APP_SP_DISMISS, false);
         unsafe {
             let _ = SetWindowPos(self.hwnd, Some(HWND_TOPMOST), x, y, w_px, h_px, SWP_NOACTIVATE);
-            let _ = InvalidateRect(Some(self.hwnd), None, false);
         }
+        sync_actual_panel_bounds(self.hwnd, x, y, w_px, h_px, false);
+        let mut pt = POINT::default();
+        if unsafe { GetCursorPos(&mut pt).is_ok() && ScreenToClient(self.hwnd, &mut pt).as_bool() } {
+            self.hovered = self.layout.hit_test(pt.x as f32 / self.scale, pt.y as f32 / self.scale);
+        }
+        unsafe { let _ = InvalidateRect(Some(self.hwnd), None, false); }
     }
 
     fn dispatch_and_close(&mut self, kind: SuperActionKind) {
@@ -236,7 +228,7 @@ impl PanelState {
                             self.trans = InlineTransState::Loading;
                             spawn_inline_translate(
                                 text,
-                                Arc::clone(&self.plugin_host),
+                                self.translate_cfg.clone(),
                                 Arc::clone(&self.trans_slot),
                                 self.hwnd,
                                 WM_APP_SP_TRANS_READY,
@@ -379,31 +371,35 @@ unsafe extern "system" fn super_panel_wndproc(
             }
             LRESULT(1)
         }
+        WM_LBUTTONDOWN => {
+            unsafe { let _ = SetFocus(Some(hwnd)); }
+            let x_dip = ((lparam.0 & 0xFFFF) as i16) as f32 / st.scale;
+            let y_dip = (((lparam.0 >> 16) & 0xFFFF) as i16) as f32 / st.scale;
+            st.pressed_hit = st.layout.hit_test(x_dip, y_dip);
+            LRESULT(0)
+        }
         WM_LBUTTONUP => {
             let x_dip = ((lparam.0 & 0xFFFF) as i16) as f32 / st.scale;
             let y_dip = (((lparam.0 >> 16) & 0xFFFF) as i16) as f32 / st.scale;
-            if let Some(hit) = st.layout.hit_test(x_dip, y_dip) {
+            let pressed = st.pressed_hit.take();
+            if let Some(hit) = st.layout.hit_test(x_dip, y_dip)
+                && (pressed.is_none() || pressed == Some(hit))
+            {
                 st.trigger_hit(hit);
             }
             LRESULT(0)
         }
         WM_KEYDOWN => { st.handle_key((wparam.0 & 0xFFFF) as u16); LRESULT(0) }
-        WM_ACTIVATE => {
-            if (wparam.0 & 0xFFFF) == 0 && st.opened_at.elapsed().as_millis() >= 80 {
-                close_active_panel();
-            }
+        WM_ACTIVATE if (wparam.0 & 0xFFFF) == 0 => {
+            if st.opened_at.elapsed().as_millis() >= 80 { close_active_panel(); }
             LRESULT(0)
         }
-        WM_ACTIVATEAPP => {
-            if wparam.0 == 0 && st.opened_at.elapsed().as_millis() >= 80 {
-                close_active_panel();
-            }
+        WM_ACTIVATEAPP if wparam.0 == 0 => {
+            if st.opened_at.elapsed().as_millis() >= 80 { close_active_panel(); }
             LRESULT(0)
         }
         WM_KILLFOCUS => {
-            if st.opened_at.elapsed().as_millis() >= 80 {
-                close_active_panel();
-            }
+            if st.opened_at.elapsed().as_millis() >= 80 { close_active_panel(); }
             LRESULT(0)
         }
         WM_NCDESTROY => {
@@ -411,10 +407,7 @@ unsafe extern "system" fn super_panel_wndproc(
                 ACTIVE_PANEL_HWND.store(0, Ordering::Release);
                 trigger::clear_panel_open();
             }
-            unsafe {
-                SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
-                drop(Box::from_raw(ptr));
-            }
+            unsafe { SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0); drop(Box::from_raw(ptr)); }
             LRESULT(0)
         }
         _ => unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) },

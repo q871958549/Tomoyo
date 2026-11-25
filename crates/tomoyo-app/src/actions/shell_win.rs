@@ -23,6 +23,10 @@ pub fn spawn_settings_window(parent_hwnd: isize, theme_name: &str) -> Result<boo
     let mut child = cmd
         .spawn()
         .map_err(|e| format!("failed to launch settings host {}: {e}", host_exe.display()))?;
+    #[cfg(windows)]
+    unsafe {
+        let _ = windows::Win32::UI::WindowsAndMessaging::AllowSetForegroundWindow(child.id());
+    }
     let job = JobGuard::assign_webview_child(&child, 512).ok();
     let _ = std::thread::Builder::new()
         .name("tomoyo-settings-reaper".into())
@@ -120,6 +124,10 @@ pub fn spawn_ephemeral_webview_ex(
         .spawn()
         .map_err(|e| format!("failed to launch {}: {e}", host_exe.display()))?;
     let pid = child.id();
+    #[cfg(windows)]
+    unsafe {
+        let _ = windows::Win32::UI::WindowsAndMessaging::AllowSetForegroundWindow(pid);
+    }
     let job = JobGuard::assign_webview_child(&child, max_memory_mb.max(512)).ok();
     let _ = std::thread::Builder::new()
         .name("tomoyo-wv-reaper".into())

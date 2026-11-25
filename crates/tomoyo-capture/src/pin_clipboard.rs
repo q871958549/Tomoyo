@@ -77,7 +77,7 @@ unsafe fn open_clipboard_with_retry() -> bool {
     false
 }
 
-fn active_cursor_dpi_scale() -> f32 {
+pub(crate) fn active_cursor_dpi_scale() -> f32 {
     unsafe {
         let mut pt = POINT::default();
         let _ = GetCursorPos(&mut pt);

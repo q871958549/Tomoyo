@@ -141,23 +141,30 @@ impl TomoyoPlugin for CapturePlugin {
     }
 
     fn execute(&self, req: &ExecuteRequest) -> ExecuteResponse {
-        if req.action_id == "pin_image" {
-            let path = req.payload.get("path").and_then(|v| v.as_str()).unwrap_or("");
-            if path.is_empty() || !Path::new(path).is_file() {
+        let path_arg = req.payload.get("path").and_then(|v| v.as_str()).map(str::trim).unwrap_or("");
+        let text_arg = req.payload.get("text").and_then(|v| v.as_str()).map(str::trim).unwrap_or("");
+
+        if req.action_id == "pin_image" || (req.action_id == "pin" && !path_arg.is_empty()) {
+            if path_arg.is_empty() || !Path::new(path_arg).is_file() {
                 return ExecuteResponse { toast: Some("图片文件不存在".into()), ..Default::default() };
             }
-            return match spawn_capture_args(&["--pin", path], false) {
+            return match spawn_capture_args(&["--pin", path_arg], false) {
                 Ok(()) => ExecuteResponse { hide_window: true, ..Default::default() },
                 Err(e) => ExecuteResponse { toast: Some(format!("贴图启动失败: {e}")), ..Default::default() },
             };
         }
 
-        let mode = req
-            .payload
-            .get("mode")
-            .and_then(|v| v.as_str())
-            .or_else(|| req.action_id.strip_prefix("run_"))
-            .unwrap_or("region");
+        if req.action_id == "pin_text" || (req.action_id == "pin" && !text_arg.is_empty()) {
+            if text_arg.is_empty() {
+                return ExecuteResponse { toast: Some("无有效色值或文本可贴图".into()), ..Default::default() };
+            }
+            return match spawn_capture_args(&["--pin-text", text_arg], false) {
+                Ok(()) => ExecuteResponse { hide_window: true, ..Default::default() },
+                Err(e) => ExecuteResponse { toast: Some(format!("贴图启动失败: {e}")), ..Default::default() },
+            };
+        }
+
+        let mode = resolve_capture_mode(req);
         let delay = req
             .payload
             .get("from_launcher")
@@ -172,6 +179,19 @@ impl TomoyoPlugin for CapturePlugin {
             return launch_capture_mode(mode, false);
         }
         ExecuteResponse::default()
+    }
+}
+
+fn resolve_capture_mode(req: &ExecuteRequest) -> &str {
+    if let Some(m) = req.payload.get("mode").and_then(|v| v.as_str()) {
+        return m;
+    }
+    if let Some(stripped) = req.action_id.strip_prefix("run_") {
+        return stripped;
+    }
+    match req.action_id.as_str() {
+        "pin" | "pin_clipboard" | "ocr" | "translate" | "record" | "region" => req.action_id.as_str(),
+        _ => "region",
     }
 }
 
@@ -303,5 +323,8 @@ mod tests {
         let hits = CapturePlugin.query(&ctx);
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].id, "capture:record");
+        assert_eq!(resolve_capture_mode(&ExecuteRequest::new("pin", "id", json!({}))), "pin");
+        assert_eq!(resolve_capture_mode(&ExecuteRequest::new("run_pin_clipboard", "id", json!({}))), "pin_clipboard");
+        assert_eq!(resolve_capture_mode(&ExecuteRequest::new("region", "id", json!({}))), "region");
     }
 }

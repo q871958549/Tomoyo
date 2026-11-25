@@ -64,16 +64,29 @@ impl SuperContext {
 }
 
 struct ClipboardBackup {
+    captured_ok: bool,
     entries: Vec<(u32, Vec<u8>)>,
+}
+
+unsafe fn open_clipboard_retry() -> bool {
+    for attempt in 0..4 {
+        if unsafe { OpenClipboard(None).is_ok() } {
+            return true;
+        }
+        if attempt < 3 {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+    false
 }
 
 impl ClipboardBackup {
     fn capture() -> Self {
         let formats = [CF_UNICODETEXT.0 as u32, CF_HDROP.0 as u32, CF_DIB.0 as u32];
         let mut entries = Vec::new();
-        unsafe {
-            if OpenClipboard(None).is_err() {
-                return Self { entries };
+        let captured_ok = unsafe {
+            if !open_clipboard_retry() {
+                return Self { captured_ok: false, entries };
             }
             for fmt in formats {
                 if IsClipboardFormatAvailable(fmt).is_ok()
@@ -92,16 +105,17 @@ impl ClipboardBackup {
                 }
             }
             let _ = CloseClipboard();
-        }
-        Self { entries }
+            true
+        };
+        Self { captured_ok, entries }
     }
 
     fn restore(self) {
-        if self.entries.is_empty() {
+        if !self.captured_ok {
             return;
         }
         unsafe {
-            if OpenClipboard(None).is_err() {
+            if !open_clipboard_retry() {
                 return;
             }
             let _ = EmptyClipboard();
@@ -131,8 +145,8 @@ pub fn probe_foreground_selection(suppress_flag: &Arc<AtomicBool>) -> SuperConte
 
     let mut changed = false;
     let mut ctx = SuperContext::Empty;
-    for _ in 0..10 {
-        std::thread::sleep(Duration::from_millis(14));
+    for _ in 0..12 {
+        std::thread::sleep(Duration::from_millis(15));
         if unsafe { GetClipboardSequenceNumber() } != seq_before {
             changed = true;
             if let Some(files) = read_clipboard_files() {

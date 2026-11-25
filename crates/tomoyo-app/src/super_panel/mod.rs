@@ -7,6 +7,7 @@ pub mod panel_layout;
 pub mod panel_paint;
 pub mod panel_wnd;
 pub mod trigger;
+mod trigger_guard;
 
 pub use context_probe::{probe_foreground_selection, SuperContext, TextKind};
 pub use panel_wnd::{close_active_panel, open_super_panel, SuperPanelExec, SuperPanelLaunch};
@@ -98,7 +99,7 @@ pub fn build_actions_for_context(
                     lang.pick("贴图色卡", "Pin Color Card"),
                     SuperActionKind::CoreAction(ActionKind::PluginExecute {
                         plugin_id: PLUGIN_CAPTURE.into(),
-                        action_id: "pin".into(),
+                        action_id: "pin_text".into(),
                         payload: serde_json::json!({ "text": raw }),
                     }),
                 ));
@@ -131,11 +132,16 @@ pub fn build_actions_for_context(
         SuperContext::Files { paths, all_images } => {
             let joined = paths.join("\r\n");
             let first = paths.first().cloned().unwrap_or_default();
-            let dir = Path::new(&first)
-                .parent()
-                .map(|p| p.to_string_lossy().into_owned())
-                .filter(|s| !s.is_empty())
-                .unwrap_or_else(|| first.clone());
+            let first_path = Path::new(&first);
+            let dir = if first_path.is_dir() {
+                first.clone()
+            } else {
+                first_path
+                    .parent()
+                    .map(|p| p.to_string_lossy().into_owned())
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or_else(|| first.clone())
+            };
 
             actions.push(act("sp:file_match", "T", lang.pick("Tomoyo 智能匹配", "Tomoyo Match"), SuperActionKind::AttachFiles(paths.clone())));
             actions.push(act(
@@ -167,7 +173,7 @@ pub fn build_actions_for_context(
                     lang.pick("桌面贴图", "Pin Image"),
                     SuperActionKind::CoreAction(ActionKind::PluginExecute {
                         plugin_id: PLUGIN_CAPTURE.into(),
-                        action_id: "pin".into(),
+                        action_id: "pin_image".into(),
                         payload: serde_json::json!({ "path": first }),
                     }),
                 ));
@@ -177,17 +183,21 @@ pub fn build_actions_for_context(
                     if actions.len() >= 6 {
                         break;
                     }
-                    actions.push(act(&spec.id, "✦", &spec.label, SuperActionKind::CoreAction(spec.kind)));
+                    let dup_builtin = (*all_images && has_ocr && spec.id == "plug:dev.tomoyo.ocr:ocr_image")
+                        || (*all_images && has_cap && spec.id == "plug:dev.tomoyo.capture:pin_image");
+                    if !dup_builtin && !actions.iter().any(|a| a.label == spec.label) {
+                        actions.push(act(&spec.id, "✦", &spec.label, SuperActionKind::CoreAction(spec.kind)));
+                    }
                 }
             }
         }
         SuperContext::Empty => {
             if has_cap {
                 actions.push(act("sp:cap_region", "✂", lang.pick("区域截图", "Region Capture"), SuperActionKind::CoreAction(ActionKind::PluginExecute {
-                    plugin_id: PLUGIN_CAPTURE.into(), action_id: "region".into(), payload: serde_json::json!({}),
+                    plugin_id: PLUGIN_CAPTURE.into(), action_id: "run_region".into(), payload: serde_json::json!({ "mode": "region" }),
                 })));
                 actions.push(act("sp:cap_pin", "◈", lang.pick("桌面贴图", "Pin Clipboard"), SuperActionKind::CoreAction(ActionKind::PluginExecute {
-                    plugin_id: PLUGIN_CAPTURE.into(), action_id: "pin".into(), payload: serde_json::json!({}),
+                    plugin_id: PLUGIN_CAPTURE.into(), action_id: "run_pin_clipboard".into(), payload: serde_json::json!({ "mode": "pin_clipboard" }),
                 })));
             }
             if has_tr {

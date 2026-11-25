@@ -1,8 +1,9 @@
 //! Pluggable multi-engine native WinHTTP translation adapters (Google, MyMemory+Youdao Dict, DeepL, OpenAI, Ollama).
 
 use super::config::TranslateConfig;
-use super::secrets::get_secret;
+use super::secrets::{get_secret, plugin_secret_key};
 use crate::http::{http_get, http_get_with_headers, http_post_bytes};
+use crate::PLUGIN_TRANSLATE;
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
 
@@ -255,8 +256,13 @@ fn lookup_youdao_ec(word: &str) -> Option<(Option<String>, Option<String>)> {
     Some((phonetic, (!defs.is_empty()).then(|| defs.join("\n"))))
 }
 
+fn resolve_translate_secret(field_key: &str) -> Option<String> {
+    get_secret(&plugin_secret_key(PLUGIN_TRANSLATE, field_key)).or_else(|| get_secret(field_key))
+}
+
 fn run_deepl(text: &str, src: &str, dst: &str) -> Result<EngineOk, String> {
-    let key = get_secret("deepl_api_key").ok_or("未配置 DeepL API Key（请在设置中心→翻译引擎加密填入）")?;
+    let key = resolve_translate_secret("deepl_api_key")
+        .ok_or("未配置 DeepL API Key（请在设置中心→翻译引擎加密填入）")?;
     let endpoint = if key.ends_with(":fx") {
         "https://api-free.deepl.com/v2/translate"
     } else {
@@ -292,7 +298,8 @@ fn parse_deepl_response(raw: &str) -> Result<EngineOk, String> {
 }
 
 fn run_openai(cfg: &TranslateConfig, text: &str, dst: &str) -> Result<EngineOk, String> {
-    let key = get_secret("openai_api_key").ok_or("未配置 OpenAI 兼容 API Key（请在设置中心→翻译引擎加密填入）")?;
+    let key = resolve_translate_secret("openai_api_key")
+        .ok_or("未配置 OpenAI 兼容 API Key（请在设置中心→翻译引擎加密填入）")?;
     let base = cfg.openai_base_url.trim_end_matches('/');
     let url = format!("{base}/chat/completions");
     let sys = format!("You are a concise, accurate translator. Translate the user's text into {}. Output only the translation without extra commentary.", lang_display_name(dst));
