@@ -10,8 +10,8 @@ use std::ffi::c_void;
 use std::sync::atomic::{AtomicIsize, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Once};
 use std::time::Instant;
-use tomoyo_core::translate::TranslateConfig;
 use tomoyo_core::{Lang, TypographyConfig};
+use tomoyo_plugin_host::StdioOneShotSpec;
 use windows::core::w;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{BeginPaint, EndPaint, InvalidateRect, ScreenToClient, PAINTSTRUCT};
@@ -49,7 +49,7 @@ pub struct SuperPanelLaunch {
     pub host_hwnd: HWND,
     pub exec_msg: u32,
     pub exec_slot: Arc<Mutex<Option<SuperPanelExec>>>,
-    pub translate_cfg: TranslateConfig,
+    pub translate_spec: Option<StdioOneShotSpec>,
     pub pal: ThemePalette,
     pub lang: Lang,
     pub font_regular: &'static str,
@@ -66,7 +66,7 @@ struct PanelState {
     host_hwnd: HWND,
     exec_msg: u32,
     exec_slot: Arc<Mutex<Option<SuperPanelExec>>>,
-    translate_cfg: TranslateConfig,
+    translate_spec: Option<StdioOneShotSpec>,
     pal: ThemePalette,
     lang: Lang,
     fonts: FontPack,
@@ -102,7 +102,10 @@ pub fn open_super_panel(cfg: SuperPanelLaunch) {
     ensure_window_class();
 
     let seq = PANEL_GEN.fetch_add(1, Ordering::AcqRel).wrapping_add(1);
-    let want_auto_tr = cfg.auto_translate && cfg.translate_enabled && cfg.ctx.selected_text().is_some();
+    let want_auto_tr = cfg.auto_translate
+        && cfg.translate_enabled
+        && cfg.translate_spec.is_some()
+        && cfg.ctx.selected_text().is_some();
     let initial_trans = if want_auto_tr { InlineTransState::Loading } else { InlineTransState::Hidden };
 
     let layout = compute_layout(&cfg.ctx, &initial_trans, cfg.actions.len());
@@ -135,15 +138,18 @@ pub fn open_super_panel(cfg: SuperPanelLaunch) {
     let trans_slot = Arc::new(Mutex::new(None));
     let state = Box::new(PanelState {
         hwnd, host_hwnd: cfg.host_hwnd, exec_msg: cfg.exec_msg, exec_slot: cfg.exec_slot,
-        translate_cfg: cfg.translate_cfg, pal: cfg.pal, lang: cfg.lang, fonts, scale,
+        translate_spec: cfg.translate_spec, pal: cfg.pal, lang: cfg.lang, fonts, scale,
         anchor: cfg.anchor, opened_at: Instant::now(), seq, ctx: cfg.ctx, trans: initial_trans,
         trans_slot, translate_enabled: cfg.translate_enabled, actions: cfg.actions, layout,
         hovered: None, pressed_hit: None, selected_row: None, mouse_tracked: false, surface: None,
     });
 
-    if want_auto_tr && let Some(text) = state.ctx.selected_text().map(str::to_string) {
+    if want_auto_tr
+        && let Some(spec) = state.translate_spec.clone()
+        && let Some(text) = state.ctx.selected_text().map(str::to_string)
+    {
         spawn_inline_translate(
-            text, state.translate_cfg.clone(), Arc::clone(&state.trans_slot),
+            text, spec, Arc::clone(&state.trans_slot),
             hwnd, WM_APP_SP_TRANS_READY, seq, state.lang,
         );
     }
@@ -223,12 +229,13 @@ impl PanelState {
                             let toast = self.lang.pick("✓ 已复制译文", "✓ Copied translation").to_string();
                             self.dispatch_and_close(SuperActionKind::CopyText { text: txt, toast });
                         } else if self.translate_enabled
+                            && let Some(spec) = self.translate_spec.clone()
                             && let Some(text) = self.ctx.selected_text().map(str::to_string)
                         {
                             self.trans = InlineTransState::Loading;
                             spawn_inline_translate(
                                 text,
-                                self.translate_cfg.clone(),
+                                spec,
                                 Arc::clone(&self.trans_slot),
                                 self.hwnd,
                                 WM_APP_SP_TRANS_READY,

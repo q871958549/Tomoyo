@@ -27,6 +27,11 @@ label = "快速呼出本地备忘录"
 default_hotkey = ""
 trigger_query = "note "
 
+[[text_actions]]
+id = "save_selection_note"
+label = "一键存为备忘"
+match_kinds = ["text", "url", "json", "code", "path"]
+
 [[settings]]
 key = "notes_dir"
 label = "自定义备忘录目录"

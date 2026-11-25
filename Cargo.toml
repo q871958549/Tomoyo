@@ -28,7 +28,7 @@ exclude = [
 ]
 
 [workspace.package]
-version = "3.0.0"
+version = "3.1.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/q871958549/Tomoyo"
@@ -36,12 +36,12 @@ homepage = "https://q871958549.github.io/Tomoyo/"
 readme = "README.md"
 
 [workspace.dependencies]
-tomoyo-protocol = { path = "crates/tomoyo-protocol", version = "3.0.0" }
-tomoyo-everything = { path = "crates/tomoyo-everything", version = "3.0.0" }
-tomoyo-core = { path = "crates/tomoyo-core", version = "3.0.0" }
-tomoyo-providers = { path = "crates/tomoyo-providers", version = "3.0.0" }
-tomoyo-plugin-host = { path = "crates/tomoyo-plugin-host", version = "3.0.0" }
-tomoyo-sdk = { path = "crates/tomoyo-sdk", version = "3.0.0" }
+tomoyo-protocol = { path = "crates/tomoyo-protocol", version = "3.1.0" }
+tomoyo-everything = { path = "crates/tomoyo-everything", version = "3.1.0" }
+tomoyo-core = { path = "crates/tomoyo-core", version = "3.1.0" }
+tomoyo-providers = { path = "crates/tomoyo-providers", version = "3.1.0" }
+tomoyo-plugin-host = { path = "crates/tomoyo-plugin-host", version = "3.1.0" }
+tomoyo-sdk = { path = "crates/tomoyo-sdk", version = "3.1.0" }
 
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

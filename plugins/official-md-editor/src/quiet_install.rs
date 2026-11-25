@@ -188,6 +188,42 @@ pub fn spawn_verified_install() {
         });
 }
 
+pub fn spawn_detached_editor(exe: &Path, arg: &str) {
+    let build = || {
+        let mut cmd = Command::new(exe);
+        cmd.arg(arg);
+        cmd
+    };
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+        let mut cmd = build();
+        cmd.creation_flags(CREATE_BREAKAWAY_FROM_JOB | CREATE_NEW_PROCESS_GROUP);
+        if cmd.spawn().is_err() {
+            let _ = build().spawn();
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::process::CommandExt;
+        let mut cmd = build();
+        unsafe {
+            cmd.pre_exec(|| {
+                unsafe extern "C" { fn setsid() -> i32; }
+                let _ = setsid();
+                Ok(())
+            });
+        }
+        let _ = cmd.spawn();
+    }
+    #[cfg(all(not(windows), not(target_os = "linux")))]
+    {
+        let _ = build().spawn();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

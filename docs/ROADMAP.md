@@ -27,6 +27,9 @@
 
 ```text
 ┌──────────────────────────────────────────────────────────────────────────────┐
+│  v3.1.0 · [已完成 ✅] 零剪贴板 UIA 超级面板 · 核心翻译彻底去重 · 插件文本动作│
+│           高 DPI 清晰图标 · 可拖动滚动条 · 12 层深扫热监听 · 剪贴板防竞态加固│
+├──────────────────────────────────────────────────────────────────────────────┤
 │  v3.0.0 · [已完成 ✅] Core/Suite 物理拆包 · WASM ABI v2 · 签名/溯源 · macOS  │
 ├──────────────────────────────────────────────────────────────────────────────┤
 │  v2.8.0 · [已完成 ✅] 社区 CLI 打包/分片/体检 · WASM RichCard · 清单同步流水线│
@@ -426,6 +429,32 @@
 1. **Protocol v3 通用插件底座（Phase 2）**：落地 Hybrid 混合运行时（`window.tomoyo.callPlugin` ↔ `tomoyo/call`）、声明式 `[[settings]]` v3（`secret` / `hotkey` / `dir` / `file` / `section` / `visible_if`）与通用加密密钥库（`plugin:<id>:<key>`）、`[[tray_actions]]`、`[[file_actions]]`、`Permission::SelectionRead` 与 `tomoyo-cli dev --devtools`；
 2. **四大重型官方模块 100% 零特权外迁（Phase 3a–3d）**：离线 OCR（`dev.tomoyo.ocr`）、多源划词翻译（`dev.tomoyo.translate`）、原生截图贴图录屏（`dev.tomoyo.capture`）与剪贴板历史工作台（`dev.tomoyo.clipboard`）全部迁出主内核与 `tomoyo-webview-host`，移除核心 `rusqlite`、内置业务 Provider/Tab/HTML 及静态剪贴板监听（按订阅动态启停），`tomoyo` 减重至 `5.86 MB`、`tomoyo-webview-host` 减重 `-35%` 至 `3.40 MB`（仅内嵌 `settings.html`）；
 3. **Starter Packs 与多平台独立插件分发（Phase 4）**：插件市场新增四组按需装机套件（纯净微内核 / 高频效率 / 写作识字 / 官方全家桶），CI/Release/Inno Setup/Arch `PKGBUILD` 全量同步 6 款官方插件及每款插件独立的 Linux/Windows ZIP 产物与 `SHA256SUMS`。
+
+### 阶段二十四：`v3.1.0` — 零剪贴板 UIA 超级面板、核心彻底去重、高 DPI 图标与交互/稳态全链路打磨（已完成 ✅）
+1. **原生零 WebView 超级面板与零剪贴板 UIA 划词（`super_panel/` + `uia_probe.rs`）**：
+   - 极简单列光标浮窗（支持右键长按 / 中键长按 / 中键单击三选一统一配置），采用严格平衡的 **Swallow-and-Replay** `WH_MOUSE_LL` 钩子（消除 `win32k` 按键失同步与任务栏假死）及三重冗余点击外部关闭；
+   - **优先 Win32 UI Automation（`IUIAutomationTextPattern2` / `TextPattern`）无痕取词**（`< 3 ms` 零剪贴板触碰、零 `Ctrl+C` 注入），内置 **终端 `SIGINT` 保护名单**（防止终端无选区时发送 `Ctrl+C` 误杀正在运行的命令），仅在非终端文件管理器/旧控件时回退至防竞态无损剪贴板探测；同步赋能 `Alt+T`（`Permission::SelectionRead`）；
+   - **核心翻译引擎彻底去重**：删除 `tomoyo-core/src/translate/engines.rs`（444 行）与冗余 `TranslateStore`，新增 `PluginHost::resolve_stdio_oneshot()` 无锁快照 + `tomoyo-plugin-translate --quick-translate` 单次委托，超级面板内联翻译与翻译工作台 100% 共享插件设置/DPAPI 密钥且永不阻塞 `PluginHost`；
+   - **官方插件接入 Protocol v3 `[[text_actions]]`**：`dev.tomoyo.notes` 新增「一键存为备忘（`save_selection_note`）」，`dev.tomoyo.clipboard` 新增「置顶存入剪贴板（`pin_selection_text`）」。
+2. **启动器质感、深层索引热监听与剪贴板防竞态加固**：
+   - **高清 Shell 图标与可拖动滚动条**：`icon_extract.rs` 接入 `SHGetImageList`（`SHIL_EXTRALARGE` / `SHIL_JUMBO`）+ 2×2 Lanczos 抗锯齿下采样消除图标模糊锯齿；`scrollbar.rs` 提供 Fluent 自绘侧边滚动条（支持鼠标拖动拇指、点击轨道翻页与悬停加宽）；
+   - **1–12 层 BFS 深层自定义目录索引 + 热变更自动重同步**：`custom_dirs.rs` 支持最多 12 层深层目录与文档索引（自动过滤构建噪声目录），`AppsProvider::reload()` 动态同步 `AppDirWatcher` 监听集合，新增/移除自定义目录免重启即刻生效；
+   - **OS 剪贴板防竞态加固（`clipboard_ctrl.rs` + `clipboard_win.rs`）**：120 ms `WM_CLIPBOARDUPDATE` 防抖合并突发写入、单次 `< 0.3 ms` 原子锁快照（DIB 解码移出锁外）、有效属主 `HWND` 及 30 ms 序列号静默窗口，消除 `CLIPBRD_E_CANT_OPEN`；
+   - **工程减压**：清理 `frontend/src/lib/i18n.ts` 中 55 个历史废弃双语键（`settings.html` 降至 `288.3 KB / 300 KB`），拆解 `TranslatorApp.svelte`、`tomoyo-plugin-ocr/src/main.rs`、`store_index.rs`、`official-md-editor/src/main.rs`、`official-notes/src/main.rs`、`launch_ctrl.rs` 全部贴顶热点。
+
+---
+
+## 五、中长期演进规划 (`v3.2 → v4.0` · 稳态纵深与生态复利)
+
+1. **`v3.2` · 高频场景纵深打磨（全部在插件侧演进，核心零膨胀）**：
+   - **启动器上下文感知**：空输入唤起时感知当前剪贴板形态（JSON/图片/URL/色值）提供一键直达动作；
+   - **旗舰插件 2.0**：`dev.tomoyo.clipboard` 支持顺序队列粘贴（Paste Stack）与行内格式化粘贴；`dev.tomoyo.capture` 支持一键重复上次区域截图与多贴图分组显示/隐藏；`dev.tomoyo.translate` 与本地 AI 工作流支持流式译文输出与 Prompt 预设。
+2. **`v3.3` · 开放插件生态飞轮**：
+   - 将 `tomoyo-protocol` / `tomoyo-sdk` / `tomoyo-wasm-sdk` v3 正式发布至 `crates.io`，提供一键建仓的 GitHub Plugin Template Repo（自动多平台构建 + 自动生成注册表分片 PR）；
+   - 推出首批零依赖纯 WASM 高频工具插件（开发者编解码/Cron/正则、本地端口查杀、窗口分屏布局），商店支持后台 ETag 304 静默更新检测。
+3. **`v3.4–v4.0` · 跨平台拉齐与可信分发**：
+   - **Linux 主力拉齐**：补齐 Linux 端可拖动滚动条与 Wayland/X11 超级面板（利用 `wl-paste --primary` 原生主选区实现零剪贴板污染划词）；
+   - **分发信任链**：结合社区规模引入 Windows 开源代码签名（如 SignPath.io），消除 SmartScreen 拦截；按实际用户诉求评估落地 macOS 原生 `NSPanel` 外壳。
 
 ---
 

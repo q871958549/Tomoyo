@@ -1,167 +1,33 @@
 //! Official standalone optional Tomoyo plugin: Local Markdown Notes (`dev.tomoyo.notes`).
 //!
 //! Zero core bloat: runs purely as an on-demand STDIO JSON-RPC child process (0 MB idle RAM)
-//! storing open, human-readable `.md` files under `%LOCALAPPDATA%\Tomoyo\notes\`.
+//! storing open, human-readable `.md` files under `%LOCALAPPDATA%\Tomoyo\notes\` and exposes
+//! Protocol v3 `[[text_actions]]` for one-click note capture from Tomoyo Super Panel.
+
+mod store;
 
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::path::PathBuf;
+use store::{
+    create_note_file, default_tag_from_settings, load_notes_from, notes_dir,
+    notes_dir_from_settings, parse_create_input, NoteDoc,
+};
 use tomoyo_sdk::{
     ActionKind, ActionSpec, ExecuteRequest, ExecuteResponse, IconSpec, PluginMeta, PreviewSpec,
     QueryContext, ResultCategory, ResultItem, TomoyoPlugin,
 };
 
 const PLUGIN_ID: &str = "dev.tomoyo.notes";
-const MAX_SCAN_NOTES: usize = 200;
-const MAX_NOTE_BYTES: u64 = 65_536;
 
 struct NotesPlugin;
 
-struct NoteDoc {
-    path: PathBuf,
-    file_name: String,
-    title: String,
-    snippet: String,
-    body: String,
-    tags: Vec<String>,
-    modified_secs: u64,
-}
-
-fn notes_dir_from(ctx: &QueryContext) -> PathBuf {
-    ctx.plugin_settings.get("notes_dir").and_then(|v| v.as_str()).map(str::trim)
-        .filter(|s| !s.is_empty()).map(PathBuf::from).unwrap_or_else(notes_dir)
-}
-
 fn max_results_from(ctx: &QueryContext) -> usize {
-    ctx.plugin_settings.get("max_results").and_then(|v| v.as_u64())
-        .map(|n| (n as usize).clamp(5, 30)).unwrap_or(15).min(ctx.limit.max(1))
-}
-
-fn default_tag_from(ctx: &QueryContext) -> String {
-    let raw = ctx.plugin_settings.get("default_tag").and_then(|v| v.as_str()).map(str::trim).unwrap_or("");
-    if raw.is_empty() { String::new() } else if raw.starts_with('#') { raw.to_string() } else { format!("#{raw}") }
-}
-
-fn notes_dir() -> PathBuf {
-    if let Ok(custom) = std::env::var("TOMOYO_NOTES_DIR") {
-        let t = custom.trim();
-        if !t.is_empty() {
-            return PathBuf::from(t);
-        }
-    }
-    let base = std::env::var("LOCALAPPDATA")
-        .or_else(|_| std::env::var("HOME"))
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("."));
-    let local_root = base.join("Tomoyo");
-    if let Ok(sync_raw) = fs::read_to_string(local_root.join("sync_dir.txt")) {
-        let sync_t = sync_raw.trim();
-        if !sync_t.is_empty() {
-            let sp = PathBuf::from(sync_t);
-            if sp.is_dir() {
-                return sp.join("notes");
-            }
-        }
-    }
-    local_root.join("notes")
-}
-
-fn load_notes_from(dir: &Path) -> Vec<NoteDoc> {
-    let Ok(rd) = fs::read_dir(dir) else { return Vec::new(); };
-    let mut docs = Vec::new();
-    for ent in rd.flatten().take(MAX_SCAN_NOTES) {
-        let path = ent.path();
-        if !path.is_file() { continue; }
-        let ext_ok = path.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("md") || e.eq_ignore_ascii_case("txt"));
-        if !ext_ok { continue; }
-        let Ok(meta) = ent.metadata() else { continue; };
-        if meta.len() > MAX_NOTE_BYTES { continue; }
-        let Ok(body) = fs::read_to_string(&path) else { continue; };
-        let file_name = path.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-        let title = extract_title(&body, &file_name);
-        let tags = extract_tags(&body);
-        let snippet = extract_snippet(&body, &title);
-        let modified_secs = meta.modified().ok().and_then(|m| m.duration_since(UNIX_EPOCH).ok()).map(|d| d.as_secs()).unwrap_or(0);
-        docs.push(NoteDoc { path, file_name, title, snippet, body, tags, modified_secs });
-    }
-    docs.sort_by_key(|a| std::cmp::Reverse(a.modified_secs));
-    docs
-}
-
-fn extract_title(body: &str, file_name: &str) -> String {
-    for line in body.lines() {
-        let t = line.trim();
-        if !t.is_empty() {
-            return t.trim_start_matches('#').trim().chars().take(64).collect();
-        }
-    }
-    file_name.trim_end_matches(".md").to_string()
-}
-
-fn extract_tags(body: &str) -> Vec<String> {
-    let mut tags = Vec::new();
-    for tok in body.split_whitespace() {
-        if let Some(rest) = tok.strip_prefix('#')
-            && !rest.is_empty() && !rest.starts_with('#') && rest.len() <= 24 {
-                let clean = rest.trim_matches(|c: char| matches!(c, ',' | '.' | ';' | '，' | '。'));
-                if !clean.is_empty() && !tags.iter().any(|x: &String| x.eq_ignore_ascii_case(clean)) {
-                    tags.push(format!("#{clean}"));
-                }
-            }
-    }
-    tags
-}
-
-fn extract_snippet(body: &str, title: &str) -> String {
-    for line in body.lines() {
-        let t = line.trim();
-        if t.is_empty() || t.trim_start_matches('#').trim() == title { continue; }
-        return t.chars().take(90).collect();
-    }
-    "本地 Markdown 备忘录".into()
-}
-
-fn sanitize_slug(title: &str) -> String {
-    let slug: String = title
-        .chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' || ('\u{4e00}'..='\u{9fff}').contains(&c) { c } else { '-' })
-        .take(36)
-        .collect();
-    let trimmed = slug.trim_matches('-');
-    if trimmed.is_empty() { "note".into() } else { trimmed.to_string() }
-}
-
-fn parse_create_input(args: &str) -> Option<(String, String)> {
-    let body = args
-        .strip_prefix('+')
-        .or_else(|| args.strip_prefix("new "))
-        .or_else(|| args.strip_prefix("add "))
-        .map(str::trim)?;
-    if body.is_empty() {
-        return None;
-    }
-    if let Some((t, c)) = body.split_once("::").or_else(|| body.split_once("：：")) {
-        let title = t.trim();
-        let content = c.trim();
-        if !title.is_empty() {
-            return Some((title.to_string(), content.to_string()));
-        }
-    }
-    let title: String = body.chars().take(28).collect();
-    Some((title, body.to_string()))
-}
-
-fn create_note_file(dir: &Path, title: &str, content: &str) -> Result<PathBuf, String> {
-    fs::create_dir_all(dir).map_err(|e| format!("创建备忘录目录失败: {e}"))?;
-    let ts = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
-    let path = dir.join(format!("{ts}-{}.md", sanitize_slug(title)));
-    let md = if content.trim().is_empty() || content.trim() == title.trim() {
-        format!("# {}\n", title.trim())
-    } else {
-        format!("# {}\n\n{}\n", title.trim(), content.trim())
-    };
-    fs::write(&path, md).map_err(|e| format!("写入 Markdown 失败: {e}"))?;
-    Ok(path)
+    ctx.plugin_settings
+        .get("max_results")
+        .and_then(|v| v.as_u64())
+        .map(|n| (n as usize).clamp(5, 30))
+        .unwrap_or(15)
+        .min(ctx.limit.max(1))
 }
 
 fn build_note_item(doc: &NoteDoc, score: i64) -> ResultItem {
@@ -219,17 +85,16 @@ fn build_note_item(doc: &NoteDoc, score: i64) -> ResultItem {
 
 impl TomoyoPlugin for NotesPlugin {
     fn meta(&self) -> PluginMeta {
-        PluginMeta::new("本地快速备忘录", "2.6.0")
+        PluginMeta::new("本地快速备忘录", env!("CARGO_PKG_VERSION"))
     }
 
     fn query(&self, ctx: &QueryContext) -> Vec<ResultItem> {
-        let dir = notes_dir_from(ctx);
+        let dir = notes_dir_from_settings(&ctx.plugin_settings);
         let dir_payload = dir.to_string_lossy().into_owned();
-        let def_tag = default_tag_from(ctx);
+        let def_tag = default_tag_from_settings(&ctx.plugin_settings);
         let args = ctx.args.trim();
         let mut out = Vec::new();
 
-        // 1. Direct create mode (`note + 标题 :: 内容` or `note new ...`)
         if let Some((title, mut content)) = parse_create_input(args) {
             if !def_tag.is_empty() && !content.contains(&def_tag) {
                 content = if content.is_empty() { def_tag.clone() } else { format!("{content}\n\n{def_tag}") };
@@ -262,41 +127,40 @@ impl TomoyoPlugin for NotesPlugin {
             return out;
         }
 
-        // 2. One-key save latest clipboard text as Markdown note (`note clip`)
         if args.eq_ignore_ascii_case("clip")
-            && let Some(clip) = ctx.clipboard.as_ref().filter(|c| !c.text.trim().is_empty()) {
-                let title: String = clip.text.lines().next().unwrap_or("剪贴板笔记").trim().chars().take(32).collect();
-                let body = if !def_tag.is_empty() && !clip.text.contains(&def_tag) {
-                    format!("{}\n\n{def_tag}", clip.text)
-                } else {
-                    clip.text.clone()
-                };
-                out.push(ResultItem {
-                    id: "note:from_clip".into(),
-                    provider_id: PLUGIN_ID.into(),
-                    title: format!("将剪贴板保存为备忘：{title}"),
-                    subtitle: "按回车将当前剪贴板文本落盘为本地 Markdown".into(),
-                    category: ResultCategory::Plugin,
-                    score: 9_900,
-                    icon: IconSpec::Monogram("CB".into()),
-                    badge: Some("CLIP→MD".into()),
-                    copy_text: None,
-                    actions: vec![ActionSpec {
-                        id: "create".into(),
-                        label: "保存为本地 .md 备忘".into(),
-                        shortcut: Some("Enter".into()),
-                        kind: ActionKind::PluginExecute {
-                            plugin_id: PLUGIN_ID.into(),
-                            action_id: "create".into(),
-                            payload: serde_json::json!({ "title": title, "content": body, "dir": dir_payload }),
-                        },
-                    }],
-                    preview: Some(PreviewSpec::Text { title, body }),
-                });
-                return out;
-            }
+            && let Some(clip) = ctx.clipboard.as_ref().filter(|c| !c.text.trim().is_empty())
+        {
+            let title: String = clip.text.lines().next().unwrap_or("剪贴板笔记").trim().chars().take(32).collect();
+            let body = if !def_tag.is_empty() && !clip.text.contains(&def_tag) {
+                format!("{}\n\n{def_tag}", clip.text)
+            } else {
+                clip.text.clone()
+            };
+            out.push(ResultItem {
+                id: "note:from_clip".into(),
+                provider_id: PLUGIN_ID.into(),
+                title: format!("将剪贴板保存为备忘：{title}"),
+                subtitle: "按回车将当前剪贴板文本落盘为本地 Markdown".into(),
+                category: ResultCategory::Plugin,
+                score: 9_900,
+                icon: IconSpec::Monogram("CB".into()),
+                badge: Some("CLIP→MD".into()),
+                copy_text: None,
+                actions: vec![ActionSpec {
+                    id: "create".into(),
+                    label: "保存为本地 .md 备忘".into(),
+                    shortcut: Some("Enter".into()),
+                    kind: ActionKind::PluginExecute {
+                        plugin_id: PLUGIN_ID.into(),
+                        action_id: "create".into(),
+                        payload: serde_json::json!({ "title": title, "content": body, "dir": dir_payload }),
+                    },
+                }],
+                preview: Some(PreviewSpec::Text { title, body }),
+            });
+            return out;
+        }
 
-        // 3. Full-text / title / #tag search across local Markdown notes
         let docs = load_notes_from(&dir);
         let tokens: Vec<String> = args.split_whitespace().map(|t| t.to_ascii_lowercase()).collect();
         let mut hits: Vec<(i64, &NoteDoc)> = docs
@@ -361,6 +225,35 @@ impl TomoyoPlugin for NotesPlugin {
 
     fn execute(&self, req: &ExecuteRequest) -> ExecuteResponse {
         match req.action_id.as_str() {
+            "save_selection_note" => {
+                let raw = req.payload.get("text").and_then(|v| v.as_str()).unwrap_or("").trim();
+                if raw.is_empty() {
+                    return ExecuteResponse { hide_window: true, toast: Some("未检测到可保存的文本".into()), ..Default::default() };
+                }
+                let dir = notes_dir_from_settings(&req.plugin_settings);
+                let def_tag = default_tag_from_settings(&req.plugin_settings);
+                let title: String = raw
+                    .lines()
+                    .find(|l| !l.trim().is_empty())
+                    .unwrap_or("划词备忘")
+                    .trim()
+                    .chars()
+                    .take(32)
+                    .collect();
+                let content = if !def_tag.is_empty() && !raw.contains(&def_tag) {
+                    format!("{raw}\n\n{def_tag}")
+                } else {
+                    raw.to_string()
+                };
+                match create_note_file(&dir, &title, &content) {
+                    Ok(_) => ExecuteResponse {
+                        hide_window: true,
+                        toast: Some(format!("✓ 已一键存为本地备忘：{title}")),
+                        ..Default::default()
+                    },
+                    Err(e) => ExecuteResponse { hide_window: true, toast: Some(e), ..Default::default() },
+                }
+            }
             "create" => {
                 let title = req.payload.get("title").and_then(|v| v.as_str()).unwrap_or("未命名备忘");
                 let content = req.payload.get("content").and_then(|v| v.as_str()).unwrap_or("");
@@ -414,7 +307,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn creates_searches_and_parses_local_markdown_notes() {
+    fn creates_searches_and_saves_selection_notes() {
         let dir = std::env::temp_dir().join(format!("tomoyo_notes_test_{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         let p = create_note_file(&dir, "架构备忘", "坚持微内核 #rust #tomoyo").unwrap();
@@ -424,13 +317,19 @@ mod tests {
         assert_eq!(docs[0].title, "架构备忘");
         assert!(docs[0].tags.contains(&"#rust".to_string()));
         assert_eq!(parse_create_input("+ 会议纪要 :: 明天上线"), Some(("会议纪要".into(), "明天上线".into())));
-        let mut ctx = QueryContext::new("note + 测试", 1, 20);
-        ctx.plugin_settings.insert("notes_dir".into(), serde_json::json!(dir.to_string_lossy()));
-        ctx.plugin_settings.insert("default_tag".into(), serde_json::json!("inbox"));
-        ctx.plugin_settings.insert("max_results".into(), serde_json::json!(10));
-        assert_eq!(notes_dir_from(&ctx), dir);
-        assert_eq!(default_tag_from(&ctx), "#inbox");
-        assert_eq!(max_results_from(&ctx), 10);
+
+        let mut settings = std::collections::BTreeMap::new();
+        settings.insert("notes_dir".into(), serde_json::json!(dir.to_string_lossy()));
+        settings.insert("default_tag".into(), serde_json::json!("inbox"));
+        let resp = NotesPlugin.execute(&ExecuteRequest {
+            action_id: "save_selection_note".into(),
+            item_id: String::new(),
+            payload: serde_json::json!({ "text": "Super Panel 一键存备忘测试" }),
+            plugin_settings: settings,
+            plugin_secrets: Default::default(),
+        });
+        assert!(resp.toast.as_deref().unwrap_or("").contains("已一键存为本地备忘"));
+        assert_eq!(load_notes_from(&dir).len(), 2);
         let _ = fs::remove_dir_all(&dir);
     }
 }

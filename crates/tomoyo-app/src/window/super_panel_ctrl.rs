@@ -5,7 +5,7 @@
 use super::AppShell;
 use crate::actions::{execute_action, set_clipboard_text, shell_open};
 use crate::super_panel::{
-    self, build_actions_for_context, close_active_panel, inline_trans, open_super_panel,
+    self, build_actions_for_context, close_active_panel, open_super_panel,
     probe_foreground_selection, should_avoid_super_panel, sync_trigger_hook,
     uninstall_trigger_hook, SuperActionKind, SuperContext, SuperPanelExec, SuperPanelLaunch,
 };
@@ -176,13 +176,21 @@ impl AppShell {
             return;
         }
         let actions = build_actions_for_context(&ctx, &cfg, &self.plugin_host, self.lang);
-        let translate_cfg = inline_trans::effective_translate_config(&cfg);
+        let translate_spec = cfg
+            .is_plugin_enabled(PLUGIN_TRANSLATE)
+            .then(|| self.plugin_host.resolve_stdio_oneshot(PLUGIN_TRANSLATE))
+            .flatten();
+        tracing::debug!(
+            actions = actions.len(),
+            has_translate_plugin = translate_spec.is_some(),
+            "Opening Super Panel popover"
+        );
         open_super_panel(SuperPanelLaunch {
             anchor,
             host_hwnd: self.hwnd,
             exec_msg: WM_APP_SP_EXEC,
             exec_slot: Arc::clone(&self.super_panel.exec_slot),
-            translate_cfg,
+            translate_spec,
             pal: self.theme,
             lang: self.lang,
             font_regular: self.font_regular,

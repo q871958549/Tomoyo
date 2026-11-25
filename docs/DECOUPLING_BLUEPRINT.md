@@ -72,7 +72,7 @@
 
 ### Phase 3（`v2.9` → `v3.0` · 已落地 ✅）：重型官方功能全量外迁
 - [x] **3a 离线 OCR 外迁**：删除 `tomoyo-webview-host/src/ocr_view.rs` 及核心内嵌 `ocr.html`；`plugins/builtin-ocr` 升级为 Protocol v3 Hybrid 插件（自带 `ui/index.html` `79.1 KB`、`[[tray_actions]]` 与图像 `[[file_actions]]`），走 `window.tomoyo.callPlugin` 双向 RPC；
-- [x] **3b 多源划词翻译外迁**：移除 `TranslateProvider`、`tr_view.rs`、`TranslateTab.svelte` 及 `tomoyo-webview-host` 内嵌 `translator.html`；`plugins/official-translate`（`dev.tomoyo.translate`，`0.67 MB`）以 Hybrid 插件自包含承载多源翻译、`ui/index.html`（`103.8 KB`）、加密 `secret` 凭据与 `Permission::SelectionRead` 划词热键；
+- [x] **3b 多源划词翻译外迁**：移除 `TranslateProvider`、`tr_view.rs`、`TranslateTab.svelte` 及 `tomoyo-webview-host` 内嵌 `translator.html`；`plugins/official-translate`（`dev.tomoyo.translate`，`0.61 MB`）以 Hybrid 插件自包含承载多源翻译、`ui/index.html`（`104.1 KB`）、加密 `secret` 凭据、`Permission::SelectionRead` 划词热键及 `--quick-translate` 无锁短生命周期内联翻译入口；**`v3.1.0` 已彻底移除 `tomoyo-core/src/translate/engines.rs` 与核心重复翻译历史存储，实现 100% 单一事实源**；
 - [x] **3c 原生截图与录屏外迁**：移除 `CaptureProvider`、`CaptureTab.svelte` 及核心内置截图热键/托盘分支；新增独立原生插件 `plugins/official-capture`（`dev.tomoyo.capture`，`0.57 MB` + 按需拉起 `tomoyo-capture` `1.49 MB`），完整承载 4 个热键、2 个托盘动作、图像贴图文件动作与 21 项声明式设置；
 - [x] **3d 剪贴板历史工作台外迁**：从 `tomoyo-core` / `tomoyo-providers` / `tomoyo-webview-host` 彻底移除 `rusqlite`、`ClipboardProvider`、`clip_view.rs`、`clipboard.html`、`tomoyo-clip-img`、`Clip*` IPC 与前端 `ClipboardPluginCard.svelte` / `OFFICIAL_PLUGINS` 硬编码；新增 `plugins/official-clipboard`（`dev.tomoyo.clipboard`，Hybrid UI `99.4 KB`）并实现 OS 剪贴板监听按订阅者动态启停（纯内核模式下零监听、零数据库占用）；
 - [x] **实测验收指标**：`tomoyo` 主程序由 `7.00 MB` 降至 `5.86 MB`，`tomoyo-webview-host` 由 `5.23 MB` 降至 `3.40 MB`（降幅 `-35%`，仅内嵌唯一页面 `settings.html` `281.0 KB` / `96.65 KB` gzip），100 轮休眠压测 `Handles +0`、`Private 21.33 MB`（零句柄泄露）。

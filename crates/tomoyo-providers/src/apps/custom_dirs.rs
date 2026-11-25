@@ -331,10 +331,49 @@ fn is_noisy_helper_exe(lower: &str) -> bool {
     PREFIXES.iter().any(|p| lower.starts_with(p)) || lower.ends_with("_helper")
 }
 
+/// Word-boundary aware Start Menu noise filter: skips app uninstallers/docs/website links
+/// without falsely dropping real utilities like `HiBit Uninstaller`, `Geek Uninstaller`,
+/// `HelpDesk`, or `License Manager`.
+pub(crate) fn is_noisy_shortcut(lower: &str) -> bool {
+    let s = lower.trim();
+    if s.contains("卸载") || s.contains("访问主页") || s.contains("release notes") || s.contains("readme") {
+        return true;
+    }
+    let words: Vec<&str> = s
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .collect();
+    if words.iter().any(|&w| matches!(w, "uninstall" | "documentation")) {
+        return true;
+    }
+    matches!(
+        words.last().copied(),
+        Some("help" | "manual" | "manuals" | "documentation" | "website" | "license")
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn noise_filter_keeps_real_uninstaller_apps_and_drops_uninstall_links() {
+        assert!(!is_noisy_shortcut("hibit uninstaller"));
+        assert!(!is_noisy_shortcut("geek uninstaller"));
+        assert!(!is_noisy_shortcut("revo uninstaller pro"));
+        assert!(!is_noisy_shortcut("bcuninstaller"));
+        assert!(!is_noisy_shortcut("helpdesk client"));
+        assert!(!is_noisy_shortcut("license manager"));
+
+        assert!(is_noisy_shortcut("uninstall node.js"));
+        assert!(is_noisy_shortcut("xyplorer uninstall"));
+        assert!(is_noisy_shortcut("卸载hibit uninstaller"));
+        assert!(is_noisy_shortcut("卸载微信"));
+        assert!(is_noisy_shortcut("7-zip help"));
+        assert!(is_noisy_shortcut("git release notes"));
+        assert!(is_noisy_shortcut("node.js documentation"));
+    }
 
     #[test]
     fn bfs_scans_deep_nested_files_up_to_depth_ten_and_skips_noise_dirs() {

@@ -146,6 +146,15 @@ impl TomoyoPlugin for ClipboardPlugin {
                     ..Default::default()
                 }
             }
+            "pin_selection_text" => {
+                let raw = req.payload.get("text").and_then(Value::as_str).unwrap_or("");
+                let ok = self.with_store(&cfg, |s| s.push_and_pin_text(raw.to_string(), "super_panel"));
+                ExecuteResponse {
+                    hide_window: true,
+                    toast: Some(if ok { "★ 已置顶存入剪贴板历史".into() } else { "未检测到可保存的文本".into() }),
+                    ..Default::default()
+                }
+            }
             "toggle_capture" => {
                 let paused = toggle_runtime_paused();
                 ExecuteResponse {

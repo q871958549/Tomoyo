@@ -1,7 +1,7 @@
 {
   "schema_version": 2,
   "name": "Tomoyo Registry Shard (examples)",
-  "updated_at": "2026-11-24",
+  "updated_at": "2026-11-25",
   "total_count": null,
   "shards": [],
   "plugins": [
@@ -99,7 +99,7 @@
       ],
       "permissions": [],
       "source": "plugins/example-webview-json",
-      "sha256": "b7676b2218be549ef08651f296e6d278b7a1633b9d1af1e75f18f479cc76e3c1",
+      "sha256": "b360116a75f47d90606fd937212afc0d3b17eb1ad4fe208771995e43fe7ef415",
       "platforms": {},
       "min_tomoyo_version": null,
       "homepage": null,

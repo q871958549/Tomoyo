@@ -8,6 +8,7 @@ pub mod panel_paint;
 pub mod panel_wnd;
 pub mod trigger;
 mod trigger_guard;
+pub(crate) mod uia_probe;
 
 pub use context_probe::{probe_foreground_selection, SuperContext, TextKind};
 pub use panel_wnd::{close_active_panel, open_super_panel, SuperPanelExec, SuperPanelLaunch};
@@ -104,16 +105,20 @@ pub fn build_actions_for_context(
                     }),
                 ));
             }
+            let mut has_plugin_note_action = false;
             for spec in plugin_host.text_actions_for(raw, kind.as_str()) {
                 if actions.len() >= 4 {
                     break;
+                }
+                if spec.id == "plug:dev.tomoyo.notes:save_selection_note" {
+                    has_plugin_note_action = true;
                 }
                 if !actions.iter().any(|a| a.label == spec.label) {
                     actions.push(act(&spec.id, "✦", &spec.label, SuperActionKind::CoreAction(spec.kind)));
                 }
             }
             actions.push(act("sp:web_search", "⌕", lang.pick("网页搜索", "Web Search"), SuperActionKind::WebSearch(raw.clone())));
-            if has_notes {
+            if has_notes && !has_plugin_note_action {
                 let snip: String = raw.replace(['\r', '\n'], " ").chars().take(180).collect();
                 actions.push(act("sp:save_note", "✎", lang.pick("存为速记", "Save Note"), SuperActionKind::FillLauncher(format!("note + {snip}"))));
             }

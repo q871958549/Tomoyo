@@ -8,7 +8,6 @@
     Pin,
     Settings,
     Sparkles,
-    Star,
     Trash2,
     Volume2,
     X,
@@ -20,17 +19,8 @@
   import Select from '../../lib/ui/Select.svelte';
   import Switch from '../../lib/ui/Switch.svelte';
   import TranslatorDrawer, { type HistItem, type WordItem } from './TranslatorDrawer.svelte';
+  import EngineResultCard, { type EngineResult } from './EngineResultCard.svelte';
 
-  interface EngineResult {
-    engine_name: string;
-    ok: boolean;
-    translated?: string;
-    detected_lang?: string;
-    phonetic?: string;
-    extra_dict?: string;
-    elapsed_ms?: number;
-    error?: string;
-  }
   interface TranslateBatch {
     source_text: string;
     target_lang: string;
@@ -344,46 +334,14 @@
           {/each}
         {:else if batch}
           {#each batch.results as r}
-            {@const saved = isSaved(batch.source_text)}
-            <div class="t-card eng-card">
-              <div class="eng-head">
-                <div class="eng-meta">
-                  <span class="dot {r.ok ? 'is-ok' : 'is-err'}"></span>
-                  <span class="eng-name">{r.engine_name}</span>
-                  {#if r.detected_lang}<span class="t-pill">{r.detected_lang} → {batch.target_lang}</span>{/if}
-                  <span class="t-pill">{r.elapsed_ms || 0} ms</span>
-                </div>
-                {#if r.ok && r.translated}
-                  <div class="src-acts">
-                    <Button variant="icon" size="sm" title="复制译文" onclick={() => copyTxt(r.translated || '', `${r.engine_name} 译文`)}>
-                      <Copy size={13} />
-                    </Button>
-                    <Button variant="icon" size="sm" active={saved} title={saved ? '已收藏' : '加入生词本'} onclick={() => saveWord(r)}>
-                      <Star size={13} />
-                    </Button>
-                    <Button variant="icon" size="sm" title="朗读译文" onclick={() => speakTxt(r.translated || '', batch?.target_lang)}>
-                      <Volume2 size={13} />
-                    </Button>
-                  </div>
-                {/if}
-              </div>
-
-              {#if r.ok && r.translated}
-                <div class="eng-text">{r.translated}</div>
-                {#if r.phonetic || r.extra_dict}
-                  <div class="dict-box">
-                    {#if r.phonetic}<div class="phonetic">/{r.phonetic}/</div>{/if}
-                    {#if r.extra_dict}
-                      {#each r.extra_dict.split(/\r?\n/).filter(Boolean) as line}
-                        <div>{line}</div>
-                      {/each}
-                    {/if}
-                  </div>
-                {/if}
-              {:else}
-                <div class="eng-err">{r.error || '翻译失败'}</div>
-              {/if}
-            </div>
+            <EngineResultCard
+              result={r}
+              targetLang={batch.target_lang}
+              saved={isSaved(batch.source_text)}
+              onCopy={copyTxt}
+              onSaveWord={saveWord}
+              onSpeak={speakTxt}
+            />
           {/each}
         {/if}
       </div>
@@ -434,17 +392,4 @@
   }
   .res-stack { display: flex; flex-direction: column; gap: 10px; }
   .eng-card { padding: 12px 14px; }
-  .eng-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
-  .eng-meta { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
-  .dot { width: 7px; height: 7px; border-radius: 999px; flex-shrink: 0; }
-  .dot.is-ok { background: var(--ok); }
-  .dot.is-err { background: var(--danger); }
-  .eng-name { font-weight: 600; font-size: 13px; }
-  .eng-text { white-space: pre-wrap; word-break: break-word; font-size: 14px; line-height: 1.7; user-select: text; }
-  .eng-err { font-size: 12.5px; color: var(--danger); }
-  .dict-box {
-    margin-top: 9px; padding: 8px 11px; border-radius: 8px; background: var(--canvas);
-    border: 1px solid var(--border); font-size: 12px; line-height: 1.6; color: var(--text-secondary);
-  }
-  .phonetic { color: var(--accent); font-weight: 500; font-family: "Cascadia Mono", Consolas, monospace; font-size: 12px; }
 </style>

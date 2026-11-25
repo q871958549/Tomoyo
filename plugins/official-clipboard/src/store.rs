@@ -116,6 +116,25 @@ impl ClipboardStore {
         }
     }
 
+    pub fn push_and_pin_text(&self, raw: String, source_app: &str) -> bool {
+        if raw.trim().is_empty() {
+            return false;
+        }
+        let key = truncate_utf8(&raw, MAX_ITEM_BYTES);
+        self.push_text_with_source(key.clone(), source_app);
+        if let Ok(mut guard) = self.history.write()
+            && let Some(item) = guard.iter_mut().find(|e| e.key == key)
+        {
+            item.pinned = true;
+        }
+        if let Some(db_lock) = &self.db
+            && let Ok(conn) = db_lock.lock()
+        {
+            let _ = conn.execute("UPDATE clipboard_history SET pinned = 1 WHERE text = ?1", params![key]);
+        }
+        true
+    }
+
     pub fn push_image_with_source(
         &self,
         path: String,

@@ -1,11 +1,26 @@
 //! Protocol v3 Super Panel action resolvers (`[[text_actions]]` & `[[file_actions]]`).
 
 use crate::host::PluginHost;
+use crate::process::resolve_command;
 use crate::runtime::RegisteredPlugin;
-use crate::v3_support::collect_file_actions_for;
-use std::collections::{HashMap, HashSet};
-use std::path::Path;
-use tomoyo_protocol::{ActionKind, ActionSpec};
+use crate::v2_support::effective_plugin_settings;
+use crate::v3_support::{collect_file_actions_for, load_declared_plugin_secrets};
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::path::{Path, PathBuf};
+use tomoyo_protocol::{ActionKind, ActionSpec, RuntimeConfig};
+
+/// Lock-free snapshot of an enabled STDIO plugin executable, settings, and declared secrets
+/// for short-lived one-shot invocations (e.g., Super Panel inline translation) that must
+/// never hold `PluginHost::state` across network I/O.
+#[derive(Debug, Clone)]
+pub struct StdioOneShotSpec {
+    pub program: String,
+    pub args: Vec<String>,
+    pub workdir: PathBuf,
+    pub env: BTreeMap<String, String>,
+    pub plugin_settings: BTreeMap<String, serde_json::Value>,
+    pub plugin_secrets: BTreeMap<String, String>,
+}
 
 /// Collects zero-I/O text/selection actions declared via `[[text_actions]]` by enabled plugins.
 pub(crate) fn collect_text_actions_for(
@@ -81,6 +96,29 @@ impl PluginHost {
         let (lock, _) = &*self.state;
         let st = lock.lock().unwrap();
         collect_file_actions_for(&st.plugins, &st.disabled_ids, full_path, &ext)
+    }
+
+    /// Snapshots an enabled STDIO plugin's command path, effective settings, and declared
+    /// secrets in `< 0.1 ms` so callers can spawn isolated one-shot helpers without locking
+    /// `PluginHost::state` across network I/O.
+    pub fn resolve_stdio_oneshot(&self, plugin_id: &str) -> Option<StdioOneShotSpec> {
+        let (lock, _) = &*self.state;
+        let st = lock.lock().unwrap();
+        if st.disabled_ids.contains(&plugin_id.to_ascii_lowercase()) {
+            return None;
+        }
+        let plug = st.plugins.get(plugin_id)?;
+        let RuntimeConfig::StdioJsonrpc { command, args, env } = &plug.manifest.runtime else {
+            return None;
+        };
+        Some(StdioOneShotSpec {
+            program: resolve_command(&plug.dir, command),
+            args: args.clone(),
+            workdir: plug.dir.clone(),
+            env: env.clone(),
+            plugin_settings: effective_plugin_settings(&plug.manifest, &st.plugin_settings),
+            plugin_secrets: load_declared_plugin_secrets(&plug.manifest),
+        })
     }
 }
 

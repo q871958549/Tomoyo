@@ -147,7 +147,9 @@ impl AppShell {
             phase: LaunchPhase::Spawning,
         });
 
-        self.toast = Some(format_in_flight_toast(self.lang, &item.title, is_admin, 0, self.in_flight_count()));
+        self.toast = Some(super::launch_probe::format_in_flight_toast(
+            self.lang, &item.title, is_admin, 0, self.in_flight_count(),
+        ));
         self.arm_launch_tick_if_needed();
         unsafe {
             let _ = InvalidateRect(Some(self.hwnd), None, false);
@@ -359,7 +361,9 @@ impl AppShell {
         if let Some(l) = self.active_launches.iter().rev().find(|l| l.is_in_flight()) {
             let secs = l.started_at.elapsed().as_secs();
             unsafe { let _ = KillTimer(Some(self.hwnd), super::TIMER_CLEAR_TOAST); }
-            self.toast = Some(format_in_flight_toast(self.lang, &l.title, l.is_admin, secs, count));
+            self.toast = Some(super::launch_probe::format_in_flight_toast(
+                self.lang, &l.title, l.is_admin, secs, count,
+            ));
         }
     }
 
@@ -384,21 +388,6 @@ fn prune_launch_list(list: &mut Vec<ActiveLaunch>) {
         LaunchPhase::Ready(at) => at.elapsed().as_millis() < READY_KEEP_MS,
         LaunchPhase::Spawning | LaunchPhase::Starting => l.started_at.elapsed().as_secs() < STALE_LAUNCH_SECS,
     });
-}
-
-fn format_in_flight_toast(lang: Lang, title: &str, is_admin: bool, secs: u64, total: usize) -> String {
-    let time_part = if secs >= 1 { format!(" ({secs}s)") } else { String::new() };
-    let extra = if total > 1 {
-        match lang { Lang::Zh => format!(" 等 {total} 项"), Lang::En => format!(" (+{})", total - 1) }
-    } else {
-        String::new()
-    };
-    match (lang, is_admin) {
-        (Lang::Zh, true) => format!("⏳ 正在请求管理员权限启动「{title}」{extra}{time_part}…"),
-        (Lang::En, true) => format!("⏳ Requesting admin launch for \"{title}\"{extra}{time_part}…"),
-        (Lang::Zh, false) => format!("⏳ 正在启动「{title}」{extra}{time_part}…"),
-        (Lang::En, false) => format!("⏳ Launching \"{title}\"{extra}{time_part}…"),
-    }
 }
 
 fn push_launch_event(

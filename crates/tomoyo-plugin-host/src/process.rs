@@ -301,7 +301,7 @@ impl Drop for LivePluginProcess {
 /// (e.g. Cargo `target/debug` / `target/release`) during local development.
 /// Always checks `.is_file()` so sibling directories (like `%LOCALAPPDATA%\Programs\Python`)
 /// are never mistaken for executable binaries!
-fn resolve_command(plugin_dir: &Path, command: &str) -> String {
+pub(crate) fn resolve_command(plugin_dir: &Path, command: &str) -> String {
     let candidate = plugin_dir.join(command);
     if candidate.is_file() {
         return candidate.to_string_lossy().into_owned();

@@ -77,6 +77,7 @@ impl AppShell {
                 }
             }
             ClipboardCaptureSnapshot::Files(files) => {
+                tracing::debug!(source_app = %src_app, count = files.len(), "Captured debounced clipboard file list");
                 self.inter.suppress_next_clip_img = false;
                 super::plugin_hotkeys::dispatch_clipboard_event(
                     self,
@@ -85,6 +86,7 @@ impl AppShell {
                 );
             }
             ClipboardCaptureSnapshot::Text(txt) => {
+                tracing::debug!(source_app = %src_app, chars = txt.chars().count(), "Captured debounced clipboard text");
                 self.inter.suppress_next_clip_img = false;
                 let now = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)

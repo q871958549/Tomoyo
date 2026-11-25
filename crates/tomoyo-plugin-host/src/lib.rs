@@ -22,3 +22,4 @@ pub use host::{PluginHost, PluginRuntimeInfo};
 pub use job::JobGuard;
 pub use v2_support::ActivePluginHotkey;
 pub use v3_support::ActivePluginTrayAction;
+pub use v3_text::StdioOneShotSpec;

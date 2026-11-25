@@ -179,37 +179,57 @@ pub(super) fn handle_plugin_hotkey(app: &mut AppShell, id: i32) {
         let _ = std::thread::Builder::new()
             .name("tomoyo-sel-plugin".into())
             .spawn(move || {
-                suppress_flag.store(true, Ordering::Release);
-                let prev_text = read_clipboard_text();
-                let seq_before = clipboard_seq_num();
-                send_ctrl_c_cleanly();
-                let mut captured = String::new();
-                let mut changed = false;
-                for _ in 0..12 {
-                    std::thread::sleep(Duration::from_millis(15));
-                    let mut cur_seq = clipboard_seq_num();
-                    if cur_seq != seq_before {
-                        changed = true;
-                        for _ in 0..3 {
-                            std::thread::sleep(Duration::from_millis(30));
-                            let next_seq = clipboard_seq_num();
-                            if next_seq == cur_seq {
-                                break;
+                let captured = if let Some(uia_txt) =
+                    crate::super_panel::uia_probe::try_read_focused_uia_selection(4000)
+                {
+                    tracing::debug!(
+                        plugin = %hk.plugin_id,
+                        method = "uia",
+                        chars = uia_txt.chars().count(),
+                        "Captured plugin SelectionRead via zero-clipboard UIA"
+                    );
+                    uia_txt
+                } else if crate::super_panel::uia_probe::is_terminal_foreground_window() {
+                    tracing::debug!(
+                        plugin = %hk.plugin_id,
+                        method = "terminal_skip",
+                        "Skipped Ctrl+C SelectionRead fallback on terminal window"
+                    );
+                    String::new()
+                } else {
+                    suppress_flag.store(true, Ordering::Release);
+                    let prev_text = read_clipboard_text();
+                    let seq_before = clipboard_seq_num();
+                    send_ctrl_c_cleanly();
+                    let mut out = String::new();
+                    let mut changed = false;
+                    for _ in 0..12 {
+                        std::thread::sleep(Duration::from_millis(15));
+                        let mut cur_seq = clipboard_seq_num();
+                        if cur_seq != seq_before {
+                            changed = true;
+                            for _ in 0..3 {
+                                std::thread::sleep(Duration::from_millis(30));
+                                let next_seq = clipboard_seq_num();
+                                if next_seq == cur_seq {
+                                    break;
+                                }
+                                cur_seq = next_seq;
                             }
-                            cur_seq = next_seq;
+                            if let Some(txt) = read_clipboard_text() {
+                                out = txt;
+                            }
+                            break;
                         }
-                        if let Some(txt) = read_clipboard_text() {
-                            captured = txt;
-                        }
-                        break;
                     }
-                }
-                if changed && let Some(old) = prev_text {
-                    std::thread::sleep(Duration::from_millis(25));
-                    let _ = set_clipboard_text(&old);
-                }
-                std::thread::sleep(Duration::from_millis(160));
-                suppress_flag.store(false, Ordering::Release);
+                    if changed && let Some(old) = prev_text {
+                        std::thread::sleep(Duration::from_millis(25));
+                        let _ = set_clipboard_text(&old);
+                    }
+                    std::thread::sleep(Duration::from_millis(160));
+                    suppress_flag.store(false, Ordering::Release);
+                    out
+                };
                 let payload = PluginEventPayload::new(
                     PluginEventKind::HotkeyTriggered,
                     serde_json::json!({

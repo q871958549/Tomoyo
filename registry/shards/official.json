@@ -1,7 +1,7 @@
 {
   "schema_version": 2,
   "name": "Tomoyo Registry Shard (official)",
-  "updated_at": "2026-11-24",
+  "updated_at": "2026-11-25",
   "total_count": null,
   "shards": [],
   "plugins": [
@@ -25,7 +25,7 @@
         "clipboard"
       ],
       "source": "plugins/builtin-ocr",
-      "sha256": "b4b1d121db9cdf74e44a1af296e8a66fbd2919e6adfe937f8cfa2d36a2a0a13f",
+      "sha256": "c35a20de0b36409c607c6119465cb4b4e85d2982d1a73aaef8d57eef6cc2776e",
       "platforms": {},
       "min_tomoyo_version": null,
       "homepage": null,
@@ -69,7 +69,7 @@
         "shell_exec"
       ],
       "source": "plugins/official-capture",
-      "sha256": "e1c4cadb09a76c5f91fe28b33683847870d89de7900819ff9737f7481e6e0f7d",
+      "sha256": "3ce64b1c3d08841e2e6a5d72c04866eae9d51be51ece7e9a2b89cf9d3e80fb4f",
       "platforms": {},
       "min_tomoyo_version": null,
       "homepage": "https://github.com/q871958549/Tomoyo",
@@ -105,7 +105,7 @@
         "filesystem_write"
       ],
       "source": "plugins/official-clipboard",
-      "sha256": "daf0127dfd285c46f98c8797bd17aeff03c04ff21b1bd664058fc4bf532cd682",
+      "sha256": "57479e526237508bc7b215c92fb45bd5824c8256b6db1bbfe0e282fb80e3e7dd",
       "platforms": {},
       "min_tomoyo_version": null,
       "homepage": "https://github.com/q871958549/Tomoyo",
@@ -143,7 +143,7 @@
         "shell_exec"
       ],
       "source": "plugins/official-md-editor",
-      "sha256": "b26bf4a9f1a6386ab598acb260418572f321d7705b44fa64419b3cf3a1d14346",
+      "sha256": "2a9f88f88493987899b7f56d836ec972b8496d981389b02ad906899477bf6bc6",
       "platforms": {},
       "min_tomoyo_version": null,
       "homepage": "https://github.com/s1dashu/quiet-md",
@@ -169,7 +169,7 @@
       ],
       "permissions": [],
       "source": "plugins/official-notes",
-      "sha256": "596bac85a36ab74ed40275bc8bea38e82ac743538f98e104ca4d696501be1b93",
+      "sha256": "e38933c78f2eef650e14b583147c18fc77f6b9be6ec1bc34ce77676d0c1a81ce",
       "platforms": {},
       "min_tomoyo_version": null,
       "homepage": null,
@@ -205,7 +205,7 @@
         "selection_read"
       ],
       "source": "plugins/official-translate",
-      "sha256": "06ef483c57a809ac509acc3c9542f8d1b4da4f0d2257a2910076ad7b2605b041",
+      "sha256": "7403d5219701ba41347255d3e419f09b52c7ebde01e0790bf7cf068d069ddc18",
       "platforms": {},
       "min_tomoyo_version": null,
       "homepage": "https://github.com/q871958549/Tomoyo",

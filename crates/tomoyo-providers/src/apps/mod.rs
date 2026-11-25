@@ -12,8 +12,8 @@ mod watcher;
 use scanner::scan_dir_roots;
 use scanner::{app_watch_paths, ScannedApp};
 use std::collections::HashSet;
-use std::path::Path;
-use std::sync::{Arc, RwLock};
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, RwLock};
 use tomoyo_core::{
     score_match_with_alias, AppsConfig, FrecencyStore, IndexedText, Lang, Provider, TomoyoConfig,
 };
@@ -46,7 +46,7 @@ pub struct AppsProvider {
     entries: Arc<RwLock<Vec<AppEntry>>>,
     config: Arc<RwLock<TomoyoConfig>>,
     frecency: Option<Arc<RwLock<FrecencyStore>>>,
-    _watcher: Option<AppDirWatcher>,
+    watcher: Mutex<(Vec<PathBuf>, Option<AppDirWatcher>)>,
 }
 
 impl AppsProvider {
@@ -70,19 +70,13 @@ impl AppsProvider {
         reload_entries(&entries, &apps_cfg);
 
         let watch_dirs = app_watch_paths(&apps_cfg);
-        let w_entries = Arc::clone(&entries);
-        let w_cfg = Arc::clone(&config);
-        let watcher = AppDirWatcher::start(watch_dirs, move || {
-            let cfg = w_cfg.read().map(|c| c.apps.clone()).unwrap_or_default();
-            tracing::info!("Detected app shortcut folder change; incrementally refreshing index");
-            reload_entries(&w_entries, &cfg);
-        });
+        let watcher = start_watcher_for(&watch_dirs, &entries, &config);
 
         Self {
             entries,
             config,
             frecency,
-            _watcher: watcher,
+            watcher: Mutex::new((watch_dirs, watcher)),
         }
     }
 
@@ -177,6 +171,15 @@ impl Provider for AppsProvider {
     fn reload(&self) {
         let apps_cfg = self.apps_config();
         reload_entries(&self.entries, &apps_cfg);
+        let next_dirs = app_watch_paths(&apps_cfg);
+        if let Ok(mut guard) = self.watcher.lock()
+            && guard.0 != next_dirs
+        {
+            tracing::info!(dirs = next_dirs.len(), "Syncing live directory watcher with updated custom folders");
+            guard.1 = None;
+            guard.1 = start_watcher_for(&next_dirs, &self.entries, &self.config);
+            guard.0 = next_dirs;
+        }
     }
 
     fn trim_memory(&self) {
@@ -184,6 +187,20 @@ impl Provider for AppsProvider {
             guard.shrink_to_fit();
         }
     }
+}
+
+fn start_watcher_for(
+    watch_dirs: &[PathBuf],
+    entries: &Arc<RwLock<Vec<AppEntry>>>,
+    config: &Arc<RwLock<TomoyoConfig>>,
+) -> Option<AppDirWatcher> {
+    let w_entries = Arc::clone(entries);
+    let w_cfg = Arc::clone(config);
+    AppDirWatcher::start(watch_dirs.to_vec(), move || {
+        let cfg = w_cfg.read().map(|c| c.apps.clone()).unwrap_or_default();
+        tracing::info!("Detected app/custom folder change; incrementally refreshing index");
+        reload_entries(&w_entries, &cfg);
+    })
 }
 
 fn reload_entries(entries: &Arc<RwLock<Vec<AppEntry>>>, apps_cfg: &AppsConfig) {
@@ -363,49 +380,10 @@ fn to_result_item(app: &AppEntry, score: i64, lang: Lang) -> ResultItem {
     }
 }
 
-/// Word-boundary aware Start Menu noise filter: skips app uninstallers/docs/website links
-/// without falsely dropping real utilities like `HiBit Uninstaller`, `Geek Uninstaller`,
-/// `HelpDesk`, or `License Manager`.
-pub(super) fn is_noisy_shortcut(lower: &str) -> bool {
-    let s = lower.trim();
-    if s.contains("卸载") || s.contains("访问主页") || s.contains("release notes") || s.contains("readme") {
-        return true;
-    }
-    let words: Vec<&str> = s
-        .split(|c: char| !c.is_alphanumeric())
-        .filter(|w| !w.is_empty())
-        .collect();
-    if words.iter().any(|&w| matches!(w, "uninstall" | "documentation")) {
-        return true;
-    }
-    matches!(
-        words.last().copied(),
-        Some("help" | "manual" | "manuals" | "documentation" | "website" | "license")
-    )
-}
+pub(crate) use custom_dirs::is_noisy_shortcut;
 
 #[cfg(test)]
 mod tests {
-    use super::is_noisy_shortcut;
-
-    #[test]
-    fn noise_filter_keeps_real_uninstaller_apps_and_drops_uninstall_links() {
-        assert!(!is_noisy_shortcut("hibit uninstaller"));
-        assert!(!is_noisy_shortcut("geek uninstaller"));
-        assert!(!is_noisy_shortcut("revo uninstaller pro"));
-        assert!(!is_noisy_shortcut("bcuninstaller"));
-        assert!(!is_noisy_shortcut("helpdesk client"));
-        assert!(!is_noisy_shortcut("license manager"));
-
-        assert!(is_noisy_shortcut("uninstall node.js"));
-        assert!(is_noisy_shortcut("xyplorer uninstall"));
-        assert!(is_noisy_shortcut("卸载hibit uninstaller"));
-        assert!(is_noisy_shortcut("卸载微信"));
-        assert!(is_noisy_shortcut("7-zip help"));
-        assert!(is_noisy_shortcut("git release notes"));
-        assert!(is_noisy_shortcut("node.js documentation"));
-    }
-
     #[test]
     #[ignore]
     fn live_desktop_apps_completeness_smoke() {

@@ -42,6 +42,11 @@ id = "open_workbench"
 label = "剪贴板工作台"
 open_ui = true
 
+[[text_actions]]
+id = "pin_selection_text"
+label = "置顶存入剪贴板"
+match_kinds = ["text", "url", "json", "code", "color", "path"]
+
 [[settings]]
 key = "capture_enabled"
 label = "后台自动采集剪贴板"

@@ -183,3 +183,18 @@ fn format_launch_error(code: u32, as_admin: bool, lang: Lang) -> String {
         other => match lang { Lang::Zh => format!("系统返回错误 #{other}"), Lang::En => format!("Windows error #{other}") },
     }
 }
+
+pub(super) fn format_in_flight_toast(lang: Lang, title: &str, is_admin: bool, secs: u64, total: usize) -> String {
+    let time_part = if secs >= 1 { format!(" ({secs}s)") } else { String::new() };
+    let extra = if total > 1 {
+        match lang { Lang::Zh => format!(" 等 {total} 项"), Lang::En => format!(" (+{})", total - 1) }
+    } else {
+        String::new()
+    };
+    match (lang, is_admin) {
+        (Lang::Zh, true) => format!("⏳ 正在请求管理员权限启动「{title}」{extra}{time_part}…"),
+        (Lang::En, true) => format!("⏳ Requesting admin launch for \"{title}\"{extra}{time_part}…"),
+        (Lang::Zh, false) => format!("⏳ 正在启动「{title}」{extra}{time_part}…"),
+        (Lang::En, false) => format!("⏳ Launching \"{title}\"{extra}{time_part}…"),
+    }
+}

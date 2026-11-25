@@ -138,7 +138,36 @@ fn wait_clipboard_transaction_settle(mut last_seq: u32) {
 
 /// Captures the foreground window's active text or file selection without disturbing the
 /// user's clipboard contents or triggering Tomoyo's clipboard history plugin.
+///
+/// Strategy (fastest & least intrusive first):
+/// 1. **Zero-clipboard Win32 UI Automation** (`IUIAutomationTextPattern2`/`TextPattern`) —
+///    reads highlighted text directly in `< 3 ms` with zero `Ctrl+C` and zero clipboard touch.
+/// 2. **Terminal SIGINT guard** — if UIA found no selection in an interactive terminal,
+///    returns `Empty` instead of injecting `Ctrl+C` (which would interrupt running jobs).
+/// 3. **Lossless clipboard fallback** — snapshots clipboard, sends clean `Ctrl+C`, waits for
+///    multi-step writers (`OleSetClipboard`) to settle, reads files/text, and restores cleanly.
 pub fn probe_foreground_selection(suppress_flag: &Arc<AtomicBool>) -> SuperContext {
+    if let Some(raw) = super::uia_probe::try_read_focused_uia_selection(MAX_SELECTED_CHARS) {
+        let kind = classify_text_kind(&raw);
+        tracing::debug!(
+            method = "uia",
+            chars = raw.chars().count(),
+            kind = kind.as_str(),
+            "Super Panel captured foreground selection without touching clipboard"
+        );
+        suppress_flag.store(false, Ordering::Release);
+        return SuperContext::Text { raw, kind };
+    }
+
+    if super::uia_probe::is_terminal_foreground_window() {
+        tracing::debug!(
+            method = "terminal_skip",
+            "Super Panel skipped Ctrl+C fallback on terminal window to prevent SIGINT"
+        );
+        suppress_flag.store(false, Ordering::Release);
+        return SuperContext::Empty;
+    }
+
     suppress_flag.store(true, Ordering::Release);
     let backup = ClipboardBackup::capture();
     let seq_before = unsafe { GetClipboardSequenceNumber() };
@@ -172,6 +201,16 @@ pub fn probe_foreground_selection(suppress_flag: &Arc<AtomicBool>) -> SuperConte
         std::thread::sleep(Duration::from_millis(25));
         backup.restore();
     }
+    tracing::debug!(
+        method = "ctrl_c",
+        changed,
+        captured = match &ctx {
+            SuperContext::Text { kind, .. } => kind.as_str(),
+            SuperContext::Files { .. } => "files",
+            SuperContext::Empty => "empty",
+        },
+        "Super Panel completed lossless clipboard selection probe"
+    );
     // Keep suppress armed strictly longer than clipboard listener's 120 ms debounce window.
     std::thread::sleep(Duration::from_millis(160));
     suppress_flag.store(false, Ordering::Release);
