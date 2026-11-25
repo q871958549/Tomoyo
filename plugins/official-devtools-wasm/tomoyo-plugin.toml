@@ -1,0 +1,30 @@
+id = "dev.tomoyo.devtools"
+name = "开发者瑞士军刀 DevTools (WASM 沙箱)"
+version = "3.2.0"
+description = "官方零权限纯 WebAssembly 开发者工具箱：时间戳互转、Base64/URL 编解码、JWT 过期解析、UUID/随机密钥生成与 Cron 表达式中文释义（16 MB 沙箱 · 0 常驻进程）"
+author = "Tomoyo Contributors"
+license = "MIT OR Apache-2.0"
+homepage = "https://github.com/q871958549/Tomoyo"
+icon = "icon.png"
+category = "dev"
+display_mode = "inline"
+tags = ["wasm", "devtools", "timestamp", "base64", "url", "jwt", "cron", "uuid"]
+permissions = []
+
+[runtime]
+kind = "wasm"
+module = "plugin.wasm"
+max_fuel = 8000000
+
+[triggers]
+keywords = ["dev", "ts", "b64", "url", "cron", "uuid"]
+
+[resources]
+max_memory_mb = 16
+idle_timeout_secs = 30
+query_timeout_ms = 1000
+
+[[text_actions]]
+id = "inspect_dev"
+label = "开发者解码 / 解析 (WASM)"
+match_kinds = ["json", "code", "text", "url"]

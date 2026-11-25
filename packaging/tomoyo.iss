@@ -2,7 +2,7 @@
 ; Zero-UAC per-user install to %LOCALAPPDATA%\Programs\Tomoyo with clean uninstaller.
 
 #ifndef AppVersion
-  #define AppVersion "3.1.0"
+  #define AppVersion "3.2.0"
 #endif
 
 #ifndef StageDir
@@ -48,7 +48,7 @@ Name: "custom"; Description: "Custom installation (自定义组件)"; Flags: isc
 Name: "core"; Description: "Tomoyo Core Launcher, Settings Center & CLI (必选内核)"; Types: suite core custom; Flags: fixed
 Name: "suite"; Description: "Official Productivity Suite (官方效率套件)"; Types: suite
 Name: "suite\capture"; Description: "Native Screenshot, Pin & Screen Recording (原生截图/贴图/录屏)"; Types: suite
-Name: "suite\plugins"; Description: "Official & Reference Plugins (剪贴板 / 翻译 / 截图 / 备忘录 / Quiet.md / 离线 OCR)"; Types: suite
+Name: "suite\plugins"; Description: "Official & Reference Plugins (剪贴板 / 翻译 / 截图 / 备忘录 / Quiet.md / 离线 OCR / WASM 开发者工具箱)"; Types: suite
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a Desktop shortcut (创建桌面快捷方式)"; GroupDescription: "Additional tasks (附加选项):"

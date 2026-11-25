@@ -52,8 +52,17 @@
     { value: 'de', label: 'Deutsch' },
   ];
 
+  const styleOpts: SelectOption[] = [
+    { value: 'standard', label: '标准' },
+    { value: 'academic', label: '学术' },
+    { value: 'code', label: '代码' },
+    { value: 'business', label: '商务' },
+    { value: 'polish', label: '润色' },
+  ];
+
   let srcLang = $state('auto');
   let tgtLang = $state(boot.target_lang || 'auto');
+  let style = $state('standard');
   let sourceText = $state(boot.text || '');
   let autoTranslate = $state(true);
   let loading = $state(false);
@@ -83,7 +92,7 @@
       const res = await window.tomoyo.callPlugin<{
         data?: TranslateBatch;
         store?: { history?: HistItem[]; wordbook?: WordItem[] };
-      }>('translate', { text: clean, source_lang: srcLang, target_lang: tgtLang });
+      }>('translate', { text: clean, source_lang: srcLang, target_lang: tgtLang, style });
       if (Array.isArray(res?.store?.history)) history = res.store.history;
       if (Array.isArray(res?.store?.wordbook)) wordbook = res.store.wordbook;
       batch = res?.data || null;
@@ -264,6 +273,7 @@
       <Select value={srcLang} options={srcLangs} size="sm" minWidth="104px" onchange={(v) => { srcLang = v; if (sourceText.trim()) runTranslate(); }} />
       <Button variant="icon" size="sm" title="互换语言" onclick={swapLangs}><ArrowLeftRight size={14} /></Button>
       <Select value={tgtLang} options={tgtLangs} size="sm" minWidth="122px" onchange={(v) => { tgtLang = v; if (sourceText.trim()) runTranslate(); }} />
+      <Select value={style} options={styleOpts} size="sm" minWidth="74px" onchange={(v) => { style = v; if (sourceText.trim()) runTranslate(); }} />
       <Button variant="primary" size="sm" disabled={loading} onclick={runTranslate}>
         <Sparkles size={13} />
         {loading ? '翻译中…' : '翻译'}

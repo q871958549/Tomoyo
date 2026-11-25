@@ -15,7 +15,7 @@
   <a href="https://github.com/q871958549/Tomoyo/actions/workflows/ci.yml"><img src="https://github.com/q871958549/Tomoyo/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="LICENSE-MIT"><img src="https://img.shields.io/badge/license-MIT%20%2F%20Apache--2.0-blue.svg" alt="License" /></a>
   <img src="https://img.shields.io/badge/platform-Linux%20(CachyOS%2FArch%20KDE%20Wayland%2FX11)%20%7C%20Windows%2010%2F11-1793D1.svg" alt="Linux & Windows" />
-  <img src="https://img.shields.io/badge/version-v3.1.0-7c6af7.svg" alt="Version" />
+  <img src="https://img.shields.io/badge/version-v3.2.0-7c6af7.svg" alt="Version" />
 </p>
 
 ---
@@ -32,7 +32,8 @@
 3. **快速应用与全盘文件检索集成**：
    - **Linux 原生栈**：扫描 XDG `.desktop` / Flatpak / Snap 应用并用 `inotify` 零轮询增量监听，整合 KWin `/WindowsRunner` 窗口切换、`fd` + `plocate` 极速全盘文件索引与 `org.freedesktop.FileManager1` 文件定位。
    - **Windows 原生栈**：内置纯 Rust **Everything 1.4 / 1.5a** `WM_COPYDATA` IPC 客户端、`SHGetImageList` 高 DPI 抗锯齿图标、Fluent 可拖动滚动条、1–12 层 BFS 深层自定义目录索引与动态热监听，以及 DeskBox/UWP 应用扫描。
-   - **原生零 WebView 超级面板（`v3.1.0`）**：支持右键长按 / 中键长按 / 中键单击极简光标浮窗，**优先通过 Win32 UI Automation 无痕划词（零剪贴板触碰 + 终端 `SIGINT` 防误杀）**，内置委托翻译插件的无锁内联快捷翻译与 Protocol v3 `[[text_actions]]` / `[[file_actions]]` 生态动作。
+   - **原生零 WebView 超级面板与上下文剪贴板卡（`v3.1`–`v3.2`）**：支持右键长按 / 中键长按 / 中键单击极简光标浮窗，**优先通过 Win32 UI Automation 无痕划词（零剪贴板触碰 + 终端 `SIGINT` 防误杀）**，内置委托翻译插件的无锁内联快捷翻译、Protocol v3 `[[text_actions]]` / `[[file_actions]]` 生态动作与空输入上下文直达卡（URL / JSON 美化 / 色值贴图 / 位图 OCR）。
+   - **旗舰官方插件 2.0 + 零权限纯 WASM 开发者工具箱（`v3.2.0`）**：剪贴板顺序粘贴队列（`cb :stack`）、截图重截上次选区与多贴图老板键（`--toggle-pins`）、翻译 5 档领域风格预设（学术/代码/商务/润色）、仅 ~262 KB 跨平台零权限纯 WASM `dev.tomoyo.devtools`（时间戳 / UUID / Base64 / URL / JWT / Cron）及开箱即用社区插件模板 [`templates/plugin-wasm-template/`](templates/plugin-wasm-template/)。
    - 支持异步有界右侧预览（文本 8 KB 截断、目录列表与 Linux `gdk-pixbuf` / Windows WIC 全格式图片缩略图）及原生文件拖拽。
 4. **界面交互与系统集成**：
    - 内置阿里巴巴普惠体 3.0 字体，支持简体中文与英文切换，提供浅色（Light）、深色（Dark）、午夜（Midnight）三种配色方案。

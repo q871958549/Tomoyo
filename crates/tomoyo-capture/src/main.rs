@@ -43,6 +43,7 @@ mod pin_card;
 mod pin_clipboard;
 #[cfg(windows)]
 mod pin_window;
+mod region_prefs;
 mod screen;
 mod snap_detect;
 #[cfg(windows)]
@@ -161,6 +162,30 @@ fn run_windows_main() {
             snap.width, snap.height, cw, ch
         );
         return;
+    }
+
+    if args.iter().any(|a| a == "--toggle-pins") {
+        region_prefs::broadcast_toggle_all_pins();
+        return;
+    }
+
+    if args.iter().any(|a| a == "--repeat-region")
+        && let Some((ox, oy, saved)) = region_prefs::load_last_region()
+        && let Ok(snap) = capture_virtual_desktop()
+    {
+        let rel = ScreenRect {
+            x: ox + saved.x - snap.origin_x,
+            y: oy + saved.y - snap.origin_y,
+            w: saved.w,
+            h: saved.h,
+        }
+        .clamp_to(snap.width, snap.height);
+        if rel.is_valid()
+            && let Some((cw, ch, buf)) = snap.crop_bgra(rel)
+        {
+            let _ = export::copy_bgra_to_clipboard(cw, ch, &buf);
+            return;
+        }
     }
 
     if args.iter().any(|a| a == "--pin-clipboard") {

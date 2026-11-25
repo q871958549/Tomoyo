@@ -64,7 +64,7 @@ Copy-Item (Join-Path $PSScriptRoot "uninstall-local.ps1") (Join-Path $InstallDir
 # Copy optional bundled plugins (opt-out with -Profile Core / -CoreOnly; developer examples opt-in via -WithExamples)
 $pluginsToCopy = @()
 if (-not $isCore) {
-    $pluginsToCopy += @("builtin-ocr", "official-notes", "official-md-editor", "official-translate", "official-capture", "official-clipboard")
+    $pluginsToCopy += @("builtin-ocr", "official-notes", "official-md-editor", "official-translate", "official-capture", "official-clipboard", "official-devtools-wasm")
 }
 if ($WithExamples) {
     $pluginsToCopy += @("example-hello", "example-python", "example-wasm", "example-webview-json")

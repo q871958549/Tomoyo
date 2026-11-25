@@ -7,6 +7,7 @@ mod config;
 mod db_io;
 mod filter;
 mod items;
+mod paste_stack;
 mod store;
 
 use base64::Engine;
@@ -80,6 +81,9 @@ impl TomoyoPlugin for ClipboardPlugin {
             let tags = self.with_store(&cfg, |s| s.list_tags());
             return build_filter_hints(&tags);
         }
+        if trimmed.eq_ignore_ascii_case(":stack") || trimmed.eq_ignore_ascii_case("stack") {
+            return paste_stack::build_stack_items(&paste_stack::PasteStack::default_path());
+        }
         if trimmed.starts_with(':') {
             return build_clip_commands(trimmed, cfg.is_effectively_capturing());
         }
@@ -97,6 +101,14 @@ impl TomoyoPlugin for ClipboardPlugin {
 
     fn execute(&self, req: &ExecuteRequest) -> ExecuteResponse {
         let cfg = ClipRuntimeConfig::from_settings(&req.plugin_settings);
+        if req.action_id.starts_with("stack_") {
+            let path = paste_stack::PasteStack::default_path();
+            if let Some(resp) = self.with_store(&cfg, |s| {
+                paste_stack::handle_stack_action(&req.action_id, &req.payload, &path, Some(s))
+            }) {
+                return resp;
+            }
+        }
         match req.action_id.as_str() {
             "open_workbench" => {
                 let focus_key = req
@@ -173,6 +185,18 @@ impl TomoyoPlugin for ClipboardPlugin {
     }
 
     fn on_event(&self, ev: &PluginEventPayload) -> ExecuteResponse {
+        if ev.event == PluginEventKind::HotkeyTriggered {
+            if ev.data.get("hotkey_id").and_then(Value::as_str) == Some("paste_stack_next") {
+                let path = paste_stack::PasteStack::default_path();
+                return paste_stack::handle_stack_action("stack_pop_copy", &json!({}), &path, None)
+                    .unwrap_or_default();
+            }
+            return ExecuteResponse {
+                hide_window: false,
+                fill_query: Some("cb ".into()),
+                ..Default::default()
+            };
+        }
         let cfg = ClipRuntimeConfig::from_settings(&ev.plugin_settings);
         if !cfg.is_effectively_capturing() {
             return ExecuteResponse::default();
@@ -212,13 +236,7 @@ impl TomoyoPlugin for ClipboardPlugin {
                     });
                 }
             }
-            PluginEventKind::HotkeyTriggered => {
-                return ExecuteResponse {
-                    hide_window: false,
-                    fill_query: Some("cb ".into()),
-                    ..Default::default()
-                };
-            }
+            PluginEventKind::HotkeyTriggered => {}
         }
         ExecuteResponse::default()
     }

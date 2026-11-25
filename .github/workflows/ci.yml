@@ -52,10 +52,13 @@ jobs:
       - name: Cache Cargo dependencies
         uses: Swatinem/rust-cache@v2
 
-      - name: Build example WASM plugin
+      - name: Build WASM plugins (example + official DevTools)
         run: |
           cargo build --manifest-path plugins/example-wasm/Cargo.toml --target wasm32-unknown-unknown --release
           cp -f plugins/example-wasm/target/wasm32-unknown-unknown/release/tomoyo_plugin_wasm_demo.wasm plugins/example-wasm/plugin.wasm
+          cargo build --manifest-path plugins/official-devtools-wasm/Cargo.toml --target wasm32-unknown-unknown --release
+          cp -f plugins/official-devtools-wasm/target/wasm32-unknown-unknown/release/tomoyo_plugin_devtools.wasm plugins/official-devtools-wasm/plugin.wasm
+          cargo test --manifest-path plugins/official-devtools-wasm/Cargo.toml
 
       - name: Run Clippy lint gate (zero warnings)
         env:
@@ -89,6 +92,7 @@ jobs:
           ./target/release/tomoyo-cli dev plugins/official-translate --query "hello" --once
           ./target/release/tomoyo-cli dev plugins/official-capture --query "" --once
           ./target/release/tomoyo-cli dev plugins/official-clipboard --query ":manage" --once
+          ./target/release/tomoyo-cli dev plugins/official-devtools-wasm --query "cron 0 9 * * 1-5" --once
 
   windows-test:
     runs-on: windows-latest
@@ -125,11 +129,14 @@ jobs:
       - name: Cache Cargo dependencies
         uses: Swatinem/rust-cache@v2
 
-      - name: Build example WASM plugin
+      - name: Build WASM plugins (example + official DevTools)
         shell: pwsh
         run: |
           cargo build --manifest-path plugins/example-wasm/Cargo.toml --target wasm32-unknown-unknown --release
           Copy-Item plugins/example-wasm/target/wasm32-unknown-unknown/release/tomoyo_plugin_wasm_demo.wasm plugins/example-wasm/plugin.wasm -Force
+          cargo build --manifest-path plugins/official-devtools-wasm/Cargo.toml --target wasm32-unknown-unknown --release
+          Copy-Item plugins/official-devtools-wasm/target/wasm32-unknown-unknown/release/tomoyo_plugin_devtools.wasm plugins/official-devtools-wasm/plugin.wasm -Force
+          cargo test --manifest-path plugins/official-devtools-wasm/Cargo.toml
 
       - name: Run Clippy lint gate (zero warnings)
         env:

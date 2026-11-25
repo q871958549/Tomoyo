@@ -1,0 +1,20 @@
+[package]
+name = "tomoyo-plugin-devtools"
+version = "3.2.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "Official zero-permission Tomoyo WebAssembly DevTools plugin: Unix timestamp, Base64, URL, JWT, UUID/Token & Cron explainer"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+tomoyo-wasm-sdk = { path = "../../crates/tomoyo-wasm-sdk" }
+base64 = "0.22"
+serde_json = "1.0"
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = "symbols"
+panic = "abort"

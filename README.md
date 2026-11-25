@@ -15,7 +15,7 @@
   <a href="https://github.com/q871958549/Tomoyo/actions/workflows/ci.yml"><img src="https://github.com/q871958549/Tomoyo/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="LICENSE-MIT"><img src="https://img.shields.io/badge/license-MIT%20%2F%20Apache--2.0-blue.svg" alt="License" /></a>
   <img src="https://img.shields.io/badge/platform-Linux%20(KDE%20Wayland%2FX11)%20%7C%20Windows%2010%2F11%20(x64%2FARM64)-1793D1.svg" alt="Linux & Windows" />
-  <img src="https://img.shields.io/badge/version-v3.1.0-7c6af7.svg" alt="Version" />
+  <img src="https://img.shields.io/badge/version-v3.2.0-7c6af7.svg" alt="Version" />
 </p>
 
 ---
@@ -38,7 +38,8 @@
 3. **Fast Cross-Platform App & Full-Disk Search**:
    - **Linux**: Incremental `inotify` watching of XDG `.desktop` / Flatpak / Snap entries, KWin `/WindowsRunner` window switching, `fd` + `plocate` file search, and `org.freedesktop.FileManager1` file reveal.
    - **Windows**: Pure-Rust **Everything 1.4 / 1.5a** `WM_COPYDATA` IPC client (`tomoyo-everything`, zero external DLLs), crisp Hi-DPI Shell icons, draggable Fluent scrollbar, 1–12 level BFS custom-directory deep indexing with live watcher hot-sync, plus Start Menu / DeskBox / UWP indexing.
-   - **Native Zero-WebView Super Panel (`v3.1.0`)**: Minimalist cursor popover (right-hold / middle-hold / middle-click) using **zero-clipboard Win32 UI Automation (`IUIAutomationTextPattern`) + terminal `SIGINT` protection**, lock-free plugin-delegated inline translation, and Protocol v3 `[[text_actions]]` / `[[file_actions]]`.
+   - **Native Zero-WebView Super Panel & Context-Aware Cards (`v3.1`–`v3.2`)**: Minimalist cursor popover (right-hold / middle-hold / middle-click) using **zero-clipboard Win32 UI Automation (`IUIAutomationTextPattern`) + terminal `SIGINT` protection**, lock-free plugin-delegated inline translation, Protocol v3 `[[text_actions]]` / `[[file_actions]]`, and empty-query contextual clipboard cards (URL/JSON/Color/Image/Translate).
+   - **Flagship Official Plugins 2.0 + Pure-WASM DevTools (`v3.2.0`)**: Clipboard Sequential Paste Stack (`cb :stack`), Capture Repeat-Last-Region & Pin Boss-Key (`--toggle-pins`), Translator domain style presets (`Academic / Code / Business / Polish`), official zero-permission pure-WASM `dev.tomoyo.devtools` (`ts` / `uuid` / `b64` / `url` / `cron` / JWT), and ready-to-clone [`templates/plugin-wasm-template/`](templates/plugin-wasm-template/).
    - Bounded async right-pane previews (8 KB text slice, directory listings, `gdk-pixbuf` / WIC thumbnails) and native drag-and-drop.
 4. **4-Tier Extensibility + Declarative Pipelines + `utools` Bridge**:
    - **Built-in Providers**: Apps (with Pinyin/heteronym/multi-word fuzzy matching and query-aware frecency), Everything/`fd`+`plocate`, Clipboard History (SQLite text/image/files), Paste Capsule (`Super Match`), Calculator & Format/Color/Timestamp Inspector, Process Manager, Web Search, Window Switcher, and GitHub Releases updater.

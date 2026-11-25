@@ -27,6 +27,9 @@
 
 ```text
 ┌──────────────────────────────────────────────────────────────────────────────┐
+│  v3.2.0 · [已完成 ✅] 上下文感知剪贴板卡 · 旗舰插件 2.0 (顺序粘贴/重截/老板键 │
+│           翻译风格预设) · 零权限纯 WASM 开发者工具箱 · 社区 WASM 模板仓库    │
+├──────────────────────────────────────────────────────────────────────────────┤
 │  v3.1.0 · [已完成 ✅] 零剪贴板 UIA 超级面板 · 核心翻译彻底去重 · 插件文本动作│
 │           高 DPI 清晰图标 · 可拖动滚动条 · 12 层深扫热监听 · 剪贴板防竞态加固│
 ├──────────────────────────────────────────────────────────────────────────────┤
@@ -442,18 +445,26 @@
    - **OS 剪贴板防竞态加固（`clipboard_ctrl.rs` + `clipboard_win.rs`）**：120 ms `WM_CLIPBOARDUPDATE` 防抖合并突发写入、单次 `< 0.3 ms` 原子锁快照（DIB 解码移出锁外）、有效属主 `HWND` 及 30 ms 序列号静默窗口，消除 `CLIPBRD_E_CANT_OPEN`；
    - **工程减压**：清理 `frontend/src/lib/i18n.ts` 中 55 个历史废弃双语键（`settings.html` 降至 `288.3 KB / 300 KB`），拆解 `TranslatorApp.svelte`、`tomoyo-plugin-ocr/src/main.rs`、`store_index.rs`、`official-md-editor/src/main.rs`、`official-notes/src/main.rs`、`launch_ctrl.rs` 全部贴顶热点。
 
+### 阶段二十五：`v3.2.0` — 上下文感知、旗舰插件 2.0 与纯 WASM 开发者生态基座（已完成 ✅）
+1. **启动器零轮询上下文感知剪贴板卡（`window/context_card.rs`）**：
+   - 空输入唤起（`All` 视图）时对 90 秒内新鲜剪贴板自动呈现至多 1 张上下文直达卡：URL 浏览器直达、JSON 一键美化/预览、色值桌面贴图/大小写切换、短文本多源翻译或存备忘、剪贴板位图一键贴图/离线 OCR，严格尊重 `disabled_plugins` 与零后台内存开销。
+2. **三大旗舰插件 2.0 纵深进化（零核心膨胀）**：
+   - **`dev.tomoyo.clipboard` 顺序粘贴队列（Paste Stack · `paste_stack.rs`）**：支持 `cb :stack` 管理最多 32 项 FIFO 队列、任意历史记录 Tab 入队、一键装入最近 5 条记录及可选全局弹出快捷键 `paste_stack_next`（顺序弹出并复制下一项，自动汇报剩余条数）；
+   - **`dev.tomoyo.capture` 重截上次选区 & 多贴图老板键（`region_prefs.rs` + `pin_window.rs`）**：持久化上次有效选区坐标支持 `--repeat-region` 无弹窗一键复截，新增跨进程 `RegisterWindowMessageW` 广播 `--toggle-pins` 一键隐藏/恢复全部悬浮贴图，并开放插件热键与托盘动作入口；
+   - **`dev.tomoyo.translate` 领域风格预设（`style_prompt.rs` + `TranslatorApp.svelte`）**：翻译胶囊新增 `标准 / 学术 / 代码 / 商务 / 润色` 五档 Prompt 预设，为 OpenAI 兼容模型与本地 Ollama 自动注入对应领域系统提示词并在结果卡显示风格徽标。
+3. **官方零权限纯 WASM 开发者工具箱与社区模板基座**：
+   - 新增 **`plugins/official-devtools-wasm`（`dev.tomoyo.devtools`）**：零环境权限（`permissions = []`）、16 MB 线性内存硬顶、仅 ~262 KB 跨平台 `plugin.wasm`，内置 Unix 时间戳/UTC+8/ISO-8601 互转（Howard Hinnant 纯整数历法）、UUID v4/256-bit 密钥生成（接入 ABI v2 `host::kv_get`/`kv_set` 持久递增盐）、Base64/URL 双向编解码与 Query 拆解、JWT 离线过期解析、5 段 Cron 中文释义及超级面板 `[[text_actions]]` 一键直达；
+   - 新增 **`templates/plugin-wasm-template/`**：开箱即用的 10 分钟社区 WASM 插件模板仓库（含 `Cargo.toml`、`tomoyo-plugin.toml`、`src/lib.rs`、`README.md` 与一键打包/发布 SHA-256 的 GitHub Actions 工作流）。
+
 ---
 
-## 五、中长期演进规划 (`v3.2 → v4.0` · 稳态纵深与生态复利)
+## 五、中长期演进规划 (`v3.3 → v4.0` · 开放生态与跨平台拉齐)
 
-1. **`v3.2` · 高频场景纵深打磨（全部在插件侧演进，核心零膨胀）**：
-   - **启动器上下文感知**：空输入唤起时感知当前剪贴板形态（JSON/图片/URL/色值）提供一键直达动作；
-   - **旗舰插件 2.0**：`dev.tomoyo.clipboard` 支持顺序队列粘贴（Paste Stack）与行内格式化粘贴；`dev.tomoyo.capture` 支持一键重复上次区域截图与多贴图分组显示/隐藏；`dev.tomoyo.translate` 与本地 AI 工作流支持流式译文输出与 Prompt 预设。
-2. **`v3.3` · 开放插件生态飞轮**：
-   - 将 `tomoyo-protocol` / `tomoyo-sdk` / `tomoyo-wasm-sdk` v3 正式发布至 `crates.io`，提供一键建仓的 GitHub Plugin Template Repo（自动多平台构建 + 自动生成注册表分片 PR）；
-   - 推出首批零依赖纯 WASM 高频工具插件（开发者编解码/Cron/正则、本地端口查杀、窗口分屏布局），商店支持后台 ETag 304 静默更新检测。
-3. **`v3.4–v4.0` · 跨平台拉齐与可信分发**：
-   - **Linux 主力拉齐**：补齐 Linux 端可拖动滚动条与 Wayland/X11 超级面板（利用 `wl-paste --primary` 原生主选区实现零剪贴板污染划词）；
+1. **`v3.3` · 开放插件生态飞轮（持续推进）**：
+   - 将 `tomoyo-protocol` / `tomoyo-sdk` / `tomoyo-wasm-sdk` v3 正式发布至 `crates.io`，将 `templates/plugin-wasm-template/` 镜像为独立 GitHub Template Repo；
+   - 基于 WASM 沙箱继续扩展高频零依赖工具（正则在线测试、端口查杀、窗口分屏），插件商店支持后台 ETag 304 静默更新检测。
+2. **`v3.4–v4.0` · 跨平台拉齐与可信分发**：
+   - **Linux 主力拉齐**：在真实 KDE Plasma Wayland/X11 环境实测补齐 Linux 端可拖动滚动条与 Wayland/X11 超级面板（利用 `wl-paste --primary` 原生主选区实现零剪贴板污染划词）；
    - **分发信任链**：结合社区规模引入 Windows 开源代码签名（如 SignPath.io），消除 SmartScreen 拦截；按实际用户诉求评估落地 macOS 原生 `NSPanel` 外壳。
 
 ---

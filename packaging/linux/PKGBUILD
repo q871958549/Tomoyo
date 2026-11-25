@@ -1,6 +1,6 @@
 # Maintainer: Tomoyo Open Source Contributors
 pkgname=tomoyo
-pkgver=3.1.0
+pkgver=3.2.0
 pkgrel=1
 pkgdesc="Tomoyo Launcher — ultra-low-memory native Rust desktop launcher, clipboard manager, screenshot, OCR & translator"
 arch=('x86_64' 'aarch64')
@@ -56,6 +56,10 @@ build() {
       --target wasm32-unknown-unknown --release
     cp plugins/example-wasm/target/wasm32-unknown-unknown/release/tomoyo_plugin_wasm_demo.wasm \
       plugins/example-wasm/plugin.wasm
+    cargo build --manifest-path plugins/official-devtools-wasm/Cargo.toml \
+      --target wasm32-unknown-unknown --release
+    cp plugins/official-devtools-wasm/target/wasm32-unknown-unknown/release/tomoyo_plugin_devtools.wasm \
+      plugins/official-devtools-wasm/plugin.wasm
   fi
   cargo build --frozen --release --workspace
 }
@@ -103,7 +107,7 @@ package() {
     install -Dm644 registry/shards/*.json "$pkgdir/usr/share/tomoyo/registry/shards/"
   fi
 
-  for p in example-hello example-python example-wasm example-webview-json builtin-ocr official-notes official-md-editor official-translate official-capture official-clipboard; do
+  for p in example-hello example-python example-wasm example-webview-json builtin-ocr official-notes official-md-editor official-translate official-capture official-clipboard official-devtools-wasm; do
     mkdir -p "$pkgdir/usr/share/tomoyo/plugins/$p"
     cp -a "plugins/$p/." "$pkgdir/usr/share/tomoyo/plugins/$p/"
     rm -rf "$pkgdir/usr/share/tomoyo/plugins/$p/target" \

@@ -1,7 +1,7 @@
 id = "dev.tomoyo.clipboard"
 name = "剪贴板管理中心 (官方插件)"
-version = "3.0.0"
-description = "CopyQ 级本地 SQLite 剪贴板历史、图片与文件采集、标签备注、隐私屏蔽及按需工作台（关闭即卸载系统剪贴板监听与热键）"
+version = "3.2.0"
+description = "CopyQ 级本地 SQLite 剪贴板历史、顺序粘贴队列 (Paste Stack)、图片与文件采集、标签备注、隐私屏蔽及按需工作台（关闭即卸载系统剪贴板监听与热键）"
 author = "Tomoyo Contributors"
 license = "MIT OR Apache-2.0"
 homepage = "https://github.com/q871958549/Tomoyo"
@@ -36,6 +36,12 @@ id = "open_cb"
 label = "剪贴板历史快捷搜索"
 default_hotkey = "Alt+V"
 trigger_query = "cb "
+
+[[hotkeys]]
+id = "paste_stack_next"
+label = "顺序粘贴队列弹出下一项"
+default_hotkey = ""
+trigger_query = ""
 
 [[tray_actions]]
 id = "open_workbench"

@@ -69,6 +69,24 @@ const COMMANDS: &[CaptureCmd] = &[
         keywords: "录屏 屏幕录制 区域录屏 录制视频 动图 gif mp4 video record rec luping lp",
         base_score: 9_740,
     },
+    CaptureCmd {
+        id: "capture:repeat",
+        mode: "repeat_region",
+        title: "重截上次选区并复制 (Repeat Last Region)",
+        subtitle: "一键无弹窗复用上次截图坐标直接截取并复制（首次使用时自动回退选区）",
+        badge: "RPT",
+        keywords: "重截 重复截图 上次区域 repeat last region again",
+        base_score: 9_680,
+    },
+    CaptureCmd {
+        id: "capture:toggle_pins",
+        mode: "toggle_pins",
+        title: "一键隐藏 / 恢复全部桌面贴图 (Boss Key)",
+        subtitle: "跨进程广播隐藏或恢复所有置顶贴图窗口（可在插件热键绑定老板键）",
+        badge: "HIDE",
+        keywords: "隐藏贴图 恢复贴图 老板键 boss key hide show toggle pins",
+        base_score: 9_660,
+    },
 ];
 
 struct CapturePlugin;
@@ -190,7 +208,9 @@ fn resolve_capture_mode(req: &ExecuteRequest) -> &str {
         return stripped;
     }
     match req.action_id.as_str() {
-        "pin" | "pin_clipboard" | "ocr" | "translate" | "record" | "region" => req.action_id.as_str(),
+        "pin" | "pin_clipboard" | "ocr" | "translate" | "record" | "region" | "repeat_region" | "toggle_pins" => {
+            req.action_id.as_str()
+        }
         _ => "region",
     }
 }
@@ -201,6 +221,8 @@ fn launch_capture_mode(mode: &str, delay_for_launcher_hide: bool) -> ExecuteResp
         "translate" => "--translate",
         "record" => "--record",
         "pin_clipboard" | "pin" => "--pin-clipboard",
+        "repeat_region" => "--repeat-region",
+        "toggle_pins" => "--toggle-pins",
         _ => "--capture",
     };
     match spawn_capture_args(&[flag], delay_for_launcher_hide) {
@@ -304,7 +326,7 @@ fn main() {
         let mut ctx = QueryContext::new("cap", 1, 10);
         ctx.keyword = Some("cap".into());
         ctx.args.clear();
-        assert_eq!(p.query(&ctx).len(), 5);
+        assert_eq!(p.query(&ctx).len(), 7);
         println!("[OK] tomoyo-plugin-capture v{} self-test passed", env!("CARGO_PKG_VERSION"));
         return;
     }

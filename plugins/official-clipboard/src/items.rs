@@ -76,6 +76,7 @@ fn build_text_item(
     if subtype == ClipboardSubtype::Link {
         actions.push(ActionSpec { id: "open_url".into(), label: "在浏览器中打开链接".into(), shortcut: None, kind: ActionKind::OpenUrl { url: text.trim().to_string() } });
     }
+    actions.push(crate::paste_stack::enqueue_action(&text));
     actions.extend(common_manage_actions(&key, pinned));
 
     let mut preview_body = String::new();
@@ -292,6 +293,9 @@ pub fn build_clip_commands(cmd: &str, capturing: bool) -> Vec<ResultItem> {
             }],
             preview: None,
         });
+    }
+    if ":stack".starts_with(&low) || low == ":" {
+        out.push(crate::paste_stack::build_stack_command_item());
     }
     if ":pause".starts_with(&low) || ":resume".starts_with(&low) || low == ":" {
         out.push(ResultItem {

@@ -106,7 +106,7 @@ install -Dm755 "$REPO_ROOT/scripts/uninstall-local.sh" "$DATA_DIR/uninstall.sh"
 
 PLUGINS_TO_INSTALL=()
 if [ "$CORE_ONLY" -eq 0 ] && [ "$PROFILE" != "core" ]; then
-  PLUGINS_TO_INSTALL+=(builtin-ocr official-notes official-md-editor official-translate official-capture official-clipboard)
+  PLUGINS_TO_INSTALL+=(builtin-ocr official-notes official-md-editor official-translate official-capture official-clipboard official-devtools-wasm)
 fi
 if [ "$WITH_EXAMPLES" -eq 1 ]; then
   PLUGINS_TO_INSTALL+=(example-hello example-python example-wasm example-webview-json)

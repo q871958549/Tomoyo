@@ -1,0 +1,25 @@
+# Tomoyo Protocol v3 WebAssembly Plugin Manifest
+id = "community.yourname.starter"
+name = "My First Tomoyo WASM Plugin"
+version = "0.1.0"
+description = "Zero-permission WebAssembly plugin built from the official Tomoyo starter template."
+author = "Your Name"
+license = "MIT"
+homepage = "https://github.com/yourname/tomoyo-plugin-starter"
+category = "dev"
+display_mode = "inline"
+tags = ["wasm", "starter", "template"]
+permissions = []
+
+[runtime]
+kind = "wasm"
+module = "plugin.wasm"
+max_fuel = 5000000
+
+[triggers]
+keywords = ["demo"]
+
+[resources]
+max_memory_mb = 16
+idle_timeout_secs = 30
+query_timeout_ms = 1000

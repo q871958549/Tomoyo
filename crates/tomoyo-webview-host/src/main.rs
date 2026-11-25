@@ -342,7 +342,7 @@ fn main() {
         });
         let notes = dirty_cfg.sanitize();
         assert!(!notes.is_empty());
-        assert_eq!(dirty_cfg.apps.extra_scan_depth, 4);
+        assert_eq!(dirty_cfg.apps.extra_scan_depth, 12);
         assert!(dirty_cfg.apps.extra_dirs.is_empty());
         assert!(dirty_cfg.web_searches.iter().all(|w| w.keyword != "bad"));
         assert!(handle_host_message(r#"{"cmd":"close"}"#, &mut pdb, None).should_close);
@@ -352,7 +352,8 @@ fn main() {
                 .as_deref(),
             Some("light")
         );
-        assert!(fetch_store_catalog_json(&["registry/index.json".into()]).contains("dev.tomoyo.example-wasm"));
+        let catalog = fetch_store_catalog_json(&["registry/index.json".into()]);
+        assert!(catalog.contains("dev.tomoyo.example-wasm") && catalog.contains("dev.tomoyo.devtools"));
         #[cfg(windows)]
         {
             let hinst = unsafe { windows::Win32::System::LibraryLoader::GetModuleHandleW(None).unwrap() };

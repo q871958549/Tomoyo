@@ -1,5 +1,6 @@
 /target
 /plugins/**/target
+/templates/**/target
 **/*.rs.bk
 *.pdb
 *.log

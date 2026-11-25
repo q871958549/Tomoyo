@@ -38,6 +38,7 @@ impl AppShell {
         } else { None };
         self.last_result_gen = out.generation;
         self.results = out.items;
+        self.inject_context_clipboard_card();
         self.inject_active_launches_into_empty_results();
         if self.active_filter == SearchFilter::All {
             let tabs = self.visible_filter_tabs();

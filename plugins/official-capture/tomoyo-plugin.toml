@@ -1,7 +1,7 @@
 id = "dev.tomoyo.capture"
 name = "原生截图、贴图与录屏 (官方插件)"
-version = "3.0.0"
-description = "多屏 DPI 精准选区截图、平滑矢量标注、取色放大镜、纵横向长截图、桌面悬浮贴图与 MP4/GIF 区域录屏（按需子进程，零后台常驻）"
+version = "3.2.0"
+description = "多屏 DPI 精准选区截图、重截上次区域、平滑矢量标注、取色放大镜、纵横向长截图、桌面悬浮贴图（支持全局老板键隐藏/恢复）与 MP4/GIF 区域录屏（按需子进程，零后台常驻）"
 author = "Tomoyo Contributors"
 license = "MIT OR Apache-2.0"
 homepage = "https://github.com/q871958549/Tomoyo"
@@ -45,6 +45,16 @@ id = "record"
 label = "全局区域录屏 (MP4/GIF)"
 default_hotkey = ""
 
+[[hotkeys]]
+id = "repeat_region"
+label = "重截上次选区 (Repeat Last Region)"
+default_hotkey = ""
+
+[[hotkeys]]
+id = "toggle_pins"
+label = "一键隐藏/恢复全部贴图 (Boss Key)"
+default_hotkey = ""
+
 [[tray_actions]]
 id = "region"
 label = "区域截图与标注"
@@ -54,6 +64,11 @@ action_id = "run_region"
 id = "record"
 label = "区域录屏 (MP4/GIF)"
 action_id = "run_record"
+
+[[tray_actions]]
+id = "toggle_pins"
+label = "隐藏 / 恢复全部贴图"
+action_id = "run_toggle_pins"
 
 [[file_actions]]
 id = "pin_image"

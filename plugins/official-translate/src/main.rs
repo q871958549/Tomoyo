@@ -7,6 +7,7 @@
 mod engines;
 mod http_curl;
 mod store;
+mod style_prompt;
 
 use engines::{resolve_target_lang, translate_parallel};
 use serde_json::{json, Value};
@@ -190,7 +191,8 @@ impl TomoyoPlugin for TranslatePlugin {
                 let text = req.params.get("text").and_then(Value::as_str).unwrap_or("");
                 let src = req.params.get("source_lang").and_then(Value::as_str).unwrap_or("auto");
                 let tgt = req.params.get("target_lang").and_then(Value::as_str).unwrap_or("");
-                let (batch, store) = translate_parallel(&cfg, &req.plugin_secrets, text, src, tgt);
+                let style = req.params.get("style").and_then(Value::as_str).unwrap_or("standard");
+                let (batch, store) = translate_parallel(&cfg, &req.plugin_secrets, text, src, tgt, style);
                 Ok(json!({
                     "data": batch,
                     "store": { "history": store.history, "wordbook": store.wordbook },
@@ -359,7 +361,7 @@ fn run_quick_translate_cli() {
         .and_then(|v| serde_json::from_value(v).ok())
         .unwrap_or_default();
     let cfg = resolve_runtime_config(&settings);
-    let (batch, _) = translate_parallel(&cfg, &secrets, text, src, tgt);
+    let (batch, _) = translate_parallel(&cfg, &secrets, text, src, tgt, "standard");
     println!("{}", serde_json::to_string(&batch).unwrap_or_else(|_| "{}".into()));
 }
 

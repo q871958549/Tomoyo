@@ -2,6 +2,7 @@
 
 use crate::http_curl::{http_get, http_get_with_headers, http_post_bytes, url_encode_component};
 use crate::store::{TranslateRuntimeConfig, TranslateStore};
+use crate::style_prompt::{build_llm_system_prompt, normalize_style, style_label_zh};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::time::Instant;
@@ -47,7 +48,9 @@ pub fn translate_parallel(
     raw_text: &str,
     source_lang: &str,
     requested_target: &str,
+    requested_style: &str,
 ) -> (TranslateBatchResponse, TranslateStore) {
+    let style = normalize_style(requested_style);
     let text: String = raw_text.trim().chars().take(MAX_INPUT_CHARS).collect();
     let eff_target = resolve_target_lang(
         &text,
@@ -74,7 +77,7 @@ pub fn translate_parallel(
                 let id_ref = id.as_str();
                 let txt_ref = text.as_str();
                 let tgt_ref = eff_target.as_str();
-                s.spawn(move || run_engine(id_ref, cfg, secrets, txt_ref, source_lang, tgt_ref))
+                s.spawn(move || run_engine(id_ref, cfg, secrets, txt_ref, source_lang, tgt_ref, style))
             })
             .collect();
         handles.into_iter().filter_map(|h| h.join().ok()).collect()
@@ -98,21 +101,23 @@ fn run_engine(
     text: &str,
     source_lang: &str,
     target_lang: &str,
+    style: &str,
 ) -> EngineTranslation {
     let started = Instant::now();
+    let suffix = if style == "standard" { String::new() } else { format!(" · {}", style_label_zh(style)) };
     let (name, res) = match engine_id {
-        "google" | "bing" => ("Google 翻译", run_google(text, source_lang, target_lang)),
-        "mymemory" => ("MyMemory / 有道词典", run_mymemory(text, source_lang, target_lang)),
-        "deepl" => ("DeepL", run_deepl(secrets, text, source_lang, target_lang)),
-        "openai" => ("OpenAI 兼容", run_openai(cfg, secrets, text, target_lang)),
-        "ollama" => ("Ollama 本地模型", run_ollama(cfg, text, target_lang)),
-        _ => ("Unknown", Err(format!("未知翻译引擎: {engine_id}"))),
+        "google" | "bing" => ("Google 翻译".to_string(), run_google(text, source_lang, target_lang)),
+        "mymemory" => ("MyMemory / 有道词典".to_string(), run_mymemory(text, source_lang, target_lang)),
+        "deepl" => ("DeepL".to_string(), run_deepl(secrets, text, source_lang, target_lang)),
+        "openai" => (format!("OpenAI 兼容{suffix}"), run_openai(cfg, secrets, text, target_lang, style)),
+        "ollama" => (format!("Ollama 本地模型{suffix}"), run_ollama(cfg, text, target_lang, style)),
+        _ => ("Unknown".to_string(), Err(format!("未知翻译引擎: {engine_id}"))),
     };
     let elapsed_ms = started.elapsed().as_millis() as u64;
     match res {
         Ok(ok) => EngineTranslation {
             engine_id: engine_id.into(),
-            engine_name: name.into(),
+            engine_name: name,
             ok: true,
             translated: ok.text,
             detected_lang: ok.detected,
@@ -123,7 +128,7 @@ fn run_engine(
         },
         Err(err) => EngineTranslation {
             engine_id: engine_id.into(),
-            engine_name: name.into(),
+            engine_name: name,
             ok: false,
             translated: String::new(),
             detected_lang: None,
@@ -317,16 +322,14 @@ fn run_openai(
     secrets: &BTreeMap<String, String>,
     text: &str,
     dst: &str,
+    style: &str,
 ) -> Result<EngineOk, String> {
     let key = secrets
         .get("openai_api_key")
         .filter(|s| !s.trim().is_empty())
         .ok_or("未配置 OpenAI 兼容 API Key（请在设置中心→已安装插件→多源对照翻译中加密填入）")?;
     let url = format!("{}/chat/completions", cfg.openai_base_url.trim_end_matches('/'));
-    let sys = format!(
-        "You are a concise, accurate translator. Translate the user's text into {}. Output only the translation without extra commentary.",
-        lang_display_name(dst)
-    );
+    let sys = build_llm_system_prompt(lang_display_name(dst), style);
     let payload = serde_json::json!({
         "model": cfg.openai_model,
         "temperature": 0.1,
@@ -356,9 +359,9 @@ fn run_openai(
     Ok(EngineOk { text: out, detected: None, phonetic: None, dict: None })
 }
 
-fn run_ollama(cfg: &TranslateRuntimeConfig, text: &str, dst: &str) -> Result<EngineOk, String> {
+fn run_ollama(cfg: &TranslateRuntimeConfig, text: &str, dst: &str, style: &str) -> Result<EngineOk, String> {
     let url = format!("{}/api/chat", cfg.ollama_url.trim_end_matches('/'));
-    let sys = format!("Translate the user's text accurately into {}. Return only the translated text.", lang_display_name(dst));
+    let sys = build_llm_system_prompt(lang_display_name(dst), style);
     let payload = serde_json::json!({
         "model": cfg.ollama_model,
         "stream": false,

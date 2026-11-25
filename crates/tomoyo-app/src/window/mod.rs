@@ -3,6 +3,7 @@
 mod bootstrap;
 mod clipboard_ctrl;
 mod commands;
+mod context_card;
 mod events;
 mod flow_exec;
 pub(crate) mod hotkey_avoid;

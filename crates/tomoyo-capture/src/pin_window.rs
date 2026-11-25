@@ -30,7 +30,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SetForegroundWindow, SetLayeredWindowAttributes, SetWindowLongPtrW, SetWindowPos, ShowWindow,
     TrackPopupMenu, TranslateMessage, CS_DBLCLKS, GWLP_USERDATA, HWND_NOTOPMOST, HWND_TOPMOST,
     IDC_SIZEALL, LWA_ALPHA, MF_CHECKED, MF_SEPARATOR, MF_STRING, MF_UNCHECKED, MSG, SM_CXSCREEN,
-    SM_CYSCREEN, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SW_SHOW, TPM_LEFTALIGN,
+    SM_CYSCREEN, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SW_HIDE, SW_SHOW,
+    SW_SHOWNOACTIVATE, TPM_LEFTALIGN,
     TPM_RETURNCMD, WM_CAPTURECHANGED, WM_DESTROY, WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDBLCLK,
     WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCLBUTTONDBLCLK,
     WM_NCMBUTTONUP, WM_NCRBUTTONUP, WM_PAINT, WM_RBUTTONUP, WNDCLASSW, WS_EX_LAYERED,
@@ -63,6 +64,8 @@ struct PinState {
     scale: f32,
     opacity_pct: u8,
     topmost: bool,
+    toggle_msg: u32,
+    hidden_by_boss: bool,
     save_dir: String,
     drag: DragState,
 }
@@ -224,6 +227,8 @@ pub fn run_pin_window_with_text(
             scale: init_scale,
             opacity_pct: cap.pin_opacity.clamp(30, 100),
             topmost: true,
+            toggle_msg: crate::region_prefs::toggle_all_pins_msg(),
+            hidden_by_boss: false,
             save_dir: cap.save_dir,
             drag: DragState::default(),
         });
@@ -269,6 +274,12 @@ unsafe extern "system" fn pin_wndproc(
         return unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) };
     }
     let st = unsafe { &mut *ptr };
+
+    if st.toggle_msg != 0 && msg == st.toggle_msg {
+        st.hidden_by_boss = !st.hidden_by_boss;
+        unsafe { let _ = ShowWindow(hwnd, if st.hidden_by_boss { SW_HIDE } else { SW_SHOWNOACTIVATE }); }
+        return LRESULT(0);
+    }
 
     match msg {
         WM_ERASEBKGND => LRESULT(1),

@@ -1,0 +1,23 @@
+[package]
+name = "tomoyo-plugin-starter-wasm"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "Ready-to-clone zero-permission WebAssembly plugin template for Tomoyo Launcher"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# When cloned outside the Tomoyo monorepo, replace `path` with:
+# tomoyo-wasm-sdk = { git = "https://github.com/q871958549/Tomoyo", tag = "v3.2.0" }
+tomoyo-wasm-sdk = { path = "../../crates/tomoyo-wasm-sdk" }
+serde_json = "1.0"
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = "symbols"
+panic = "abort"
+
+[workspace]

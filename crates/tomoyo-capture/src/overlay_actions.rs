@@ -69,6 +69,7 @@ impl OverlayState {
         if !sel.is_valid() {
             return None;
         }
+        crate::region_prefs::save_last_region(self.snap.origin_x, self.snap.origin_y, sel);
         let (cw, ch, mut buf) = self.snap.crop_bgra(sel)?;
         render_annotations(&mut buf, cw as i32, ch as i32, sel.x, sel.y, self.stack.items());
         render_text_annotations_bgra(&mut buf, cw as i32, ch as i32, sel.x, sel.y, self.stack.items(), self.font_face, None);
