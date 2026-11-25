@@ -8,6 +8,7 @@ use super::panel::{
 use super::{MenuStepOutcome, PopupEntry};
 use crate::renderer::{FontPack, ThemePalette};
 use std::ffi::c_void;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::OnceLock;
 use windows::core::w;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
@@ -29,6 +30,17 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 const SUBMENU_SWITCH_TIMER: usize = 701;
 
+static SUPPRESS_DEACTIVATE_DEPTH: AtomicUsize = AtomicUsize::new(0);
+struct SuppressDeactivateGuard;
+impl Drop for SuppressDeactivateGuard {
+    fn drop(&mut self) { SUPPRESS_DEACTIVATE_DEPTH.fetch_sub(1, Ordering::SeqCst); }
+}
+fn enter_suppress_deactivate() -> SuppressDeactivateGuard {
+    SUPPRESS_DEACTIVATE_DEPTH.fetch_add(1, Ordering::SeqCst);
+    SuppressDeactivateGuard
+}
+fn is_deactivate_suppressed() -> bool { SUPPRESS_DEACTIVATE_DEPTH.load(Ordering::SeqCst) > 0 }
+
 pub(super) struct MenuSession<'a> {
     pub pal: ThemePalette,
     pub scale: f32,
@@ -37,9 +49,8 @@ pub(super) struct MenuSession<'a> {
     pub lvl1: PanelState,
     pub lvl2: Option<PanelState>,
     pub pending_sub_idx: Option<usize>,
-    pub suppress_deactivate: bool,
-    pub external_deactivate: bool,
-    pub closed: bool,
+    pub external_deactivate: AtomicBool,
+    pub closed: AtomicBool,
     pub on_command: &'a mut dyn FnMut(u32) -> MenuStepOutcome,
 }
 
@@ -68,7 +79,7 @@ pub(super) fn run_session(
     let pal = style.pal;
     let owner = style.owner;
     let align_bottom = style.align_bottom;
-    let mut sess = Box::new(MenuSession {
+    let sess = Box::new(MenuSession {
         pal,
         scale,
         fonts,
@@ -76,20 +87,20 @@ pub(super) fn run_session(
         lvl1: PanelState::from_entries(entries, false),
         lvl2: None,
         pending_sub_idx: None,
-        suppress_deactivate: false,
-        external_deactivate: false,
-        closed: false,
+        external_deactivate: AtomicBool::new(false),
+        closed: AtomicBool::new(false),
         on_command,
     });
 
     let w_px = (sess.lvl1.w_dip * scale).round() as i32;
     let h_px = (sess.lvl1.h_dip * scale).round() as i32;
     let (x, y) = place_on_monitor(pt, w_px, h_px, align_bottom);
-    let sess_ptr = &mut *sess as *mut MenuSession<'_> as isize;
-    let Some(hwnd1) = create_panel_window(x, y, w_px, h_px, pal.is_dark, owner, sess_ptr) else {
+    let sess_ptr = Box::into_raw(sess);
+    let Some(hwnd1) = create_panel_window(x, y, w_px, h_px, pal.is_dark, owner, sess_ptr as isize) else {
+        unsafe { drop(Box::from_raw(sess_ptr)); }
         return false;
     };
-    sess.lvl1.hwnd = hwnd1;
+    unsafe { (*sess_ptr).lvl1.hwnd = hwnd1; }
 
     unsafe {
         let _ = ShowWindow(hwnd1, SW_SHOW);
@@ -97,7 +108,7 @@ pub(super) fn run_session(
 
         let mut msg = MSG::default();
         loop {
-            if sess.closed {
+            if (*sess_ptr).closed.load(Ordering::SeqCst) {
                 break;
             }
             let ret = GetMessageW(&mut msg, None, 0, 0);
@@ -111,17 +122,19 @@ pub(super) fn run_session(
             windows::Win32::UI::WindowsAndMessaging::DispatchMessageW(&msg);
         }
 
-        sess.suppress_deactivate = true;
-        close_child_panel(&mut sess);
-        if !sess.external_deactivate
-            && let Some(own) = sess.owner
+        let _guard = enter_suppress_deactivate();
+        close_child_panel(&mut *sess_ptr);
+        let ext = (*sess_ptr).external_deactivate.load(Ordering::SeqCst);
+        if !ext
+            && let Some(own) = (*sess_ptr).owner
             && IsWindow(Some(own)).as_bool()
         {
             let _ = SetForegroundWindow(own);
         }
         SetWindowLongPtrW(hwnd1, GWLP_USERDATA, 0);
         let _ = DestroyWindow(hwnd1);
-        sess.external_deactivate
+        drop(Box::from_raw(sess_ptr));
+        ext
     }
 }
 
@@ -146,14 +159,13 @@ fn close_child_panel(sess: &mut MenuSession<'_>) {
         let _ = KillTimer(Some(sess.lvl1.hwnd), SUBMENU_SWITCH_TIMER);
     }
     if let Some(child) = sess.lvl2.take() {
-        sess.suppress_deactivate = true;
+        let _guard = enter_suppress_deactivate();
         unsafe {
             SetWindowLongPtrW(child.hwnd, GWLP_USERDATA, 0);
             if IsWindow(Some(child.hwnd)).as_bool() {
                 let _ = DestroyWindow(child.hwnd);
             }
         }
-        sess.suppress_deactivate = false;
     }
 }
 
@@ -201,7 +213,7 @@ fn is_menu_family_hwnd(sess: &MenuSession<'_>, other: HWND) -> bool {
 }
 
 fn invoke_command(sess: &mut MenuSession<'_>, cmd_id: u32) {
-    sess.suppress_deactivate = true;
+    let _guard = enter_suppress_deactivate();
     let outcome = (sess.on_command)(cmd_id);
     match outcome {
         MenuStepOutcome::Close => close_session(sess),
@@ -238,7 +250,6 @@ fn invoke_command(sess: &mut MenuSession<'_>, cmd_id: u32) {
             }
         }
     }
-    sess.suppress_deactivate = false;
 }
 
 unsafe extern "system" fn popup_wndproc(
@@ -257,7 +268,7 @@ unsafe extern "system" fn popup_wndproc(
     match msg {
         WM_ERASEBKGND => LRESULT(1),
         WM_ACTIVATE => {
-            if (wparam.0 & 0xFFFF) == 0 && !sess.suppress_deactivate {
+            if (wparam.0 & 0xFFFF) == 0 && !is_deactivate_suppressed() {
                 let other = HWND(lparam.0 as *mut c_void);
                 if !is_menu_family_hwnd(sess, other) {
                     let target = if !other.is_invalid() { other } else { unsafe { GetForegroundWindow() } };
@@ -266,7 +277,7 @@ unsafe extern "system" fn popup_wndproc(
                         unsafe { GetWindowThreadProcessId(target, Some(&mut pid)); }
                     }
                     if pid != 0 && pid != std::process::id() {
-                        sess.external_deactivate = true;
+                        sess.external_deactivate.store(true, Ordering::SeqCst);
                     }
                     close_session(sess);
                 }
@@ -421,6 +432,6 @@ fn panel_mut<'a>(sess: &'a mut MenuSession<'_>, is_child: bool) -> &'a mut Panel
 }
 
 fn close_session(sess: &mut MenuSession<'_>) {
-    sess.closed = true;
+    sess.closed.store(true, Ordering::SeqCst);
     unsafe { let _ = PostMessageW(Some(sess.lvl1.hwnd), WM_NULL, WPARAM(0), LPARAM(0)); }
 }

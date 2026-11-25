@@ -165,11 +165,12 @@ impl AppShell {
         }
         let width = (self.desired_width_dip() as f32 * self.dpi_scale) as i32;
         let height = (self.desired_height_dip() as f32 * self.dpi_scale) as i32;
-        let z_flag = if self.inter.in_modal_overlay { SWP_NOZORDER } else { Default::default() };
+        let modal = super::is_modal_overlay_active();
+        let z_flag = if modal { SWP_NOZORDER } else { Default::default() };
         unsafe {
             let _ = SetWindowPos(
                 self.hwnd,
-                (!self.inter.in_modal_overlay).then_some(HWND_TOPMOST),
+                (!modal).then_some(HWND_TOPMOST),
                 rect.left,
                 rect.top,
                 width,

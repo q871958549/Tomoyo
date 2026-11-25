@@ -124,7 +124,7 @@ impl AppShell {
         self.action_menu_open = false;
         self.inter.drag_origin = None;
         if is_admin {
-            self.inter.in_modal_overlay = true;
+            super::set_async_modal_overlay(true);
         }
         self.inter.launching = Some(LaunchingState {
             item_id: item_id.to_string(),
@@ -193,7 +193,7 @@ impl AppShell {
             return;
         };
         if done.is_admin {
-            self.inter.in_modal_overlay = false;
+            super::set_async_modal_overlay(false);
         }
         match done.result {
             Ok(()) => {

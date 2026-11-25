@@ -47,7 +47,7 @@ impl AppShell {
         match spawn_settings_window(self.hwnd.0 as isize, &self.theme_name) {
             Ok(true) => {
                 self.inter.settings_pending = true;
-                self.inter.in_modal_overlay = true;
+                super::set_async_modal_overlay(true);
                 self.show_toast(self.lang.pick("⚙ 正在开启设置中心…", "⚙ Opening Settings Center…"));
                 unsafe {
                     let _ = InvalidateRect(Some(self.hwnd), None, false);
@@ -66,7 +66,7 @@ impl AppShell {
             let _ = KillTimer(Some(self.hwnd), super::TIMER_SETTINGS_HIDE);
         }
         self.inter.settings_pending = false;
-        self.inter.in_modal_overlay = false;
+        super::set_async_modal_overlay(false);
         if unsafe { IsWindowVisible(self.hwnd).as_bool() } {
             self.begin_fade_hide();
         }

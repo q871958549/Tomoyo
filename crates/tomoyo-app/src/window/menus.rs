@@ -6,7 +6,8 @@
 use super::{AppShell, EM_GETSEL, EM_SETSEL};
 use crate::actions::{clipboard_has_rich_attachment, set_clipboard_text};
 use crate::popup_menu::{
-    run_interactive_popup_menu, show_themed_popup_menu, MenuStepOutcome, PopupEntry, PopupMenuStyle,
+    run_interactive_popup_menu, show_themed_popup_menu_tracked, MenuStepOutcome, PopupEntry,
+    PopupMenuStyle,
 };
 use tomoyo_core::Lang;
 use tomoyo_protocol::SearchFilter;
@@ -57,21 +58,33 @@ impl AppShell {
         }
     }
 
-    pub(super) fn show_logo_context_menu(&mut self) {
-        self.show_launcher_context_menu(false);
+    fn restore_edit_focus(&self) {
+        unsafe { let _ = SetForegroundWindow(self.hwnd); let _ = SetFocus(Some(self.edit_hwnd)); }
     }
+
+    fn finish_dismissed_popup(&mut self, dismissed_externally: bool) {
+        if dismissed_externally { self.hide_launcher(); } else { self.restore_edit_focus(); }
+    }
+
+    fn run_tracked_popup(&mut self, entries: &[PopupEntry]) -> Option<u32> {
+        let (chosen, dismissed_externally) = {
+            let _modal = super::enter_modal_overlay();
+            show_themed_popup_menu_tracked(self.popup_style(), entries)
+        };
+        if chosen.is_none() { self.finish_dismissed_popup(dismissed_externally); } else { self.restore_edit_focus(); }
+        chosen
+    }
+
+    pub(super) fn show_logo_context_menu(&mut self) { self.show_launcher_context_menu(false); }
 
     pub(super) fn show_launcher_context_menu(&mut self, from_edit: bool) {
         let initial = self.build_launcher_menu_entries(from_edit);
         let mut close_action: Option<u32> = None;
 
-        self.inter.in_modal_overlay = true;
-        let app_ptr = self as *mut AppShell;
-        let style = self.popup_style();
-        let dismissed_externally = run_interactive_popup_menu(
-            style,
-            initial,
-            |cmd| {
+        let dismissed_externally = {
+            let _modal = super::enter_modal_overlay();
+            let app_ptr = self as *mut AppShell;
+            run_interactive_popup_menu(self.popup_style(), initial, |cmd| {
                 let shell = unsafe { &mut *app_ptr };
                 if matches!(cmd, CMD_SETTINGS | CMD_CONFIG | CMD_QUIT) {
                     close_action = Some(cmd);
@@ -81,29 +94,16 @@ impl AppShell {
                 if matches!(cmd, CMD_EDIT_PASTE..=CMD_EDIT_CLEAR | CMD_MODE_ALL..=CMD_MODE_CALC) {
                     return MenuStepOutcome::Close;
                 }
-                unsafe {
-                    let _ = UpdateWindow(shell.hwnd);
-                }
-                MenuStepOutcome::StayOpen {
-                    entries: shell.build_launcher_menu_entries(from_edit),
-                    pal: shell.theme,
-                }
-            },
-        );
-        self.inter.in_modal_overlay = false;
+                unsafe { let _ = UpdateWindow(shell.hwnd); }
+                MenuStepOutcome::StayOpen { entries: shell.build_launcher_menu_entries(from_edit), pal: shell.theme }
+            })
+        };
 
         if let Some(cmd) = close_action {
             self.execute_terminal_menu_command(cmd);
             return;
         }
-        if dismissed_externally {
-            self.hide_launcher();
-            return;
-        }
-        unsafe {
-            let _ = SetForegroundWindow(self.hwnd);
-            let _ = SetFocus(Some(self.edit_hwnd));
-        }
+        self.finish_dismissed_popup(dismissed_externally);
     }
 
     fn build_launcher_menu_entries(&self, from_edit: bool) -> Vec<PopupEntry> {
@@ -349,12 +349,7 @@ impl AppShell {
         entries.push(PopupEntry::item(CMD_COPY_TITLE, l.pick("复制文本内容", "Copy Text"), Some("Ctrl+C"), false));
         entries.push(PopupEntry::item(CMD_TOGGLE_PREVIEW, l.pick("右侧实时预览", "Live Preview Pane"), Some("Ctrl+P"), self.preview_enabled));
 
-        self.inter.in_modal_overlay = true;
-        let chosen = show_themed_popup_menu(self.popup_style(), &entries);
-        self.inter.in_modal_overlay = false;
-
-        let Some(cmd) = chosen else { return };
-        unsafe { let _ = SetForegroundWindow(self.hwnd); }
+        let Some(cmd) = self.run_tracked_popup(&entries) else { return };
         if cmd == CMD_COPY_TITLE {
             let text = item.copy_text.as_deref().unwrap_or(&item.title);
             if set_clipboard_text(text) {
@@ -368,7 +363,7 @@ impl AppShell {
         }
         let action_idx = (cmd - 1) as usize;
         if action_idx < item.actions.len() {
-            self.selected = idx;
+            self.selected = self.results.iter().position(|r| r.id == item.id).unwrap_or(idx);
             self.execute_selected(action_idx);
         }
     }
@@ -414,12 +409,7 @@ impl AppShell {
             self.filter_bar_wrap,
         ));
 
-        self.inter.in_modal_overlay = true;
-        let chosen = show_themed_popup_menu(self.popup_style(), &entries);
-        self.inter.in_modal_overlay = false;
-        unsafe { let _ = SetForegroundWindow(self.hwnd); }
-
-        let Some(cmd) = chosen else { return };
+        let Some(cmd) = self.run_tracked_popup(&entries) else { return };
         if cmd == CMD_TOGGLE_LAYOUT {
             self.filter_bar_wrap = !self.filter_bar_wrap;
             if let Ok(mut cfg) = self.config.write() {

@@ -77,7 +77,7 @@ impl AppShell {
     }
 
     pub(super) fn on_edit_changed(&mut self) {
-        if self.inter.suppress_edit_change {
+        if super::is_edit_change_suppressed() {
             return;
         }
         self.cancel_pending_launch_hide();

@@ -24,7 +24,7 @@ use crate::preview_loader::AsyncPreviewLoader;
 use crate::renderer::{FilterCounts, FluentRenderer, ThemePalette};
 use crate::tray::TrayIcon;
 use bootstrap::detect_everything_label;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Instant;
@@ -63,6 +63,52 @@ pub(super) const TIMER_FADE_HIDE: usize = 1006;
 pub(super) const EM_SETCUEBANNER: u32 = 0x1501;
 pub(super) const EM_GETSEL: u32 = 0x00B0;
 pub(super) const EM_SETSEL: u32 = 0x00B1;
+
+static MODAL_OVERLAY_DEPTH: AtomicUsize = AtomicUsize::new(0);
+static ASYNC_MODAL_OVERLAY: AtomicBool = AtomicBool::new(false);
+static SUPPRESS_EDIT_CHANGE_DEPTH: AtomicUsize = AtomicUsize::new(0);
+
+/// RAII guard for synchronous modal Win32 loops (context menus, OLE drag-drop).
+/// Uses process-global atomics rather than a `&mut AppShell` bool so LLVM `noalias`
+/// dead-store elimination cannot elide the store before a re-entrant Win32 callback.
+pub(super) struct ModalOverlayGuard;
+
+impl Drop for ModalOverlayGuard {
+    fn drop(&mut self) {
+        MODAL_OVERLAY_DEPTH.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+pub(super) fn enter_modal_overlay() -> ModalOverlayGuard {
+    MODAL_OVERLAY_DEPTH.fetch_add(1, Ordering::SeqCst);
+    ModalOverlayGuard
+}
+
+pub(super) fn set_async_modal_overlay(active: bool) {
+    ASYNC_MODAL_OVERLAY.store(active, Ordering::SeqCst);
+}
+
+pub(super) fn is_modal_overlay_active() -> bool {
+    MODAL_OVERLAY_DEPTH.load(Ordering::SeqCst) > 0 || ASYNC_MODAL_OVERLAY.load(Ordering::SeqCst)
+}
+
+/// RAII guard suppressing synchronous `WM_COMMAND(EN_CHANGE)` callbacks during `SetWindowTextW`.
+pub(super) struct EditChangeSuppressGuard;
+
+impl Drop for EditChangeSuppressGuard {
+    fn drop(&mut self) {
+        SUPPRESS_EDIT_CHANGE_DEPTH.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+pub(super) fn suppress_edit_change() -> EditChangeSuppressGuard {
+    SUPPRESS_EDIT_CHANGE_DEPTH.fetch_add(1, Ordering::SeqCst);
+    EditChangeSuppressGuard
+}
+
+pub(super) fn is_edit_change_suppressed() -> bool {
+    SUPPRESS_EDIT_CHANGE_DEPTH.load(Ordering::SeqCst) > 0
+}
 
 unsafe extern "C" {
     /// Linked via `mimalloc`: forces immediate purge of freed segments back to Windows OS!
@@ -107,9 +153,7 @@ pub(super) struct InteractionState {
     pub last_click: Option<(usize, Instant)>,
     pub launching: Option<launch_ctrl::LaunchingState>,
     pub prev_foreground_hwnd: isize,
-    pub in_modal_overlay: bool,
     pub suppress_next_clip_img: bool,
-    pub suppress_edit_change: bool,
     pub inline_dock_pid: Option<u32>,
     pub last_shown_at: Option<Instant>,
 }
@@ -186,7 +230,7 @@ impl AppShell {
         self.inter.hovered_logo = false;
         self.inter.pressed_logo = false;
         self.inter.settings_pending = false;
-        self.inter.in_modal_overlay = false;
+        set_async_modal_overlay(false);
         self.inter.fade_alpha = None;
         selftest::restore_launcher_opacity(self.hwnd);
         self.inter.filter_counts = None;
@@ -210,14 +254,15 @@ impl AppShell {
             self.active_filter = SearchFilter::All;
             self.attached = None;
             let wide: Vec<u16> = q.encode_utf16().chain(std::iter::once(0)).collect();
-            self.inter.suppress_edit_change = true;
-            unsafe { let _ = SetWindowTextW(self.edit_hwnd, PCWSTR(wide.as_ptr())); }
-            self.inter.suppress_edit_change = false;
+            {
+                let _suppress = suppress_edit_change();
+                unsafe { let _ = SetWindowTextW(self.edit_hwnd, PCWSTR(wide.as_ptr())); }
+            }
             self.current_query = q.to_string();
         }
         self.position_on_active_monitor();
         self.dispatch_query();
-        self.inter.in_modal_overlay = false;
+        set_async_modal_overlay(false);
         self.inter.last_shown_at = Some(Instant::now());
         unsafe {
             let _ = ShowWindow(self.hwnd, SW_SHOW);
@@ -255,9 +300,10 @@ impl AppShell {
             let _ = KillTimer(Some(self.hwnd), TIMER_FOCUS_GUARD);
             let _ = KillTimer(Some(self.hwnd), TIMER_LAUNCH_HIDE);
             let _ = ShowWindow(self.hwnd, SW_HIDE);
-            self.inter.suppress_edit_change = true;
-            let _ = SetWindowTextW(self.edit_hwnd, w!(""));
-            self.inter.suppress_edit_change = false;
+            {
+                let _suppress = suppress_edit_change();
+                let _ = SetWindowTextW(self.edit_hwnd, w!(""));
+            }
             let _ = KillTimer(Some(self.hwnd), TIMER_HIBERNATE);
             let _ = SetTimer(Some(self.hwnd), TIMER_HIBERNATE, delay_ms, None);
         }
@@ -283,13 +329,14 @@ impl AppShell {
 
     pub fn set_query_text(&mut self, text: &str) {
         let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
-        self.inter.suppress_edit_change = true;
-        unsafe {
-            let _ = SetWindowTextW(self.edit_hwnd, PCWSTR(wide.as_ptr()));
-            let len = text.encode_utf16().count() as isize;
-            SendMessageW(self.edit_hwnd, EM_SETSEL, Some(WPARAM(len as usize)), Some(LPARAM(len)));
+        {
+            let _suppress = suppress_edit_change();
+            unsafe {
+                let _ = SetWindowTextW(self.edit_hwnd, PCWSTR(wide.as_ptr()));
+                let len = text.encode_utf16().count() as isize;
+                SendMessageW(self.edit_hwnd, EM_SETSEL, Some(WPARAM(len as usize)), Some(LPARAM(len)));
+            }
         }
-        self.inter.suppress_edit_change = false;
         self.current_query = text.to_string();
         self.dispatch_query();
     }
@@ -336,5 +383,49 @@ impl Drop for AppShell {
             if !self.edit_font.is_invalid() { let _ = DeleteObject(self.edit_font.into()); }
             if !self.edit_bg_brush.is_invalid() { let _ = DeleteObject(self.edit_bg_brush.into()); }
         }
+    }
+}
+
+#[cfg(test)]
+mod guard_tests {
+    use super::*;
+
+    #[test]
+    fn reentrant_atomic_guards_nest_and_reset_cleanly() {
+        set_async_modal_overlay(false);
+        assert!(!is_modal_overlay_active());
+        assert!(!is_edit_change_suppressed());
+
+        {
+            let _outer = enter_modal_overlay();
+            assert!(is_modal_overlay_active());
+            {
+                let _inner = enter_modal_overlay();
+                assert!(is_modal_overlay_active());
+            }
+            assert!(is_modal_overlay_active());
+        }
+        assert!(!is_modal_overlay_active());
+
+        set_async_modal_overlay(true);
+        assert!(is_modal_overlay_active());
+        {
+            let _scoped = enter_modal_overlay();
+            assert!(is_modal_overlay_active());
+        }
+        assert!(is_modal_overlay_active());
+        set_async_modal_overlay(false);
+        assert!(!is_modal_overlay_active());
+
+        {
+            let _e1 = suppress_edit_change();
+            assert!(is_edit_change_suppressed());
+            {
+                let _e2 = suppress_edit_change();
+                assert!(is_edit_change_suppressed());
+            }
+            assert!(is_edit_change_suppressed());
+        }
+        assert!(!is_edit_change_suppressed());
     }
 }

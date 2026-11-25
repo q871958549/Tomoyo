@@ -98,17 +98,25 @@ pub struct PopupMenuStyle<'a> {
     pub owner: Option<HWND>,
 }
 
-pub fn show_themed_popup_menu(
+/// Runs a single-selection theme-matched popup menu and returns `(picked_id, dismissed_externally)`.
+pub fn show_themed_popup_menu_tracked(
     style: PopupMenuStyle<'_>,
     entries: &[PopupEntry],
-) -> Option<u32> {
+) -> (Option<u32>, bool) {
     let mut picked = None;
     let mut handler = |id: u32| {
         picked = Some(id);
         MenuStepOutcome::Close
     };
-    cascade::run_session(style, entries.to_vec(), &mut handler);
-    picked
+    let dismissed_externally = cascade::run_session(style, entries.to_vec(), &mut handler);
+    (picked, dismissed_externally)
+}
+
+pub fn show_themed_popup_menu(
+    style: PopupMenuStyle<'_>,
+    entries: &[PopupEntry],
+) -> Option<u32> {
+    show_themed_popup_menu_tracked(style, entries).0
 }
 
 /// Runs a cascading Level-1/Level-2 context menu that stays open across tryable commands

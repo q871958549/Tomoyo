@@ -123,11 +123,13 @@ pub(super) fn handle_mouse_down(hwnd: HWND, app: &mut AppShell, lparam: LPARAM) 
     }
     if let Some(hit) = app.hit_test_filter_target(x, y) {
         match hit {
-            FilterHit::Tab(f) => app.set_active_filter(f),
+            FilterHit::Tab(f) => {
+                app.set_active_filter(f);
+                unsafe {
+                    let _ = SetFocus(Some(app.edit_hwnd));
+                }
+            }
             FilterHit::Overflow => app.show_filter_overflow_menu(),
-        }
-        unsafe {
-            let _ = SetFocus(Some(app.edit_hwnd));
         }
         return LRESULT(0);
     }
@@ -210,9 +212,10 @@ pub(super) fn handle_mouse_move(
     {
         app.inter.drag_origin = None;
         app.inter.last_click = None;
-        app.inter.in_modal_overlay = true;
-        let _ = start_file_drag(&path);
-        app.inter.in_modal_overlay = false;
+        {
+            let _modal = super::enter_modal_overlay();
+            let _ = start_file_drag(&path);
+        }
         return LRESULT(0);
     }
     let new_logo_hover = app.hit_test_logo_icon(x, y);

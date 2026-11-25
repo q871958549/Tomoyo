@@ -160,7 +160,7 @@ pub(super) unsafe extern "system" fn main_wndproc(
             if (wparam.0 & 0xFFFF) == 0
                 && !in_grace
                 && !to_inline
-                && !app.inter.in_modal_overlay
+                && !super::is_modal_overlay_active()
                 && unsafe { IsWindowVisible(hwnd).as_bool() }
             {
                 app.hide_launcher();
@@ -173,7 +173,7 @@ pub(super) unsafe extern "system" fn main_wndproc(
             if wparam.0 == 0
                 && !in_grace
                 && !to_inline
-                && !app.inter.in_modal_overlay
+                && !super::is_modal_overlay_active()
                 && unsafe { IsWindowVisible(hwnd).as_bool() }
             {
                 app.hide_launcher();
@@ -250,7 +250,7 @@ fn handle_timer(hwnd: HWND, app: &mut AppShell, timer_id: usize) -> LRESULT {
         TIMER_FOCUS_GUARD => {
             if !unsafe { IsWindowVisible(hwnd).as_bool() } {
                 unsafe { let _ = KillTimer(Some(hwnd), TIMER_FOCUS_GUARD); }
-            } else if !app.inter.in_modal_overlay && !app.inter.in_size_move {
+            } else if !super::is_modal_overlay_active() && !app.inter.in_size_move {
                 let fg = unsafe { GetForegroundWindow() };
                 let mut fg_pid = 0u32;
                 if !fg.is_invalid() {
