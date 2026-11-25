@@ -59,9 +59,10 @@ pub(crate) fn ensure_live_stdio(
     if plug.live.is_some() {
         return Ok(false);
     }
-    let _granted_perms: Vec<Permission> =
+    let granted_perms: Vec<Permission> =
         authorize_plugin_runtime(perms, &plug.manifest, &plug.dir, interactive)
             .map_err(ProcessError::Spawn)?;
+    let allow_breakaway = granted_perms.contains(&Permission::ShellExec);
     match &plug.manifest.runtime {
         RuntimeConfig::StdioJsonrpc { command, args, env } => {
             let proc = LivePluginProcess::spawn(
@@ -72,6 +73,7 @@ pub(crate) fn ensure_live_stdio(
                 env,
                 plug.manifest.resources.max_memory_mb,
                 plug.manifest.resources.query_timeout_ms,
+                allow_breakaway,
             )?;
             plug.live = Some(LiveRuntime::Stdio(proc));
             Ok(true)

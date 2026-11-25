@@ -207,7 +207,7 @@ pub(super) fn paint_gdi_pass(
                 if pal.is_dark { Rgb(0xF8, 0x71, 0x71) } else { Rgb(0xDC, 0x26, 0x26) }
             } else if t.starts_with('✓') {
                 if pal.is_dark { Rgb(0x34, 0xD3, 0x99) } else { Rgb(0x05, 0x96, 0x69) }
-            } else if state.launching_row.is_some() {
+            } else if t.starts_with('⏳') || state.launching_row.is_some() {
                 pal.accent
             } else {
                 pal.text_secondary

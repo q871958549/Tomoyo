@@ -11,6 +11,7 @@ mod inline_host;
 mod input;
 mod input_edit;
 mod launch_ctrl;
+mod launch_probe;
 mod layout;
 mod menus;
 mod plugin_hotkeys;
@@ -60,6 +61,7 @@ pub(super) const TIMER_FOCUS_GUARD: usize = 1003;
 pub(super) const TIMER_LAUNCH_HIDE: usize = 1004;
 pub(super) const TIMER_SETTINGS_HIDE: usize = 1005;
 pub(super) const TIMER_FADE_HIDE: usize = 1006;
+pub(super) const TIMER_LAUNCH_TICK: usize = 1007;
 pub(super) const EM_SETCUEBANNER: u32 = 0x1501;
 pub(super) const EM_GETSEL: u32 = 0x00B0;
 pub(super) const EM_SETSEL: u32 = 0x00B1;
@@ -151,7 +153,6 @@ pub(super) struct InteractionState {
     pub dragging_divider: bool,
     pub drag_origin: Option<(i32, i32, String)>,
     pub last_click: Option<(usize, Instant)>,
-    pub launching: Option<launch_ctrl::LaunchingState>,
     pub prev_foreground_hwnd: isize,
     pub suppress_next_clip_img: bool,
     pub inline_dock_pid: Option<u32>,
@@ -205,7 +206,10 @@ pub struct AppShell {
     pub(super) flow_hotkeys: Vec<String>,
     pub(super) pending_flow_result: Arc<Mutex<Option<Result<tomoyo_core::FlowRunPlan, String>>>>,
     pub(super) pending_plugin_event: Arc<Mutex<Option<(String, tomoyo_protocol::ExecuteResponse)>>>,
-    pub(super) pending_launch_result: Arc<Mutex<Option<launch_ctrl::LaunchResultMsg>>>,
+    pub(super) pending_launch_events: Arc<Mutex<std::collections::VecDeque<launch_ctrl::LaunchEvent>>>,
+    pub(super) active_launches: Vec<launch_ctrl::ActiveLaunch>,
+    pub(super) next_launch_id: u64,
+    pub(super) pending_launch_failure: Option<(String, Instant)>,
     pub(super) pending_update_install: Arc<Mutex<updater_ctrl::UpdateInstallSlot>>,
     pub(super) dpi_scale: f32,
     pub(super) taskbar_created_msg: u32,
@@ -277,6 +281,7 @@ impl AppShell {
             let _ = SetTimer(Some(self.hwnd), TIMER_FOCUS_GUARD, 160, None);
             let _ = InvalidateRect(Some(self.hwnd), None, false);
         }
+        self.restore_launch_ui_on_show();
         if let Some(msg) = self.hotkey_conflict.take() {
             self.show_toast(&msg);
         }
@@ -288,7 +293,6 @@ impl AppShell {
         self.toast = None;
         self.inter.drag_origin = None;
         self.inter.last_click = None;
-        self.inter.launching = None;
         self.inter.dragging_divider = false;
         self.preview_loader.cancel_all();
         let delay_ms = self
@@ -299,6 +303,7 @@ impl AppShell {
         unsafe {
             let _ = KillTimer(Some(self.hwnd), TIMER_FOCUS_GUARD);
             let _ = KillTimer(Some(self.hwnd), TIMER_LAUNCH_HIDE);
+            let _ = KillTimer(Some(self.hwnd), TIMER_LAUNCH_TICK);
             let _ = ShowWindow(self.hwnd, SW_HIDE);
             {
                 let _suppress = suppress_edit_change();

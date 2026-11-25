@@ -219,6 +219,48 @@ fn locate_capture_bin() -> Result<PathBuf, String> {
     Err(format!("未找到 {bin_name}"))
 }
 
+/// Spawns `tomoyo-capture` detached from the plugin's Job Object / process group so long
+/// annotation sessions, screen recordings, and pinned desktop cards are NEVER terminated when
+/// `tomoyo-plugin-capture` idles out and exits cleanly after 60s.
+fn spawn_detached(exe: &Path, args: &[String]) -> std::io::Result<std::process::Child> {
+    let build_cmd = || {
+        let mut cmd = Command::new(exe);
+        cmd.args(args);
+        cmd
+    };
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+        let mut cmd = build_cmd();
+        cmd.creation_flags(CREATE_BREAKAWAY_FROM_JOB | CREATE_NEW_PROCESS_GROUP);
+        match cmd.spawn() {
+            Ok(child) => Ok(child),
+            Err(_) => build_cmd().spawn(),
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::process::CommandExt;
+        let mut cmd = build_cmd();
+        unsafe {
+            cmd.pre_exec(|| {
+                unsafe extern "C" {
+                    fn setsid() -> i32;
+                }
+                let _ = setsid();
+                Ok(())
+            });
+        }
+        return cmd.spawn();
+    }
+    #[cfg(all(not(windows), not(target_os = "linux")))]
+    {
+        build_cmd().spawn()
+    }
+}
+
 fn spawn_capture_args(args: &[&str], delay_ms_75: bool) -> Result<(), String> {
     let exe = locate_capture_bin()?;
     let owned_args: Vec<String> = args.iter().map(|s| (*s).to_string()).collect();
@@ -227,21 +269,12 @@ fn spawn_capture_args(args: &[&str], delay_ms_75: bool) -> Result<(), String> {
             .name("tomoyo-cap-delay".into())
             .spawn(move || {
                 std::thread::sleep(std::time::Duration::from_millis(75));
-                if let Ok(mut child) = Command::new(&exe).args(&owned_args).spawn() {
-                    let _ = child.wait();
-                }
+                let _ = spawn_detached(&exe, &owned_args);
             });
         return Ok(());
     }
-    let mut child = Command::new(&exe)
-        .args(&owned_args)
-        .spawn()
+    let _child = spawn_detached(&exe, &owned_args)
         .map_err(|e| format!("failed to spawn {}: {e}", exe.display()))?;
-    let _ = std::thread::Builder::new()
-        .name("tomoyo-cap-reaper".into())
-        .spawn(move || {
-            let _ = child.wait();
-        });
     Ok(())
 }
 

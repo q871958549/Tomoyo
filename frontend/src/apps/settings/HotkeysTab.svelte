@@ -13,6 +13,7 @@
   import Combobox from '../../lib/ui/Combobox.svelte';
   import Segmented from '../../lib/ui/Segmented.svelte';
   import Switch from '../../lib/ui/Switch.svelte';
+  import HotkeyProbeBar from './HotkeyProbeBar.svelte';
   import HotkeySlotsCard from './HotkeySlotsCard.svelte';
   import SuspectDetailCard from './SuspectDetailCard.svelte';
 
@@ -46,7 +47,6 @@
   }
 
   let filter = $state('all');
-  let customSpec = $state('');
   let selectedSuspect = $state<{ spec: string; suspect: SuspectProcess } | null>(null);
   let isEn = $derived(lang === 'en');
 
@@ -86,10 +86,9 @@
     return '当前空闲';
   }
 
-  function runCustomProbe() {
-    const clean = customSpec.trim();
-    if (!clean || probingSpec) return;
-    onProbe(clean);
+  function formatTomoyoSlot(slot: string): string {
+    if (slot === 'main') return isEn ? 'Main Launcher' : '主启动器唤起';
+    return slot;
   }
 </script>
 
@@ -220,18 +219,7 @@
     />
   </div>
 
-  <div class="custom-probe">
-    <input
-      class="t-input probe-inp"
-      placeholder={isEn ? 'Probe any shortcut (e.g. Alt+C, Ctrl+Alt+V, F1)…' : '输入任意组合键实测是否空闲或抓占用真凶（如 Alt+C、Ctrl+Alt+V）…'}
-      bind:value={customSpec}
-      onkeydown={(e) => e.key === 'Enter' && runCustomProbe()}
-    />
-    <Button variant="secondary" size="sm" disabled={!customSpec.trim() || !!probingSpec} onclick={runCustomProbe}>
-      <Crosshair size={13} />
-      {probingSpec && probingSpec === customSpec.trim() ? (isEn ? 'Probing…' : '探测中…') : (isEn ? 'Probe Key' : '探测此键')}
-    </Button>
-  </div>
+  <HotkeyProbeBar {lang} {probingSpec} {onProbe} />
 
   {#if selectedSuspect}
     <SuspectDetailCard
@@ -263,11 +251,11 @@
                 </button>
               {/each}
             {:else if item.status === 'overridden'}
-              <span class="t-desc">{isEn ? `Tomoyo (${item.tomoyo_slot}) rescued over silent external hold` : `Tomoyo (${item.tomoyo_slot}) 已自动高优接管 · 可点右侧「探测」追踪外部占位`}</span>
+              <span class="t-desc">{isEn ? `Tomoyo (${formatTomoyoSlot(item.tomoyo_slot || '')}) rescued over silent external hold` : `Tomoyo (${formatTomoyoSlot(item.tomoyo_slot || '')}) 已自动高优接管 · 可点右侧「探测」追踪外部占位`}</span>
             {:else if item.status === 'conflict' || item.status === 'occupied_external'}
               <span class="t-desc">{isEn ? 'Silent external hold — click Probe' : '外部程序占用 · 可点右侧「探测」抓现行'}</span>
             {:else if item.tomoyo_slot}
-              <span class="t-desc">Tomoyo ({item.tomoyo_slot})</span>
+              <span class="t-desc">Tomoyo ({formatTomoyoSlot(item.tomoyo_slot)})</span>
             {:else}
               <span class="t-desc">{isEn ? 'Available for binding' : '空闲，可直接绑定'}</span>
             {/if}
@@ -305,8 +293,6 @@
   .probe-body { font-size: 12.5px; display: flex; flex-direction: column; gap: 3px; }
   .probe-meta { font-size: 11.5px; color: var(--text-secondary); word-break: break-all; }
   .mat-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }
-  .custom-probe { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
-  .probe-inp { flex: 1; font-family: "Cascadia Mono", Consolas, monospace; font-size: 12px; }
   .mat-list { display: flex; flex-direction: column; }
   .mat-row { display: grid; grid-template-columns: 128px 94px 1fr 74px; gap: 10px; align-items: center; padding: 8px 0; border-top: 1px solid var(--border); font-size: 12px; }
   .mat-sus { display: flex; flex-wrap: wrap; gap: 5px; min-width: 0; }

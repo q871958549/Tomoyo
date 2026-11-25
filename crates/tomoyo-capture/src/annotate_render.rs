@@ -72,6 +72,9 @@ pub fn render_single(bgra: &mut [u8], w: i32, h: i32, ox: i32, oy: i32, ann: &An
 
 pub fn draw_selection_handles(bgra: &mut [u8], w: i32, h: i32, ann: &Annotation, is_hover_only: bool) {
     let alpha = if is_hover_only { 0.72 } else { 1.0 };
+    if matches!(ann, Annotation::StepNumber { .. }) {
+        return;
+    }
     if let Annotation::Text { x, y, text, size, bold, .. } = ann {
         let r = text_bounds_estimate(*x, *y, text, *size, *bold);
         draw_dashed_frame(bgra, w, h, r, AnnotColor(0x3B, 0x82, 0xF6), if is_hover_only { 0.65 } else { 0.95 });

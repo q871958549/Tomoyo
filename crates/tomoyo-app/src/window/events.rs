@@ -38,6 +38,7 @@ impl AppShell {
         } else { None };
         self.last_result_gen = out.generation;
         self.results = out.items;
+        self.inject_active_launches_into_empty_results();
         if self.active_filter == SearchFilter::All {
             let tabs = self.visible_filter_tabs();
             self.inter.filter_counts = Some(compute_filter_counts(&self.results, &tabs));
@@ -92,12 +93,7 @@ impl AppShell {
         let update_label = self.updater.available_release().map(|r| format!("↑ v{}", r.version));
         let filter_vis = self.is_filter_bar_visible();
         let filter_tabs = self.visible_filter_tabs();
-        let launching_row = self.inter.launching.as_ref().and_then(|l| {
-            self.results
-                .iter()
-                .position(|r| r.id == l.item_id)
-                .map(|idx| (idx, l.finished_ok))
-        });
+        let launching_row = self.resolve_launching_row();
         let state = RenderState {
             lang: self.lang, theme: self.theme, query: &self.current_query, hovered_logo: self.inter.hovered_logo,
             mode_badge: mode.as_deref(), attached_capsule: attached_label.as_deref(),

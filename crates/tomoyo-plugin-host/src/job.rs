@@ -15,7 +15,18 @@ impl JobGuard {
     /// Creates a Windows Job Object with `KILL_ON_JOB_CLOSE` and a hard per-process memory cap,
     /// then assigns `child` into the job (forbidding breakaway by default for untrusted plugins).
     pub fn assign_child(child: &std::process::Child, max_memory_mb: u32) -> Result<Self, String> {
-        Self::assign_child_impl(child, max_memory_mb, false)
+        Self::assign_child_with_breakaway(child, max_memory_mb, false)
+    }
+
+    /// Assigns `child` into a Job Object, optionally enabling `JOB_OBJECT_LIMIT_BREAKAWAY_OK`
+    /// for `ShellExec`-authorized plugins so interactive GUI tools (e.g. screenshot overlay,
+    /// desktop pins, external editors) outlive the plugin's 60s idle-reap lifecycle.
+    pub fn assign_child_with_breakaway(
+        child: &std::process::Child,
+        max_memory_mb: u32,
+        allow_breakaway: bool,
+    ) -> Result<Self, String> {
+        Self::assign_child_impl(child, max_memory_mb, allow_breakaway)
     }
 
     /// Creates a Job Object for trusted WebView children that still kills the UI process tree
@@ -95,6 +106,14 @@ impl JobGuard {
     pub fn assign_child(child: &std::process::Child, _max_memory_mb: u32) -> Result<Self, String> {
         Ok(Self { pgid: child.id() as i32 })
     }
+
+    pub fn assign_child_with_breakaway(
+        child: &std::process::Child,
+        max_memory_mb: u32,
+        _allow_breakaway: bool,
+    ) -> Result<Self, String> {
+        Self::assign_child(child, max_memory_mb)
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -119,5 +138,13 @@ pub struct JobGuard;
 impl JobGuard {
     pub fn assign_child(_child: &std::process::Child, _max_memory_mb: u32) -> Result<Self, String> {
         Ok(Self)
+    }
+
+    pub fn assign_child_with_breakaway(
+        child: &std::process::Child,
+        max_memory_mb: u32,
+        _allow_breakaway: bool,
+    ) -> Result<Self, String> {
+        Self::assign_child(child, max_memory_mb)
     }
 }

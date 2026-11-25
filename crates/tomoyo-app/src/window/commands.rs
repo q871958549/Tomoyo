@@ -156,7 +156,7 @@ impl AppShell {
             }
             return;
         }
-        if self.try_start_async_launch(&action.kind, &item.id, &item.title) {
+        if self.try_start_async_launch(&action.kind, &item) {
             return;
         }
         let outcome = execute_action(&action.kind, &item.id, &self.plugin_host, self.theme.is_dark);

@@ -41,6 +41,7 @@ pub struct LivePluginProcess {
 }
 
 impl LivePluginProcess {
+    #[allow(clippy::too_many_arguments)]
     pub fn spawn(
         plugin_id: &str,
         plugin_dir: &Path,
@@ -49,6 +50,7 @@ impl LivePluginProcess {
         env: &BTreeMap<String, String>,
         max_memory_mb: u32,
         handshake_timeout_ms: u64,
+        allow_breakaway: bool,
     ) -> Result<Self, ProcessError> {
         let resolved = resolve_command(plugin_dir, command);
         let mut cmd = Command::new(&resolved);
@@ -91,7 +93,7 @@ impl LivePluginProcess {
             .map_err(|e| ProcessError::Spawn(format!("{resolved}: {e}")))?;
 
         let pid = child.id();
-        let job = match JobGuard::assign_child(&child, max_memory_mb) {
+        let job = match JobGuard::assign_child_with_breakaway(&child, max_memory_mb, allow_breakaway) {
             Ok(j) => Some(j),
             Err(e) => {
                 tracing::warn!(plugin_id = %plugin_id, pid = pid, "Job Object assignment skipped: {e}");

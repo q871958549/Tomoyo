@@ -207,7 +207,7 @@ fn paint_sdf_pass_inner(
             Rgb(0xEF, 0x44, 0x44)
         } else if t.starts_with('✓') {
             Rgb(0x10, 0xB9, 0x81)
-        } else if state.launching_row.is_some() {
+        } else if t.starts_with('⏳') || state.launching_row.is_some() {
             pal.accent
         } else if state.everything_status.is_some() {
             Rgb(0x10, 0xB9, 0x81)

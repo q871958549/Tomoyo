@@ -106,8 +106,7 @@ impl Annotation {
                 ]
             }
             Self::Arrow { x0, y0, cx, cy, x1, y1, .. } => vec![(*x0, *y0), (*cx, *cy), (*x1, *y1)],
-            Self::StepNumber { cx, cy, .. } => vec![(*cx, *cy)],
-            Self::Text { .. } => Vec::new(),
+            Self::StepNumber { .. } | Self::Text { .. } => Vec::new(),
             Self::Pen { points, .. } => {
                 if points.is_empty() { return Vec::new(); }
                 let (mut lx, mut ly, mut rx, mut ry) = (i32::MAX, i32::MAX, i32::MIN, i32::MIN);

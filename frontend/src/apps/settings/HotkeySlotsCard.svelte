@@ -56,76 +56,86 @@
     {@const isBad = !!s.spec && !!s.st && !s.st.disabled && !s.st.ok}
     {@const isOv = !!s.spec && !!s.st?.ok && !!s.st?.overridden}
     {@const freeList = audit?.recommended_free?.[s.id] || []}
+    {@const suspects = (isBad || isOv) ? suspectsForSpec(s.spec) : []}
     <div class="slot-row">
-      <div class="slot-main">
-        <div class="slot-top">
-          <span class="t-label">{s.label}</span>
-          {#if isBad}
-            <span class="pill is-bad"><AlertTriangle size={11} /> {s.st?.reason || tr(lang, 'hk_conflict')}</span>
-          {:else if isOv}
-            <span class="pill is-override"><Zap size={11} /> {isEn ? 'Auto-Rescued (Working)' : '已高优先级接管生效'}</span>
-          {:else if s.spec && s.st?.ok}
-            <span class="pill is-ok"><CheckCircle2 size={11} /> {tr(lang, 'hk_ok')}</span>
-          {/if}
+      <div class="slot-head">
+        <div class="slot-info">
+          <div class="slot-top">
+            <span class="t-label">{s.label}</span>
+            {#if isBad}
+              <span class="pill is-bad"><AlertTriangle size={11} /> {s.st?.reason || tr(lang, 'hk_conflict')}</span>
+            {:else if isOv}
+              <span class="pill is-override"><Zap size={11} /> {isEn ? 'Auto-Rescued' : '已高优接管'}</span>
+            {:else if s.spec && s.st?.ok}
+              <span class="pill is-ok"><CheckCircle2 size={11} /> {tr(lang, 'hk_ok')}</span>
+            {/if}
+          </div>
+          <div class="t-desc">
+            {isEn
+              ? 'Click the key box to press any shortcut directly, or choose from presets.'
+              : '点击右侧热键框直接按键录入，或从快捷预设切换常用组合键。'}
+          </div>
         </div>
-        <HotkeyRecorder
-          value={s.spec}
-          presets={s.presets}
-          allowDisable={s.id !== 'main'}
-          presetPlaceholder={tr(lang, 'preset_opt')}
-          disabledLabel={tr(lang, 'hk_off')}
-          okLabel={tr(lang, 'hk_ok')}
-          conflictLabel={tr(lang, 'hk_conflict')}
-          recordPrompt={tr(lang, 'rec_prompt')}
-          needModPrompt={tr(lang, 'rec_need_mod')}
-          onchange={(next) => onApplyFreeKey(s.id, next)}
-        />
-        {#if (isBad || isOv) && suspectsForSpec(s.spec).length > 0}
-          <div class="rec-line">
-            <span class="rec-hint">{isEn ? 'Suspected holder:' : '疑似外部占用：'}</span>
-            {#each suspectsForSpec(s.spec) as sus}
-              <button type="button" class="sus-tag" onclick={() => onSelectSuspect(s.spec, sus)}>
-                {sus.process_name} · {isEn ? 'How to fix' : '查看解除方案'}
-              </button>
-            {/each}
-          </div>
-        {/if}
-        {#if (isBad || isOv) && freeList.length > 0}
-          <div class="rec-line">
-            <span class="rec-hint">{isEn ? 'Zero-conflict free keys:' : '实测空闲可一键换无冲突键：'}</span>
-            {#each freeList as fk}
-              <button type="button" class="free-chip" onclick={() => onApplyFreeKey(s.id, fk)}>{fk}</button>
-            {/each}
-          </div>
-        {:else if s.presets.length > 0}
-          <div class="rec-line">
-            <span class="rec-hint">{isEn ? 'Quick pick:' : '一键快选：'}</span>
-            {#each s.presets as p}
-              {@const act = !!s.spec && s.spec.toLowerCase() === p.value.toLowerCase()}
-              <button type="button" class="free-chip {act ? 'is-on' : ''}" onclick={() => onApplyFreeKey(s.id, p.value)}>{p.label}</button>
-            {/each}
-          </div>
-        {/if}
+
+        <div class="slot-ctrl">
+          <HotkeyRecorder
+            value={s.spec}
+            presets={s.presets}
+            allowDisable={s.id !== 'main'}
+            presetPlaceholder={tr(lang, 'preset_opt')}
+            disabledLabel={tr(lang, 'hk_off')}
+            okLabel={tr(lang, 'hk_ok')}
+            conflictLabel={tr(lang, 'hk_conflict')}
+            recordPrompt={tr(lang, 'rec_prompt')}
+            needModPrompt={tr(lang, 'rec_need_mod')}
+            onchange={(next) => onApplyFreeKey(s.id, next)}
+          />
+        </div>
       </div>
-      {#if (isBad || isOv) && s.spec}
-        <div class="slot-acts">
-          {#if isBad}
-            <Button variant="primary" size="sm" class="btn-rescue-{s.id}" onclick={() => onToggleOverride(true)}>
-              <Zap size={12} />
-              {isEn ? 'Rescue Now' : '一键接管'}
-            </Button>
+
+      {#if isBad || isOv}
+        <div class="slot-remedy">
+          <div class="remedy-meta">
+            {#if suspects.length > 0}
+              <div class="rec-line">
+                <span class="rec-hint">{isEn ? 'Suspected holder:' : '疑似外部占用：'}</span>
+                {#each suspects as sus}
+                  <button type="button" class="sus-tag" onclick={() => onSelectSuspect(s.spec, sus)}>
+                    {sus.process_name} · {isEn ? 'How to fix' : '查看解除方案'}
+                  </button>
+                {/each}
+              </div>
+            {/if}
+            {#if freeList.length > 0}
+              <div class="rec-line">
+                <span class="rec-hint">{isEn ? 'Zero-conflict free keys:' : '实测空闲可一键换无冲突键：'}</span>
+                {#each freeList as fk}
+                  <button type="button" class="free-chip" onclick={() => onApplyFreeKey(s.id, fk)}>{fk}</button>
+                {/each}
+              </div>
+            {/if}
+          </div>
+          {#if s.spec}
+            <div class="slot-acts">
+              {#if isBad}
+                <Button variant="primary" size="sm" class="btn-rescue-{s.id}" onclick={() => onToggleOverride(true)}>
+                  <Zap size={12} />
+                  {isEn ? 'Rescue Now' : '一键接管'}
+                </Button>
+              {/if}
+              <Button variant="secondary" size="sm" disabled={!!probingSpec} onclick={() => onProbe(s.spec)}>
+                <Crosshair size={13} />
+                {probingSpec === s.spec ? (isEn ? 'Probing…' : '基线探测中…') : (isEn ? 'Catch Owner' : '抓现行')}
+              </Button>
+            </div>
           {/if}
-          <Button variant="secondary" size="sm" disabled={!!probingSpec} onclick={() => onProbe(s.spec)}>
-            <Crosshair size={13} />
-            {probingSpec === s.spec ? (isEn ? 'Probing…' : '基线探测中…') : (isEn ? 'Catch Owner' : '抓现行')}
-          </Button>
         </div>
       {/if}
     </div>
   {/each}
 
   <div class="slot-row override-row">
-    <div class="slot-main">
+    <div class="slot-info">
       <div class="slot-top">
         <Zap size={14} class="ov-ico" />
         <span class="t-label">{isEn ? 'Auto High-Priority Conflict Rescue' : '高优先级强行接管冲突热键'}</span>
@@ -143,24 +153,34 @@
 <style>
   .sec-card { padding: 14px 16px; }
   .sec-title { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 600; margin-bottom: 10px; }
-  .slot-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 11px 0; border-top: 1px solid var(--border); flex-wrap: wrap; }
-  .slot-main { display: flex; flex-direction: column; gap: 7px; min-width: 0; flex: 1; }
+  .slot-row { display: flex; flex-direction: column; gap: 10px; padding: 12px 0; border-top: 1px solid var(--border); }
+  .slot-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  .slot-info { display: flex; flex-direction: column; gap: 3px; min-width: 180px; flex: 1; }
   .slot-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .slot-ctrl { display: flex; align-items: center; flex-shrink: 0; }
+  .slot-remedy {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+    padding: 9px 11px; border-radius: 8px; background: var(--canvas); border: 1px solid var(--border);
+  }
+  .remedy-meta { display: flex; flex-direction: column; gap: 6px; min-width: 0; flex: 1; }
   .slot-acts { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
   .rec-line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
   .rec-hint { font-size: 11.5px; color: var(--muted); }
   .free-chip {
     padding: 2px 8px; border-radius: 6px; border: 1px solid var(--border);
-    background: var(--canvas); color: var(--accent); font-family: "Cascadia Mono", Consolas, monospace;
+    background: var(--surface); color: var(--accent); font-family: "Cascadia Mono", Consolas, monospace;
     font-size: 11.5px; font-weight: 500; cursor: pointer;
   }
-  .free-chip:hover, .free-chip.is-on { border-color: var(--accent); background: var(--accent-soft); }
-  .sus-tag { border: 1px solid var(--border); background: var(--canvas); color: var(--text-secondary); border-radius: 6px; padding: 2px 7px; font-family: inherit; font-size: 11.5px; cursor: pointer; }
+  .free-chip:hover { border-color: var(--accent); background: var(--accent-soft); }
+  .sus-tag { border: 1px solid var(--border); background: var(--surface); color: var(--text-secondary); border-radius: 6px; padding: 2px 7px; font-family: inherit; font-size: 11.5px; cursor: pointer; }
   .sus-tag:hover { border-color: var(--accent); color: var(--accent); }
   .pill { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 500; white-space: nowrap; }
   .pill.is-ok { background: var(--ok-soft); color: var(--ok); }
   .pill.is-override { background: rgba(124, 58, 237, 0.12); color: #7c3aed; }
   .pill.is-bad { background: var(--danger-soft); color: var(--danger); }
-  .override-row { background: var(--canvas); margin: 6px -16px -14px; padding: 12px 16px; border-radius: 0 0 10px 10px; align-items: center; }
+  .override-row {
+    flex-direction: row; align-items: center; justify-content: space-between; gap: 14px;
+    background: var(--canvas); margin: 4px -16px -14px; padding: 12px 16px; border-radius: 0 0 10px 10px;
+  }
   :global(.ov-ico) { color: #7c3aed; flex-shrink: 0; }
 </style>

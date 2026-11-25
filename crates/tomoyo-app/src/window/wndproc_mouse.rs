@@ -206,7 +206,7 @@ pub(super) fn handle_mouse_move(
     let lbtn_down = (wparam.0 & 0x0001) != 0;
     let drag_thresh = (12.0 * app.dpi_scale.max(1.0)).round() as i32;
     if lbtn_down
-        && app.inter.launching.is_none()
+        && !app.has_in_flight_launch()
         && let Some((ox, oy, path)) = app.inter.drag_origin.clone()
         && ((x - ox).abs() > drag_thresh || (y - oy).abs() > drag_thresh)
     {

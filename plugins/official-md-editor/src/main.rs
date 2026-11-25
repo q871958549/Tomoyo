@@ -340,7 +340,7 @@ impl TomoyoPlugin for MarkdownEditorPlugin {
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
             if let Some(qm) = find_quiet_md(custom_bin) {
-                let _ = Command::new(&qm).arg(path_str).spawn();
+                spawn_detached_editor(&qm, path_str);
                 return ExecuteResponse { hide_window: true, ..Default::default() };
             }
             return ExecuteResponse {
@@ -367,7 +367,7 @@ impl TomoyoPlugin for MarkdownEditorPlugin {
         match create_md_file(&dir, title) {
             Ok(created) => {
                 if open_after && !qm_exe.is_empty() && Path::new(qm_exe).is_file() {
-                    let _ = Command::new(qm_exe).arg(&created).spawn();
+                    spawn_detached_editor(Path::new(qm_exe), &created.to_string_lossy());
                     return ExecuteResponse {
                         hide_window: true,
                         toast: Some(format!("已新建并用 Quiet.md 打开：{}", created.file_name().unwrap_or_default().to_string_lossy())),
@@ -383,6 +383,42 @@ impl TomoyoPlugin for MarkdownEditorPlugin {
             }
             Err(e) => ExecuteResponse { hide_window: false, toast: Some(e), ..Default::default() },
         }
+    }
+}
+
+fn spawn_detached_editor(exe: &Path, arg: &str) {
+    let build = || {
+        let mut cmd = Command::new(exe);
+        cmd.arg(arg);
+        cmd
+    };
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+        let mut cmd = build();
+        cmd.creation_flags(CREATE_BREAKAWAY_FROM_JOB | CREATE_NEW_PROCESS_GROUP);
+        if cmd.spawn().is_err() {
+            let _ = build().spawn();
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::process::CommandExt;
+        let mut cmd = build();
+        unsafe {
+            cmd.pre_exec(|| {
+                unsafe extern "C" { fn setsid() -> i32; }
+                let _ = setsid();
+                Ok(())
+            });
+        }
+        let _ = cmd.spawn();
+    }
+    #[cfg(all(not(windows), not(target_os = "linux")))]
+    {
+        let _ = build().spawn();
     }
 }
 
