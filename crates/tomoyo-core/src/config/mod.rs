@@ -234,7 +234,7 @@ mod tests {
         let cfg: TomoyoConfig = toml::from_str(legacy).unwrap();
         assert!(cfg.show_filter_bar);
         assert!(cfg.apps.auto_detect_desktop_organizers);
-        assert_eq!(cfg.apps.extra_scan_depth, 2);
+        assert_eq!(cfg.apps.extra_scan_depth, 4);
         assert!(cfg.apps.extra_dirs.is_empty());
     }
 }

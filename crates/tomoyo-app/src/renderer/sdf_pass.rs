@@ -2,9 +2,12 @@
 
 use super::canvas::Canvas;
 use super::filter_bar::paint_filter_bar_sdf;
+use super::scrollbar::{compute_scrollbar_metrics, ScrollbarVisual};
 use super::theme::{category_rgb, Rgb};
 use super::{FrameLayout, RenderState};
 use crate::brand::paint_modern_white_emblem;
+#[cfg(windows)]
+use crate::icons::IconCache;
 #[cfg(windows)]
 use crate::image_icons::ImageIconCache;
 use tomoyo_protocol::IconSpec;
@@ -13,6 +16,7 @@ use tomoyo_protocol::IconSpec;
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn paint_sdf_pass(
     pixels: &mut [u8],
+    shell_icons: &mut IconCache,
     image_icons: &mut ImageIconCache,
     width: i32,
     height: i32,
@@ -20,8 +24,16 @@ pub(crate) fn paint_sdf_pass(
     lay: &FrameLayout,
     state: &RenderState<'_>,
 ) {
-    let icon_px = (30.0 * scale).round() as u32;
-    paint_sdf_pass_inner(pixels, Some((image_icons, icon_px)), width, height, scale, lay, state);
+    let icon_px = (32.0 * scale).round() as u32;
+    paint_sdf_pass_inner(
+        pixels,
+        Some((shell_icons, image_icons, icon_px)),
+        width,
+        height,
+        scale,
+        lay,
+        state,
+    );
 }
 
 #[cfg(not(windows))]
@@ -38,8 +50,8 @@ pub(crate) fn paint_sdf_pass(
 
 fn paint_sdf_pass_inner(
     pixels: &mut [u8],
-    #[cfg(windows)] mut image_icons: Option<(&mut ImageIconCache, u32)>,
-    #[cfg(not(windows))] _image_icons: Option<()>,
+    #[cfg(windows)] mut icon_caches: Option<(&mut IconCache, &mut ImageIconCache, u32)>,
+    #[cfg(not(windows))] _icon_caches: Option<()>,
     width: i32,
     height: i32,
     scale: f32,
@@ -143,32 +155,42 @@ fn paint_sdf_pass_inner(
         let y0 = lay.list_top + (slot as f32) * lay.row_h;
         let y1 = y0 + lay.row_h - 2.0;
         let is_sel = idx == state.selected;
-        let icon_top = y0 + (lay.row_h - 30.0) * 0.5;
+        let icon_top = y0 + (lay.row_h - 32.0) * 0.5;
         let badge_top = y0 + (lay.row_h - 21.0) * 0.5;
         let key_top = y0 + (lay.row_h - 20.0) * 0.5;
         if is_sel {
-            canvas.fill_rounded_rect(10.0, y0 + 2.0, lay.list_w_dip - 12.0, y1 - 2.0, 8.0, pal.card_sel);
-            canvas.stroke_rounded_rect(10.0, y0 + 2.0, lay.list_w_dip - 12.0, y1 - 2.0, 8.0, pal.sel_border);
+            canvas.fill_rounded_rect(10.0, y0 + 2.0, lay.list_w_dip - 13.0, y1 - 2.0, 8.0, pal.card_sel);
+            canvas.stroke_rounded_rect(10.0, y0 + 2.0, lay.list_w_dip - 13.0, y1 - 2.0, 8.0, pal.sel_border);
             canvas.fill_rounded_rect(10.5, y0 + 11.0, 13.5, y1 - 11.0, 1.5, pal.accent);
         } else if state.hovered == Some(idx) {
-            canvas.fill_rounded_rect(10.0, y0 + 2.0, lay.list_w_dip - 12.0, y1 - 2.0, 8.0, pal.card_hover);
+            canvas.fill_rounded_rect(10.0, y0 + 2.0, lay.list_w_dip - 13.0, y1 - 2.0, 8.0, pal.card_hover);
         }
         #[cfg(windows)]
-        let mut drew_img = false;
+        let mut drew_rgba = false;
         #[cfg(windows)]
-        if let IconSpec::ImageFile(path) = &item.icon
-            && let Some((ref mut ic, sz)) = image_icons
-            && let Some((iw, ih, rgba)) = ic.get_cached(path, sz)
-        {
-            canvas.draw_rgba_image(22.0, icon_top, 30.0, 30.0, *iw, *ih, rgba);
-            drew_img = true;
+        if let Some((ref mut sh_ic, ref mut img_ic, sz)) = icon_caches {
+            match &item.icon {
+                IconSpec::ImageFile(path) => {
+                    if let Some((iw, ih, rgba)) = img_ic.get_cached(path, sz) {
+                        canvas.draw_rgba_image(21.0, icon_top, 32.0, 32.0, *iw, *ih, rgba);
+                        drew_rgba = true;
+                    }
+                }
+                IconSpec::ShellPath(path) => {
+                    if let Some((iw, ih, rgba)) = sh_ic.get_cached(path, sz) {
+                        canvas.draw_rgba_image(21.0, icon_top, 32.0, 32.0, *iw, *ih, rgba);
+                        drew_rgba = true;
+                    }
+                }
+                _ => {}
+            }
         }
         #[cfg(windows)]
-        let need_tile = !drew_img && !matches!(item.icon, IconSpec::ShellPath(_));
+        let need_tile = !drew_rgba;
         #[cfg(not(windows))]
         let need_tile = !matches!(item.icon, IconSpec::ShellPath(_) | IconSpec::ImageFile(_));
         if need_tile {
-            canvas.fill_rounded_rect(22.0, icon_top, 52.0, icon_top + 30.0, 7.0, category_rgb(item.category));
+            canvas.fill_rounded_rect(21.0, icon_top, 53.0, icon_top + 32.0, 7.0, category_rgb(item.category));
         }
         let mut text_right = lay.list_w_dip - 20.0;
         let row_launch = state.launching_row.filter(|(li, _)| *li == idx);
@@ -193,13 +215,33 @@ fn paint_sdf_pass_inner(
         }
     }
 
-    if state.items.len() > lay.visible_cap && lay.visible_cap > 0 {
-        let track_top = lay.list_top + 4.0;
-        let track_h = (lay.fy0 - track_top - 6.0).max(20.0);
-        let thumb_h = (track_h * (lay.visible_cap as f32 / state.items.len() as f32).clamp(0.12, 1.0)).max(24.0);
-        let frac = (state.scroll_offset as f32 / state.items.len().saturating_sub(lay.visible_cap).max(1) as f32).clamp(0.0, 1.0);
-        let ty0 = track_top + frac * (track_h - thumb_h);
-        canvas.fill_rounded_rect(lay.list_w_dip - 7.0, ty0, lay.list_w_dip - 3.0, ty0 + thumb_h, 2.0, pal.scroll_thumb);
+    if let Some(sb) = compute_scrollbar_metrics(
+        lay.list_w_dip,
+        lay.list_top,
+        lay.fy0,
+        state.items.len(),
+        lay.visible_cap,
+        state.scroll_offset,
+        lay.has_preview,
+    ) {
+        let active = !matches!(state.scrollbar_visual, ScrollbarVisual::Idle);
+        if active {
+            let track_col = if pal.is_dark { Rgb(0x23, 0x27, 0x35) } else { Rgb(0xEA, 0xEE, 0xF5) };
+            canvas.fill_rounded_rect(sb.track_x0 - 0.5, sb.track_y0, sb.track_x1 + 0.5, sb.track_y1, 4.0, track_col);
+        }
+        let (x0, x1, radius, thumb_col) = match state.scrollbar_visual {
+            ScrollbarVisual::Dragging => (sb.track_x0, sb.track_x1, 3.75, pal.accent),
+            ScrollbarVisual::HoveredThumb => {
+                let col = if pal.is_dark { Rgb(0x94, 0xA3, 0xB8) } else { Rgb(0x64, 0x74, 0x8B) };
+                (sb.track_x0 + 0.3, sb.track_x1 - 0.3, 3.4, col)
+            }
+            ScrollbarVisual::HoveredTrack => {
+                let col = if pal.is_dark { Rgb(0x64, 0x74, 0x8B) } else { Rgb(0x94, 0xA3, 0xB8) };
+                (sb.track_x0 + 0.6, sb.track_x1 - 0.6, 3.1, col)
+            }
+            ScrollbarVisual::Idle => (sb.track_x1 - 4.0, sb.track_x1, 2.0, pal.scroll_thumb),
+        };
+        canvas.fill_rounded_rect(x0, sb.thumb_y0, x1, sb.thumb_y1, radius, thumb_col);
     }
 
     let dot_col = if let Some(t) = state.toast {

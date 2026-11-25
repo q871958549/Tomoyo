@@ -18,6 +18,7 @@ pub(super) struct ScannedApp {
     pub subtitle: String,
     pub is_uwp: bool,
     pub is_folder: bool,
+    pub is_file: bool,
     pub alias_text: Option<String>,
 }
 
@@ -116,25 +117,6 @@ fn collect_dir_roots(apps_cfg: &AppsConfig) -> Vec<ScanRoot> {
         });
     }
 
-    let custom_depth = apps_cfg.extra_scan_depth.clamp(1, 4);
-    for raw_dir in &apps_cfg.extra_dirs {
-        let trimmed = raw_dir.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        let pb = PathBuf::from(trimmed);
-        if pb.is_dir() {
-            roots.push(ScanRoot {
-                path: pb,
-                max_depth: custom_depth,
-                allow_exe: true,
-                allow_scripts: true,
-                include_top_folders: false,
-                filter_noise: false,
-                label_prefix: "工具",
-            });
-        }
-    }
     roots
 }
 
@@ -145,11 +127,21 @@ pub(super) fn app_watch_paths(apps_cfg: &AppsConfig) -> Vec<PathBuf> {
     }
     #[cfg(not(target_os = "linux"))]
     {
-        collect_dir_roots(apps_cfg)
+        let mut dirs: Vec<PathBuf> = collect_dir_roots(apps_cfg)
             .into_iter()
             .map(|r| r.path)
             .filter(|p| p.is_dir())
-            .collect()
+            .collect();
+        for raw in &apps_cfg.extra_dirs {
+            let trimmed = raw.trim();
+            if !trimmed.is_empty() {
+                let pb = PathBuf::from(trimmed);
+                if pb.is_dir() && !dirs.iter().any(|d| d == &pb) {
+                    dirs.push(pb);
+                }
+            }
+        }
+        dirs
     }
 }
 
@@ -212,6 +204,7 @@ fn scan_dir_recursive(
                         subtitle: format!("{} · 文件夹", cfg.label_prefix),
                         is_uwp: false,
                         is_folder: true,
+                        is_file: false,
                         alias_text: None,
                     });
                 }
@@ -271,6 +264,7 @@ fn scan_dir_recursive(
             subtitle,
             is_uwp: false,
             is_folder: false,
+            is_file: false,
             alias_text,
         });
     }

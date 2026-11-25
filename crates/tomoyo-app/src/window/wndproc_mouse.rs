@@ -1,8 +1,11 @@
-//! Pointer, cursor, drag-resize, filter-tab, and wheel handlers delegated from `wndproc.rs`.
+//! Pointer, cursor, Fluent scrollbar dragging, divider resize, filter-tab, and wheel handlers.
 
 use super::AppShell;
 use crate::drag::start_file_drag;
-use crate::renderer::{FilterHit, FOOTER_HEIGHT_DIP, HEADER_HEIGHT_DIP, MIN_WINDOW_WIDTH_DIP};
+use crate::renderer::{
+    compute_scrollbar_metrics, FilterHit, ScrollbarHit, ScrollbarMetrics, FOOTER_HEIGHT_DIP,
+    HEADER_HEIGHT_DIP, MIN_WINDOW_WIDTH_DIP,
+};
 use std::time::Instant;
 use tomoyo_protocol::IconSpec;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
@@ -13,12 +16,36 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     DefWindowProcW, GetClientRect, GetCursorPos, LoadCursorW, SetCursor, HTBOTTOM, HTBOTTOMLEFT,
-    HTBOTTOMRIGHT, HTCAPTION, HTCLIENT, HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT, IDC_HAND,
-    IDC_SIZEWE,
+    HTBOTTOMRIGHT, HTCAPTION, HTCLIENT, HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT, IDC_ARROW,
+    IDC_HAND, IDC_SIZEWE,
 };
 
 pub(super) fn unpack_xy(lparam: LPARAM) -> (i32, i32) {
     ((lparam.0 & 0xFFFF) as i16 as i32, ((lparam.0 >> 16) & 0xFFFF) as i16 as i32)
+}
+
+fn current_scrollbar_metrics(app: &AppShell) -> Option<ScrollbarMetrics> {
+    let mut rc = RECT::default();
+    unsafe {
+        let _ = GetClientRect(app.hwnd, &mut rc);
+    }
+    let scale = app.dpi_scale.max(1.0);
+    let h_dip = (rc.bottom - rc.top) as f32 / scale;
+    let list_w_dip = app.current_list_width_dip();
+    let list_top = HEADER_HEIGHT_DIP as f32 + app.filter_bar_height_dip() as f32 + 4.0;
+    let fy0 = h_dip - FOOTER_HEIGHT_DIP as f32;
+    let row_h = app.typography.row_height_dip() as f32;
+    let max_by_h = ((fy0 - list_top).max(0.0) / row_h).floor() as usize;
+    let visible_cap = app.geom.max_visible_rows.max(1).min(max_by_h.max(1));
+    compute_scrollbar_metrics(
+        list_w_dip,
+        list_top,
+        fy0,
+        app.results.len(),
+        visible_cap,
+        app.scroll_offset,
+        app.is_preview_visible(),
+    )
 }
 
 pub(super) fn hit_test_window_chrome(hwnd: HWND, app: &AppShell, lparam: LPARAM) -> LRESULT {
@@ -63,25 +90,36 @@ pub(super) fn handle_set_cursor(
     lparam: LPARAM,
 ) -> LRESULT {
     if (lparam.0 & 0xFFFF) as u32 == HTCLIENT {
+        if app.inter.dragging_scrollbar.is_some()
+            && let Ok(cur) = unsafe { LoadCursorW(None, IDC_ARROW) }
+        {
+            unsafe { SetCursor(Some(cur)); }
+            return LRESULT(1);
+        }
         let mut pt = POINT::default();
         unsafe {
             let _ = GetCursorPos(&mut pt);
             let _ = ScreenToClient(hwnd, &mut pt);
         }
+        let scale = app.dpi_scale.max(1.0);
+        if current_scrollbar_metrics(app)
+            .and_then(|sb| sb.hit_test(pt.x as f32 / scale, pt.y as f32 / scale))
+            .is_some()
+            && let Ok(cur) = unsafe { LoadCursorW(None, IDC_ARROW) }
+        {
+            unsafe { SetCursor(Some(cur)); }
+            return LRESULT(1);
+        }
         if (app.inter.dragging_divider || app.is_over_preview_divider(pt.x, pt.y))
             && let Ok(cur) = unsafe { LoadCursorW(None, IDC_SIZEWE) }
         {
-            unsafe {
-                SetCursor(Some(cur));
-            }
+            unsafe { SetCursor(Some(cur)); }
             return LRESULT(1);
         }
         if (app.hit_test_update_badge(pt.x, pt.y) || app.hit_test_logo_icon(pt.x, pt.y))
             && let Ok(cur) = unsafe { LoadCursorW(None, IDC_HAND) }
         {
-            unsafe {
-                SetCursor(Some(cur));
-            }
+            unsafe { SetCursor(Some(cur)); }
             return LRESULT(1);
         }
     }
@@ -114,20 +152,41 @@ pub(super) fn handle_mouse_down(hwnd: HWND, app: &mut AppShell, lparam: LPARAM) 
         app.set_query_text(":update");
         return LRESULT(0);
     }
-    if app.is_over_preview_divider(x, y) {
-        app.inter.dragging_divider = true;
+    let scale = app.dpi_scale.max(1.0);
+    let (x_dip, y_dip) = (x as f32 / scale, y as f32 / scale);
+    if let Some(sb) = current_scrollbar_metrics(app)
+        && let Some(hit) = sb.hit_test(x_dip, y_dip)
+    {
+        app.inter.drag_origin = None;
+        app.inter.last_click = None;
+        app.inter.hovered = None;
+        let grab_offset = match hit {
+            ScrollbarHit::Thumb => (y_dip - sb.thumb_y0).clamp(0.0, sb.thumb_height()),
+            ScrollbarHit::Track => {
+                let target_ty0 = sb.centered_thumb_top(y_dip);
+                app.scroll_offset = sb.offset_from_thumb_top(target_ty0);
+                sb.thumb_height() * 0.5
+            }
+        };
+        app.inter.dragging_scrollbar = Some(grab_offset);
+        app.inter.scrollbar_hover = Some(ScrollbarHit::Thumb);
         unsafe {
             SetCapture(hwnd);
+            let _ = SetFocus(Some(app.edit_hwnd));
         }
+        app.invalidate();
+        return LRESULT(0);
+    }
+    if app.is_over_preview_divider(x, y) {
+        app.inter.dragging_divider = true;
+        unsafe { SetCapture(hwnd); }
         return LRESULT(0);
     }
     if let Some(hit) = app.hit_test_filter_target(x, y) {
         match hit {
             FilterHit::Tab(f) => {
                 app.set_active_filter(f);
-                unsafe {
-                    let _ = SetFocus(Some(app.edit_hwnd));
-                }
+                unsafe { let _ = SetFocus(Some(app.edit_hwnd)); }
             }
             FilterHit::Overflow => app.show_filter_overflow_menu(),
         }
@@ -139,8 +198,6 @@ pub(super) fn handle_mouse_down(hwnd: HWND, app: &mut AppShell, lparam: LPARAM) 
             && prev_idx == idx
             && prev_at.elapsed().as_millis() <= dbl_ms
         {
-            // Row-aware double-click tolerance: even if hand jitter exceeded Windows' 4px SM_CXDOUBLECLK box
-            // inside the same result row, treat it identically to WM_LBUTTONDBLCLK and launch immediately.
             app.inter.last_click = None;
             app.inter.drag_origin = None;
             app.selected = idx;
@@ -182,16 +239,23 @@ pub(super) fn handle_mouse_move(
             hwndTrack: hwnd,
             dwHoverTime: 0,
         };
-        unsafe {
-            let _ = TrackMouseEvent(&mut tme);
+        unsafe { let _ = TrackMouseEvent(&mut tme); }
+    }
+    let scale = app.dpi_scale.max(1.0);
+    if let Some(grab_off) = app.inter.dragging_scrollbar {
+        if let Some(sb) = current_scrollbar_metrics(app) {
+            let y_dip = y as f32 / scale;
+            let next_off = sb.offset_from_thumb_top(y_dip - grab_off);
+            if next_off != app.scroll_offset {
+                app.scroll_offset = next_off;
+                app.invalidate();
+            }
         }
+        return LRESULT(0);
     }
     if app.inter.dragging_divider {
         let mut rc = RECT::default();
-        unsafe {
-            let _ = GetClientRect(hwnd, &mut rc);
-        }
-        let scale = app.dpi_scale.max(1.0);
+        unsafe { let _ = GetClientRect(hwnd, &mut rc); }
         let w_dip = (rc.right - rc.left) as f32 / scale;
         let clamped = (w_dip - x as f32 / scale)
             .round()
@@ -204,7 +268,7 @@ pub(super) fn handle_mouse_move(
         return LRESULT(0);
     }
     let lbtn_down = (wparam.0 & 0x0001) != 0;
-    let drag_thresh = (12.0 * app.dpi_scale.max(1.0)).round() as i32;
+    let drag_thresh = (12.0 * scale).round() as i32;
     if lbtn_down
         && !app.has_in_flight_launch()
         && let Some((ox, oy, path)) = app.inter.drag_origin.clone()
@@ -218,6 +282,8 @@ pub(super) fn handle_mouse_move(
         }
         return LRESULT(0);
     }
+    let sb_hover = current_scrollbar_metrics(app)
+        .and_then(|sb| sb.hit_test(x as f32 / scale, y as f32 / scale));
     let new_logo_hover = app.hit_test_logo_icon(x, y);
     let filter_hit = app.hit_test_filter_target(x, y);
     let new_filter_hover = match filter_hit {
@@ -225,7 +291,7 @@ pub(super) fn handle_mouse_move(
         _ => None,
     };
     let new_overflow_hover = matches!(filter_hit, Some(FilterHit::Overflow));
-    let new_hover = if filter_hit.is_some() {
+    let new_hover = if filter_hit.is_some() || sb_hover.is_some() {
         None
     } else {
         app.hit_test_row(x, y)
@@ -234,11 +300,13 @@ pub(super) fn handle_mouse_move(
         || new_filter_hover != app.inter.hovered_filter
         || new_overflow_hover != app.inter.hovered_overflow
         || new_logo_hover != app.inter.hovered_logo
+        || sb_hover != app.inter.scrollbar_hover
     {
         app.inter.hovered = new_hover;
         app.inter.hovered_filter = new_filter_hover;
         app.inter.hovered_overflow = new_overflow_hover;
         app.inter.hovered_logo = new_logo_hover;
+        app.inter.scrollbar_hover = sb_hover;
         app.invalidate();
     }
     LRESULT(0)
@@ -250,8 +318,25 @@ pub(super) fn handle_mouse_leave(app: &mut AppShell) -> LRESULT {
     let changed = app.inter.hovered.take().is_some()
         | app.inter.hovered_filter.take().is_some()
         | std::mem::replace(&mut app.inter.hovered_overflow, false)
-        | std::mem::replace(&mut app.inter.hovered_logo, false);
+        | std::mem::replace(&mut app.inter.hovered_logo, false)
+        | (app.inter.dragging_scrollbar.is_none() && app.inter.scrollbar_hover.take().is_some());
     if changed {
+        app.invalidate();
+    }
+    LRESULT(0)
+}
+
+pub(super) fn handle_capture_changed(app: &mut AppShell) -> LRESULT {
+    let mut dirty = false;
+    if app.inter.dragging_scrollbar.take().is_some() {
+        app.inter.scrollbar_hover = None;
+        dirty = true;
+    }
+    if app.inter.dragging_divider {
+        app.inter.dragging_divider = false;
+        dirty = true;
+    }
+    if dirty {
         app.invalidate();
     }
     LRESULT(0)
@@ -259,6 +344,19 @@ pub(super) fn handle_mouse_leave(app: &mut AppShell) -> LRESULT {
 
 pub(super) fn handle_lbutton_up(app: &mut AppShell) -> LRESULT {
     app.inter.drag_origin = None;
+    if app.inter.dragging_scrollbar.take().is_some() {
+        unsafe { let _ = ReleaseCapture(); }
+        let mut pt = POINT::default();
+        unsafe {
+            let _ = GetCursorPos(&mut pt);
+            let _ = ScreenToClient(app.hwnd, &mut pt);
+        }
+        let scale = app.dpi_scale.max(1.0);
+        app.inter.scrollbar_hover = current_scrollbar_metrics(app)
+            .and_then(|sb| sb.hit_test(pt.x as f32 / scale, pt.y as f32 / scale));
+        app.invalidate();
+        return LRESULT(0);
+    }
     if app.inter.pressed_logo {
         app.inter.pressed_logo = false;
         let mut pt = POINT::default();
@@ -273,9 +371,7 @@ pub(super) fn handle_lbutton_up(app: &mut AppShell) -> LRESULT {
     }
     if app.inter.dragging_divider {
         app.inter.dragging_divider = false;
-        unsafe {
-            let _ = ReleaseCapture();
-        }
+        unsafe { let _ = ReleaseCapture(); }
         app.persist_window_geometry();
     }
     LRESULT(0)
@@ -285,6 +381,13 @@ pub(super) fn handle_lbutton_dblclk(app: &mut AppShell, lparam: LPARAM) -> LRESU
     app.inter.drag_origin = None;
     app.inter.last_click = None;
     let (x, y) = unpack_xy(lparam);
+    let scale = app.dpi_scale.max(1.0);
+    if current_scrollbar_metrics(app)
+        .and_then(|sb| sb.hit_test(x as f32 / scale, y as f32 / scale))
+        .is_some()
+    {
+        return LRESULT(0);
+    }
     if let Some(idx) = app.hit_test_row(x, y) {
         app.selected = idx;
         app.execute_selected(0);
@@ -294,7 +397,27 @@ pub(super) fn handle_lbutton_dblclk(app: &mut AppShell, lparam: LPARAM) -> LRESU
 
 pub(super) fn handle_mouse_wheel(app: &mut AppShell, wparam: WPARAM) -> LRESULT {
     let delta = ((wparam.0 >> 16) & 0xFFFF) as i16;
-    if !app.results.is_empty() {
+    if app.results.is_empty() || delta == 0 {
+        return LRESULT(0);
+    }
+    if let Some(sb) = current_scrollbar_metrics(app) {
+        let step = 2usize;
+        let next = if delta < 0 {
+            (app.scroll_offset + step).min(sb.max_scroll)
+        } else {
+            app.scroll_offset.saturating_sub(step)
+        };
+        if next != app.scroll_offset {
+            app.scroll_offset = next;
+            let mut pt = POINT::default();
+            unsafe {
+                let _ = GetCursorPos(&mut pt);
+                let _ = ScreenToClient(app.hwnd, &mut pt);
+            }
+            app.inter.hovered = app.hit_test_row(pt.x, pt.y);
+            app.invalidate();
+        }
+    } else {
         if delta < 0 && app.selected + 1 < app.results.len() {
             app.selected += 1;
         } else if delta > 0 && app.selected > 0 {

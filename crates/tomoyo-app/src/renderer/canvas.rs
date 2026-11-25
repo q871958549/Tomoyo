@@ -176,19 +176,56 @@ impl<'a> Canvas<'a> {
         let (x_start, y_start) = (px0.max(0), py0.max(0));
         let (x_end, y_end) = ((px0 + pw).min(self.w), (py0 + ph).min(self.h));
 
+        // 1:1 exact pixel fast path (zero resampling blur for pre-sized Hi-DPI icons!)
+        if src_w as i32 == pw && src_h as i32 == ph {
+            for y in y_start..y_end {
+                let sy = (y - py0) as usize;
+                let row = (y * self.w) as usize * 4;
+                for x in x_start..x_end {
+                    let sx = (x - px0) as usize;
+                    let si = (sy * src_w as usize + sx) * 4;
+                    let a = rgba[si + 3] as f32 / 255.0;
+                    if a > 0.0 {
+                        blend_pixel(
+                            &mut self.buf[row + (x as usize) * 4..],
+                            Rgb(rgba[si], rgba[si + 1], rgba[si + 2]),
+                            a,
+                        );
+                    }
+                }
+            }
+            return;
+        }
+
+        // Premultiplied bilinear fallback when displaying scaled thumbnails
+        let (swf, shf, pwf, phf) = (src_w as f32, src_h as f32, pw as f32, ph as f32);
         for y in y_start..y_end {
-            let sy = (((y - py0) as u64 * src_h as u64) / ph as u64).min(src_h as u64 - 1) as usize;
+            let fy = (((y - py0) as f32 + 0.5) * (shf / phf) - 0.5).clamp(0.0, shf - 1.0);
+            let y0 = fy.floor() as usize;
+            let y1 = (y0 + 1).min(src_h as usize - 1);
+            let ty = fy - y0 as f32;
             let row = (y * self.w) as usize * 4;
             for x in x_start..x_end {
-                let sx = (((x - px0) as u64 * src_w as u64) / pw as u64).min(src_w as u64 - 1) as usize;
-                let si = (sy * src_w as usize + sx) * 4;
-                let a = rgba[si + 3] as f32 / 255.0;
-                if a > 0.0 {
-                    blend_pixel(
-                        &mut self.buf[row + (x as usize) * 4..],
-                        Rgb(rgba[si], rgba[si + 1], rgba[si + 2]),
-                        a,
-                    );
+                let fx = (((x - px0) as f32 + 0.5) * (swf / pwf) - 0.5).clamp(0.0, swf - 1.0);
+                let x0 = fx.floor() as usize;
+                let x1 = (x0 + 1).min(src_w as usize - 1);
+                let tx = fx - x0 as f32;
+                let sample = |sx: usize, sy: usize, w: f32| -> (f32, f32, f32, f32) {
+                    let i = (sy * src_w as usize + sx) * 4;
+                    let a = rgba[i + 3] as f32 / 255.0;
+                    (rgba[i] as f32 * a * w, rgba[i + 1] as f32 * a * w, rgba[i + 2] as f32 * a * w, a * w)
+                };
+                let s00 = sample(x0, y0, (1.0 - tx) * (1.0 - ty));
+                let s10 = sample(x1, y0, tx * (1.0 - ty));
+                let s01 = sample(x0, y1, (1.0 - tx) * ty);
+                let s11 = sample(x1, y1, tx * ty);
+                let a = (s00.3 + s10.3 + s01.3 + s11.3).clamp(0.0, 1.0);
+                if a > 1e-4 {
+                    let inv = 1.0 / a;
+                    let r = ((s00.0 + s10.0 + s01.0 + s11.0) * inv).round().clamp(0.0, 255.0) as u8;
+                    let g = ((s00.1 + s10.1 + s01.1 + s11.1) * inv).round().clamp(0.0, 255.0) as u8;
+                    let b = ((s00.2 + s10.2 + s01.2 + s11.2) * inv).round().clamp(0.0, 255.0) as u8;
+                    blend_pixel(&mut self.buf[row + (x as usize) * 4..], Rgb(r, g, b), a);
                 }
             }
         }

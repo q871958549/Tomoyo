@@ -1,3 +1,4 @@
+mod custom_dirs;
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(not(target_os = "linux"))]
@@ -33,6 +34,7 @@ pub(super) struct AppEntry {
     pub subtitle: String,
     pub is_uwp: bool,
     pub is_folder: bool,
+    pub is_file: bool,
     pub indexed: IndexedText,
     pub alias_indexed: Option<IndexedText>,
 }
@@ -109,39 +111,38 @@ impl Provider for AppsProvider {
         "Installed Applications"
     }
 
+    fn supports_file_filters(&self) -> bool {
+        true
+    }
+
     fn query(&self, ctx: &QueryContext) -> Vec<ResultItem> {
         let q = ctx.trimmed.as_str();
         let lang = self.lang();
-        let cap = if matches!(ctx.filter, SearchFilter::App | SearchFilter::Folder) {
-            ctx.limit.min(25)
-        } else {
-            ctx.limit.min(12)
+        let cap = if ctx.filter != SearchFilter::All { ctx.limit.min(25) } else { ctx.limit.min(16) };
+        let Ok(entries) = self.entries.read() else { return Vec::new() };
+        let custom_exts = match ctx.filter {
+            SearchFilter::Custom(idx) => self
+                .config
+                .read()
+                .ok()
+                .and_then(|c| c.custom_filters.get(idx as usize).map(|t| t.extensions.clone())),
+            _ => None,
         };
-        let Ok(entries) = self.entries.read() else {
-            return Vec::new();
-        };
-        let allow_entry = |app: &AppEntry| match ctx.filter {
-            SearchFilter::App => !app.is_folder,
-            SearchFilter::Folder => app.is_folder,
-            _ => true,
+        let allow_entry = |app: &AppEntry| {
+            custom_dirs::entry_matches_filter(app, ctx.filter, custom_exts.as_deref())
         };
 
         if q.is_empty() {
-            let empty_cap = if matches!(ctx.filter, SearchFilter::App | SearchFilter::Folder) {
-                cap
-            } else {
-                cap.min(8)
-            };
+            let empty_cap = if matches!(ctx.filter, SearchFilter::App | SearchFilter::Folder) { cap } else { cap.min(8) };
             let mut ranked_empty: Vec<(&AppEntry, i64)> = entries
                 .iter()
-                .filter(|app| allow_entry(app) && (ctx.filter == SearchFilter::Folder || !app.is_folder))
+                .filter(|app| {
+                    allow_entry(app)
+                        && (ctx.filter == SearchFilter::Folder || !app.is_folder)
+                        && (ctx.filter.is_file_only() || !app.is_file)
+                })
                 .map(|app| {
-                    let bonus = self
-                        .frecency
-                        .as_ref()
-                        .and_then(|f| f.read().ok())
-                        .map(|s| s.bonus(&app.id))
-                        .unwrap_or(0);
+                    let bonus = self.frecency.as_ref().and_then(|f| f.read().ok()).map(|s| s.bonus(&app.id)).unwrap_or(0);
                     (app, 500 + bonus)
                 })
                 .collect();
@@ -214,6 +215,7 @@ fn scan_all_apps(apps_cfg: &AppsConfig) -> Vec<AppEntry> {
         scan_registry_uninstall(&mut seen_names, &mut seen_targets, &mut raw_entries);
         push_windows_builtin_apps(&mut seen_names, &mut raw_entries);
     }
+    custom_dirs::scan_custom_extra_dirs(apps_cfg, &mut seen_targets, &mut raw_entries);
 
     let mut entries: Vec<AppEntry> = raw_entries
         .into_iter()
@@ -227,6 +229,7 @@ fn scan_all_apps(apps_cfg: &AppsConfig) -> Vec<AppEntry> {
             subtitle: s.subtitle,
             is_uwp: s.is_uwp,
             is_folder: s.is_folder,
+            is_file: s.is_file,
         })
         .collect();
 
@@ -235,6 +238,9 @@ fn scan_all_apps(apps_cfg: &AppsConfig) -> Vec<AppEntry> {
 }
 
 fn to_result_item(app: &AppEntry, score: i64, lang: Lang) -> ResultItem {
+    if app.is_file {
+        return custom_dirs::custom_file_to_result_item(app, score, lang);
+    }
     if app.is_folder {
         return ResultItem {
             id: app.id.clone(),
@@ -332,13 +338,12 @@ fn to_result_item(app: &AppEntry, score: i64, lang: Lang) -> ResultItem {
     }
 
     let icon = if app.is_uwp {
-        let mono: String = app
-            .name
-            .chars()
-            .filter(|c| !c.is_whitespace())
-            .take(2)
-            .collect();
-        IconSpec::Monogram(if mono.is_empty() { "APP".into() } else { mono })
+        if let Some(aumid) = app.launch_args.as_deref().filter(|a| a.starts_with("shell:AppsFolder\\")) {
+            IconSpec::ShellPath(aumid.to_string())
+        } else {
+            let mono: String = app.name.chars().filter(|c| !c.is_whitespace()).take(2).collect();
+            IconSpec::Monogram(if mono.is_empty() { "APP".into() } else { mono })
+        }
     } else {
         IconSpec::ShellPath(app.path.clone())
     };

@@ -21,7 +21,7 @@ pub(super) fn linux_app_watch_paths(apps_cfg: &AppsConfig) -> Vec<PathBuf> {
 }
 
 pub(super) fn scan_linux_apps(
-    apps_cfg: &AppsConfig,
+    _apps_cfg: &AppsConfig,
     seen: &mut HashSet<String>,
     seen_targets: &mut HashSet<String>,
     out: &mut Vec<ScannedApp>,
@@ -32,13 +32,6 @@ pub(super) fn scan_linux_apps(
     }
     if let Some(desktop) = detect_xdg_desktop_dir() {
         scan_user_folder(&desktop, 0, 2, "桌面", true, &mut visited, seen, out);
-    }
-    let depth = apps_cfg.extra_scan_depth.clamp(1, 4);
-    for raw in &apps_cfg.extra_dirs {
-        let p = PathBuf::from(raw.trim());
-        if p.is_dir() {
-            scan_user_folder(&p, 0, depth, "工具", false, &mut visited, seen, out);
-        }
     }
 }
 
@@ -236,6 +229,7 @@ fn parse_desktop_file(path: &Path, raw: &str) -> Option<ScannedApp> {
         subtitle,
         is_uwp: false,
         is_folder: false,
+        is_file: false,
         alias_text: (!aliases.is_empty()).then(|| aliases.join(" ")),
     })
 }
@@ -292,6 +286,7 @@ fn scan_user_folder(
                         subtitle: format!("{label_prefix} · 文件夹"),
                         is_uwp: false,
                         is_folder: true,
+                        is_file: false,
                         alias_text: None,
                     });
                 }
@@ -329,6 +324,7 @@ fn scan_user_folder(
                 subtitle: format!("{label_prefix} · {fname}"),
                 is_uwp: false,
                 is_folder: false,
+                is_file: false,
                 alias_text: None,
             });
         }

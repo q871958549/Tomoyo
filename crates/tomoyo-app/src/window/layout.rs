@@ -274,7 +274,7 @@ impl AppShell {
         }
     }
 
-    fn current_list_width_dip(&self) -> f32 {
+    pub(super) fn current_list_width_dip(&self) -> f32 {
         let mut rc = RECT::default();
         unsafe {
             let _ = GetClientRect(self.hwnd, &mut rc);
@@ -331,7 +331,8 @@ impl AppShell {
         }
         let pw = (self.geom.preview_width_dip as f32).clamp(220.0, (w_dip * 0.48).max(220.0));
         let div_x_dip = (w_dip - pw).max(380.0);
-        (x_px as f32 / scale - div_x_dip).abs() <= 5.0
+        let dx = x_px as f32 / scale - div_x_dip;
+        (-3.5..=5.0).contains(&dx)
     }
 
     pub(super) fn hit_test_filter_target(&self, x_px: i32, y_px: i32) -> Option<FilterHit> {

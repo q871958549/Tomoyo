@@ -19,12 +19,12 @@ pub struct AppsConfig {
     /// Auto-detect desktop organizer folders (DeskBox, Tencent DeskGo, etc.).
     #[serde(default = "default_true")]
     pub auto_detect_desktop_organizers: bool,
-    /// Maximum recursion depth for `extra_dirs` (`1..=4`, default `2`).
+    /// Maximum recursion depth for `extra_dirs` (`1..=12`, default `4`).
     #[serde(default = "default_extra_scan_depth")]
     pub extra_scan_depth: usize,
 }
 
-fn default_extra_scan_depth() -> usize { 2 }
+fn default_extra_scan_depth() -> usize { 4 }
 
 impl Default for AppsConfig {
     fn default() -> Self {

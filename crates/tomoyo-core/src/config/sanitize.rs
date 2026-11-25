@@ -10,7 +10,7 @@ use super::{
 };
 use std::collections::HashSet;
 
-pub const MAX_SCAN_DEPTH: usize = 4;
+pub const MAX_SCAN_DEPTH: usize = 12;
 pub const MAX_EXTRA_DIRS: usize = 16;
 pub const MAX_WEB_SEARCHES: usize = 24;
 pub const MAX_EXTRA_FILTER_CHARS: usize = 160;
@@ -349,7 +349,7 @@ mod tests {
 
         let notes = sanitize_config(&mut cfg);
         assert!(!notes.is_empty());
-        assert_eq!(cfg.apps.extra_scan_depth, 4);
+        assert_eq!(cfg.apps.extra_scan_depth, 12);
         assert_eq!(cfg.apps.extra_dirs, vec![r"E:\Tools".to_string()]);
         assert_eq!(cfg.everything.max_global_results, 10);
         assert_eq!(cfg.everything.max_dedicated_results, 50);

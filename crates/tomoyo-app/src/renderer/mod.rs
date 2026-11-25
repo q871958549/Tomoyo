@@ -6,6 +6,7 @@ pub(crate) mod filter_bar;
 mod gdi;
 #[cfg(windows)]
 mod gdi_pass;
+pub(crate) mod scrollbar;
 mod sdf_pass;
 mod theme;
 
@@ -13,6 +14,7 @@ pub use canvas::Canvas;
 pub use filter_bar::{
     compute_filter_bar_layout, compute_filter_counts, FilterCounts, FilterHit,
 };
+pub use scrollbar::{compute_scrollbar_metrics, ScrollbarHit, ScrollbarMetrics, ScrollbarVisual};
 #[cfg(not(windows))]
 pub use filter_bar::{item_matches_filter, FilterPillAnim};
 #[cfg(windows)]
@@ -67,6 +69,7 @@ pub struct RenderState<'a> {
     pub hovered: Option<usize>,
     pub launching_row: Option<(usize, bool)>,
     pub scroll_offset: usize,
+    pub scrollbar_visual: ScrollbarVisual,
     pub max_visible_rows: usize,
     pub preview_width_dip: i32,
     pub action_menu_open: bool,
@@ -163,16 +166,31 @@ impl FluentRenderer {
         let Some(fonts) = self.fonts.as_ref() else { return };
 
         let lay = compute_frame_layout(width, height, scale, state);
-        let img_px = (30.0 * scale).round() as u32;
+        let icon_px = (32.0 * scale).round() as u32;
         for slot in 0..lay.visible_count {
             let idx = state.scroll_offset + slot;
-            if let Some(item) = state.items.get(idx)
-                && let tomoyo_protocol::IconSpec::ImageFile(p) = &item.icon
-            {
-                let _ = self.image_icons.get_or_enqueue(p, img_px);
+            if let Some(item) = state.items.get(idx) {
+                match &item.icon {
+                    tomoyo_protocol::IconSpec::ImageFile(p) => {
+                        let _ = self.image_icons.get_or_enqueue(p, icon_px);
+                    }
+                    tomoyo_protocol::IconSpec::ShellPath(p) => {
+                        let _ = self.icons.get_or_enqueue(p, icon_px);
+                    }
+                    _ => {}
+                }
             }
         }
-        paint_sdf_pass(surface.pixels_mut(), &mut self.image_icons, width, height, scale, &lay, state);
+        paint_sdf_pass(
+            surface.pixels_mut(),
+            &mut self.icons,
+            &mut self.image_icons,
+            width,
+            height,
+            scale,
+            &lay,
+            state,
+        );
         paint_gdi_pass(surface, fonts, &mut self.icons, &mut self.image_icons, width, height, scale, &lay, state, screen_hdc);
     }
 }

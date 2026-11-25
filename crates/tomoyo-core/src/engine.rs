@@ -24,6 +24,10 @@ pub trait Provider: Send + Sync {
     fn is_slow_ipc(&self) -> bool {
         false
     }
+    /// Whether this provider indexes files and responds to file-type filters (`@pdf`, `@word`, etc.).
+    fn supports_file_filters(&self) -> bool {
+        false
+    }
     fn query(&self, ctx: &QueryContext) -> Vec<ResultItem>;
     fn reload(&self) {}
     fn trim_memory(&self) {}
@@ -279,7 +283,7 @@ impl QueryRouter {
             if !p.supports_global() || p.is_slow_ipc() {
                 continue;
             }
-            if !provider_allowed_for_filter(p.id(), ctx.filter) {
+            if !provider_allowed_for_filter(p.as_ref(), ctx.filter) {
                 continue;
             }
             if self.is_stale(generation) {
@@ -387,15 +391,15 @@ fn empty_fast_batch(ctx: QueryContext) -> FastQueryBatch {
     }
 }
 
-fn provider_allowed_for_filter(provider_id: &str, filter: SearchFilter) -> bool {
+fn provider_allowed_for_filter(provider: &dyn Provider, filter: SearchFilter) -> bool {
     match filter {
         SearchFilter::All => true,
         SearchFilter::App => matches!(
-            provider_id,
+            provider.id(),
             "builtin.apps" | "builtin.system" | "builtin.windows"
         ),
-        SearchFilter::Folder => provider_id == "builtin.apps",
-        _ => false,
+        SearchFilter::Folder => provider.id() == "builtin.apps",
+        _ => provider.supports_file_filters(),
     }
 }
 

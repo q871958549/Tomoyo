@@ -7,9 +7,9 @@ use super::super_panel_ctrl::{
 };
 use super::updater_ctrl::WM_APP_UPDATE_PROGRESS;
 use super::wndproc_mouse::{
-    handle_lbutton_dblclk, handle_lbutton_up, handle_mouse_down, handle_mouse_leave,
-    handle_mouse_move, handle_mouse_wheel, handle_rbutton_up, handle_set_cursor,
-    hit_test_window_chrome,
+    handle_capture_changed, handle_lbutton_dblclk, handle_lbutton_up, handle_mouse_down,
+    handle_mouse_leave, handle_mouse_move, handle_mouse_wheel, handle_rbutton_up,
+    handle_set_cursor, hit_test_window_chrome,
 };
 use super::{
     AppShell, HOTKEY_ID, TIMER_CLEAR_TOAST, TIMER_FADE_HIDE, TIMER_FOCUS_GUARD, TIMER_HIBERNATE,
@@ -35,7 +35,8 @@ use windows::Win32::UI::Input::KeyboardAndMouse::SetFocus;
 use windows::Win32::UI::WindowsAndMessaging::{
     DefWindowProcW, GetClientRect, GetForegroundWindow, GetWindowLongPtrW,
     GetWindowThreadProcessId, IsWindowVisible, KillTimer, PostQuitMessage, GWLP_USERDATA,
-    HTCAPTION, MINMAXINFO, WM_ACTIVATE, WM_ACTIVATEAPP, WM_CLIPBOARDUPDATE, WM_COMMAND,
+    HTCAPTION, MINMAXINFO, WM_ACTIVATE, WM_ACTIVATEAPP, WM_CAPTURECHANGED, WM_CLIPBOARDUPDATE,
+    WM_COMMAND,
     WM_CTLCOLOREDIT, WM_DESTROY, WM_DPICHANGED, WM_ENDSESSION, WM_ENTERSIZEMOVE, WM_ERASEBKGND,
     WM_EXITSIZEMOVE, WM_GETMINMAXINFO, WM_HOTKEY, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP,
     WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCHITTEST, WM_NCRBUTTONUP, WM_PAINT, WM_RBUTTONUP,
@@ -223,6 +224,7 @@ pub(super) unsafe extern "system" fn main_wndproc(
         WM_LBUTTONDOWN => handle_mouse_down(hwnd, app, lparam),
         WM_MOUSEMOVE => handle_mouse_move(hwnd, app, wparam, lparam),
         WM_MOUSELEAVE => handle_mouse_leave(app),
+        WM_CAPTURECHANGED => handle_capture_changed(app),
         WM_LBUTTONUP => handle_lbutton_up(app),
         WM_LBUTTONDBLCLK => handle_lbutton_dblclk(app, lparam),
         WM_MOUSEWHEEL => handle_mouse_wheel(app, wparam),

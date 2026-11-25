@@ -4,7 +4,6 @@
   import { tr, type Lang } from '../../lib/i18n';
   import type { CustomFilterTab, TomoyoConfig } from '../../lib/types';
   import Button from '../../lib/ui/Button.svelte';
-  import Segmented from '../../lib/ui/Segmented.svelte';
   import Slider from '../../lib/ui/Slider.svelte';
   import Switch from '../../lib/ui/Switch.svelte';
   import FilterTabsCard from './FilterTabsCard.svelte';
@@ -45,10 +44,6 @@
     cfg.apps.extra_dirs = cfg.apps.extra_dirs.filter((_, i) => i !== idx);
     onSave(0);
   }
-
-  let depthOptions = $derived(
-    [1, 2, 3, 4].map((d) => ({ value: String(d), label: lang === 'en' ? `${d} lvl` : `${d} 层` }))
-  );
 </script>
 
 <div class="tab-head">
@@ -71,10 +66,13 @@
       <div class="t-label">{tr(lang, 'lbl_apps_depth')}</div>
       <div class="t-desc">{tr(lang, 'desc_apps_depth')}</div>
     </div>
-    <Segmented
-      value={String(cfg.apps.extra_scan_depth)}
-      options={depthOptions}
-      onchange={(v) => { cfg.apps.extra_scan_depth = Number(v) || 2; onSave(0); }}
+    <Slider
+      value={cfg.apps.extra_scan_depth}
+      min={1}
+      max={12}
+      step={1}
+      format={(v) => (lang === 'en' ? `${v} lvl${v > 1 ? 's' : ''}` : `${v} 层`)}
+      oninput={(v) => { cfg.apps.extra_scan_depth = v; onSave(160); }}
     />
   </div>
 

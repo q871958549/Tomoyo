@@ -11,6 +11,8 @@ mod crash_guard;
 #[cfg(windows)]
 mod drag;
 #[cfg(windows)]
+mod icon_extract;
+#[cfg(windows)]
 mod icons;
 #[cfg(windows)]
 mod image_icons;

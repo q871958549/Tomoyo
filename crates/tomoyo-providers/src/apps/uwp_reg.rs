@@ -87,6 +87,7 @@ pub(super) fn scan_apps_folder(
                         subtitle: format!("应用 · {parse_id}"),
                         is_uwp: false,
                         is_folder: false,
+                        is_file: false,
                         alias_text: None,
                     });
                 }
@@ -108,6 +109,7 @@ pub(super) fn scan_apps_folder(
                     },
                     is_uwp: true,
                     is_folder: false,
+                    is_file: false,
                     alias_text: None,
                 });
             }
@@ -215,6 +217,7 @@ pub(super) fn scan_registry_app_paths(
                                 subtitle: format!("系统注册应用 · {raw_path}"),
                                 is_uwp: false,
                                 is_folder: false,
+                                is_file: false,
                                 alias_text: None,
                             });
                         }
@@ -310,6 +313,7 @@ pub(super) fn scan_registry_uninstall(
                             subtitle: format!("已安装应用 · {exe_path}"),
                             is_uwp: false,
                             is_folder: false,
+                            is_file: false,
                             alias_text: stem,
                         });
                     }
@@ -419,6 +423,7 @@ pub(super) fn push_windows_builtin_apps(seen_names: &mut HashSet<String>, raw_en
                 subtitle: desc.to_string(),
                 is_uwp: false,
                 is_folder: false,
+                is_file: false,
                 alias_text: None,
             });
         }

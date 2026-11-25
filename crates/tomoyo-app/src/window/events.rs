@@ -94,6 +94,15 @@ impl AppShell {
         let filter_vis = self.is_filter_bar_visible();
         let filter_tabs = self.visible_filter_tabs();
         let launching_row = self.resolve_launching_row();
+        let scrollbar_visual = if self.inter.dragging_scrollbar.is_some() {
+            crate::renderer::ScrollbarVisual::Dragging
+        } else {
+            match self.inter.scrollbar_hover {
+                Some(crate::renderer::ScrollbarHit::Thumb) => crate::renderer::ScrollbarVisual::HoveredThumb,
+                Some(crate::renderer::ScrollbarHit::Track) => crate::renderer::ScrollbarVisual::HoveredTrack,
+                None => crate::renderer::ScrollbarVisual::Idle,
+            }
+        };
         let state = RenderState {
             lang: self.lang, theme: self.theme, query: &self.current_query, hovered_logo: self.inter.hovered_logo,
             mode_badge: mode.as_deref(), attached_capsule: attached_label.as_deref(),
@@ -105,7 +114,7 @@ impl AppShell {
             filter_pill_override: None, typography: &self.typography,
             items: &self.results, selected: self.selected, hovered: self.inter.hovered,
             launching_row,
-            scroll_offset: self.scroll_offset, max_visible_rows: self.geom.max_visible_rows,
+            scroll_offset: self.scroll_offset, scrollbar_visual, max_visible_rows: self.geom.max_visible_rows,
             preview_width_dip: self.geom.preview_width_dip, action_menu_open: self.action_menu_open,
             selected_action: self.selected_action, preview: self.cached_preview.as_ref(),
             everything_status: self.everything_status, toast: self.toast.as_deref(),

@@ -23,7 +23,7 @@ mod wndproc;
 mod wndproc_mouse;
 
 use crate::preview_loader::AsyncPreviewLoader;
-use crate::renderer::{FilterCounts, FluentRenderer, ThemePalette};
+use crate::renderer::{FilterCounts, FluentRenderer, ScrollbarHit, ThemePalette};
 use crate::tray::TrayIcon;
 use bootstrap::detect_everything_label;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -152,6 +152,8 @@ pub(super) struct InteractionState {
     pub mouse_tracked: bool,
     pub in_size_move: bool,
     pub dragging_divider: bool,
+    pub dragging_scrollbar: Option<f32>,
+    pub scrollbar_hover: Option<ScrollbarHit>,
     pub drag_origin: Option<(i32, i32, String)>,
     pub last_click: Option<(usize, Instant)>,
     pub prev_foreground_hwnd: isize,
@@ -235,6 +237,8 @@ impl AppShell {
         self.inter.hovered_overflow = false;
         self.inter.hovered_logo = false;
         self.inter.pressed_logo = false;
+        self.inter.dragging_scrollbar = None;
+        self.inter.scrollbar_hover = None;
         self.inter.settings_pending = false;
         set_async_modal_overlay(false);
         self.inter.fade_alpha = None;
