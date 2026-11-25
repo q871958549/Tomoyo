@@ -95,6 +95,15 @@ export interface CaptureToolHotkeys {
   record: string;
 }
 
+export interface SuperPanelConfig {
+  enabled: boolean;
+  trigger_right_hold: boolean;
+  middle_trigger: 'hold' | 'click' | 'off' | string;
+  hold_ms: number;
+  auto_translate_selection: boolean;
+  excluded_apps: string[];
+}
+
 export interface TomoyoConfig {
   language: string;
   hotkey: string;
@@ -159,6 +168,7 @@ export interface TomoyoConfig {
     record_cursor?: boolean;
     tool_hotkeys: CaptureToolHotkeys;
   };
+  super_panel?: SuperPanelConfig;
   update: {
     auto_check: boolean;
     check_interval_hours: number;

@@ -24,6 +24,21 @@
   let { cfg, lang, autostart, syncDir, hotkeyStatus, onLanguageChange, onAutostartChange, onJumpDoctor, onSave }: Props = $props();
   let fileInput: HTMLInputElement | undefined = $state();
   let isEn = $derived(lang === 'en');
+  let sp = $derived(
+    cfg.super_panel ?? {
+      enabled: true,
+      trigger_right_hold: true,
+      middle_trigger: 'hold',
+      hold_ms: 320,
+      auto_translate_selection: true,
+      excluded_apps: [],
+    }
+  );
+
+  function patchSp(patch: Partial<NonNullable<TomoyoConfig['super_panel']>>, delayMs = 0) {
+    cfg.super_panel = { ...sp, ...patch };
+    onSave(delayMs);
+  }
 
   const mainPresets = [
     { value: 'Alt+Space', label: 'Alt+Space' },
@@ -120,6 +135,69 @@
     </div>
     <Switch checked={cfg.show_filter_bar} onchange={(v) => { cfg.show_filter_bar = v; onSave(0); }} />
   </div>
+</div>
+
+<div class="t-card" style="margin-top:14px">
+  <div class="t-row">
+    <div>
+      <div class="t-label">{isEn ? 'Native Super Panel (Mouse Trigger & Inline Translate)' : '原生超级面板（鼠标长按唤起 · 选中文本即刻翻译）'}</div>
+      <div class="t-desc">
+        {isEn
+          ? 'Zero-WebView cursor popup that losslessly detects selected text/files and streams instant translations; auto-yields in fullscreen & remote desktop.'
+          : '零 WebView 原生光标浮层面板：无痕读取选中文本/文件并直出内联译文，自动遵循全屏与远程桌面避让名单。'}
+      </div>
+    </div>
+    <Switch checked={sp.enabled} onchange={(v) => patchSp({ enabled: v })} />
+  </div>
+
+  {#if sp.enabled}
+    <div class="t-row">
+      <div>
+        <div class="t-label">{isEn ? 'Long-Press Right Mouse Button' : '长按鼠标右键唤起'}</div>
+        <div class="t-desc">{isEn ? 'Hold right button stationary to open Super Panel (moving >8px cancels; quick right-click stays native).' : '原地长按右键即弹出（移动超 8px 自动取消，不影响短按右键菜单与手势拖拽）。'}</div>
+      </div>
+      <Switch checked={sp.trigger_right_hold} onchange={(v) => patchSp({ trigger_right_hold: v })} />
+    </div>
+
+    <div class="t-row">
+      <div>
+        <div class="t-label">{isEn ? 'Middle Mouse Button Trigger' : '鼠标中键唤起方式'}</div>
+        <div class="t-desc">{isEn ? 'Hold keeps browser tab middle-click intact; Click summons immediately on tap.' : '默认「长按」不干扰浏览器中键开/关标签页；也可设为「单击」一键秒开。'}</div>
+      </div>
+      <Segmented
+        value={sp.middle_trigger || 'hold'}
+        options={[
+          { value: 'hold', label: isEn ? 'Hold' : '长按' },
+          { value: 'click', label: isEn ? 'Click' : '单击' },
+          { value: 'off', label: isEn ? 'Off' : '关闭' },
+        ]}
+        onchange={(v) => patchSp({ middle_trigger: v })}
+      />
+    </div>
+
+    <div class="t-row">
+      <div>
+        <div class="t-label">{isEn ? 'Long-Press Duration' : '长按触发时长'}</div>
+        <div class="t-desc">{isEn ? 'Stationary hold time before Super Panel pops up (180–800 ms).' : '鼠标静止按住达到该时长后自动呼出超级面板（推荐 280–360 ms）。'}</div>
+      </div>
+      <Slider
+        value={sp.hold_ms}
+        min={180}
+        max={800}
+        step={20}
+        format={(v) => `${v} ms`}
+        oninput={(v) => patchSp({ hold_ms: v }, 160)}
+      />
+    </div>
+
+    <div class="t-row">
+      <div>
+        <div class="t-label">{isEn ? 'Auto Inline Translate on Text Selection' : '选中文本时自动内联翻译'}</div>
+        <div class="t-desc">{isEn ? 'Streams multi-engine translation right inside the Super Panel card with one-click copy.' : '呼出超级面板若检测到划词文本，自动并行翻译并在顶部卡片直出译文与一键复制。'}</div>
+      </div>
+      <Switch checked={sp.auto_translate_selection} onchange={(v) => patchSp({ auto_translate_selection: v })} />
+    </div>
+  {/if}
 </div>
 
 <div class="t-card" style="margin-top:14px">

@@ -37,7 +37,7 @@ pub(super) fn sync_hotkey_avoidance(suspend_fullscreen: bool, excluded_apps: &[S
 }
 
 /// Returns `true` when Tomoyo should yield a global hotkey to the current foreground window.
-pub(super) fn should_avoid_hotkey(self_hwnd: HWND) -> bool {
+pub(crate) fn should_avoid_hotkey(self_hwnd: HWND) -> bool {
     unsafe {
         if !self_hwnd.is_invalid() && IsWindowVisible(self_hwnd).as_bool() {
             return false;
@@ -94,7 +94,7 @@ pub(super) fn should_avoid_hotkey(self_hwnd: HWND) -> bool {
     false
 }
 
-fn query_process_basename_lower(pid: u32) -> Option<String> {
+pub(crate) fn query_process_basename_lower(pid: u32) -> Option<String> {
     unsafe {
         let h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
         let mut buf = [0u16; 320];

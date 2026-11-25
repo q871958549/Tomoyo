@@ -277,8 +277,29 @@ pub fn sanitize_config(cfg: &mut TomoyoConfig) -> Vec<String> {
     cfg.web_searches = clean_web;
     super::sanitize_filters_and_plugins(cfg);
     super::sanitize_typography(&mut cfg.typography);
+    sanitize_super_panel(&mut cfg.super_panel);
 
     notes
+}
+
+fn sanitize_super_panel(sp: &mut super::SuperPanelConfig) {
+    sp.hold_ms = sp.hold_ms.clamp(180, 900);
+    let mt = sp.middle_trigger.trim().to_ascii_lowercase();
+    sp.middle_trigger = match mt.as_str() {
+        "hold" | "click" | "off" => mt,
+        _ => "hold".into(),
+    };
+    let mut seen = HashSet::new();
+    let mut clean = Vec::new();
+    for raw in std::mem::take(&mut sp.excluded_apps) {
+        if let Some(exe) = normalize_exe_name(&raw)
+            && seen.insert(exe.clone())
+            && clean.len() < MAX_EXCLUDED_APPS
+        {
+            clean.push(exe);
+        }
+    }
+    sp.excluded_apps = clean;
 }
 
 #[cfg(test)]
@@ -311,6 +332,9 @@ mod tests {
         cfg.capture.hotkey = "Alt+T".into();
         cfg.capture.pin_opacity = 5;
         cfg.capture.save_dir = r"\\evil\share".into();
+        cfg.super_panel.hold_ms = 50;
+        cfg.super_panel.middle_trigger = "invalid".into();
+        cfg.super_panel.excluded_apps = vec!["Blender".into(), "blender.exe".into(), "..\\bad.exe".into()];
         cfg.update.repo = "https://evil.com/../../etc/passwd".into();
         cfg.web_searches.push(WebSearchEngine {
             keyword: "bad".into(),
@@ -343,6 +367,11 @@ mod tests {
         assert_eq!(cfg.capture.hotkey, "Alt+S");
         assert_eq!(cfg.capture.pin_opacity, 30);
         assert!(cfg.capture.save_dir.is_empty());
+        assert_eq!(cfg.super_panel.hold_ms, 180);
+        assert_eq!(cfg.super_panel.middle_trigger, "hold");
+        if cfg!(windows) {
+            assert_eq!(cfg.super_panel.excluded_apps, vec!["blender.exe"]);
+        }
         assert_eq!(cfg.update.repo, "q871958549/Tomoyo");
         assert!(!cfg.web_searches.iter().any(|w| w.keyword == "bad" || w.keyword == "f"));
     }

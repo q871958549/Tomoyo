@@ -5,8 +5,8 @@ mod clipboard_ctrl;
 mod commands;
 mod events;
 mod flow_exec;
-mod hotkey_avoid;
-mod hotkey_override;
+pub(crate) mod hotkey_avoid;
+pub(crate) mod hotkey_override;
 mod inline_host;
 mod input;
 mod input_edit;
@@ -16,6 +16,7 @@ mod layout;
 mod menus;
 mod plugin_hotkeys;
 mod selftest;
+mod super_panel_ctrl;
 mod translate_ctrl;
 mod updater_ctrl;
 mod wndproc;
@@ -214,6 +215,7 @@ pub struct AppShell {
     pub(super) dpi_scale: f32,
     pub(super) taskbar_created_msg: u32,
     pub(super) suppress_clipboard_capture: Arc<AtomicBool>,
+    pub(super) super_panel: super_panel_ctrl::SuperPanelBridge,
     pub(super) shutting_down: bool,
 }
 
@@ -380,6 +382,7 @@ impl AppShell {
 
 impl Drop for AppShell {
     fn drop(&mut self) {
+        self.shutdown_super_panel();
         self.plugin_host.shutdown_all();
         self.preview_loader.cancel_all();
         self.renderer.hibernate_release();

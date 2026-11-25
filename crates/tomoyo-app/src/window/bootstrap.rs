@@ -225,12 +225,14 @@ impl AppShell {
             dpi_scale,
             taskbar_created_msg,
             suppress_clipboard_capture: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            super_panel: Default::default(),
             shutting_down: false,
         });
 
         unsafe {
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, &mut *app as *mut AppShell as isize);
         }
+        app.sync_super_panel_hook();
         if has_clip_subs && let Some(txt) = read_clipboard_text() {
             let now = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)

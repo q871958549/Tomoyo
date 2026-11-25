@@ -22,6 +22,8 @@ mod preview_loader;
 mod renderer;
 mod selftest_runner;
 #[cfg(windows)]
+mod super_panel;
+#[cfg(windows)]
 mod tray;
 #[cfg(windows)]
 mod window;

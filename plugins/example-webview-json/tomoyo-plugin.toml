@@ -21,3 +21,9 @@ keywords = ["json", "utools"]
 [resources]
 max_memory_mb = 256
 idle_timeout_secs = 5
+
+[[text_actions]]
+id = "format_json"
+label = "JSON 树形格式化"
+match_kinds = ["json"]
+query_template = "json {text}"

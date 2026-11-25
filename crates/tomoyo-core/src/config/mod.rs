@@ -11,7 +11,7 @@ mod typography;
 pub use capture::{sanitize_capture_config, CaptureConfig, CaptureToolHotkeys};
 pub use sections::{
     default_ev_favorites, AppsConfig, ClipboardConfig, EverythingConfig, EverythingFavorite,
-    UpdateConfig, WebSearchEngine, WindowConfig,
+    SuperPanelConfig, UpdateConfig, WebSearchEngine, WindowConfig,
 };
 use sections::{default_plugin_registries, default_true};
 pub use typography::{
@@ -113,6 +113,9 @@ pub struct TomoyoConfig {
     /// On-demand native screenshot & Pin-to-Desktop settings (PixPin replacement).
     #[serde(default)]
     pub capture: CaptureConfig,
+    /// Native cursor Super Panel (middle/right mouse hold) & inline selection translation settings.
+    #[serde(default)]
+    pub super_panel: SuperPanelConfig,
     /// Auto-update check settings (GitHub Releases).
     #[serde(default)]
     pub update: UpdateConfig,
@@ -155,6 +158,7 @@ impl Default for TomoyoConfig {
             clipboard: ClipboardConfig::default(),
             translate: TranslateConfig::default(),
             capture: CaptureConfig::default(),
+            super_panel: SuperPanelConfig::default(),
             update: UpdateConfig::default(),
             plugin_registries: default_plugin_registries(),
             web_searches: default_web_searches(),

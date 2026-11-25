@@ -63,6 +63,24 @@ pub struct PluginFileActionDecl {
     pub query_template: String,
 }
 
+/// Declarative Super Panel text/selection action exposed when matching text is selected anywhere on screen.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PluginTextActionDecl {
+    /// Stable action identifier (also used as `action_id` for `PluginExecute` when `query_template` is empty).
+    pub id: String,
+    /// Action label displayed inside Tomoyo's native Super Panel.
+    pub label: String,
+    /// Selection kinds matched case-insensitively (`"text"`, `"url"`, `"json"`, `"color"`, `"path"`, `"code"`, `"any"`).
+    /// Empty defaults to `["any"]`.
+    #[serde(default)]
+    pub match_kinds: Vec<String>,
+    #[serde(default)]
+    pub shortcut: Option<String>,
+    /// Optional launcher query template supporting `{text}` placeholder; when empty, dispatches `PluginExecute`.
+    #[serde(default)]
+    pub query_template: String,
+}
+
 /// Conditional display rule for a `[[settings]]` field in Settings Center.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SettingVisibleIf {
@@ -143,6 +161,12 @@ id = "open_md"
 label = "使用 Hybrid 打开"
 extensions = ["md", "markdown"]
 
+[[text_actions]]
+id = "quick_tr"
+label = "多源对照翻译"
+match_kinds = ["text", "any"]
+query_template = "tr {text}"
+
 [[settings]]
 key = "api_key"
 label = "API Key"
@@ -178,6 +202,8 @@ visible_if = { key = "enable_extra", equals = true }
         assert!(m.tray_actions[0].open_ui);
         assert_eq!(m.file_actions.len(), 1);
         assert_eq!(m.file_actions[0].extensions, vec!["md", "markdown"]);
+        assert_eq!(m.text_actions.len(), 1);
+        assert_eq!(m.text_actions[0].match_kinds, vec!["text", "any"]);
         assert_eq!(m.triggers.file_extensions, vec!["md", "txt"]);
         assert!(matches!(m.settings[0].kind, SettingFieldKind::Secret { .. }));
         assert_eq!(m.settings[0].section, "凭据配置");

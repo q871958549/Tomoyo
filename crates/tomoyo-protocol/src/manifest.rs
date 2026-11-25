@@ -1,5 +1,5 @@
 use crate::v2::{PluginEventKind, PluginHotkeyDecl, PluginSettingField};
-use crate::v3::{PluginFileActionDecl, PluginTrayActionDecl, PluginUiConfig};
+use crate::v3::{PluginFileActionDecl, PluginTextActionDecl, PluginTrayActionDecl, PluginUiConfig};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use thiserror::Error;
@@ -91,6 +91,9 @@ pub struct PluginManifest {
     /// Protocol v3: declarative file-extension actions appended to matching file results (`Tab` menu).
     #[serde(default)]
     pub file_actions: Vec<PluginFileActionDecl>,
+    /// Protocol v3: declarative text/selection actions exposed in Tomoyo's native Super Panel.
+    #[serde(default)]
+    pub text_actions: Vec<PluginTextActionDecl>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

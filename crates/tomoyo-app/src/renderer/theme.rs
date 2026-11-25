@@ -4,7 +4,7 @@ use tomoyo_protocol::ResultCategory;
 #[cfg(windows)]
 use windows::Win32::Foundation::COLORREF;
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct Rgb(pub u8, pub u8, pub u8);
 
 #[cfg(windows)]

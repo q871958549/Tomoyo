@@ -105,7 +105,7 @@ fn inject_menu_mask_key() {
 
 /// 3-stage Win32 foreground activator that reliably breaks Windows Foreground Lock even when
 /// summoned via `WH_KEYBOARD_LL` override or from elevated/UWP foreground windows.
-pub(super) fn force_foreground_window(hwnd: HWND) {
+pub(crate) fn force_foreground_window(hwnd: HWND) {
     unsafe {
         let _ = SetWindowPos(
             hwnd,

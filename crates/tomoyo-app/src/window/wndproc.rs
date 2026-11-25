@@ -2,6 +2,9 @@
 
 use super::commands::{dispatch_menu_id, dispatch_wm_command};
 use super::input::{register_all_hotkeys, unregister_all_hotkeys};
+use super::super_panel_ctrl::{
+    TIMER_SP_HOLD, WM_APP_SP_ARM, WM_APP_SP_EXEC, WM_APP_SP_FIRE, WM_APP_SP_PROBED,
+};
 use super::updater_ctrl::WM_APP_UPDATE_PROGRESS;
 use super::wndproc_mouse::{
     handle_lbutton_dblclk, handle_lbutton_up, handle_mouse_down, handle_mouse_leave,
@@ -198,6 +201,10 @@ pub(super) unsafe extern "system" fn main_wndproc(
         WM_APP_LAUNCH_DONE => { app.on_async_launch_done(); LRESULT(0) }
         WM_APP_SHOW_CONTEXT_MENU => { app.show_launcher_context_menu(wparam.0 != 0); LRESULT(0) }
         WM_APP_PLUGIN_EVENT_DONE => { super::plugin_hotkeys::on_async_plugin_event_done(app); LRESULT(0) }
+        WM_APP_SP_ARM => { app.on_super_panel_arm(wparam.0 as u32, lparam.0 as u8); LRESULT(0) }
+        WM_APP_SP_FIRE => { app.on_super_panel_fire_click(); LRESULT(0) }
+        WM_APP_SP_PROBED => { app.on_super_panel_probed(); LRESULT(0) }
+        WM_APP_SP_EXEC => { app.on_super_panel_exec(); LRESULT(0) }
         WM_DPICHANGED => {
             let new_dpi = (wparam.0 & 0xFFFF) as u32;
             let suggested = (lparam.0 != 0).then(|| unsafe { &*(lparam.0 as *const RECT) });
@@ -287,6 +294,7 @@ fn handle_timer(hwnd: HWND, app: &mut AppShell, timer_id: usize) -> LRESULT {
             }
         }
         TIMER_LAUNCH_TICK => app.on_launch_tick(),
+        TIMER_SP_HOLD => app.on_super_panel_hold_timer(),
         TIMER_SETTINGS_HIDE => app.on_settings_window_ready(),
         TIMER_FADE_HIDE => app.step_fade_hide(),
         _ => {}

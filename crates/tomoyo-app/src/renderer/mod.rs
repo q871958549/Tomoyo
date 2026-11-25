@@ -16,7 +16,10 @@ pub use filter_bar::{
 #[cfg(not(windows))]
 pub use filter_bar::{item_matches_filter, FilterPillAnim};
 #[cfg(windows)]
-pub use gdi::{dip_rect, draw_text_gdi, resolve_face_and_weight, DibSurface, FontKey, FontPack};
+pub use gdi::{
+    dip_rect, draw_multiline_gdi, draw_text_gdi, resolve_face_and_weight, DibSurface, FontKey,
+    FontPack,
+};
 pub(crate) use sdf_pass::paint_sdf_pass;
 pub use theme::{Rgb, ThemePalette};
 #[cfg(not(windows))]

@@ -120,6 +120,7 @@ impl AppShell {
     pub(super) fn shutdown_clean(&mut self) {
         if self.shutting_down { return; }
         self.shutting_down = true;
+        self.shutdown_super_panel();
         self.close_inline_dock();
         self.plugin_host.shutdown_all();
         self.preview_loader.cancel_all();
@@ -225,6 +226,7 @@ impl AppShell {
         }
         if self.tray.is_some() {
             self.sync_clipboard_listener();
+            self.sync_super_panel_hook();
             if force_provider_reload || hotkeys_changed {
                 unregister_all_hotkeys(self.hwnd);
                 let (active, conflict, plug_hks, flow_hks) = register_all_hotkeys(self.hwnd, &cfg_for_hk, &self.plugin_host);

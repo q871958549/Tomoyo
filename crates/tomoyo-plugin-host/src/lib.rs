@@ -13,6 +13,7 @@ pub mod process;
 mod runtime;
 pub mod v2_support;
 pub mod v3_support;
+mod v3_text;
 pub mod wasm;
 mod wasm_kv;
 
