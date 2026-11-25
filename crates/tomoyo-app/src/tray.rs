@@ -21,6 +21,7 @@ pub const WM_TRAY_CALLBACK: u32 = WM_APP + 10;
 
 pub const MENU_ID_SHOW: u32 = 2001;
 pub const MENU_ID_SETTINGS: u32 = 2002;
+pub const MENU_ID_TOGGLE_HOTKEYS: u32 = 2009;
 pub const MENU_ID_UPDATE: u32 = 2008;
 pub const MENU_ID_STATS: u32 = 2003;
 pub const MENU_ID_CONFIG: u32 = 2004;
@@ -99,8 +100,22 @@ impl TrayIcon {
         dpi_scale: f32,
         font_regular: &str,
         font_medium: &str,
+        hotkeys_paused: bool,
+        update_version: Option<&str>,
         plugin_actions: &[tomoyo_plugin_host::ActivePluginTrayAction],
     ) -> Option<u32> {
+        let hk_label = if hotkeys_paused {
+            lang.pick("恢复全局快捷键（已停用）", "Resume Global Hotkeys (Paused)")
+        } else {
+            lang.pick("停用全局快捷键", "Pause Global Hotkeys")
+        };
+        let upd_label = match update_version {
+            Some(v) => match lang {
+                Lang::Zh => format!("立即自动更新 v{v} 并重启"),
+                Lang::En => format!("Auto-Update to v{v} & Restart"),
+            },
+            None => lang.pick("检查更新 (:update)", "Check for Updates").into(),
+        };
         let mut entries = vec![
             PopupEntry::item(MENU_ID_SHOW, lang.pick("显示 Tomoyo", "Show Tomoyo"), None, false),
             PopupEntry::item(
@@ -109,6 +124,7 @@ impl TrayIcon {
                 Some("Ctrl+,"),
                 false,
             ),
+            PopupEntry::item(MENU_ID_TOGGLE_HOTKEYS, hk_label, None, hotkeys_paused),
         ];
         if !plugin_actions.is_empty() {
             entries.push(PopupEntry::Separator);
@@ -123,12 +139,7 @@ impl TrayIcon {
         }
         entries.extend([
             PopupEntry::Separator,
-            PopupEntry::item(
-                MENU_ID_UPDATE,
-                lang.pick("检查更新 (:update)", "Check for Updates"),
-                None,
-                false,
-            ),
+            PopupEntry::item(MENU_ID_UPDATE, upd_label, None, false),
             PopupEntry::item(
                 MENU_ID_STATS,
                 lang.pick("内存与插件监控 (:stats)", "Memory & Plugin Stats"),

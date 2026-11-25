@@ -95,7 +95,7 @@ export function makeDefaultConfig(): TomoyoConfig {
       auto_translate_selection: true,
       excluded_apps: [],
     },
-    update: { auto_check: true, check_interval_hours: 24, repo: OFFICIAL_REPO, last_checked_unix: 0 },
+    update: { auto_check: true, auto_install: false, check_interval_hours: 24, repo: OFFICIAL_REPO, last_checked_unix: 0 },
     plugin_hotkeys: {},
     plugin_settings: {},
     plugin_display_modes: {},

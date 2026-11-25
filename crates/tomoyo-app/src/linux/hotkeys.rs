@@ -21,6 +21,8 @@ unsafe extern "C" {
         olen: usize,
     ) -> c_int;
     fn tomoyo_kga_unregister(hk: *mut c_void, act_id: *const c_char);
+    fn tomoyo_kga_purge_all(hk: *mut c_void);
+    fn tomoyo_kga_unblock_global(hk: *mut c_void);
     fn tomoyo_kga_destroy(hk: *mut c_void);
 }
 
@@ -38,6 +40,7 @@ pub struct HotkeyManager {
     registered_ids: Vec<String>,
     slots: Arc<Mutex<Vec<(String, HotkeyAction)>>>,
     on_fire: FireHandler,
+    paused: bool,
     pub active_label: String,
     pub conflict_msg: Option<String>,
 }
@@ -54,6 +57,7 @@ unsafe extern "C" fn on_kga_fired(ctx: *mut c_void, act_ptr: *const c_char) {
         .ok()
         .and_then(|list| list.iter().find(|(id, _)| id == &act_id).map(|(_, a)| a.clone()));
     if let Some(action) = action_opt {
+        tracing::debug!(action = %act_id, "KDE KGlobalAccel shortcut fired");
         let cb_arc = Arc::clone(&state.1);
         schedule_on_ui(move || {
             if let Ok(g) = cb_arc.lock()
@@ -62,6 +66,8 @@ unsafe extern "C" fn on_kga_fired(ctx: *mut c_void, act_ptr: *const c_char) {
                 cb(action);
             }
         });
+    } else {
+        tracing::warn!(action = %act_id, "Ignored unmatched KDE KGlobalAccel action");
     }
 }
 
@@ -77,9 +83,46 @@ impl HotkeyManager {
             registered_ids: Vec::new(),
             slots,
             on_fire,
+            paused: false,
             active_label: "Alt+Space".into(),
             conflict_msg: None,
         }
+    }
+
+    pub fn is_paused(&self) -> bool {
+        self.paused
+    }
+
+    pub fn set_paused(&mut self, paused: bool, cfg: &TomoyoConfig, plugin_host: &PluginHost) -> bool {
+        self.paused = paused;
+        if paused {
+            self.unregister_all();
+            self.active_label = cfg.lang().pick("快捷键已停用", "Hotkeys Paused").into();
+            self.conflict_msg = None;
+            save_hotkey_health(&HotkeyHealthReport {
+                main: HotkeySlotStatus {
+                    spec: cfg.hotkey.trim().into(),
+                    disabled: true,
+                    reason: cfg.lang().pick("已通过托盘一键停用全局快捷键", "Paused via system tray").into(),
+                    ..Default::default()
+                },
+                clipboard: HotkeySlotStatus { disabled: true, ..Default::default() },
+                translate: HotkeySlotStatus { disabled: true, ..Default::default() },
+                capture: HotkeySlotStatus { disabled: true, ..Default::default() },
+                pin: HotkeySlotStatus { disabled: true, ..Default::default() },
+                ocr: HotkeySlotStatus { disabled: true, ..Default::default() },
+                record: HotkeySlotStatus { disabled: true, ..Default::default() },
+                updated_at_unix: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0),
+            });
+            tracing::info!("Linux global hotkeys paused via tray toggle");
+        } else {
+            self.register_all(cfg, plugin_host);
+            tracing::info!("Linux global hotkeys resumed via tray toggle");
+        }
+        self.paused
     }
 
     pub fn set_handler<F: Fn(HotkeyAction) + Send + Sync + 'static>(&self, f: F) {
@@ -95,6 +138,7 @@ impl HotkeyManager {
                     unsafe { tomoyo_kga_unregister(self.kga, cs.as_ptr()); }
                 }
             }
+            unsafe { tomoyo_kga_purge_all(self.kga); }
         } else {
             self.registered_ids.clear();
         }
@@ -105,6 +149,14 @@ impl HotkeyManager {
 
     pub fn register_all(&mut self, cfg: &TomoyoConfig, plugin_host: &PluginHost) {
         self.unregister_all();
+        if self.paused {
+            self.active_label = cfg.lang().pick("快捷键已停用", "Hotkeys Paused").into();
+            self.conflict_msg = None;
+            return;
+        }
+        if !self.kga.is_null() {
+            unsafe { tomoyo_kga_unblock_global(self.kga); }
+        }
         let mut health = HotkeyHealthReport {
             updated_at_unix: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -137,11 +189,16 @@ impl HotkeyManager {
         health.ocr = HotkeySlotStatus { disabled: true, ..Default::default() };
         health.record = HotkeySlotStatus { disabled: true, ..Default::default() };
 
+        let mut summary = vec![format!("main={}({})", self.active_label, if health.main.ok { "ok" } else { "fail" })];
         for (i, hk) in plugin_host.active_plugin_hotkeys(cfg).into_iter().take(16).enumerate() {
             let id = format!("plugin_{i}");
-            let label = format!("插件快捷键: {}", hk.spec);
+            let label = format!("{} ({})", hk.plugin_id, hk.hotkey_id);
             let spec = hk.spec.clone();
-            let _ = self.try_slot(&id, &label, &spec, ov, HotkeyAction::Plugin(hk));
+            let st = self.try_slot(&id, &label, &spec, ov, HotkeyAction::Plugin(hk));
+            summary.push(format!("{label}={spec}({})", if st.ok { "ok" } else { "fail" }));
+            if !st.ok && !st.reason.is_empty() {
+                tracing::warn!(slot = %id, hotkey = %spec, reason = %st.reason, "Plugin global hotkey failed");
+            }
         }
         for (i, fl) in load_or_init_flows()
             .into_iter()
@@ -151,8 +208,10 @@ impl HotkeyManager {
         {
             let id = format!("flow_{i}");
             let label = format!("工作流: {}", fl.name);
-            let _ = self.try_slot(&id, &label, &fl.hotkey, ov, HotkeyAction::Flow(fl.id));
+            let st = self.try_slot(&id, &label, &fl.hotkey, ov, HotkeyAction::Flow(fl.id));
+            summary.push(format!("{id}={}({})", fl.hotkey, if st.ok { "ok" } else { "fail" }));
         }
+        tracing::info!("Linux KGlobalAccel shortcuts synced: {}", summary.join(", "));
         save_hotkey_health(&health);
     }
 

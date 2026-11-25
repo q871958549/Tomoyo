@@ -227,7 +227,7 @@ impl AppShell {
         if self.tray.is_some() {
             self.sync_clipboard_listener();
             self.sync_super_panel_hook();
-            if force_provider_reload || hotkeys_changed {
+            if (force_provider_reload || hotkeys_changed) && !self.hotkeys_paused {
                 unregister_all_hotkeys(self.hwnd);
                 let (active, conflict, plug_hks, flow_hks) = register_all_hotkeys(self.hwnd, &cfg_for_hk, &self.plugin_host);
                 self.hotkey_label = active;

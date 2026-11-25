@@ -152,11 +152,18 @@
             {#if rel.download_url}
               <Button variant="primary" size="sm" disabled={!!installProgress && !installProgress.done} onclick={() => onInstall(rel)}>
                 <Download size={13} />
-                {lang === 'en' ? 'Upgrade Now' : '一键校验升级'}
+                {lang === 'en' ? 'Auto-Update & Restart' : '自动下载更新并重启'}
               </Button>
             {/if}
           </div>
         </div>
+        {#if !rel.download_url}
+          <div class="t-desc" style="margin-top:8px;color:var(--warn)">
+            {lang === 'en'
+              ? 'No prebuilt package for this OS was found in this GitHub Release yet; open Release Page to inspect assets.'
+              : '该 Release 暂未包含当前系统的预编译更新包（仅找到其他平台安装包），请点击右侧「前往下载」查看或等待本平台产物发布。'}
+          </div>
+        {/if}
         {#if installProgress}
           <div class="prog-wrap">
             <div class="t-desc" style:color={installProgress.done && !installProgress.ok ? 'var(--danger)' : 'var(--text-secondary)'}>
@@ -191,6 +198,14 @@
       <div class="t-desc">{tr(lang, 'desc_upd_auto')}</div>
     </div>
     <Switch checked={cfg.update.auto_check} onchange={(v) => { cfg.update.auto_check = v; onSave(0); }} />
+  </div>
+
+  <div class="t-row">
+    <div>
+      <div class="t-label">{lang === 'en' ? 'Auto-download, verify & restart on new release' : '检测到新版本时自动更新并重启应用'}</div>
+      <div class="t-desc">{lang === 'en' ? 'Automatically downloads the current OS package, verifies SHA-256, replaces binaries, and relaunches Tomoyo.' : '发现包含当前平台安装包的更新后，自动下载、校验 SHA-256、替换安装并重启 Tomoyo。'}</div>
+    </div>
+    <Switch checked={!!cfg.update.auto_install} onchange={(v) => { cfg.update.auto_install = v; onSave(0); }} />
   </div>
 
   <div class="t-row">

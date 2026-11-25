@@ -34,6 +34,11 @@ static void on_popup_done(GtkMenuShell *ms, gpointer ud) {
     g_idle_add(destroy_menu_idle, ms);
 }
 
+void tomoyo_linux_tray_set_title(tomoyo_app_t *a, const char *title) {
+    if (!a || !a->tray || !title) return;
+    app_indicator_set_title(a->tray, title);
+}
+
 void tomoyo_linux_tray_set_menu(tomoyo_app_t *a, const tomoyo_menu_item_t *items, size_t n) {
     if (!a || !a->tray || !items) return;
     GtkWidget *menu = gtk_menu_new();
@@ -42,7 +47,11 @@ void tomoyo_linux_tray_set_menu(tomoyo_app_t *a, const tomoyo_menu_item_t *items
             gtk_menu_shell_append(GTK_MENU_SHELL(menu), gtk_separator_menu_item_new());
             continue;
         }
-        GtkWidget *mi = gtk_menu_item_new_with_label(items[i].label);
+        GtkWidget *mi = items[i].checked
+            ? gtk_check_menu_item_new_with_label(items[i].label)
+            : gtk_menu_item_new_with_label(items[i].label);
+        if (items[i].checked) gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(mi), TRUE);
+        if (items[i].disabled) gtk_widget_set_sensitive(mi, FALSE);
         menu_pick_t *p = (menu_pick_t *)malloc(sizeof(menu_pick_t));
         p->cb = a->on_tray_cmd; p->ctx = a->ctx; p->cmd = items[i].cmd; p->app = NULL;
         g_signal_connect_data(mi, "activate", G_CALLBACK(on_popup_activate), p, free_menu_pick, 0);

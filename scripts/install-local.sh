@@ -49,8 +49,10 @@ echo "=== Installing Tomoyo v$VERSION ($PROFILE profile) -> $BIN_DIR & $DATA_DIR
 
 # Stop any running Tomoyo instances safely before overwriting binaries
 if command -v systemctl >/dev/null 2>&1; then
-  systemctl --user stop app-tomoyo@launcher.service tomoyo-launcher.service tomoyo-tray.service >/dev/null 2>&1 || true
-  systemctl --user reset-failed app-tomoyo@launcher.service tomoyo-launcher.service tomoyo-tray.service >/dev/null 2>&1 || true
+  for u in app-tomoyo@launcher.service tomoyo-launcher.service tomoyo-tray.service; do
+    systemctl --user stop "$u" >/dev/null 2>&1 || true
+    systemctl --user reset-failed "$u" >/dev/null 2>&1 || true
+  done
   AUTOSTART_CGROUP="/sys/fs/cgroup/user.slice/user-$(id -u).slice/user@$(id -u).service/app.slice/app-tomoyo@autostart.service/cgroup.procs"
   if [ -r "$AUTOSTART_CGROUP" ]; then
     foreign_procs=""
@@ -70,9 +72,9 @@ if command -v systemctl >/dev/null 2>&1; then
     fi
   fi
 fi
-for proc in tomoyo tomoyo-webview-host tomoyo-capture; do
-  pkill -x "$proc" >/dev/null 2>&1 || true
-done
+pkill -x tomoyo >/dev/null 2>&1 || true
+pkill -x tomoyo-capture >/dev/null 2>&1 || true
+pkill -f '(^|/)tomoyo-(webview-host|plugin-[a-z0-9-]+)([[:space:]]|$)' >/dev/null 2>&1 || true
 sleep 0.3
 
 mkdir -p "$BIN_DIR" "$DATA_DIR/fonts" "$DATA_DIR/plugin-icons" "$DATA_DIR/assets" "$DATA_DIR/registry" \

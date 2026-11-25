@@ -77,32 +77,35 @@ fn find_asset_matching<'a>(
 
 pub fn pick_release_assets(assets: &[CandidateAsset]) -> PickedAssets {
     let mut out = PickedAssets::default();
-    #[cfg(target_arch = "aarch64")]
-    {
-        for name in ["SHA256SUMS-arm64.txt", "SHA256SUMS.txt"] {
-            if let Some(hit) = assets.iter().find(|a| a.name.eq_ignore_ascii_case(name)) {
-                out.sha256_url = Some(hit.url.clone());
-                break;
-            }
-        }
-    }
-    #[cfg(not(target_arch = "aarch64"))]
-    {
-        if let Some(hit) = assets
-            .iter()
-            .find(|a| a.name.eq_ignore_ascii_case("SHA256SUMS.txt"))
-        {
+    #[cfg(target_os = "linux")]
+    let sha_names: &[&str] = &["SHA256SUMS-linux.txt", "SHA256SUMS.txt"];
+    #[cfg(all(not(target_os = "linux"), target_arch = "aarch64"))]
+    let sha_names: &[&str] = &["SHA256SUMS-arm64.txt", "SHA256SUMS.txt"];
+    #[cfg(all(not(target_os = "linux"), not(target_arch = "aarch64")))]
+    let sha_names: &[&str] = &["SHA256SUMS.txt"];
+
+    for name in sha_names {
+        if let Some(hit) = assets.iter().find(|a| a.name.eq_ignore_ascii_case(name)) {
             out.sha256_url = Some(hit.url.clone());
+            break;
         }
     }
 
     #[cfg(target_os = "linux")]
     {
-        if let Some(hit) = find_asset_matching(
-            assets,
+        #[cfg(target_arch = "aarch64")]
+        let (suffixes, excluded): (&[&str], &[&str]) = (
+            &["-linux-aarch64.tar.gz", "-linux-arm64.tar.gz", ".tar.gz", ".appimage"],
+            &["x86_64", "x64", "amd64", "-core.tar.gz"],
+        );
+        #[cfg(not(target_arch = "aarch64"))]
+        let (suffixes, excluded): (&[&str], &[&str]) = (
             &["-linux-x86_64.tar.gz", "-linux-x64.tar.gz", ".tar.gz", ".appimage"],
-            &["arm64", "aarch64"],
-        ) {
+            &["arm64", "aarch64", "-core.tar.gz"],
+        );
+        if let Some(hit) = find_asset_matching(assets, suffixes, excluded)
+            .or_else(|| find_asset_matching(assets, &["-core.tar.gz", ".tar.gz"], &["arm64", "aarch64"]))
+        {
             out.portable_url = Some(hit.url.clone());
             out.portable_name = Some(hit.name.clone());
             out.download_url = Some(hit.url.clone());
@@ -114,7 +117,7 @@ pub fn pick_release_assets(assets: &[CandidateAsset]) -> PickedAssets {
     {
         #[cfg(target_arch = "aarch64")]
         let (excluded, portable_suffixes, setup_suffixes): (&[&str], &[&str], &[&str]) = (
-            &["x64", "x86_64", "amd64"],
+            &["x64", "x86_64", "amd64", "-core-portable.zip"],
             &[
                 "-windows-arm64-portable.zip",
                 "-arm64-portable.zip",
@@ -133,7 +136,7 @@ pub fn pick_release_assets(assets: &[CandidateAsset]) -> PickedAssets {
         );
         #[cfg(not(target_arch = "aarch64"))]
         let (excluded, portable_suffixes, setup_suffixes): (&[&str], &[&str], &[&str]) = (
-            &["arm64", "aarch64"],
+            &["arm64", "aarch64", "-core-portable.zip"],
             &[
                 "-windows-x64-portable.zip",
                 "-x64-portable.zip",
@@ -368,6 +371,14 @@ mod tests {
                 url: "https://example.invalid/setup.exe".into(),
             },
             CandidateAsset {
+                name: "SHA256SUMS-linux.txt".into(),
+                url: "https://example.invalid/SHA256SUMS-linux.txt".into(),
+            },
+            CandidateAsset {
+                name: "Tomoyo-v2.3.0-linux-x86_64-core.tar.gz".into(),
+                url: "https://example.invalid/linux-core.tar.gz".into(),
+            },
+            CandidateAsset {
                 name: "Tomoyo-v2.3.0-linux-x86_64.tar.gz".into(),
                 url: "https://example.invalid/linux.tar.gz".into(),
             },
@@ -378,6 +389,10 @@ mod tests {
             assert_eq!(
                 picked.asset_name.as_deref(),
                 Some("Tomoyo-v2.3.0-linux-x86_64.tar.gz")
+            );
+            assert_eq!(
+                picked.sha256_url.as_deref(),
+                Some("https://example.invalid/SHA256SUMS-linux.txt")
             );
         }
         #[cfg(all(not(target_os = "linux"), not(target_arch = "aarch64")))]

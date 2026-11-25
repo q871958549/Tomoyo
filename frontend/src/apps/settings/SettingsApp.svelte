@@ -320,6 +320,9 @@
             else if (nextSt.state === 'available' && nextSt.release) setToast(lang === 'en' ? `↑ New release v${nextSt.release.version} available` : `↑ 发现新版本 v${nextSt.release.version}`);
             else if (nextSt.state === 'error') setToast(`✗ ${nextSt.message || '检查更新失败'}`, true);
           }
+          if (nextSt?.state === 'available' && nextSt.release?.download_url && cfg.update.auto_install && (!installProgress || installProgress.done)) {
+            installRelease(nextSt.release);
+          }
         };
         const remain = (manualUpdateCheck ? 480 : 0) - (Date.now() - checkStartedAt);
         if (remain > 0) checkTimer = setTimeout(finish, remain);

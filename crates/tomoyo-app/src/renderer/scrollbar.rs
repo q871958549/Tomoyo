@@ -1,6 +1,7 @@
 //! Shared single-source-of-truth geometry & pointer hit-testing for the interactive Fluent scrollbar.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[cfg_attr(not(windows), allow(dead_code))]
 pub enum ScrollbarVisual {
     #[default]
     Idle,
@@ -10,12 +11,14 @@ pub enum ScrollbarVisual {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(not(windows), allow(dead_code))]
 pub enum ScrollbarHit {
     Thumb,
     Track,
 }
 
 #[derive(Debug, Clone, Copy)]
+#[cfg_attr(not(windows), allow(dead_code))]
 pub struct ScrollbarMetrics {
     pub hit_x0: f32,
     pub hit_x1: f32,
@@ -28,6 +31,7 @@ pub struct ScrollbarMetrics {
     pub max_scroll: usize,
 }
 
+#[cfg_attr(not(windows), allow(dead_code))]
 impl ScrollbarMetrics {
     pub fn thumb_height(self) -> f32 {
         (self.thumb_y1 - self.thumb_y0).max(26.0)

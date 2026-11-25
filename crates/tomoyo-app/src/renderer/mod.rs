@@ -14,7 +14,9 @@ pub use canvas::Canvas;
 pub use filter_bar::{
     compute_filter_bar_layout, compute_filter_counts, FilterCounts, FilterHit,
 };
-pub use scrollbar::{compute_scrollbar_metrics, ScrollbarHit, ScrollbarMetrics, ScrollbarVisual};
+pub use scrollbar::ScrollbarVisual;
+#[cfg(windows)]
+pub use scrollbar::{compute_scrollbar_metrics, ScrollbarHit, ScrollbarMetrics};
 #[cfg(not(windows))]
 pub use filter_bar::{item_matches_filter, FilterPillAnim};
 #[cfg(windows)]

@@ -4,20 +4,49 @@ use std::path::Path;
 use tomoyo_core::{permission_key, permission_label_zh, PermissionStore};
 use tomoyo_protocol::{Permission, PluginManifest};
 
+const OFFICIAL_BUNDLED_DIRS: &[&str] = &[
+    "builtin-ocr",
+    "official-notes",
+    "official-md-editor",
+    "official-translate",
+    "official-capture",
+    "official-clipboard",
+    "official-devtools-wasm",
+];
+
 pub(crate) fn is_bundled_plugin_dir(dir: &Path) -> bool {
     let dir_str = dir.to_string_lossy().to_ascii_lowercase();
     if let Ok(exe) = std::env::current_exe()
-        && let Some(parent) = exe.parent() {
-            let bundled = parent.join("plugins").to_string_lossy().to_ascii_lowercase();
-            if dir_str.starts_with(&bundled) {
-                return true;
-            }
+        && let Some(parent) = exe.parent()
+    {
+        let bundled = parent.join("plugins").to_string_lossy().to_ascii_lowercase();
+        if dir_str.starts_with(&bundled) {
+            return true;
         }
+    }
     if let Ok(cwd) = std::env::current_dir() {
         let local_plugins = cwd.join("plugins").to_string_lossy().to_ascii_lowercase();
         if dir_str.starts_with(&local_plugins) {
             return true;
         }
+    }
+    #[cfg(unix)]
+    if dir_str.starts_with("/usr/share/tomoyo/plugins")
+        || dir_str.starts_with("/usr/local/share/tomoyo/plugins")
+    {
+        return true;
+    }
+    // Linux XDG installs place official Suite plugins in `$XDG_DATA_HOME/tomoyo/plugins/official-*`
+    // while keeping third-party plugins in the same root untrusted by default.
+    let data_plugins = tomoyo_core::data_dir()
+        .join("plugins")
+        .to_string_lossy()
+        .to_ascii_lowercase();
+    if let (Some(parent), Some(leaf)) = (dir.parent(), dir.file_name().and_then(|s| s.to_str()))
+        && parent.to_string_lossy().to_ascii_lowercase() == data_plugins
+        && OFFICIAL_BUNDLED_DIRS.contains(&leaf.to_ascii_lowercase().as_str())
+    {
+        return true;
     }
     false
 }
@@ -126,4 +155,19 @@ fn prompt_user_for_permissions(manifest: &PluginManifest, dir: &Path, pending: &
 #[cfg(all(not(windows), not(target_os = "linux")))]
 fn prompt_user_for_permissions(_manifest: &PluginManifest, _dir: &Path, _pending: &[Permission]) -> bool {
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn data_dir_official_suite_plugins_are_trusted_but_third_party_are_not() {
+        let plugins_root = tomoyo_core::data_dir().join("plugins");
+        assert!(is_bundled_plugin_dir(&plugins_root.join("official-clipboard")));
+        assert!(is_bundled_plugin_dir(&plugins_root.join("official-capture")));
+        assert!(is_bundled_plugin_dir(&plugins_root.join("builtin-ocr")));
+        assert!(!is_bundled_plugin_dir(&plugins_root.join("com.thirdparty.evil")));
+        assert!(!is_bundled_plugin_dir(&plugins_root.join("official-fake-thirdparty")));
+    }
 }

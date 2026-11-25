@@ -231,12 +231,20 @@ pub fn fetch_release_via_github_web(clean_repo: &str) -> Result<Option<ReleaseIn
                 url: format!("https://github.com/{clean_repo}/releases/download/{tag}/SHA256SUMS.txt"),
             },
             CandidateAsset {
+                name: "SHA256SUMS-linux.txt".into(),
+                url: format!("https://github.com/{clean_repo}/releases/download/{tag}/SHA256SUMS-linux.txt"),
+            },
+            CandidateAsset {
                 name: format!("Tomoyo-{vtag}-windows-x64-setup.exe"),
                 url: format!("https://github.com/{clean_repo}/releases/download/{tag}/Tomoyo-{vtag}-windows-x64-setup.exe"),
             },
             CandidateAsset {
                 name: format!("Tomoyo-{vtag}-windows-x64-portable.zip"),
                 url: format!("https://github.com/{clean_repo}/releases/download/{tag}/Tomoyo-{vtag}-windows-x64-portable.zip"),
+            },
+            CandidateAsset {
+                name: format!("Tomoyo-{vtag}-linux-x86_64.tar.gz"),
+                url: format!("https://github.com/{clean_repo}/releases/download/{tag}/Tomoyo-{vtag}-linux-x86_64.tar.gz"),
             },
         ];
     }

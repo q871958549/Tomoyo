@@ -203,6 +203,31 @@ impl AppShell {
         self.resize_to_fit_results();
         self.invalidate();
     }
+
+    pub(super) fn toggle_hotkeys_paused(&mut self) {
+        self.hotkeys_paused = !self.hotkeys_paused;
+        if self.hotkeys_paused {
+            unregister_all_hotkeys(self.hwnd);
+            self.hotkey_label = self.lang.pick("快捷键已停用", "Hotkeys Paused").into();
+            if let Some(tray) = &mut self.tray {
+                tray.update_tooltip(&self.hotkey_label);
+            }
+            tracing::info!("Windows global hotkeys paused via tray toggle");
+        } else {
+            let cfg = self.config.read().map(|c| c.clone()).unwrap_or_default();
+            unregister_all_hotkeys(self.hwnd);
+            let (active, conflict, plug_hks, flow_hks) =
+                register_all_hotkeys(self.hwnd, &cfg, &self.plugin_host);
+            self.hotkey_label = active;
+            self.hotkey_conflict = conflict;
+            self.plugin_hotkeys = plug_hks;
+            self.flow_hotkeys = flow_hks;
+            if let Some(tray) = &mut self.tray {
+                tray.update_tooltip(&self.hotkey_label);
+            }
+            tracing::info!("Windows global hotkeys resumed via tray toggle");
+        }
+    }
 }
 
 pub(super) fn register_configured_hotkey(hwnd: HWND, spec: &str) -> (String, Option<String>) {

@@ -347,6 +347,39 @@ static int kga_strip_foreign_key(
     return 0;
 }
 
+void tomoyo_kga_unblock_global(void *hk) {
+    kga_ctx_t *k = (kga_ctx_t *)hk;
+    if (!k || !k->bus) return;
+    GVariant *r = g_dbus_connection_call_sync(k->bus, "org.kde.kglobalaccel", "/kglobalaccel", "org.kde.KGlobalAccel", "blockGlobalShortcuts", g_variant_new("(b)", FALSE), NULL, G_DBUS_CALL_FLAGS_NONE, 200, NULL, NULL);
+    if (r) g_variant_unref(r);
+}
+
+void tomoyo_kga_purge_all(void *hk) {
+    kga_ctx_t *k = (kga_ctx_t *)hk;
+    if (!k || !k->bus) return;
+    GVariantBuilder q; g_variant_builder_init(&q, G_VARIANT_TYPE("as"));
+    g_variant_builder_add(&q, "s", "tomoyo");
+    for (int i = 0; i < 3; i++) g_variant_builder_add(&q, "s", "");
+    GVariant *res = g_dbus_connection_call_sync(k->bus, "org.kde.kglobalaccel", "/kglobalaccel", "org.kde.KGlobalAccel", "allActionsForComponent", g_variant_new("(as)", &q), G_VARIANT_TYPE("(aas)"), G_DBUS_CALL_FLAGS_NONE, 300, NULL, NULL);
+    if (!res) return;
+    GVariantIter *outer = NULL, *inner = NULL;
+    g_variant_get(res, "(aas)", &outer);
+    while (g_variant_iter_next(outer, "as", &inner)) {
+        const gchar *parts[4] = {0}; int idx = 0; const gchar *s = NULL;
+        while (idx < 4 && g_variant_iter_next(inner, "&s", &s)) parts[idx++] = s;
+        if (idx >= 2 && parts[0] && strcmp(parts[0], "tomoyo") == 0 && parts[1] && parts[1][0]) {
+            GVariantBuilder ia; g_variant_builder_init(&ia, G_VARIANT_TYPE("as"));
+            for (int i = 0; i < idx; i++) g_variant_builder_add(&ia, "s", parts[i]);
+            GVariant *ri = g_dbus_connection_call_sync(k->bus, "org.kde.kglobalaccel", "/kglobalaccel", "org.kde.KGlobalAccel", "setInactive", g_variant_new("(as)", &ia), NULL, G_DBUS_CALL_FLAGS_NONE, 150, NULL, NULL);
+            if (ri) g_variant_unref(ri);
+            GVariant *ru = g_dbus_connection_call_sync(k->bus, "org.kde.kglobalaccel", "/kglobalaccel", "org.kde.KGlobalAccel", "unregister", g_variant_new("(ss)", "tomoyo", parts[1]), G_VARIANT_TYPE("(b)"), G_DBUS_CALL_FLAGS_NONE, 150, NULL, NULL);
+            if (ru) g_variant_unref(ru);
+        }
+        g_variant_iter_free(inner);
+    }
+    g_variant_iter_free(outer); g_variant_unref(res);
+}
+
 int tomoyo_kga_register(void *hk, const char *act_id, const char *friendly, int qt_key, int allow_override, char *owner_out, size_t olen) {
     if (owner_out && olen > 0) owner_out[0] = '\0';
     kga_ctx_t *k = (kga_ctx_t *)hk;
@@ -355,7 +388,10 @@ int tomoyo_kga_register(void *hk, const char *act_id, const char *friendly, int 
     int qrc = kga_query_action(k->bus, qt_key, oc, sizeof(oc), oa, sizeof(oa), oapp, sizeof(oapp), ofr, sizeof(ofr));
     if (qrc < 0) return -1;
     int stolen = 0;
-    if (qrc == 1 && strcmp(oc, "tomoyo") != 0) {
+    if (qrc == 1 && strcmp(oc, "tomoyo") == 0 && oa[0] && strcmp(oa, act_id) != 0) {
+        GVariant *ru = g_dbus_connection_call_sync(k->bus, "org.kde.kglobalaccel", "/kglobalaccel", "org.kde.KGlobalAccel", "unregister", g_variant_new("(ss)", "tomoyo", oa), G_VARIANT_TYPE("(b)"), G_DBUS_CALL_FLAGS_NONE, 200, NULL, NULL);
+        if (ru) g_variant_unref(ru);
+    } else if (qrc == 1 && strcmp(oc, "tomoyo") != 0) {
         if (owner_out && olen > 0) snprintf(owner_out, olen, "%s (%s)", oapp[0] ? oapp : oc, oc);
         if (!allow_override) return 0;
         stolen = kga_strip_foreign_key(k->bus, oc, oa, oapp, ofr, qt_key);
@@ -371,7 +407,8 @@ int tomoyo_kga_register(void *hk, const char *act_id, const char *friendly, int 
     GVariant *r2 = g_dbus_connection_call_sync(k->bus, "org.kde.kglobalaccel", "/kglobalaccel", "org.kde.KGlobalAccel", "setShortcut", g_variant_new("(asaiu)", &b2, &b3, 6u), G_VARIANT_TYPE("(ai)"), G_DBUS_CALL_FLAGS_NONE, 250, NULL, NULL);
     if (r2) g_variant_unref(r2);
     char vc[128], va[128], vapp[128], vfr[128];
-    if (kga_query_action(k->bus, qt_key, vc, sizeof(vc), va, sizeof(va), vapp, sizeof(vapp), vfr, sizeof(vfr)) == 1 && strcmp(vc, "tomoyo") == 0) {
+    if (kga_query_action(k->bus, qt_key, vc, sizeof(vc), va, sizeof(va), vapp, sizeof(vapp), vfr, sizeof(vfr)) == 1
+        && strcmp(vc, "tomoyo") == 0 && strcmp(va, act_id) == 0) {
         return stolen ? 2 : 1;
     }
     if (vc[0] && owner_out && olen > 0) snprintf(owner_out, olen, "%s (%s)", vapp[0] ? vapp : vc, vc);

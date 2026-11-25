@@ -22,8 +22,10 @@ for arg in "$@"; do
 done
 
 if command -v systemctl >/dev/null 2>&1; then
-  systemctl --user stop app-tomoyo@launcher.service tomoyo-launcher.service tomoyo-tray.service >/dev/null 2>&1 || true
-  systemctl --user reset-failed app-tomoyo@launcher.service tomoyo-launcher.service tomoyo-tray.service >/dev/null 2>&1 || true
+  for u in app-tomoyo@launcher.service tomoyo-launcher.service tomoyo-tray.service; do
+    systemctl --user stop "$u" >/dev/null 2>&1 || true
+    systemctl --user reset-failed "$u" >/dev/null 2>&1 || true
+  done
   AUTOSTART_CGROUP="/sys/fs/cgroup/user.slice/user-$(id -u).slice/user@$(id -u).service/app.slice/app-tomoyo@autostart.service/cgroup.procs"
   if [ -r "$AUTOSTART_CGROUP" ]; then
     foreign_procs=""
@@ -40,9 +42,9 @@ if command -v systemctl >/dev/null 2>&1; then
     fi
   fi
 fi
-for proc in tomoyo tomoyo-webview-host tomoyo-capture; do
-  pkill -x "$proc" >/dev/null 2>&1 || true
-done
+pkill -x tomoyo >/dev/null 2>&1 || true
+pkill -x tomoyo-capture >/dev/null 2>&1 || true
+pkill -f '(^|/)tomoyo-(webview-host|plugin-[a-z0-9-]+)([[:space:]]|$)' >/dev/null 2>&1 || true
 sleep 0.3
 
 for b in tomoyo tomoyo-webview-host tomoyo-capture tomoyo-cli tomoyo-plugin-hello tomoyo-plugin-ocr tomoyo-plugin-notes tomoyo-plugin-md-editor tomoyo-plugin-translate tomoyo-plugin-capture tomoyo-plugin-clipboard; do
@@ -59,7 +61,7 @@ if [ "$PURGE" -eq 1 ]; then
   rm -rf "$DATA_DIR"
 else
   rm -rf "$DATA_DIR/fonts" "$DATA_DIR/plugin-icons" "$DATA_DIR/assets" "$DATA_DIR/registry" "$DATA_DIR/uninstall.sh"
-  for p in example-hello example-python example-wasm example-webview-json builtin-ocr official-notes official-md-editor official-translate official-capture official-clipboard; do
+  for p in example-hello example-python example-wasm example-webview-json builtin-ocr official-notes official-md-editor official-translate official-capture official-clipboard official-devtools-wasm; do
     rm -rf "$DATA_DIR/plugins/$p"
   done
 fi

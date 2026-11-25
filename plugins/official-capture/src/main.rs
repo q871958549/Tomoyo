@@ -295,7 +295,7 @@ fn spawn_detached(exe: &Path, args: &[String]) -> std::io::Result<std::process::
                 Ok(())
             });
         }
-        return cmd.spawn();
+        cmd.spawn()
     }
     #[cfg(all(not(windows), not(target_os = "linux")))]
     {

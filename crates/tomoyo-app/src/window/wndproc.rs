@@ -118,14 +118,16 @@ pub(super) unsafe extern "system" fn main_wndproc(
                     }
                 }
                 4 => {
-                    let cfg = app.config.read().unwrap().clone();
-                    unregister_all_hotkeys(hwnd);
-                    let (active, _, plug_hks, flow_hks) =
-                        register_all_hotkeys(hwnd, &cfg, &app.plugin_host);
-                    app.plugin_hotkeys = plug_hks;
-                    app.flow_hotkeys = flow_hks;
-                    if let Some(t) = app.tray.as_mut() {
-                        t.update_tooltip(&active);
+                    if !app.hotkeys_paused {
+                        let cfg = app.config.read().unwrap().clone();
+                        unregister_all_hotkeys(hwnd);
+                        let (active, _, plug_hks, flow_hks) =
+                            register_all_hotkeys(hwnd, &cfg, &app.plugin_host);
+                        app.plugin_hotkeys = plug_hks;
+                        app.flow_hotkeys = flow_hks;
+                        if let Some(t) = app.tray.as_mut() {
+                            t.update_tooltip(&active);
+                        }
                     }
                 }
                 3 => unregister_all_hotkeys(hwnd),
@@ -142,7 +144,7 @@ pub(super) unsafe extern "system" fn main_wndproc(
             LRESULT(0)
         }
         WM_HOTKEY => {
-            if super::hotkey_avoid::should_avoid_hotkey(hwnd) {
+            if app.hotkeys_paused || super::hotkey_avoid::should_avoid_hotkey(hwnd) {
                 return LRESULT(0);
             }
             match wparam.0 as i32 {
@@ -314,9 +316,15 @@ fn handle_tray_callback(hwnd: HWND, app: &mut AppShell, lparam: LPARAM) -> LRESU
         app.toggle_launcher();
     } else if ev == WM_RBUTTONUP {
         app.tray_plugin_actions = app.plugin_host.active_tray_actions();
+        let upd_ver = app
+            .updater
+            .available_release()
+            .filter(|r| r.download_url.is_some())
+            .map(|r| r.version);
         let chosen = app.tray.as_ref().and_then(|tray| {
             tray.show_context_menu(
                 app.lang, app.theme, app.dpi_scale, app.font_regular, app.font_medium,
+                app.hotkeys_paused, upd_ver.as_deref(),
                 &app.tray_plugin_actions,
             )
         });

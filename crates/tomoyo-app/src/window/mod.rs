@@ -205,6 +205,7 @@ pub struct AppShell {
     pub(super) everything_status: Option<&'static str>,
     pub(super) hotkey_label: String,
     pub(super) hotkey_conflict: Option<String>,
+    pub(super) hotkeys_paused: bool,
     pub(super) plugin_hotkeys: Vec<tomoyo_plugin_host::ActivePluginHotkey>,
     pub(super) tray_plugin_actions: Vec<tomoyo_plugin_host::ActivePluginTrayAction>,
     pub(super) flow_hotkeys: Vec<String>,

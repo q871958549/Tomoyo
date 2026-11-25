@@ -6,7 +6,10 @@ use crate::actions::{
     read_clipboard_text, send_ctrl_c_cleanly, set_clipboard_text, shell_open,
     spawn_settings_window,
 };
-use crate::linux::{tomoyo_linux_tray_set_menu, tomoyo_linux_ui_quit, LinuxTrayMenuItem};
+use crate::linux::{
+    tomoyo_linux_tray_set_menu, tomoyo_linux_tray_set_title, tomoyo_linux_ui_quit,
+    LinuxTrayMenuItem,
+};
 use crate::linux::ipc::schedule_on_ui;
 use crate::linux::shell_state::{with_current_core, AppCore};
 use std::ffi::CString;
@@ -184,25 +187,71 @@ impl AppCore {
         }
     }
 
+    pub(super) fn toggle_hotkeys_paused(&mut self) {
+        let cfg = self.config.read().map(|c| c.clone()).unwrap_or_default();
+        let paused = self.hotkeys.set_paused(!self.hotkeys.is_paused(), &cfg, &self.plugin_host);
+        if !self.ui.is_null()
+            && let Ok(t) = CString::new(format!("Tomoyo ({})", self.hotkeys.active_label))
+        {
+            unsafe { tomoyo_linux_tray_set_title(self.ui, t.as_ptr()); }
+        }
+        self.rebuild_tray_menu();
+        let msg = if paused {
+            self.lang.pick("已停用全部全局快捷键（托盘右键可随时恢复）", "All global hotkeys paused")
+        } else {
+            self.lang.pick("已恢复全部全局快捷键", "All global hotkeys resumed")
+        };
+        if self.is_visible() { self.show_toast(msg); }
+    }
+
+    pub(super) fn handle_tray_update_click(&mut self) {
+        if let Some(rel) = self.updater.available_release() && rel.download_url.is_some() {
+            self.trigger_update_install_async();
+            return;
+        }
+        self.show_launcher_with_query(Some(":update"));
+        self.trigger_update_check_async();
+    }
+
     pub(super) fn rebuild_tray_menu(&mut self) {
         if self.ui.is_null() { return; }
         self.tray_plugin_actions = self.plugin_host.active_tray_actions();
         let l = self.lang;
-        let mut raw: Vec<(String, u32)> = vec![
-            (l.pick("显示 Tomoyo", "Show Tomoyo").into(), 1),
-            (l.pick("设置中心...", "Settings...").into(), 2),
+        let paused = self.hotkeys.is_paused();
+        let hk_label = if paused {
+            l.pick("恢复全局快捷键（已停用）", "Resume Global Hotkeys (Paused)")
+        } else {
+            l.pick("停用全局快捷键", "Pause Global Hotkeys")
+        };
+        let upd_label = match self.updater.available_release() {
+            Some(r) if r.download_url.is_some() => match l {
+                tomoyo_core::Lang::Zh => format!("立即自动更新 v{} 并重启", r.version),
+                tomoyo_core::Lang::En => format!("Auto-Update to v{} & Restart", r.version),
+            },
+            Some(r) => match l {
+                tomoyo_core::Lang::Zh => format!("发现新版本 v{} (:update)", r.version),
+                tomoyo_core::Lang::En => format!("New Version v{} (:update)", r.version),
+            },
+            None => l.pick("检查更新 (:update)", "Check for Updates").into(),
+        };
+        let mut raw: Vec<(String, u32, bool)> = vec![
+            (l.pick("显示 Tomoyo", "Show Tomoyo").into(), 1, false),
+            (l.pick("设置中心...", "Settings...").into(), 2, false),
+            (hk_label.into(), 3, paused),
         ];
         if !self.tray_plugin_actions.is_empty() {
-            raw.push(("---".into(), 0));
+            raw.push(("---".into(), 0, false));
             for (idx, act) in self.tray_plugin_actions.iter().enumerate() {
-                raw.push((act.label.clone(), 100 + idx as u32));
+                raw.push((act.label.clone(), 100 + idx as u32, false));
             }
         }
-        raw.push(("---".into(), 0));
-        raw.push((l.pick("退出 Tomoyo", "Exit Tomoyo").into(), 9));
-        let cstrs: Vec<CString> = raw.iter().map(|(s, _)| CString::new(s.as_str()).unwrap_or_default()).collect();
-        let items: Vec<LinuxTrayMenuItem> = cstrs.iter().zip(raw.iter()).map(|(cs, (_, cmd))| LinuxTrayMenuItem {
-            label: cs.as_ptr(), cmd: *cmd, parent_idx: -1, checked: 0, disabled: i32::from(*cmd == 0),
+        raw.push(("---".into(), 0, false));
+        raw.push((upd_label, 4, false));
+        raw.push(("---".into(), 0, false));
+        raw.push((l.pick("退出 Tomoyo", "Exit Tomoyo").into(), 9, false));
+        let cstrs: Vec<CString> = raw.iter().map(|(s, _, _)| CString::new(s.as_str()).unwrap_or_default()).collect();
+        let items: Vec<LinuxTrayMenuItem> = cstrs.iter().zip(raw.iter()).map(|(cs, (_, cmd, chk))| LinuxTrayMenuItem {
+            label: cs.as_ptr(), cmd: *cmd, parent_idx: -1, checked: i32::from(*chk), disabled: i32::from(*cmd == 0),
         }).collect();
         unsafe { tomoyo_linux_tray_set_menu(self.ui, items.as_ptr(), items.len()); }
     }
@@ -292,18 +341,28 @@ impl AppCore {
 
     fn trigger_update_install_async(&mut self) {
         let Some(rel) = self.updater.available_release() else { self.trigger_update_check_async(); return; };
-        self.show_toast(&format!("准备下载 v{} 更新包...", rel.version));
+        self.show_toast(&format!("准备下载 v{} 更新包并校验 SHA-256...", rel.version));
         let _ = std::thread::Builder::new().name("tomoyo-upd-dl".into()).spawn(move || {
             let res = download_and_verify_release_asset_with_progress(&rel, |_| {}).and_then(|p| launch_verified_update_installer(&p));
             schedule_on_ui(move || with_current_core(|st| match res {
-                Ok(_) => st.show_toast("✓ 更新包已启动安装，即将重启 Tomoyo"),
+                Ok(true) => {
+                    st.shutdown_clean();
+                    unsafe { tomoyo_linux_ui_quit(); }
+                }
+                Ok(false) => st.show_toast("✓ 更新包校验通过，已在文件管理器定位"),
                 Err(e) => st.show_toast(&format!("⚠ 更新失败: {e}")),
             }));
         });
     }
 
     pub(super) fn on_update_ready(&mut self) {
+        self.rebuild_tray_menu();
         if let UpdateStatus::Available { release, .. } = self.updater.snapshot() {
+            let auto_inst = self.config.read().map(|c| c.update.auto_install).unwrap_or(false);
+            if auto_inst && release.download_url.is_some() {
+                self.trigger_update_install_async();
+                return;
+            }
             self.show_toast(&format!("发现新版本 v{}！输入 :update 升级", release.version));
         }
         self.invalidate();
@@ -319,6 +378,11 @@ impl AppCore {
             "reload:4" => {
                 let cfg = self.config.read().map(|c| c.clone()).unwrap_or_default();
                 self.hotkeys.register_all(&cfg, &self.plugin_host);
+            }
+            "reload:5" => {
+                tracing::info!("Updater requested graceful shutdown; exiting Tomoyo cleanly");
+                self.shutdown_clean();
+                unsafe { tomoyo_linux_ui_quit(); }
             }
             "capture:region" | "capture:ocr" | "capture:record" => {
                 let mode = line.strip_prefix("capture:").unwrap_or("region");
@@ -361,6 +425,11 @@ impl AppCore {
         if force_providers { self.router.reload_all(); }
         self.sync_clipboard_watcher();
         self.hotkeys.register_all(&cfg_clone, &self.plugin_host);
+        if !self.ui.is_null()
+            && let Ok(t) = CString::new(format!("Tomoyo ({})", self.hotkeys.active_label))
+        {
+            unsafe { tomoyo_linux_tray_set_title(self.ui, t.as_ptr()); }
+        }
         self.rebuild_tray_menu();
         if self.is_visible() { self.dispatch_query(); }
     }

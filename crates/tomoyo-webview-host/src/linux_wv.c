@@ -68,6 +68,14 @@ static gboolean on_focus_in_ev(GtkWidget *w, GdkEventFocus *ev, gpointer ud) {
     return FALSE;
 }
 
+static gboolean on_focus_out_ev(GtkWidget *w, GdkEventFocus *ev, gpointer ud) {
+    (void)w; (void)ev;
+    tomoyo_wv_t *h = (tomoyo_wv_t *)ud;
+    // Synthesize Esc when Settings loses focus so any active hotkey capture immediately unblocks KGlobalAccel.
+    if (h && h->on_key) h->on_key(h->ctx, 0xFF1Bu, 0u);
+    return FALSE;
+}
+
 static gboolean on_delete_ev(GtkWidget *w, GdkEvent *ev, gpointer ud) {
     (void)w; (void)ev;
     tomoyo_wv_t *h = (tomoyo_wv_t *)ud;
@@ -202,6 +210,7 @@ tomoyo_wv_t *tomoyo_wv_create(
     gtk_container_add(GTK_CONTAINER(h->window), GTK_WIDGET(h->webview));
     g_signal_connect(h->window, "key-press-event", G_CALLBACK(on_key_press), h);
     g_signal_connect(h->window, "focus-in-event", G_CALLBACK(on_focus_in_ev), h);
+    g_signal_connect(h->window, "focus-out-event", G_CALLBACK(on_focus_out_ev), h);
     g_signal_connect(h->window, "delete-event", G_CALLBACK(on_delete_ev), h);
 
     g_object_unref(ucm);

@@ -40,6 +40,8 @@ impl Default for AppsConfig {
 pub struct UpdateConfig {
     #[serde(default = "default_true")]
     pub auto_check: bool,
+    #[serde(default)]
+    pub auto_install: bool,
     #[serde(default = "default_update_interval")]
     pub check_interval_hours: u64,
     #[serde(default = "default_update_repo")]
@@ -57,6 +59,7 @@ impl Default for UpdateConfig {
     fn default() -> Self {
         Self {
             auto_check: true,
+            auto_install: false,
             check_interval_hours: default_update_interval(),
             repo: default_update_repo(),
             last_checked_unix: 0,

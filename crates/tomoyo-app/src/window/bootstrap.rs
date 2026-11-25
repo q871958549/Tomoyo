@@ -212,6 +212,7 @@ impl AppShell {
             everything_status: detect_everything_label(),
             hotkey_label,
             hotkey_conflict,
+            hotkeys_paused: false,
             plugin_hotkeys,
             tray_plugin_actions: Vec::new(),
             flow_hotkeys,

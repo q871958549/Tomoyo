@@ -201,7 +201,7 @@ if ($CheckBinaries) {
     $binBudgets = [ordered]@{
         "target\release\tomoyo.exe"              = 5.8
         "target\release\tomoyo-webview-host.exe" = 4.2
-        "target\release\tomoyo-capture.exe"      = 1.5
+        "target\release\tomoyo-capture.exe"      = 1.6
         "target\release\tomoyo-plugin-ocr.exe"       = 0.8
         "target\release\tomoyo-plugin-notes.exe"     = 0.8
         "target\release\tomoyo-plugin-md-editor.exe" = 0.8

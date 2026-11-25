@@ -8,7 +8,7 @@ use crate::actions::{
 };
 use crate::tray::{
     MENU_ID_CONFIG, MENU_ID_GC, MENU_ID_PLUGIN_TRAY_BASE, MENU_ID_QUIT, MENU_ID_RELOAD,
-    MENU_ID_SETTINGS, MENU_ID_SHOW, MENU_ID_STATS, MENU_ID_UPDATE,
+    MENU_ID_SETTINGS, MENU_ID_SHOW, MENU_ID_STATS, MENU_ID_TOGGLE_HOTKEYS, MENU_ID_UPDATE,
 };
 use tomoyo_core::{is_autostart_enabled, set_autostart_enabled, Lang};
 use tomoyo_protocol::{ActionKind, AttachedContext, InternalCommandKind, PluginEventKind};
@@ -30,10 +30,16 @@ pub(super) fn dispatch_menu_id(hwnd: HWND, app: &mut AppShell, id: u32) {
     match id {
         MENU_ID_SHOW => app.show_launcher(),
         MENU_ID_SETTINGS => app.open_settings_center(),
+        MENU_ID_TOGGLE_HOTKEYS => app.toggle_hotkeys_paused(),
         MENU_ID_UPDATE => {
-            app.show_launcher();
-            app.set_query_text(":update");
-            app.trigger_update_check_async();
+            if let Some(rel) = app.updater.available_release() && rel.download_url.is_some() {
+                app.show_launcher();
+                app.trigger_update_install_async();
+            } else {
+                app.show_launcher();
+                app.set_query_text(":update");
+                app.trigger_update_check_async();
+            }
         }
         MENU_ID_STATS => {
             app.show_launcher();

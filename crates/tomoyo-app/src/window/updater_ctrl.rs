@@ -57,10 +57,17 @@ impl AppShell {
 
     pub(super) fn on_update_ready(&mut self) {
         let msg = match self.updater.snapshot() {
-            UpdateStatus::Available { release, .. } => match self.lang {
-                Lang::Zh => format!("发现新版本 v{}！点击右下角徽标或输入 :update 一键升级", release.version),
-                Lang::En => format!("New version v{} available! Click badge or :update to upgrade", release.version),
-            },
+            UpdateStatus::Available { release, .. } => {
+                let auto_inst = self.config.read().map(|c| c.update.auto_install).unwrap_or(false);
+                if auto_inst && release.download_url.is_some() {
+                    self.trigger_update_install_async();
+                    return;
+                }
+                match self.lang {
+                    Lang::Zh => format!("发现新版本 v{}！点击右下角徽标或输入 :update 一键升级", release.version),
+                    Lang::En => format!("New version v{} available! Click badge or :update to upgrade", release.version),
+                }
+            }
             UpdateStatus::UpToDate { current, note, .. } => {
                 if note.is_empty() {
                     match self.lang {

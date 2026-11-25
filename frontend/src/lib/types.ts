@@ -170,6 +170,7 @@ export interface TomoyoConfig {
   super_panel?: SuperPanelConfig;
   update: {
     auto_check: boolean;
+    auto_install?: boolean;
     check_interval_hours: number;
     repo: string;
     last_checked_unix: number;

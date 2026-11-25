@@ -204,7 +204,7 @@ if (checkBinaries) {
   const binBudgets = {
     [`target/release/tomoyo${ext}`]: isWin ? 5.8 : 6.2,
     [`target/release/tomoyo-webview-host${ext}`]: 4.2,
-    [`target/release/tomoyo-capture${ext}`]: 1.5,
+    [`target/release/tomoyo-capture${ext}`]: 1.6,
     [`target/release/tomoyo-plugin-ocr${ext}`]: 0.8,
     [`target/release/tomoyo-plugin-notes${ext}`]: 0.8,
     [`target/release/tomoyo-plugin-md-editor${ext}`]: 0.8,

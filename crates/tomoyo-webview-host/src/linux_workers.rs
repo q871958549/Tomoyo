@@ -265,6 +265,7 @@ fn spawn_install_update_worker(rel: ReleaseInfo, ch: Arc<HostChannel>) {
             last_stage = prog.stage.clone();
             ch.push(serde_json::json!({ "event": "update_install_progress", "progress": prog }).to_string());
         }).and_then(|p| launch_verified_update_installer(&p));
+        let launched = matches!(res, Ok(true));
         let evt = match res {
             Ok(started) => serde_json::json!({
                 "event": "update_install_result", "ok": true, "launched_installer": started,
@@ -276,6 +277,10 @@ fn spawn_install_update_worker(rel: ReleaseInfo, ch: Arc<HostChannel>) {
             }),
         }.to_string();
         ch.push(evt);
+        if launched && let Some(h) = ch.notify_hwnd {
+            std::thread::sleep(std::time::Duration::from_millis(250));
+            crate::bridge_os::notify_parent_mode(h, 5);
+        }
     });
 }
 

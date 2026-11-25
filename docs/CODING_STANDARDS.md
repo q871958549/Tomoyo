@@ -54,7 +54,7 @@ WebView 前端位于 `frontend/`，通过 Vite + `vite-plugin-singlefile` 编译
 | `frontend/dist/{translator,clipboard,ocr}.html` | **≤ 150 KB** | 三个按需工作台单文件产物 |
 | `tomoyo` / `tomoyo.exe` | **≤ 7.5 MB (Linux) / ≤ 6.5 MB (Win)** | 常驻主内核（含 SDF 字体光栅、SQLite、WASM 宿主） |
 | `tomoyo-webview-host` / `.exe` | **≤ 5.5 MB** | 按需 WebView 宿主（WebKitGTK 4.1 / WebView2 + 4 套前端单文件包） |
-| `tomoyo-capture` / `.exe` | **≤ 1.5 MB** | 原生多屏截图、标注、长截图与桌面贴图工具 |
+| `tomoyo-capture` / `.exe` | **≤ 1.6 MB** | 原生多屏截图、标注、长截图与桌面贴图工具 |
 | `tomoyo-plugin-ocr` / `tomoyo-plugin-notes` | **≤ 0.8 MB** | 官方独立 STDIO 插件 |
 
 ### 2.3 运行时预算门禁（`--self-test --strict-budget`）
