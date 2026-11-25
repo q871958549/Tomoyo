@@ -1,5 +1,6 @@
 //! Pure Win32 `main_wndproc` message dispatcher delegating into cohesive `AppShell` methods.
 
+use super::clipboard_ctrl::TIMER_CLIP_DEBOUNCE;
 use super::commands::{dispatch_menu_id, dispatch_wm_command};
 use super::input::{register_all_hotkeys, unregister_all_hotkeys};
 use super::super_panel_ctrl::{
@@ -299,6 +300,7 @@ fn handle_timer(hwnd: HWND, app: &mut AppShell, timer_id: usize) -> LRESULT {
         }
         TIMER_LAUNCH_TICK => app.on_launch_tick(),
         TIMER_SP_HOLD => app.on_super_panel_hold_timer(),
+        TIMER_CLIP_DEBOUNCE => app.on_clipboard_debounce_timer(),
         TIMER_SETTINGS_HIDE => app.on_settings_window_ready(),
         TIMER_FADE_HIDE => app.step_fade_hide(),
         _ => {}

@@ -2,6 +2,8 @@
 
 #[cfg(windows)]
 mod clipboard_win;
+#[cfg(windows)]
+mod clipboard_win_img;
 #[cfg(target_os = "linux")]
 #[path = "clipboard_linux.rs"]
 mod clipboard_win;
@@ -13,11 +15,16 @@ mod shell_win;
 mod shell_win;
 
 #[cfg(target_os = "linux")]
-pub use clipboard_win::set_clipboard_file_uri;
+pub use clipboard_win::{is_clipboard_confidential, set_clipboard_file_uri};
+#[cfg(windows)]
+pub use clipboard_win::{
+    decode_and_cache_dib_bytes, open_clipboard_owned, read_clipboard_files_or_text_once,
+    read_clipboard_snapshot_once, set_clipboard_owner_hwnd, ClipboardCaptureSnapshot,
+};
 pub use clipboard_win::{
     clipboard_has_rich_attachment, clipboard_source_app_name, copy_image_as_base64_uri,
-    is_clipboard_confidential, read_clipboard_files, read_clipboard_image_png,
-    read_clipboard_text, set_clipboard_image_from_png, set_clipboard_text,
+    read_clipboard_files, read_clipboard_image_png, read_clipboard_text,
+    set_clipboard_image_from_png, set_clipboard_text,
 };
 pub use file_ops::{
     compute_file_sha256_bounded, copy_file_contents_bounded, extract_zip_into_sibling_dir,

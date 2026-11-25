@@ -4,7 +4,7 @@
 //! Tomoyo's own clipboard history listener, injects clean `Ctrl+C` while the target app still
 //! owns focus, classifies the captured text/files, and restores the original clipboard cleanly.
 
-use crate::actions::{read_clipboard_files, read_clipboard_text};
+use crate::actions::{open_clipboard_owned, read_clipboard_files_or_text_once};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -12,7 +12,7 @@ use std::time::Duration;
 use windows::Win32::Foundation::{HANDLE, HGLOBAL};
 use windows::Win32::System::DataExchange::{
     CloseClipboard, EmptyClipboard, GetClipboardData, GetClipboardSequenceNumber,
-    IsClipboardFormatAvailable, OpenClipboard, SetClipboardData,
+    IsClipboardFormatAvailable, SetClipboardData,
 };
 use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock, GMEM_MOVEABLE};
 use windows::Win32::System::Ole::{CF_DIB, CF_HDROP, CF_UNICODETEXT};
@@ -68,24 +68,12 @@ struct ClipboardBackup {
     entries: Vec<(u32, Vec<u8>)>,
 }
 
-unsafe fn open_clipboard_retry() -> bool {
-    for attempt in 0..4 {
-        if unsafe { OpenClipboard(None).is_ok() } {
-            return true;
-        }
-        if attempt < 3 {
-            std::thread::sleep(Duration::from_millis(10));
-        }
-    }
-    false
-}
-
 impl ClipboardBackup {
     fn capture() -> Self {
         let formats = [CF_UNICODETEXT.0 as u32, CF_HDROP.0 as u32, CF_DIB.0 as u32];
         let mut entries = Vec::new();
         let captured_ok = unsafe {
-            if !open_clipboard_retry() {
+            if !open_clipboard_owned(4) {
                 return Self { captured_ok: false, entries };
             }
             for fmt in formats {
@@ -115,7 +103,7 @@ impl ClipboardBackup {
             return;
         }
         unsafe {
-            if !open_clipboard_retry() {
+            if !open_clipboard_owned(4) {
                 return;
             }
             let _ = EmptyClipboard();
@@ -134,6 +122,20 @@ impl ClipboardBackup {
     }
 }
 
+/// Waits until `GetClipboardSequenceNumber()` stops changing across a 30 ms quiet gap
+/// so multi-step writers (OneCommander, Explorer, Excel, Word) finish `OleSetClipboard` /
+/// `Preferred DropEffect` before Tomoyo touches `OpenClipboard`.
+fn wait_clipboard_transaction_settle(mut last_seq: u32) {
+    for _ in 0..3 {
+        std::thread::sleep(Duration::from_millis(30));
+        let cur = unsafe { GetClipboardSequenceNumber() };
+        if cur == last_seq {
+            break;
+        }
+        last_seq = cur;
+    }
+}
+
 /// Captures the foreground window's active text or file selection without disturbing the
 /// user's clipboard contents or triggering Tomoyo's clipboard history plugin.
 pub fn probe_foreground_selection(suppress_flag: &Arc<AtomicBool>) -> SuperContext {
@@ -147,12 +149,15 @@ pub fn probe_foreground_selection(suppress_flag: &Arc<AtomicBool>) -> SuperConte
     let mut ctx = SuperContext::Empty;
     for _ in 0..12 {
         std::thread::sleep(Duration::from_millis(15));
-        if unsafe { GetClipboardSequenceNumber() } != seq_before {
+        let cur_seq = unsafe { GetClipboardSequenceNumber() };
+        if cur_seq != seq_before {
             changed = true;
-            if let Some(files) = read_clipboard_files() {
+            wait_clipboard_transaction_settle(cur_seq);
+            let (files_opt, txt_opt) = read_clipboard_files_or_text_once();
+            if let Some(files) = files_opt {
                 let all_images = !files.is_empty() && files.iter().all(|p| is_image_path(p));
                 ctx = SuperContext::Files { paths: files, all_images };
-            } else if let Some(txt) = read_clipboard_text() {
+            } else if let Some(txt) = txt_opt {
                 let trimmed: String = txt.trim().chars().take(MAX_SELECTED_CHARS).collect();
                 if !trimmed.is_empty() {
                     let kind = classify_text_kind(&trimmed);
@@ -164,9 +169,11 @@ pub fn probe_foreground_selection(suppress_flag: &Arc<AtomicBool>) -> SuperConte
     }
 
     if changed {
+        std::thread::sleep(Duration::from_millis(25));
         backup.restore();
     }
-    std::thread::sleep(Duration::from_millis(55));
+    // Keep suppress armed strictly longer than clipboard listener's 120 ms debounce window.
+    std::thread::sleep(Duration::from_millis(160));
     suppress_flag.store(false, Ordering::Release);
     ctx
 }

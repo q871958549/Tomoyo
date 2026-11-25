@@ -185,10 +185,19 @@ pub(super) fn handle_plugin_hotkey(app: &mut AppShell, id: i32) {
                 send_ctrl_c_cleanly();
                 let mut captured = String::new();
                 let mut changed = false;
-                for _ in 0..11 {
-                    std::thread::sleep(Duration::from_millis(16));
-                    if clipboard_seq_num() != seq_before {
+                for _ in 0..12 {
+                    std::thread::sleep(Duration::from_millis(15));
+                    let mut cur_seq = clipboard_seq_num();
+                    if cur_seq != seq_before {
                         changed = true;
+                        for _ in 0..3 {
+                            std::thread::sleep(Duration::from_millis(30));
+                            let next_seq = clipboard_seq_num();
+                            if next_seq == cur_seq {
+                                break;
+                            }
+                            cur_seq = next_seq;
+                        }
                         if let Some(txt) = read_clipboard_text() {
                             captured = txt;
                         }
@@ -196,9 +205,10 @@ pub(super) fn handle_plugin_hotkey(app: &mut AppShell, id: i32) {
                     }
                 }
                 if changed && let Some(old) = prev_text {
+                    std::thread::sleep(Duration::from_millis(25));
                     let _ = set_clipboard_text(&old);
                 }
-                std::thread::sleep(Duration::from_millis(60));
+                std::thread::sleep(Duration::from_millis(160));
                 suppress_flag.store(false, Ordering::Release);
                 let payload = PluginEventPayload::new(
                     PluginEventKind::HotkeyTriggered,

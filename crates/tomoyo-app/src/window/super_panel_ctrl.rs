@@ -131,6 +131,11 @@ impl AppShell {
 
     fn begin_super_panel_probe(&mut self, pt: POINT) {
         self.super_panel.probing = true;
+        self.suppress_clipboard_capture
+            .store(true, std::sync::atomic::Ordering::Release);
+        unsafe {
+            let _ = KillTimer(Some(self.hwnd), super::clipboard_ctrl::TIMER_CLIP_DEBOUNCE);
+        }
         let fg = unsafe { GetForegroundWindow() };
         self.super_panel.source_fg_hwnd = if !fg.is_invalid() && fg != self.hwnd {
             fg.0 as isize

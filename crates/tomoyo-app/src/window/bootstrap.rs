@@ -232,6 +232,7 @@ impl AppShell {
         unsafe {
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, &mut *app as *mut AppShell as isize);
         }
+        crate::actions::set_clipboard_owner_hwnd(hwnd.0 as isize);
         app.sync_super_panel_hook();
         if has_clip_subs && let Some(txt) = read_clipboard_text() {
             let now = std::time::SystemTime::now()
