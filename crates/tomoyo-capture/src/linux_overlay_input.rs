@@ -201,7 +201,7 @@ fn handle_left_down(st: &mut OverlayState, x: i32, y: i32) -> c_int {
                 let txt = unsafe { CStr::from_ptr(raw) }.to_string_lossy().into_owned();
                 unsafe { tomoyo_cap_free(raw.cast()); }
                 if !txt.trim().is_empty() {
-                    st.ann_stack.push(Annotation::Text { x, y, text: txt, size: st.text_size, color: col });
+                    st.ann_stack.push(Annotation::Text { x, y, text: txt, size: st.text_size, color: col, bold: false });
                 }
             }
             return 0;

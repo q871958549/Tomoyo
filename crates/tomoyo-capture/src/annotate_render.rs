@@ -2,7 +2,7 @@
 //! arrows, true-Euclidean uniform-stroke ellipses, rounded rects, smooth pen/highlighter,
 //! mosaic/blur, step badges & hover/selection handles.
 
-use crate::annotate::{eval_quad_bezier, AnnotColor, Annotation};
+use crate::annotate::{eval_quad_bezier, text_bounds_estimate, AnnotColor, Annotation};
 use crate::annotate_arrow::draw_modern_tapered_arrow;
 use crate::overlay_icons::{
     blend_px, draw_aa_line, fill_circle_aa, fill_rounded_rect_aa, stroke_circle_aa,
@@ -72,6 +72,11 @@ pub fn render_single(bgra: &mut [u8], w: i32, h: i32, ox: i32, oy: i32, ann: &An
 
 pub fn draw_selection_handles(bgra: &mut [u8], w: i32, h: i32, ann: &Annotation, is_hover_only: bool) {
     let alpha = if is_hover_only { 0.72 } else { 1.0 };
+    if let Annotation::Text { x, y, text, size, bold, .. } = ann {
+        let r = text_bounds_estimate(*x, *y, text, *size, *bold);
+        draw_dashed_frame(bgra, w, h, r, AnnotColor(0x3B, 0x82, 0xF6), if is_hover_only { 0.65 } else { 0.95 });
+        return;
+    }
     let pts = ann.control_points();
     for (idx, (hx, hy)) in pts.iter().enumerate() {
         let is_bend = matches!(ann, Annotation::Arrow { .. }) && idx == 1;
@@ -80,6 +85,33 @@ pub fn draw_selection_handles(bgra: &mut [u8], w: i32, h: i32, ann: &Annotation,
         let ring = if is_bend { AnnotColor(0xFF, 0xFF, 0xFF) } else { AnnotColor(0x25, 0x63, 0xEB) };
         fill_circle_aa(bgra, w, h, *hx as f32 + 0.5, *hy as f32 + 0.5, rad, fill, alpha);
         stroke_circle_aa(bgra, w, h, *hx as f32 + 0.5, *hy as f32 + 0.5, rad, 1.6, ring, alpha);
+    }
+}
+
+/// Crisp dashed bounding frame (used for both active inline text editor & selected text annotations).
+pub fn draw_dashed_frame(bgra: &mut [u8], w: i32, h: i32, r: ScreenRect, color: AnnotColor, alpha: f32) {
+    if r.w < 4 || r.h < 4 { return; }
+    let (x0, y0, x1, y1) = (r.x, r.y, r.right() - 1, r.bottom() - 1);
+    let shadow = AnnotColor(0x0B, 0x0F, 0x19);
+    let mut plot = |px: i32, py: i32, step: i32| {
+        if (step % 9) < 5 {
+            blend_px(bgra, w, h, px + 1, py + 1, shadow, alpha * 0.35);
+            blend_px(bgra, w, h, px, py, color, alpha);
+        }
+    };
+    for x in x0..=x1 {
+        let s = x - x0;
+        plot(x, y0, s);
+        plot(x, y0 + 1, s);
+        plot(x, y1, s);
+        plot(x, y1 - 1, s);
+    }
+    for y in y0..=y1 {
+        let s = y - y0;
+        plot(x0, y, s);
+        plot(x0 + 1, y, s);
+        plot(x1, y, s);
+        plot(x1 - 1, y, s);
     }
 }
 

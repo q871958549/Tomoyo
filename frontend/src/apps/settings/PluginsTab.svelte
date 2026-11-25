@@ -81,8 +81,7 @@
 
   function onChangeHotkey(slotKey: string, spec: string) {
     const next = { ...(cfg.plugin_hotkeys || {}) };
-    if (spec.trim()) next[slotKey] = spec.trim();
-    else delete next[slotKey];
+    next[slotKey] = spec.trim();
     onUpdatePluginConfig(next, { ...(cfg.plugin_settings || {}) });
   }
 

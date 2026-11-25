@@ -93,9 +93,14 @@ pub fn audit_system_hotkeys(parent_hwnd: Option<isize>) -> HotkeyAuditReport {
     let procs = snapshot_processes();
     let cfg_hits = scan_known_local_configs(&procs);
 
-    let tomoyo_slots: Vec<(&str, String)> = vec![
-        ("main", cfg.hotkey.trim().to_string()),
+    let mut tomoyo_slots: Vec<(String, String)> = vec![
+        ("main".into(), cfg.hotkey.trim().to_string()),
     ];
+    let host = tomoyo_plugin_host::PluginHost::new(tomoyo_plugin_host::default_plugin_dirs());
+    for hk in host.active_plugin_hotkeys(&cfg) {
+        tomoyo_slots.push((hk.label, hk.spec));
+    }
+    host.shutdown_all();
 
     if let Some(p) = parent_hwnd {
         notify_parent_mode(p, 3);
@@ -118,7 +123,7 @@ pub fn audit_system_hotkeys(parent_hwnd: Option<isize>) -> HotkeyAuditReport {
         let slot = tomoyo_slots
             .iter()
             .find(|(_, s)| !s.is_empty() && s.eq_ignore_ascii_case(&spec))
-            .map(|(k, _)| (*k).to_string());
+            .map(|(k, _)| k.clone());
         let is_free = probe_register_free(&spec, 0x5400 + idx as i32);
         let (status, suspects) = if is_free {
             if slot.is_some() { ("tomoyo", Vec::new()) } else { ("free", Vec::new()) }

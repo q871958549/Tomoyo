@@ -10,7 +10,8 @@ use crate::export::{
 };
 use crate::overlay::{CaptureOutcome, OverlayState, TIMER_WHEEL_HUD};
 use crate::overlay_draw::ToolbarCmd;
-use crate::overlay_text::bake_text_annotations_into_bgra;
+use crate::overlay_text::render_text_annotations_bgra;
+use crate::overlay_text_editor::TIMER_TEXT_CARET;
 use crate::screen::ScreenRect;
 use crate::win_record::{RecAudio, RecFormat, RecordRequest};
 use tomoyo_core::TomoyoConfig;
@@ -20,15 +21,46 @@ use windows::Win32::UI::Input::KeyboardAndMouse::SetFocus;
 use windows::Win32::UI::WindowsAndMessaging::{DestroyWindow, KillTimer, SetTimer};
 
 impl OverlayState {
-    pub(crate) fn commit_text_if_open(&mut self, hwnd: HWND) {
-        if let Some(ed) = self.text_editor.take() {
-            if let Some(ann) = ed.commit_and_close() {
-                self.stack.push(ann);
-            }
-            unsafe {
-                let _ = SetFocus(Some(hwnd));
-            }
+    pub(crate) fn restart_text_caret_timer(&mut self, hwnd: HWND) {
+        if let Some(ed) = self.text_editor.as_mut() {
+            ed.caret_visible = true;
         }
+        unsafe {
+            let _ = KillTimer(Some(hwnd), TIMER_TEXT_CARET);
+            let _ = SetTimer(Some(hwnd), TIMER_TEXT_CARET, 530, None);
+        }
+    }
+
+    pub(crate) fn commit_text_if_open(&mut self, hwnd: HWND) -> bool {
+        let Some(ed) = self.text_editor.take() else {
+            return false;
+        };
+        unsafe {
+            let _ = KillTimer(Some(hwnd), TIMER_TEXT_CARET);
+        }
+        if let Some(ann) = ed.commit_and_close() {
+            self.stack.push(ann);
+        }
+        unsafe {
+            let _ = SetFocus(Some(hwnd));
+        }
+        true
+    }
+
+    pub(crate) fn cancel_text_if_open(&mut self, hwnd: HWND) -> bool {
+        let Some(ed) = self.text_editor.take() else {
+            return false;
+        };
+        unsafe {
+            let _ = KillTimer(Some(hwnd), TIMER_TEXT_CARET);
+        }
+        if let Some(orig) = ed.cancel_and_close() {
+            self.stack.push(orig);
+        }
+        unsafe {
+            let _ = SetFocus(Some(hwnd));
+        }
+        true
     }
 
     fn finalize_cropped(&mut self, hwnd: HWND) -> Option<(u32, u32, Vec<u8>, ScreenRect)> {
@@ -39,7 +71,7 @@ impl OverlayState {
         }
         let (cw, ch, mut buf) = self.snap.crop_bgra(sel)?;
         render_annotations(&mut buf, cw as i32, ch as i32, sel.x, sel.y, self.stack.items());
-        bake_text_annotations_into_bgra(&mut buf, cw as i32, ch as i32, sel.x, sel.y, self.stack.items());
+        render_text_annotations_bgra(&mut buf, cw as i32, ch as i32, sel.x, sel.y, self.stack.items(), self.font_face, None);
         Some((cw, ch, buf, sel))
     }
 
@@ -53,7 +85,9 @@ impl OverlayState {
     }
 
     pub(crate) fn execute_action(&mut self, hwnd: HWND, cmd: ToolbarCmd) {
-        self.commit_text_if_open(hwnd);
+        if !matches!(cmd, ToolbarCmd::Color(_) | ToolbarCmd::Thickness(_) | ToolbarCmd::TextBold(_)) {
+            self.commit_text_if_open(hwnd);
+        }
         match cmd {
             ToolbarCmd::Tool(t) => {
                 self.record_open = false;
@@ -64,7 +98,10 @@ impl OverlayState {
             }
             ToolbarCmd::Color(i) => {
                 self.color_idx = i.min(COLOR_PRESETS.len() - 1);
-                if let Some(sel_i) = self.stack.selected
+                if let Some(ed) = self.text_editor.as_mut() {
+                    ed.color = COLOR_PRESETS[self.color_idx];
+                    unsafe { let _ = SetFocus(Some(ed.hwnd)); }
+                } else if let Some(sel_i) = self.stack.selected
                     && sel_i < self.stack.items().len()
                 {
                     self.stack.save_undo_snapshot();
@@ -72,25 +109,63 @@ impl OverlayState {
                 }
             }
             ToolbarCmd::Thickness(t) => {
-                self.thickness = t.clamp(1, 20);
-                if let Some(sel_i) = self.stack.selected.filter(|&i| i < self.stack.items().len()) {
-                    self.stack.save_undo_snapshot();
-                    match &mut self.stack.items_mut()[sel_i] {
-                        Annotation::Rect { thickness, .. }
-                        | Annotation::Ellipse { thickness, .. }
-                        | Annotation::Arrow { thickness, .. } => *thickness = self.thickness,
-                        Annotation::Pen { thickness, highlighter, .. } => {
-                            *thickness = if *highlighter {
-                                (self.thickness * 3).clamp(12, 36)
-                            } else {
-                                self.thickness
-                            };
+                let sel_is_text = self
+                    .stack
+                    .selected
+                    .and_then(|i| self.stack.items().get(i))
+                    .is_some_and(|a| matches!(a, Annotation::Text { .. }));
+                if self.text_editor.is_some() || self.tool == ToolKind::Text || sel_is_text {
+                    let sz = match t { 2 => 16, 4 => 22, 8 => 32, other => other.clamp(12, 64) };
+                    self.text_size = sz;
+                    if let Some(ed) = self.text_editor.as_mut() {
+                        ed.size = sz;
+                        ed.update_layout_and_ime_anchor(self.font_face);
+                        unsafe { let _ = SetFocus(Some(ed.hwnd)); }
+                    } else if let Some(sel_i) = self.stack.selected.filter(|&i| i < self.stack.items().len())
+                        && matches!(self.stack.items().get(sel_i), Some(Annotation::Text { .. }))
+                    {
+                        self.stack.save_undo_snapshot();
+                        if let Annotation::Text { size, .. } = &mut self.stack.items_mut()[sel_i] {
+                            *size = sz;
                         }
-                        Annotation::Mosaic { block, .. } => *block = (self.thickness * 3).clamp(6, 36),
-                        _ => {}
+                    }
+                    self.show_wheel_hud(hwnd, format!("字号 {sz} px"));
+                } else {
+                    self.thickness = t.clamp(1, 20);
+                    if let Some(sel_i) = self.stack.selected.filter(|&i| i < self.stack.items().len()) {
+                        self.stack.save_undo_snapshot();
+                        match &mut self.stack.items_mut()[sel_i] {
+                            Annotation::Rect { thickness, .. }
+                            | Annotation::Ellipse { thickness, .. }
+                            | Annotation::Arrow { thickness, .. } => *thickness = self.thickness,
+                            Annotation::Pen { thickness, highlighter, .. } => {
+                                *thickness = if *highlighter {
+                                    (self.thickness * 3).clamp(12, 36)
+                                } else {
+                                    self.thickness
+                                };
+                            }
+                            Annotation::Mosaic { block, .. } => *block = (self.thickness * 3).clamp(6, 36),
+                            _ => {}
+                        }
+                    }
+                    self.show_wheel_hud(hwnd, format!("粗细 {} px", self.thickness));
+                }
+            }
+            ToolbarCmd::TextBold(b) => {
+                self.text_bold = b;
+                if let Some(ed) = self.text_editor.as_mut() {
+                    ed.bold = b;
+                    ed.update_layout_and_ime_anchor(self.font_face);
+                    unsafe { let _ = SetFocus(Some(ed.hwnd)); }
+                } else if let Some(sel_i) = self.stack.selected.filter(|&i| i < self.stack.items().len())
+                    && matches!(self.stack.items().get(sel_i), Some(Annotation::Text { .. }))
+                {
+                    self.stack.save_undo_snapshot();
+                    if let Annotation::Text { bold, .. } = &mut self.stack.items_mut()[sel_i] {
+                        *bold = b;
                     }
                 }
-                self.show_wheel_hud(hwnd, format!("粗细 {} px", self.thickness));
             }
             ToolbarCmd::ShapeFilled(f) => {
                 self.shape_filled = f;

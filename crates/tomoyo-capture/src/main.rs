@@ -34,6 +34,8 @@ mod overlay_icons;
 mod overlay_input;
 #[cfg(windows)]
 mod overlay_text;
+#[cfg(windows)]
+mod overlay_text_editor;
 mod overlay_toolbar;
 #[cfg(windows)]
 mod pin_card;
@@ -117,7 +119,7 @@ fn run_windows_main() {
         stack.push(arrow);
         stack.push(Annotation::Mosaic { rect: ScreenRect { x: 50, y: 10, w: 30, h: 30 }, block: 10, blur: true });
         stack.push(Annotation::StepNumber { cx: 90, cy: 25, number: 1, radius: 13, color: COLOR_PRESETS[3] });
-        stack.push(Annotation::Text { x: 12, y: 80, text: "Tomoyo".into(), size: 16, color: COLOR_PRESETS[0] });
+        stack.push(Annotation::Text { x: 12, y: 80, text: "Tomoyo".into(), size: 16, color: COLOR_PRESETS[0], bold: false });
         render_annotations(&mut crop, cw as i32, ch as i32, 0, 0, stack.items());
         overlay_text::bake_text_annotations_into_bgra(&mut crop, cw as i32, ch as i32, 0, 0, stack.items());
 

@@ -40,7 +40,25 @@ pub enum Annotation {
     Pen { points: Vec<(i32, i32)>, color: AnnotColor, thickness: i32, highlighter: bool },
     Mosaic { rect: ScreenRect, block: i32, blur: bool },
     StepNumber { cx: i32, cy: i32, number: u32, radius: i32, color: AnnotColor },
-    Text { x: i32, y: i32, text: String, size: i32, color: AnnotColor },
+    Text { x: i32, y: i32, text: String, size: i32, color: AnnotColor, bold: bool },
+}
+
+pub fn text_line_height(size: i32) -> i32 {
+    let s = size.clamp(12, 64);
+    ((s as f32 * 1.32).round() as i32).max(s + 4)
+}
+
+pub fn text_bounds_estimate(x: i32, y: i32, text: &str, size: i32, bold: bool) -> ScreenRect {
+    let (s, lh, scale) = (size.clamp(12, 64), text_line_height(size), if bold { 1.07 } else { 1.0 });
+    let (mut max_w, mut lines) = (48i32, 0i32);
+    for line in text.split('\n') {
+        lines += 1;
+        let lw: f32 = line.trim_end_matches('\r').chars().map(|c| {
+            s as f32 * if c == ' ' { 0.34 } else if c.is_ascii() { 0.58 } else { 1.02 }
+        }).sum();
+        max_w = max_w.max((lw * scale).ceil() as i32);
+    }
+    ScreenRect { x: x - 8, y: y - 6, w: max_w + 18, h: lines.max(1) * lh + 12 }
 }
 
 impl Annotation {
@@ -89,7 +107,7 @@ impl Annotation {
             }
             Self::Arrow { x0, y0, cx, cy, x1, y1, .. } => vec![(*x0, *y0), (*cx, *cy), (*x1, *y1)],
             Self::StepNumber { cx, cy, .. } => vec![(*cx, *cy)],
-            Self::Text { x, y, .. } => vec![(*x, *y)],
+            Self::Text { .. } => Vec::new(),
             Self::Pen { points, .. } => {
                 if points.is_empty() { return Vec::new(); }
                 let (mut lx, mut ly, mut rx, mut ry) = (i32::MAX, i32::MAX, i32::MIN, i32::MIN);
@@ -163,9 +181,8 @@ impl Annotation {
             Self::StepNumber { cx, cy, radius, .. } => {
                 (((px - *cx) as f32).powi(2) + ((py - *cy) as f32).powi(2)).sqrt() <= (*radius as f32 + 6.0)
             }
-            Self::Text { x, y, text, size, .. } => {
-                let est_w = (text.chars().map(|c| if c.is_ascii() { (*size as f32 * 0.6) as i32 } else { *size }).sum::<i32>()).max(36);
-                ScreenRect { x: *x - 6, y: *y - 6, w: est_w + 12, h: (*size + 14).max(28) }.contains(px, py)
+            Self::Text { x, y, text, size, bold, .. } => {
+                text_bounds_estimate(*x, *y, text, *size, *bold).contains(px, py)
             }
         }
     }
@@ -189,34 +206,18 @@ impl Annotation {
             Self::Rect { rect, .. } | Self::Ellipse { rect, .. } | Self::Mosaic { rect, .. } => {
                 let (mut l, mut t, mut r, mut b) = (rect.x, rect.y, rect.right(), rect.bottom());
                 match idx {
-                    0 => { l = nx; t = ny; }
-                    1 => t = ny,
-                    2 => { r = nx; t = ny; }
-                    3 => l = nx,
-                    4 => r = nx,
-                    5 => { l = nx; b = ny; }
-                    6 => b = ny,
-                    7 => { r = nx; b = ny; }
-                    _ => {}
+                    0 => { l = nx; t = ny; } 1 => t = ny, 2 => { r = nx; t = ny; }
+                    3 => l = nx, 4 => r = nx, 5 => { l = nx; b = ny; }
+                    6 => b = ny, 7 => { r = nx; b = ny; } _ => {}
                 }
                 *rect = ScreenRect::from_points(l, t, r, b);
             }
             Self::Arrow { x0, y0, cx, cy, x1, y1, .. } => {
-                // Keep relative bend offset when moving endpoints, or move on-curve midpoint directly
-                let (old_mx, old_my) = ((*x0 + *x1) / 2, (*y0 + *y1) / 2);
-                let (off_x, off_y) = (*cx - old_mx, *cy - old_my);
+                let (off_x, off_y) = (*cx - (*x0 + *x1) / 2, *cy - (*y0 + *y1) / 2);
                 match idx {
-                    0 => {
-                        *x0 = nx; *y0 = ny;
-                        *cx = (*x0 + *x1) / 2 + off_x;
-                        *cy = (*y0 + *y1) / 2 + off_y;
-                    }
+                    0 => { *x0 = nx; *y0 = ny; *cx = (*x0 + *x1) / 2 + off_x; *cy = (*y0 + *y1) / 2 + off_y; }
                     1 => { *cx = nx; *cy = ny; }
-                    2 => {
-                        *x1 = nx; *y1 = ny;
-                        *cx = (*x0 + *x1) / 2 + off_x;
-                        *cy = (*y0 + *y1) / 2 + off_y;
-                    }
+                    2 => { *x1 = nx; *y1 = ny; *cx = (*x0 + *x1) / 2 + off_x; *cy = (*y0 + *y1) / 2 + off_y; }
                     _ => {}
                 }
             }
@@ -239,7 +240,7 @@ impl Annotation {
             }
             Self::Mosaic { block, .. } => { *block = (*block + delta * 2).clamp(6, 36); *block }
             Self::StepNumber { radius, .. } => { *radius = (*radius + delta).clamp(10, 26); *radius }
-            Self::Text { size, .. } => { *size = (*size + delta * 2).clamp(12, 52); *size }
+            Self::Text { size, .. } => { *size = (*size + delta * 2).clamp(12, 64); *size }
         }
     }
 
@@ -336,6 +337,15 @@ impl AnnotationStack {
             self.sync_step_counter();
             true
         } else { false }
+    }
+
+    pub fn take_at(&mut self, idx: usize) -> Option<Annotation> {
+        if idx >= self.items.len() { return None; }
+        self.save_undo_snapshot();
+        self.selected = None;
+        let item = self.items.remove(idx);
+        self.sync_step_counter();
+        Some(item)
     }
 
     pub fn items(&self) -> &[Annotation] { &self.items }

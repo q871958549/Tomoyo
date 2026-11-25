@@ -12,6 +12,7 @@ pub enum ToolbarCmd {
     Thickness(i32),
     ShapeFilled(bool),
     MosaicBlur(bool),
+    TextBold(bool),
     Undo,
     ScrollLong,
     Record,
@@ -54,6 +55,8 @@ pub struct ToolbarStyleState {
     pub active_tool: ToolKind,
     pub active_color: usize,
     pub active_thickness: i32,
+    pub text_size: i32,
+    pub text_bold: bool,
     pub shape_filled: bool,
     pub mosaic_blur: bool,
     pub allow_record: bool,
@@ -70,6 +73,8 @@ impl Default for ToolbarStyleState {
             active_tool: ToolKind::Select,
             active_color: 0,
             active_thickness: 4,
+            text_size: 22,
+            text_bold: false,
             shape_filled: false,
             mosaic_blur: false,
             allow_record: true,
@@ -260,6 +265,7 @@ fn build_annot_sub_bar(
             (ToolbarCmd::MosaicBlur(false), "马赛克", !st.mosaic_blur),
             (ToolbarCmd::MosaicBlur(true), "模糊", st.mosaic_blur),
         ],
+        ToolKind::Text => vec![(ToolbarCmd::TextBold(!st.text_bold), "加粗", st.text_bold)],
         _ => Vec::new(),
     };
     let style_w: i32 = if style_pills.is_empty() { 0 } else { style_pills.len() as i32 * 44 + 9 };
@@ -267,13 +273,27 @@ fn build_annot_sub_bar(
     let sub_x = bar_x.clamp(8, (screen_w - sub_w - 8).max(8));
     let mut sx = sub_x + 8;
 
-    for (t, tip) in [(2, "细 · 滚轮可无级调节"), (4, "中 · 滚轮可无级调节"), (8, "粗 · 滚轮可无级调节")] {
+    let is_text = st.active_tool == ToolKind::Text;
+    let size_dots = if is_text {
+        [
+            (2, "小字 16px · 滚轮可无级调节", st.text_size <= 18),
+            (4, "中字 22px · 滚轮可无级调节", (19..=27).contains(&st.text_size)),
+            (8, "大字 32px · 滚轮可无级调节", st.text_size >= 28),
+        ]
+    } else {
+        [
+            (2, "细 · 滚轮可无级调节", (st.active_thickness - 2).abs() <= 1),
+            (4, "中 · 滚轮可无级调节", (st.active_thickness - 4).abs() <= 1),
+            (8, "粗 · 滚轮可无级调节", (st.active_thickness - 8).abs() <= 1),
+        ]
+    };
+    for (t, tip, active) in size_dots {
         hits.push(ToolbarHit {
             cmd: ToolbarCmd::Thickness(t),
             rect: ScreenRect { x: sx, y: sub_y + 4, w: 24, h: 26 },
             tooltip: tip.into(),
             pill_text: "",
-            active: (st.active_thickness - t).abs() <= 1,
+            active,
             accent: false, danger: false, swatch: None, thickness_dot: Some(t),
         });
         sx += 26;

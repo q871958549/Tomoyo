@@ -11,12 +11,15 @@ use crate::overlay_input::{
     cursor_for_hover, handle_key_down, handle_lbutton_dblclk, handle_lbutton_down,
     handle_mouse_move, handle_mouse_wheel,
 };
-use crate::overlay_text::{paint_overlay_gdi_labels, InlineTextEditor};
+use crate::overlay_text::{paint_overlay_gdi_labels, render_text_annotations_bgra, TextMaskCache};
+use crate::overlay_text_editor::{
+    InlineTextEditor, TIMER_TEXT_CARET, WM_APP_TEXT_CANCEL, WM_APP_TEXT_COMMIT, WM_APP_TEXT_SYNC,
+};
 use crate::screen::{capture_virtual_desktop, enumerate_snap_windows, DesktopSnapshot, ScreenRect};
 use crate::snap_detect::{SnapCandidate, SnapContext};
 use crate::win_record::RecordRequest;
 use std::ffi::c_void;
-use tomoyo_core::{CaptureToolHotkeys, TomoyoConfig};
+use tomoyo_core::{CaptureToolHotkeys, PrivateFonts, TomoyoConfig};
 use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
@@ -26,7 +29,7 @@ use windows::Win32::Graphics::Gdi::{
     HBITMAP, HDC, HFONT, OUT_DEFAULT_PRECIS, PAINTSTRUCT, SRCCOPY,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
-use windows::Win32::UI::Input::KeyboardAndMouse::{ReleaseCapture, SetFocus, VK_ESCAPE, VK_RETURN};
+use windows::Win32::UI::Input::KeyboardAndMouse::{ReleaseCapture, SetFocus};
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DispatchMessageW, GetCursorPos, GetMessageW, GetWindowLongPtrW,
     KillTimer, LoadCursorW, PostQuitMessage, RegisterClassW, SetCursor, SetWindowLongPtrW,
@@ -62,9 +65,13 @@ pub(crate) enum DragMode {
     Drawing(i32, i32),
     MoveAnnot(usize, i32, i32),
     EditControl(usize, usize),
+    PendingTextDrag(i32, i32, i32, i32),
+    MoveTextEditor(i32, i32, i32, i32),
 }
 
 pub(crate) struct OverlayState {
+    pub _private_fonts: PrivateFonts,
+    pub font_face: &'static str,
     pub snap: DesktopSnapshot,
     pub dimmed: Vec<u8>,
     pub snap_ctx: SnapContext,
@@ -80,6 +87,7 @@ pub(crate) struct OverlayState {
     pub thickness: i32,
     pub step_radius: i32,
     pub text_size: i32,
+    pub text_bold: bool,
     pub shape_filled: bool,
     pub mosaic_blur: bool,
     pub record_open: bool,
@@ -97,6 +105,7 @@ pub(crate) struct OverlayState {
     pub hovered_ctrl: Option<(usize, usize)>,
     pub wheel_hud: Option<String>,
     pub text_editor: Option<InlineTextEditor>,
+    pub text_cache: TextMaskCache,
     pub layout: ToolbarLayout,
     pub mem_dc: HDC,
     pub dib_bmp: HBITMAP,
@@ -146,7 +155,9 @@ pub fn run_capture_overlay(mode: CaptureMode) -> Result<CaptureOutcome, String> 
         let dib_bmp = CreateDIBSection(Some(mem_dc), &bmi, DIB_RGB_COLORS, &mut bits, None, 0)
             .map_err(|e| format!("overlay DIB failed: {e}"))?;
         let _ = SelectObject(mem_dc, dib_bmp.into());
-        let face: Vec<u16> = "Microsoft YaHei UI".encode_utf16().chain(std::iter::once(0)).collect();
+        let private_fonts = PrivateFonts::load_default();
+        let font_face = private_fonts.medium_family();
+        let face: Vec<u16> = font_face.encode_utf16().chain(std::iter::once(0)).collect();
         let font = CreateFontW(
             -13, 0, 0, 0, FW_NORMAL.0 as i32, 0, 0, 0, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
             CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, (DEFAULT_PITCH.0 | FF_DONTCARE.0) as u32,
@@ -166,16 +177,18 @@ pub fn run_capture_overlay(mode: CaptureMode) -> Result<CaptureOutcome, String> 
         let rec_audio = match cap.record_audio.as_str() { "system" => 1, "mic" => 2, "both" => 3, _ => 0 };
         let rec_cursor = cap.record_cursor;
         let mut st = Box::new(OverlayState {
+            _private_fonts: private_fonts, font_face,
             snap, dimmed, snap_ctx, mode, save_dir: cap.save_dir,
             hex_lower: cap.copy_hex_lowercase, rgb_mode: false,
             tool_hotkeys: cap.tool_hotkeys, sel: None, hover_snap,
-            tool: ToolKind::Select, color_idx: 0, thickness: 4, step_radius: 13, text_size: 20,
-            shape_filled: false, mosaic_blur: false,
+            tool: ToolKind::Select, color_idx: 0, thickness: 4, step_radius: 13, text_size: 22,
+            text_bold: false, shape_filled: false, mosaic_blur: false,
             record_open: mode == CaptureMode::Record, rec_is_gif, rec_fps, rec_audio, rec_cursor,
             stack: AnnotationStack::default(), live_ann: None, pen_pts: Vec::new(),
             drag: DragMode::None, cursor: init_cursor, hovered_cmd: None, hovered_annot: None,
             hovered_ctrl: None, wheel_hud: None,
-            text_editor: None, layout: ToolbarLayout::default(), mem_dc, dib_bmp,
+            text_editor: None, text_cache: TextMaskCache::default(),
+            layout: ToolbarLayout::default(), mem_dc, dib_bmp,
             dib_bits: bits as *mut u8, font, outcome: None,
         });
         let hwnd = CreateWindowExW(
@@ -188,19 +201,6 @@ pub fn run_capture_overlay(mode: CaptureMode) -> Result<CaptureOutcome, String> 
 
         let mut msg = MSG::default();
         while GetMessageW(&mut msg, None, 0, 0).into() {
-            if msg.message == WM_KEYDOWN && st.text_editor.is_some() {
-                let vk = msg.wParam.0 as u16;
-                if vk == VK_RETURN.0 {
-                    st.commit_text_if_open(hwnd);
-                    let _ = InvalidateRect(Some(hwnd), None, false);
-                    continue;
-                } else if vk == VK_ESCAPE.0 {
-                    if let Some(ed) = st.text_editor.take() { ed.cancel_and_close(); }
-                    let _ = SetFocus(Some(hwnd));
-                    let _ = InvalidateRect(Some(hwnd), None, false);
-                    continue;
-                }
-            }
             let _ = TranslateMessage(&msg);
             DispatchMessageW(&msg);
         }
@@ -221,6 +221,33 @@ unsafe extern "system" fn overlay_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, 
             unsafe { let _ = KillTimer(Some(hwnd), TIMER_WHEEL_HUD); let _ = InvalidateRect(Some(hwnd), None, false); }
             LRESULT(0)
         }
+        WM_TIMER if wparam.0 == TIMER_TEXT_CARET => {
+            if let Some(ed) = st.text_editor.as_mut() {
+                ed.caret_visible = !ed.caret_visible;
+                unsafe { let _ = InvalidateRect(Some(hwnd), None, false); }
+            } else {
+                unsafe { let _ = KillTimer(Some(hwnd), TIMER_TEXT_CARET); }
+            }
+            LRESULT(0)
+        }
+        WM_APP_TEXT_SYNC => {
+            if let Some(ed) = st.text_editor.as_mut() {
+                ed.sync_from_hwnd(st.font_face);
+                st.restart_text_caret_timer(hwnd);
+                unsafe { let _ = InvalidateRect(Some(hwnd), None, false); }
+            }
+            LRESULT(0)
+        }
+        WM_APP_TEXT_COMMIT => {
+            st.commit_text_if_open(hwnd);
+            unsafe { let _ = InvalidateRect(Some(hwnd), None, false); }
+            LRESULT(0)
+        }
+        WM_APP_TEXT_CANCEL => {
+            st.cancel_text_if_open(hwnd);
+            unsafe { let _ = InvalidateRect(Some(hwnd), None, false); }
+            LRESULT(0)
+        }
         WM_SETCURSOR => {
             if let Ok(cur) = unsafe { LoadCursorW(None, cursor_for_hover(st)) } {
                 unsafe { SetCursor(Some(cur)); }
@@ -232,6 +259,8 @@ unsafe extern "system" fn overlay_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, 
             let hdc = unsafe { BeginPaint(hwnd, &mut ps) };
             let style = ToolbarStyleState {
                 active_tool: st.tool, active_color: st.color_idx, active_thickness: st.thickness,
+                text_size: st.text_editor.as_ref().map_or(st.text_size, |e| e.size),
+                text_bold: st.text_editor.as_ref().map_or(st.text_bold, |e| e.bold),
                 shape_filled: st.shape_filled, mosaic_blur: st.mosaic_blur,
                 allow_record: true, record_open: st.record_open, rec_is_gif: st.rec_is_gif,
                 rec_fps: st.rec_fps, rec_audio: st.rec_audio, rec_cursor: st.rec_cursor,
@@ -247,8 +276,17 @@ unsafe extern "system" fn overlay_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, 
                 st.stack.selected, st.hovered_annot, st.live_ann.as_ref(), st.cursor, show_loupe,
                 &st.layout, st.hovered_cmd, st.wheel_hud.as_deref(),
             );
+            if st.sel.is_some() {
+                render_text_annotations_bgra(
+                    dst, st.snap.width, st.snap.height, 0, 0, st.stack.items(), st.font_face,
+                    Some(&mut st.text_cache),
+                );
+                if let Some(ed) = &st.text_editor {
+                    ed.paint_into_bgra(dst, st.snap.width, st.snap.height, st.font_face, &mut st.text_cache);
+                }
+            }
             paint_overlay_gdi_labels(
-                st.mem_dc, st.font, &st.snap, st.sel, st.hover_snap, st.snap_ctx.cycle_count, st.stack.items(),
+                st.mem_dc, st.font, &st.snap, st.sel, st.hover_snap, st.snap_ctx.cycle_count,
                 st.cursor, show_loupe, &st.layout, st.hovered_cmd, st.hex_lower, st.rgb_mode, st.wheel_hud.as_deref(),
             );
             unsafe {
@@ -287,6 +325,18 @@ unsafe extern "system" fn overlay_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, 
                     }
                     st.pen_pts.clear();
                 }
+                DragMode::PendingTextDrag(dx, dy, ..) => {
+                    if let Some(ed) = st.text_editor.as_mut() {
+                        ed.place_caret_at(dx, dy, st.font_face);
+                        st.restart_text_caret_timer(hwnd);
+                    }
+                }
+                DragMode::MoveTextEditor(..) => {
+                    if let Some(ed) = st.text_editor.as_mut() {
+                        ed.update_layout_and_ime_anchor(st.font_face);
+                        unsafe { let _ = SetFocus(Some(ed.hwnd)); }
+                    }
+                }
                 _ => {}
             }
             unsafe { let _ = InvalidateRect(Some(hwnd), None, false); }
@@ -298,7 +348,7 @@ unsafe extern "system" fn overlay_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, 
             LRESULT(0)
         }
         WM_RBUTTONUP => {
-            if st.stack.selected.take().is_some() {
+            if st.commit_text_if_open(hwnd) || st.stack.selected.take().is_some() {
                 unsafe { let _ = InvalidateRect(Some(hwnd), None, false); }
             } else if st.sel.is_some() {
                 st.sel = None;

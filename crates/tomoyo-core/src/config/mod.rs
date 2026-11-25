@@ -24,8 +24,8 @@ pub use hotkey::{
     ParsedHotkey,
 };
 pub use modules::{
-    sanitize_filters_and_plugins, PLUGIN_CAPTURE, PLUGIN_CLIPBOARD, PLUGIN_MD_EDITOR,
-    PLUGIN_NOTES, PLUGIN_OCR, PLUGIN_TRANSLATE,
+    migrate_legacy_plugin_config, sanitize_filters_and_plugins, PLUGIN_CAPTURE, PLUGIN_CLIPBOARD,
+    PLUGIN_MD_EDITOR, PLUGIN_NOTES, PLUGIN_OCR, PLUGIN_TRANSLATE,
 };
 pub use paths::{
     default_excluded_apps, default_hotkey_excluded_apps, default_web_searches, normalize_exe_name,
@@ -177,8 +177,14 @@ impl TomoyoConfig {
             match toml::from_str::<Self>(&raw) {
                 Ok(mut cfg) => {
                     let notes = cfg.sanitize();
+                    let migrated = migrate_legacy_plugin_config(&mut cfg);
+                    if migrated {
+                        tracing::info!("Migrated legacy plugin hotkeys/settings into Protocol v3 config");
+                    }
                     if !notes.is_empty() {
                         tracing::warn!("Sanitized config.toml on load: {}", notes.join("; "));
+                    }
+                    if migrated || !notes.is_empty() {
                         let _ = cfg.save_to_path(path);
                     }
                     return cfg;

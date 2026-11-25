@@ -118,6 +118,8 @@ impl OverlayState {
                     active_tool: self.tool,
                     active_color: self.color_idx,
                     active_thickness: self.thickness,
+                    text_size: self.text_size,
+                    text_bold: false,
                     shape_filled: self.shape_filled,
                     mosaic_blur: self.mosaic_blur,
                     allow_record: true,
@@ -164,11 +166,12 @@ impl OverlayState {
         if !self.ann_stack.items().is_empty() {
             render_annotations(&mut buf, w as i32, h as i32, r.x, r.y, self.ann_stack.items());
             for ann in self.ann_stack.items() {
-                if let Annotation::Text { x, y, text, size, color } = ann
+                if let Annotation::Text { x, y, text, size, color, bold } = ann
                     && !text.trim().is_empty()
                     && let Ok(cs) = CString::new(text.as_str())
                 {
-                    let f = CString::new(format!("阿里巴巴普惠体 3.0 55 Regular {}px", (*size).max(12))).unwrap();
+                    let wt = if *bold { "Bold " } else { "" };
+                    let f = CString::new(format!("阿里巴巴普惠体 3.0 65 Medium {wt}{}px", (*size).max(12))).unwrap();
                     let rgb = ((color.0 as u32) << 16) | ((color.1 as u32) << 8) | (color.2 as u32);
                     unsafe {
                         tomoyo_cap_bake_pango_text(
@@ -219,6 +222,7 @@ impl OverlayState {
             ToolbarCmd::Color(i) => { self.color_idx = i; self.rebuild_layout(); }
             ToolbarCmd::Thickness(t) => { self.thickness = t; self.show_wheel_hud(format!("粗细 {t} px")); self.rebuild_layout(); }
             ToolbarCmd::ShapeFilled(f) => { self.shape_filled = f; self.rebuild_layout(); }
+            ToolbarCmd::TextBold(_) => {}
             ToolbarCmd::MosaicBlur(b) => { self.mosaic_blur = b; self.rebuild_layout(); }
             ToolbarCmd::Undo => { self.ann_stack.undo(); }
             ToolbarCmd::Cancel => { self.outcome = CaptureOutcome::Done; return true; }
@@ -293,9 +297,10 @@ unsafe extern "C" fn on_draw(ctx: *mut c_void, cr: *mut c_void, ww: c_int, wh: c
         draw_txt(cr, &sm_fnt, 0x94A3B8, 0, &format!("({},{}) Shift/C", st.cursor.0, st.cursor.1), [(lr.x + 12) as f64 * sx, (lr.y + 168) as f64 * sy, 144.0 * sx, 16.0 * sy]);
     }
     for ann in st.ann_stack.items() {
-        if let Annotation::Text { x, y, text, size, color } = ann {
+        if let Annotation::Text { x, y, text, size, color, bold } = ann {
             let rgb = ((color.0 as u32) << 16) | ((color.1 as u32) << 8) | (color.2 as u32);
-            let tf = CString::new(format!("阿里巴巴普惠体 3.0 55 Regular {}px", (*size).max(12))).unwrap();
+            let wt = if *bold { "Bold " } else { "" };
+            let tf = CString::new(format!("阿里巴巴普惠体 3.0 65 Medium {wt}{}px", (*size).max(12))).unwrap();
             draw_txt(cr, &tf, rgb, 0, text, [*x as f64 * sx, *y as f64 * sy, 480.0 * sx, 60.0 * sy]);
         }
     }

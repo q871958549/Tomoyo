@@ -8,7 +8,7 @@ use crate::annotate::{
 use crate::export::copy_text_to_clipboard;
 use crate::overlay::{DragMode, OverlayState};
 use crate::overlay_draw::{hit_test_handle, resize_rect_by_handle, ToolbarCmd};
-use crate::overlay_text::InlineTextEditor;
+use crate::overlay_text_editor::{InlineTextEditor, TextHitZone};
 use crate::screen::ScreenRect;
 use tomoyo_core::CaptureToolHotkeys;
 use windows::core::PCWSTR;
@@ -19,7 +19,7 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     VK_SHIFT, VK_SPACE, VK_TAB,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    IDC_CROSS, IDC_HAND, IDC_SIZEALL, IDC_SIZENESW, IDC_SIZENS, IDC_SIZENWSE, IDC_SIZEWE,
+    IDC_CROSS, IDC_HAND, IDC_IBEAM, IDC_SIZEALL, IDC_SIZENESW, IDC_SIZENS, IDC_SIZENWSE, IDC_SIZEWE,
 };
 
 fn box_handle_cursor(h_idx: usize) -> PCWSTR {
@@ -45,7 +45,7 @@ pub fn cursor_for_hover(st: &OverlayState) -> PCWSTR {
             _ => IDC_SIZEALL,
         };
     }
-    if matches!(st.drag, DragMode::MoveAnnot(..)) {
+    if matches!(st.drag, DragMode::MoveAnnot(..) | DragMode::MoveTextEditor(..)) {
         return IDC_SIZEALL;
     }
     if let DragMode::Resizing(h_idx, _) = st.drag {
@@ -53,6 +53,13 @@ pub fn cursor_for_hover(st: &OverlayState) -> PCWSTR {
     }
     if matches!(st.drag, DragMode::Moving(..)) {
         return IDC_SIZEALL;
+    }
+    if let Some(ed) = &st.text_editor {
+        match ed.hit_test(st.cursor.0, st.cursor.1) {
+            TextHitZone::FrameDrag => return IDC_SIZEALL,
+            TextHitZone::Body => return IDC_IBEAM,
+            TextHitZone::Outside => {}
+        }
     }
     if st.drag == DragMode::None && st.sel.is_some() {
         if let Some((idx, h_idx)) = st.hovered_ctrl {
@@ -82,6 +89,13 @@ pub fn cursor_for_hover(st: &OverlayState) -> PCWSTR {
 
 pub fn handle_mouse_wheel(st: &mut OverlayState, hwnd: HWND, wheel_delta: i32) {
     let step = if wheel_delta > 0 { 1 } else { -1 };
+    if let Some(ed) = st.text_editor.as_mut() {
+        ed.size = (ed.size + step * 2).clamp(12, 64);
+        st.text_size = ed.size;
+        ed.update_layout_and_ime_anchor(st.font_face);
+        st.show_wheel_hud(hwnd, format!("字号 {} px", st.text_size));
+        return;
+    }
     let target = st.hovered_annot.or(st.stack.selected);
     if let Some(idx) = target.filter(|&i| i < st.stack.items().len()) {
         let sz = st.stack.items_mut()[idx].adjust_size(step);
@@ -103,7 +117,7 @@ pub fn handle_mouse_wheel(st: &mut OverlayState, hwnd: HWND, wheel_delta: i32) {
             st.show_wheel_hud(hwnd, format!("序号 {} px", st.step_radius));
         }
         ToolKind::Text => {
-            st.text_size = (st.text_size + step * 2).clamp(12, 52);
+            st.text_size = (st.text_size + step * 2).clamp(12, 64);
             st.show_wheel_hud(hwnd, format!("字号 {} px", st.text_size));
         }
         _ => {
@@ -115,11 +129,28 @@ pub fn handle_mouse_wheel(st: &mut OverlayState, hwnd: HWND, wheel_delta: i32) {
 
 pub fn handle_lbutton_down(st: &mut OverlayState, hwnd: HWND, x: i32, y: i32) {
     st.cursor = (x, y);
-    st.commit_text_if_open(hwnd);
     if let Some(hit) = st.layout.hits.iter().find(|h| h.rect.contains(x, y)) {
         let cmd = hit.cmd;
         st.execute_action(hwnd, cmd);
         return;
+    }
+    let mut committed_open_editor = false;
+    if let Some(ed) = &st.text_editor {
+        match ed.hit_test(x, y) {
+            TextHitZone::FrameDrag => {
+                st.drag = DragMode::MoveTextEditor(x, y, ed.x, ed.y);
+                unsafe { SetCapture(hwnd); let _ = InvalidateRect(Some(hwnd), None, false); }
+                return;
+            }
+            TextHitZone::Body => {
+                st.drag = DragMode::PendingTextDrag(x, y, ed.x, ed.y);
+                unsafe { SetCapture(hwnd); }
+                return;
+            }
+            TextHitZone::Outside => {
+                committed_open_editor = st.commit_text_if_open(hwnd);
+            }
+        }
     }
     // Always-on direct manipulation: grab ANY existing annotation's control handle or body directly
     // without needing to switch back to a separate Select tool!
@@ -138,6 +169,10 @@ pub fn handle_lbutton_down(st: &mut OverlayState, hwnd: HWND, x: i32, y: i32) {
             unsafe { SetCapture(hwnd); let _ = InvalidateRect(Some(hwnd), None, false); }
             return;
         }
+        if committed_open_editor {
+            unsafe { let _ = InvalidateRect(Some(hwnd), None, false); }
+            return;
+        }
         st.stack.selected = None;
     }
     if st.sel.is_some() && st.tool != ToolKind::Select {
@@ -150,7 +185,11 @@ pub fn handle_lbutton_down(st: &mut OverlayState, hwnd: HWND, x: i32, y: i32) {
             return;
         }
         if st.tool == ToolKind::Text {
-            st.text_editor = InlineTextEditor::spawn(hwnd, x, y, st.text_size, COLOR_PRESETS[st.color_idx]);
+            st.text_editor = InlineTextEditor::spawn(
+                hwnd, x, y, st.text_size, COLOR_PRESETS[st.color_idx], st.text_bold, st.font_face,
+            );
+            st.restart_text_caret_timer(hwnd);
+            unsafe { let _ = InvalidateRect(Some(hwnd), None, false); }
             return;
         }
         st.pen_pts.clear();
@@ -175,6 +214,9 @@ pub fn handle_lbutton_down(st: &mut OverlayState, hwnd: HWND, x: i32, y: i32) {
 }
 
 pub fn handle_lbutton_dblclk(st: &mut OverlayState, hwnd: HWND, x: i32, y: i32) {
+    if st.text_editor.is_some() {
+        return;
+    }
     if let Some((idx, 1)) = st.stack.hit_test_any_control(x, y)
         && matches!(st.stack.items().get(idx), Some(Annotation::Arrow { .. })) {
             st.stack.save_undo_snapshot();
@@ -183,6 +225,23 @@ pub fn handle_lbutton_dblclk(st: &mut OverlayState, hwnd: HWND, x: i32, y: i32) 
             unsafe { let _ = InvalidateRect(Some(hwnd), None, false); }
             return;
         }
+    if let Some(idx) = st.stack.hit_test_top(x, y)
+        && matches!(st.stack.items().get(idx), Some(Annotation::Text { .. }))
+        && let Some(orig) = st.stack.take_at(idx)
+    {
+        if let Annotation::Text { size, color, bold, .. } = &orig {
+            st.text_size = *size;
+            st.text_bold = *bold;
+            if let Some(ci) = COLOR_PRESETS.iter().position(|c| c == color) {
+                st.color_idx = ci;
+            }
+        }
+        st.tool = ToolKind::Text;
+        st.text_editor = InlineTextEditor::spawn_for_reedit(hwnd, orig, st.font_face);
+        st.restart_text_caret_timer(hwnd);
+        unsafe { let _ = InvalidateRect(Some(hwnd), None, false); }
+        return;
+    }
     if st.sel.is_some_and(ScreenRect::is_valid)
         && st.tool == ToolKind::Select
         && st.stack.hit_test_top(x, y).is_none()
@@ -231,6 +290,23 @@ pub fn handle_mouse_move(st: &mut OverlayState, hwnd: HWND, x: i32, y: i32) {
         DragMode::EditControl(idx, h_idx) => {
             if idx < st.stack.items().len() {
                 st.stack.items_mut()[idx].move_control(h_idx, x, y);
+            }
+        }
+        DragMode::PendingTextDrag(sx, sy, ox, oy) => {
+            if (x - sx).abs() > 4 || (y - sy).abs() > 4 {
+                st.drag = DragMode::MoveTextEditor(sx, sy, ox, oy);
+                if let Some(ed) = st.text_editor.as_mut() {
+                    ed.x = (ox + x - sx).clamp(4, (st.snap.width - 24).max(4));
+                    ed.y = (oy + y - sy).clamp(4, (st.snap.height - 24).max(4));
+                    ed.update_layout_and_ime_anchor(st.font_face);
+                }
+            }
+        }
+        DragMode::MoveTextEditor(sx, sy, ox, oy) => {
+            if let Some(ed) = st.text_editor.as_mut() {
+                ed.x = (ox + x - sx).clamp(4, (st.snap.width - 24).max(4));
+                ed.y = (oy + y - sy).clamp(4, (st.snap.height - 24).max(4));
+                ed.update_layout_and_ime_anchor(st.font_face);
             }
         }
         DragMode::Drawing(sx, sy) => {

@@ -369,6 +369,7 @@ pub fn draw_toolbar_icon(
         | ToolbarCmd::Thickness(_)
         | ToolbarCmd::ShapeFilled(_)
         | ToolbarCmd::MosaicBlur(_)
+        | ToolbarCmd::TextBold(_)
         | ToolbarCmd::RecFormat(_)
         | ToolbarCmd::RecFps(_)
         | ToolbarCmd::RecAudio(_)
