@@ -1,54 +1,64 @@
-//! Theme-matched Win32 modal quick-add/edit dialog for left sidebar custom filter tags.
+//! Frameless Fluent SDF + ClearType modal quick-add/edit dialog matching Tomoyo's launcher UI.
 
 use super::bootstrap::{apply_dwm_attributes, read_edit_text};
-use super::AppShell;
+use super::filter_dialog_ui::{
+    hit_test_dlg, DlgGfx, DlgHit, DlgRenderParams, DLG_H_DIP, DLG_W_DIP, FIELD_RECTS, HEADER_H_DIP,
+    PRESETS,
+};
+use super::{suppress_edit_change, AppShell, EM_SETCUEBANNER};
 use std::ffi::c_void;
-use tomoyo_core::CustomFilterTab;
+use tomoyo_core::{CustomFilterTab, Lang, TypographyConfig};
 use tomoyo_protocol::SearchFilter;
 use windows::core::{w, PCWSTR};
-use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, RECT, WPARAM};
+use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
-    CreateFontW, CreateSolidBrush, DeleteObject, FillRect, SetBkColor, SetBkMode, SetTextColor,
-    CLEARTYPE_QUALITY, CLIP_DEFAULT_PRECIS, DEFAULT_CHARSET, DEFAULT_PITCH, FF_DONTCARE,
-    FW_MEDIUM, FW_NORMAL, HBRUSH, HDC, HFONT, OUT_DEFAULT_PRECIS, TRANSPARENT,
+    BeginPaint, CreateFontW, CreateSolidBrush, DeleteObject, EndPaint, InvalidateRect,
+    ScreenToClient, SetBkColor, SetTextColor, CLEARTYPE_QUALITY, CLIP_DEFAULT_PRECIS,
+    DEFAULT_CHARSET, DEFAULT_PITCH, FF_DONTCARE, FW_NORMAL, HBRUSH, HDC, HFONT, OUT_DEFAULT_PRECIS,
+    PAINTSTRUCT,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
-use windows::Win32::UI::Input::KeyboardAndMouse::{EnableWindow, SetFocus};
+use windows::Win32::UI::Controls::WM_MOUSELEAVE;
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+    EnableWindow, SetFocus, TrackMouseEvent, TME_LEAVE, TRACKMOUSEEVENT,
+};
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetClientRect, GetMessageW,
-    GetWindowLongPtrW, GetWindowRect, IsDialogMessageW, LoadCursorW, RegisterClassW,
-    SendMessageW, SetForegroundWindow, SetWindowLongPtrW, SetWindowPos, SetWindowTextW,
-    ShowWindow, TranslateMessage, BM_CLICK, BN_CLICKED, BS_DEFPUSHBUTTON, BS_PUSHBUTTON,
-    ES_AUTOHSCROLL, ES_LEFT, GWLP_USERDATA, HMENU, HWND_TOP, IDC_ARROW, MSG, SW_SHOW, WINDOW_STYLE,
-    WM_CLOSE, WM_COMMAND, WM_CTLCOLORBTN, WM_CTLCOLOREDIT, WM_CTLCOLORSTATIC, WM_ERASEBKGND,
-    WM_KEYDOWN, WM_SETFONT, WNDCLASSW, WS_BORDER, WS_CAPTION, WS_CHILD, WS_POPUP, WS_SYSMENU,
-    WS_TABSTOP, WS_VISIBLE,
+    CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetClientRect, GetCursorPos,
+    GetMessageW, GetWindowLongPtrW, GetWindowRect, IsDialogMessageW, LoadCursorW, RegisterClassW,
+    SendMessageW, SetCursor, SetForegroundWindow, SetWindowLongPtrW, SetWindowPos, SetWindowTextW,
+    ShowWindow, TranslateMessage, ES_AUTOHSCROLL, ES_LEFT, GWLP_USERDATA, HMENU, HTCAPTION,
+    HTCLIENT, HWND_TOP, IDC_ARROW, IDC_HAND, MSG, SW_SHOW, WINDOW_STYLE, WM_CLOSE, WM_COMMAND,
+    WM_CTLCOLOREDIT, WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONUP, WM_MOUSEMOVE,
+    WM_NCHITTEST, WM_PAINT, WM_SETCURSOR, WM_SETFONT, WNDCLASSW, WS_CHILD, WS_CLIPCHILDREN,
+    WS_POPUP, WS_TABSTOP, WS_VISIBLE,
 };
 
-const ID_NAME_EDIT: usize = 201;
-const ID_EXT_EDIT: usize = 202;
-const ID_EXPR_EDIT: usize = 203;
-const ID_STATUS_LBL: usize = 204;
-const ID_OK_BTN: usize = 1;
-const ID_CANCEL_BTN: usize = 2;
+const ID_EDITS: [usize; 3] = [201, 202, 203];
+const EN_SETFOCUS_CODE: u32 = 0x0100;
+const EN_KILLFOCUS_CODE: u32 = 0x0200;
 
-struct FilterDlgState {
+struct DlgState {
+    pal: crate::renderer::ThemePalette,
+    lang: Lang,
+    typo: TypographyConfig,
+    font_regular: &'static str,
+    font_medium: &'static str,
+    is_edit: bool,
+    scale: f32,
+    gfx: DlgGfx,
     bg_brush: HBRUSH,
-    edit_brush: HBRUSH,
     bg_ref: COLORREF,
-    edit_ref: COLORREF,
     fg_ref: COLORREF,
-    err_ref: COLORREF,
-    name_hwnd: HWND,
-    ext_hwnd: HWND,
-    expr_hwnd: HWND,
-    status_hwnd: HWND,
+    edits: [HWND; 3],
+    focused: Option<u8>,
+    hovered: Option<DlgHit>,
+    mouse_tracked: bool,
+    error: Option<String>,
     saved: bool,
     done: bool,
     out_label: String,
     out_exts: Vec<String>,
     out_expr: String,
-    zh: bool,
 }
 
 fn parse_extensions(raw: &str) -> Vec<String> {
@@ -62,15 +72,25 @@ fn parse_extensions(raw: &str) -> Vec<String> {
     out
 }
 
-fn make_ui_font(scale: f32, bold: bool) -> HFONT {
-    let h = -(14.5 * scale).round() as i32;
-    let wt = if bold { FW_MEDIUM.0 } else { FW_NORMAL.0 } as i32;
-    unsafe {
-        CreateFontW(
-            h, 0, 0, 0, wt, 0, 0, 0, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-            CLEARTYPE_QUALITY, (DEFAULT_PITCH.0 | FF_DONTCARE.0) as u32, w!("Segoe UI"),
-        )
+fn try_submit(st: &mut DlgState) {
+    let name = read_edit_text(st.edits[0]).trim().to_string();
+    let exts = parse_extensions(&read_edit_text(st.edits[1]));
+    let expr = read_edit_text(st.edits[2]).trim().to_string();
+    if name.is_empty() {
+        st.error = Some(st.lang.pick("请输入标签名称", "Please enter a tag name").into());
+        unsafe { let _ = SetFocus(Some(st.edits[0])); }
+        return;
     }
+    if exts.is_empty() && expr.is_empty() {
+        st.error = Some(st.lang.pick("请填写至少一个扩展名或 Everything 表达式", "Provide extensions or an Everything expression").into());
+        unsafe { let _ = SetFocus(Some(st.edits[1])); }
+        return;
+    }
+    st.out_label = name;
+    st.out_exts = exts;
+    st.out_expr = expr;
+    st.saved = true;
+    st.done = true;
 }
 
 unsafe extern "system" fn filter_dlg_proc(
@@ -79,71 +99,131 @@ unsafe extern "system" fn filter_dlg_proc(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
-    let ptr = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as *mut FilterDlgState;
+    let ptr = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as *mut DlgState;
     if ptr.is_null() {
         return unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) };
     }
     let st = unsafe { &mut *ptr };
     match msg {
-        WM_ERASEBKGND => {
-            let dc = HDC(wparam.0 as *mut c_void);
+        WM_ERASEBKGND => LRESULT(1),
+        WM_PAINT => {
+            let mut ps = PAINTSTRUCT::default();
+            let hdc = unsafe { BeginPaint(hwnd, &mut ps) };
             let mut rc = RECT::default();
-            unsafe { let _ = GetClientRect(hwnd, &mut rc); let _ = FillRect(dc, &rc, st.bg_brush); }
-            LRESULT(1)
+            unsafe { let _ = GetClientRect(hwnd, &mut rc); }
+            st.gfx.paint(hdc, rc.right - rc.left, rc.bottom - rc.top, &DlgRenderParams {
+                pal: st.pal, lang: st.lang, typo: &st.typo,
+                font_regular: st.font_regular, font_medium: st.font_medium,
+                is_edit: st.is_edit, scale: st.scale,
+                focused: st.focused, hovered: st.hovered, error: st.error.as_deref(),
+            });
+            unsafe { let _ = EndPaint(hwnd, &ps); }
+            LRESULT(0)
         }
-        WM_CTLCOLORSTATIC | WM_CTLCOLORBTN => {
-            let dc = HDC(wparam.0 as *mut c_void);
-            let ctl = HWND(lparam.0 as *mut c_void);
-            unsafe {
-                let _ = SetBkMode(dc, TRANSPARENT);
-                let _ = SetBkColor(dc, st.bg_ref);
-                let _ = SetTextColor(dc, if ctl == st.status_hwnd { st.err_ref } else { st.fg_ref });
+        WM_NCHITTEST => {
+            let mut pt = POINT { x: (lparam.0 & 0xFFFF) as i16 as i32, y: ((lparam.0 >> 16) & 0xFFFF) as i16 as i32 };
+            unsafe { let _ = ScreenToClient(hwnd, &mut pt); }
+            let (xd, yd) = (pt.x as f32 / st.scale, pt.y as f32 / st.scale);
+            if yd <= HEADER_H_DIP && hit_test_dlg(xd, yd).is_none() {
+                LRESULT(HTCAPTION as isize)
+            } else {
+                LRESULT(HTCLIENT as isize)
             }
-            LRESULT(st.bg_brush.0 as isize)
+        }
+        WM_SETCURSOR => {
+            if (lparam.0 & 0xFFFF) as u32 == HTCLIENT {
+                let mut pt = POINT::default();
+                unsafe { let _ = GetCursorPos(&mut pt); let _ = ScreenToClient(hwnd, &mut pt); }
+                if hit_test_dlg(pt.x as f32 / st.scale, pt.y as f32 / st.scale).is_some()
+                    && let Ok(cur) = unsafe { LoadCursorW(None, IDC_HAND) }
+                {
+                    unsafe { SetCursor(Some(cur)); }
+                    return LRESULT(1);
+                }
+            }
+            unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
+        }
+        WM_MOUSEMOVE => {
+            if !st.mouse_tracked {
+                st.mouse_tracked = true;
+                let mut tme = TRACKMOUSEEVENT { cbSize: std::mem::size_of::<TRACKMOUSEEVENT>() as u32, dwFlags: TME_LEAVE, hwndTrack: hwnd, dwHoverTime: 0 };
+                unsafe { let _ = TrackMouseEvent(&mut tme); }
+            }
+            let (x, y) = ((lparam.0 & 0xFFFF) as i16 as f32, ((lparam.0 >> 16) & 0xFFFF) as i16 as f32);
+            let next = hit_test_dlg(x / st.scale, y / st.scale);
+            if next != st.hovered {
+                st.hovered = next;
+                unsafe { let _ = InvalidateRect(Some(hwnd), None, false); }
+            }
+            LRESULT(0)
+        }
+        WM_MOUSELEAVE => {
+            st.mouse_tracked = false;
+            if st.hovered.take().is_some() {
+                unsafe { let _ = InvalidateRect(Some(hwnd), None, false); }
+            }
+            LRESULT(0)
+        }
+        WM_LBUTTONUP => {
+            let (x, y) = ((lparam.0 & 0xFFFF) as i16 as f32, ((lparam.0 >> 16) & 0xFFFF) as i16 as f32);
+            match hit_test_dlg(x / st.scale, y / st.scale) {
+                Some(DlgHit::Close | DlgHit::Cancel) => st.done = true,
+                Some(DlgHit::Save) => {
+                    try_submit(st);
+                    unsafe { let _ = InvalidateRect(Some(hwnd), None, false); }
+                }
+                Some(DlgHit::Preset(idx)) => {
+                    let (lz, le, exts) = PRESETS[idx];
+                    let lbl = if st.lang == Lang::Zh { lz } else { le };
+                    let lw: Vec<u16> = lbl.encode_utf16().chain(std::iter::once(0)).collect();
+                    let ew: Vec<u16> = exts.encode_utf16().chain(std::iter::once(0)).collect();
+                    {
+                        let _sup = suppress_edit_change();
+                        unsafe {
+                            let _ = SetWindowTextW(st.edits[0], PCWSTR(lw.as_ptr()));
+                            let _ = SetWindowTextW(st.edits[1], PCWSTR(ew.as_ptr()));
+                        }
+                    }
+                    st.error = None;
+                    unsafe { let _ = SetFocus(Some(st.edits[1])); let _ = InvalidateRect(Some(hwnd), None, false); }
+                }
+                None => {}
+            }
+            LRESULT(0)
         }
         WM_CTLCOLOREDIT => {
             let dc = HDC(wparam.0 as *mut c_void);
-            unsafe { let _ = SetBkColor(dc, st.edit_ref); let _ = SetTextColor(dc, st.fg_ref); }
-            LRESULT(st.edit_brush.0 as isize)
+            unsafe { let _ = SetBkColor(dc, st.bg_ref); let _ = SetTextColor(dc, st.fg_ref); }
+            LRESULT(st.bg_brush.0 as isize)
         }
         WM_COMMAND => {
             let id = wparam.0 & 0xFFFF;
             let code = ((wparam.0 >> 16) & 0xFFFF) as u32;
-            if id == ID_OK_BTN && (code == BN_CLICKED || code == 0) {
-                let name = read_edit_text(st.name_hwnd).trim().to_string();
-                let exts = parse_extensions(&read_edit_text(st.ext_hwnd));
-                let expr = read_edit_text(st.expr_hwnd).trim().to_string();
-                if name.is_empty() {
-                    let msg = if st.zh { w!("请输入标签名称") } else { w!("Please enter a tag name") };
-                    unsafe { let _ = SetWindowTextW(st.status_hwnd, msg); let _ = SetFocus(Some(st.name_hwnd)); }
-                    return LRESULT(0);
+            if let Some(fi) = ID_EDITS.iter().position(|&eid| eid == id) {
+                if code == EN_SETFOCUS_CODE {
+                    st.focused = Some(fi as u8);
+                    unsafe { let _ = InvalidateRect(Some(hwnd), None, false); }
+                } else if code == EN_KILLFOCUS_CODE && st.focused == Some(fi as u8) {
+                    st.focused = None;
+                    unsafe { let _ = InvalidateRect(Some(hwnd), None, false); }
                 }
-                if exts.is_empty() && expr.is_empty() {
-                    let msg = if st.zh {
-                        w!("请填写扩展名（如 rs,ts）或 Everything 表达式")
-                    } else {
-                        w!("Provide extensions or Everything expression")
-                    };
-                    unsafe { let _ = SetWindowTextW(st.status_hwnd, msg); let _ = SetFocus(Some(st.ext_hwnd)); }
-                    return LRESULT(0);
-                }
-                st.out_label = name;
-                st.out_exts = exts;
-                st.out_expr = expr;
-                st.saved = true;
-                st.done = true;
-                return LRESULT(0);
-            }
-            if id == ID_CANCEL_BTN && (code == BN_CLICKED || code == 0) {
-                st.done = true;
             }
             LRESULT(0)
         }
-        WM_CLOSE => {
-            st.done = true;
-            LRESULT(0)
-        }
+        WM_CLOSE => { st.done = true; LRESULT(0) }
         _ => unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) },
+    }
+}
+
+fn create_input_font(scale: f32, face: &str) -> HFONT {
+    let h = -(15.5 * scale).round() as i32;
+    let fw: Vec<u16> = face.encode_utf16().chain(std::iter::once(0)).collect();
+    unsafe {
+        CreateFontW(
+            h, 0, 0, 0, FW_NORMAL.0 as i32, 0, 0, 0, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
+            CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, (DEFAULT_PITCH.0 | FF_DONTCARE.0) as u32,
+            PCWSTR(fw.as_ptr()),
+        )
     }
 }
 
@@ -151,17 +231,17 @@ impl AppShell {
     pub(super) fn open_custom_filter_dialog(&mut self, edit_idx: Option<usize>) {
         let _modal = super::enter_modal_overlay();
         let existing = edit_idx.and_then(|i| self.config.read().ok().and_then(|c| c.custom_filters.get(i).cloned()));
-        let zh = self.lang == tomoyo_core::Lang::Zh;
         let pal = self.theme;
+        let lang = self.lang;
         let scale = self.dpi_scale.max(1.0);
-        let (dw, dh) = ((380.0 * scale).round() as i32, (268.0 * scale).round() as i32);
+        let (dw, dh) = ((DLG_W_DIP * scale).round() as i32, (DLG_H_DIP * scale).round() as i32);
 
-        let mut parent_rc = RECT::default();
-        unsafe { let _ = GetWindowRect(self.hwnd, &mut parent_rc); }
-        let dx = parent_rc.left + ((parent_rc.right - parent_rc.left) - dw) / 2;
-        let dy = parent_rc.top + ((parent_rc.bottom - parent_rc.top) - dh).max(20) / 2;
+        let mut pr = RECT::default();
+        unsafe { let _ = GetWindowRect(self.hwnd, &mut pr); }
+        let dx = pr.left + ((pr.right - pr.left) - dw) / 2;
+        let dy = pr.top + ((pr.bottom - pr.top) - dh).max(16) / 2;
 
-        let cls = w!("TomoyoCustomFilterDlg");
+        let cls = w!("TomoyoFluentFilterDlg");
         let hinst = unsafe { GetModuleHandleW(None).unwrap() };
         unsafe {
             let wc = WNDCLASSW {
@@ -174,16 +254,10 @@ impl AppShell {
             let _ = RegisterClassW(&wc);
         }
 
-        let title = match (existing.is_some(), zh) {
-            (true, true) => w!("编辑自定义标签"),
-            (true, false) => w!("Edit Custom Tag"),
-            (false, true) => w!("快速添加搜索标签"),
-            (false, false) => w!("Quick Add Search Tag"),
-        };
         let Ok(dlg) = (unsafe {
             CreateWindowExW(
-                Default::default(), cls, title,
-                WS_POPUP | WS_CAPTION | WS_SYSMENU,
+                Default::default(), cls, w!("Tomoyo Tag"),
+                WS_POPUP | WS_CLIPCHILDREN,
                 dx, dy, dw, dh, Some(self.hwnd), None, Some(hinst.into()), None,
             )
         }) else {
@@ -191,63 +265,67 @@ impl AppShell {
         };
         apply_dwm_attributes(dlg, pal.is_dark);
 
-        let font = make_ui_font(scale, false);
-        let bold_font = make_ui_font(scale, true);
+        let gfx = DlgGfx::new();
+        let edit_font = create_input_font(scale, gfx.edit_font_face(&self.typography, self.font_regular, self.font_medium));
         let bg_brush = unsafe { CreateSolidBrush(pal.bg.to_colorref()) };
-        let edit_brush = unsafe { CreateSolidBrush(pal.pop_bg.to_colorref()) };
-
-        let px = |v: f32| (v * scale).round() as i32;
-        let mk_ctrl = |cls_name: PCWSTR, txt: &str, style: WINDOW_STYLE, x: f32, y: f32, w: f32, h: f32, id: usize, fnt: HFONT| -> HWND {
-            let tw: Vec<u16> = txt.encode_utf16().chain(std::iter::once(0)).collect();
-            let ctl = unsafe {
-                CreateWindowExW(
-                    Default::default(), cls_name, PCWSTR(tw.as_ptr()), style,
-                    px(x), px(y), px(w), px(h), Some(dlg), Some(HMENU(id as *mut c_void)),
-                    Some(hinst.into()), None,
-                ).unwrap_or_default()
-            };
-            unsafe { SendMessageW(ctl, WM_SETFONT, Some(WPARAM(fnt.0 as usize)), Some(LPARAM(0))); }
-            ctl
+        let initial_vals = [
+            existing.as_ref().map(|t| t.label.clone()).unwrap_or_default(),
+            existing.as_ref().map(|t| t.extensions.join(", ")).unwrap_or_default(),
+            existing.as_ref().map(|t| t.everything_expr.clone()).unwrap_or_default(),
+        ];
+        let cues = if lang == Lang::Zh {
+            ["例如：代码、视频、设计稿", "逗号或空格分隔，如 rs, ts, py, md", "留空自动按扩展名生成，如 ext:mp4;mkv"]
+        } else {
+            ["e.g. Code, Videos, Design", "Comma/space separated, e.g. rs, ts, py", "Optional, auto-built from extensions"]
         };
 
-        let cw = 340.0;
-        let edit_st = WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | WINDOW_STYLE((ES_LEFT | ES_AUTOHSCROLL) as u32);
-        let _ = mk_ctrl(w!("STATIC"), if zh { "标签名称（如：代码 / 视频）" } else { "Tag Label (e.g. Code / Video)" }, WS_CHILD | WS_VISIBLE, 18.0, 14.0, cw, 18.0, 301, bold_font);
-        let name_hwnd = mk_ctrl(w!("EDIT"), existing.as_ref().map(|t| t.label.as_str()).unwrap_or(""), edit_st, 18.0, 34.0, cw, 26.0, ID_NAME_EDIT, font);
-        let _ = mk_ctrl(w!("STATIC"), if zh { "文件扩展名（逗号/空格分隔，如 rs, ts, py）" } else { "Extensions (comma/space separated, e.g. rs, ts)" }, WS_CHILD | WS_VISIBLE, 18.0, 68.0, cw, 18.0, 302, bold_font);
-        let init_ext = existing.as_ref().map(|t| t.extensions.join(", ")).unwrap_or_default();
-        let ext_hwnd = mk_ctrl(w!("EDIT"), &init_ext, edit_st, 18.0, 88.0, cw, 26.0, ID_EXT_EDIT, font);
-        let _ = mk_ctrl(w!("STATIC"), if zh { "Everything 表达式（可选，留空自动按扩展名匹配）" } else { "Everything Expr (optional, e.g. ext:mp4;mkv)" }, WS_CHILD | WS_VISIBLE, 18.0, 122.0, cw, 18.0, 303, bold_font);
-        let expr_hwnd = mk_ctrl(w!("EDIT"), existing.as_ref().map(|t| t.everything_expr.as_str()).unwrap_or(""), edit_st, 18.0, 142.0, cw, 26.0, ID_EXPR_EDIT, font);
-        let status_hwnd = mk_ctrl(w!("STATIC"), "", WS_CHILD | WS_VISIBLE, 18.0, 174.0, cw, 18.0, ID_STATUS_LBL, font);
-        let ok_btn = mk_ctrl(w!("BUTTON"), if zh { "保存并应用" } else { "Save" }, WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(BS_DEFPUSHBUTTON as u32), 166.0, 200.0, 96.0, 28.0, ID_OK_BTN, bold_font);
-        let _cancel = mk_ctrl(w!("BUTTON"), if zh { "取消" } else { "Cancel" }, WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(BS_PUSHBUTTON as u32), 270.0, 200.0, 88.0, 28.0, ID_CANCEL_BTN, font);
+        let mut edits = [HWND::default(); 3];
+        for i in 0..3 {
+            let (x0, y0, x1, y1) = FIELD_RECTS[i];
+            let vw: Vec<u16> = initial_vals[i].encode_utf16().chain(std::iter::once(0)).collect();
+            let cw: Vec<u16> = cues[i].encode_utf16().chain(std::iter::once(0)).collect();
+            let ed = unsafe {
+                CreateWindowExW(
+                    Default::default(), w!("EDIT"), PCWSTR(vw.as_ptr()),
+                    WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE((ES_LEFT | ES_AUTOHSCROLL) as u32),
+                    ((x0 + 11.0) * scale).round() as i32,
+                    ((y0 + 7.0) * scale).round() as i32,
+                    ((x1 - x0 - 22.0) * scale).round() as i32,
+                    ((y1 - y0 - 14.0) * scale).round() as i32,
+                    Some(dlg), Some(HMENU(ID_EDITS[i] as *mut c_void)), Some(hinst.into()), None,
+                ).unwrap_or_default()
+            };
+            unsafe {
+                SendMessageW(ed, WM_SETFONT, Some(WPARAM(edit_font.0 as usize)), Some(LPARAM(0)));
+                SendMessageW(ed, EM_SETCUEBANNER, Some(WPARAM(1)), Some(LPARAM(cw.as_ptr() as isize)));
+            }
+            edits[i] = ed;
+        }
 
-        let mut st = Box::new(FilterDlgState {
-            bg_brush, edit_brush,
-            bg_ref: pal.bg.to_colorref(),
-            edit_ref: pal.pop_bg.to_colorref(),
-            fg_ref: pal.text_primary.to_colorref(),
-            err_ref: COLORREF(0x004444EF),
-            name_hwnd, ext_hwnd, expr_hwnd, status_hwnd,
-            saved: false, done: false,
+        let mut st = Box::new(DlgState {
+            pal, lang, typo: self.typography.clone(), font_regular: self.font_regular, font_medium: self.font_medium,
+            is_edit: existing.is_some(), scale, gfx, bg_brush, bg_ref: pal.bg.to_colorref(), fg_ref: pal.text_primary.to_colorref(),
+            edits, focused: Some(0), hovered: None, mouse_tracked: false, error: None, saved: false, done: false,
             out_label: String::new(), out_exts: Vec::new(), out_expr: String::new(),
-            zh,
         });
-        let st_ptr = &mut *st as *mut FilterDlgState;
+        let st_ptr = &mut *st as *mut DlgState;
         unsafe {
             SetWindowLongPtrW(dlg, GWLP_USERDATA, st_ptr as isize);
             let _ = EnableWindow(self.hwnd, false);
             let _ = ShowWindow(dlg, SW_SHOW);
             let _ = SetWindowPos(dlg, Some(HWND_TOP), dx, dy, dw, dh, Default::default());
-            let _ = SetFocus(Some(name_hwnd));
+            let _ = SetFocus(Some(edits[0]));
 
             let mut msg = MSG::default();
             while !(*st_ptr).done && GetMessageW(&mut msg, None, 0, 0).into() {
                 if msg.message == WM_KEYDOWN {
                     let vk = msg.wParam.0 as u32;
                     if vk == 0x1B { (*st_ptr).done = true; continue; }
-                    if vk == 0x0D { let _ = SendMessageW(ok_btn, BM_CLICK, Some(WPARAM(0)), Some(LPARAM(0))); continue; }
+                    if vk == 0x0D {
+                        try_submit(&mut *st_ptr);
+                        let _ = InvalidateRect(Some(dlg), None, false);
+                        continue;
+                    }
                 }
                 if !IsDialogMessageW(dlg, &msg).as_bool() {
                     let _ = TranslateMessage(&msg);
@@ -258,9 +336,7 @@ impl AppShell {
             SetWindowLongPtrW(dlg, GWLP_USERDATA, 0);
             let _ = DestroyWindow(dlg);
             let _ = DeleteObject(bg_brush.into());
-            let _ = DeleteObject(edit_brush.into());
-            let _ = DeleteObject(font.into());
-            let _ = DeleteObject(bold_font.into());
+            let _ = DeleteObject(edit_font.into());
         }
 
         if st.saved {
@@ -297,4 +373,3 @@ impl AppShell {
         unsafe { let _ = SetForegroundWindow(self.hwnd); let _ = SetFocus(Some(self.edit_hwnd)); }
     }
 }
-

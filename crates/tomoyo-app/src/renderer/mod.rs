@@ -17,7 +17,10 @@ pub use canvas::Canvas;
 pub use filter_bar::{compute_filter_bar_layout, FilterHit};
 pub use filter_bar::{compute_filter_counts, FilterCounts};
 #[cfg(windows)]
-pub use filter_sidebar::{compute_sidebar_layout, hit_test_sidebar, SidebarHit, SIDEBAR_WIDTH_DIP};
+pub use filter_sidebar::{
+    compute_sidebar_layout, hit_test_sidebar, should_show_filter_sidebar, SidebarHit,
+    SIDEBAR_WIDTH_DIP,
+};
 pub use scrollbar::ScrollbarVisual;
 #[cfg(windows)]
 pub use scrollbar::{compute_scrollbar_metrics, ScrollbarHit, ScrollbarMetrics};

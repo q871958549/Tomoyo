@@ -4,9 +4,9 @@ use super::bootstrap::create_edit_font;
 use super::AppShell;
 use crate::actions::shell_open;
 use crate::renderer::{
-    hit_test_sidebar, resolve_face_and_weight, SidebarHit, DEFAULT_PREVIEW_WIDTH_DIP,
-    DEFAULT_WINDOW_WIDTH_DIP, FOOTER_HEIGHT_DIP, HEADER_HEIGHT_DIP, MAX_WINDOW_WIDTH_DIP,
-    MIN_WINDOW_WIDTH_DIP, SIDEBAR_WIDTH_DIP,
+    hit_test_sidebar, resolve_face_and_weight, should_show_filter_sidebar, SidebarHit,
+    DEFAULT_PREVIEW_WIDTH_DIP, DEFAULT_WINDOW_WIDTH_DIP, FOOTER_HEIGHT_DIP, HEADER_HEIGHT_DIP,
+    MAX_WINDOW_WIDTH_DIP, MIN_WINDOW_WIDTH_DIP, SIDEBAR_WIDTH_DIP,
 };
 use tomoyo_core::{ExternalPluginBridge, Lang, TomoyoConfig};
 use tomoyo_protocol::{AttachedContext, SearchFilter};
@@ -204,7 +204,13 @@ impl AppShell {
     }
 
     pub(super) fn is_filter_bar_visible(&self) -> bool {
-        self.show_filter_bar && self.attached.is_none()
+        should_show_filter_sidebar(
+            self.show_filter_bar,
+            self.attached.is_some(),
+            &self.current_query,
+            self.active_filter,
+            self.results.len(),
+        )
     }
 
     pub(super) fn desired_width_dip(&self) -> i32 {

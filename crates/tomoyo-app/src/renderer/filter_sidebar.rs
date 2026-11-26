@@ -14,6 +14,43 @@ const TAB_ROW_H: f32 = 30.0;
 const TAB_GAP: f32 = 2.0;
 const ADD_AREA_H: f32 = 40.0;
 
+pub fn should_show_filter_sidebar(
+    show_pref: bool,
+    has_attached: bool,
+    query: &str,
+    active_filter: SearchFilter,
+    result_count: usize,
+) -> bool {
+    if !show_pref || has_attached {
+        return false;
+    }
+    let t = query.trim();
+    if t.starts_with(':') {
+        return false;
+    }
+    let low = t.to_ascii_lowercase();
+    let is_dedicated_non_file = low == "cb"
+        || low.starts_with("cb ")
+        || low == "w"
+        || low.starts_with("w ")
+        || low == "kill"
+        || low.starts_with("kill ")
+        || low == "ps"
+        || low.starts_with("ps ")
+        || low == "port"
+        || low.starts_with("port ")
+        || low.starts_with("= ")
+        || low.starts_with("b64 ")
+        || low.starts_with("b64d ");
+    if is_dedicated_non_file {
+        return false;
+    }
+    if active_filter != SearchFilter::All {
+        return true;
+    }
+    !t.is_empty() && result_count > 6
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SidebarHit {
     Tab(SearchFilter),
@@ -252,5 +289,17 @@ mod tests {
             Some(SidebarHit::AddTag)
         );
         assert_eq!(hit_test_sidebar(150.0, 120.0, 62.0, 312.0, &tabs, 0.0), None);
+    }
+
+    #[test]
+    fn sidebar_only_appears_for_abundant_results_or_active_filter() {
+        assert!(!should_show_filter_sidebar(true, false, "", SearchFilter::All, 8));
+        assert!(!should_show_filter_sidebar(true, false, "foo", SearchFilter::All, 6));
+        assert!(should_show_filter_sidebar(true, false, "foo", SearchFilter::All, 7));
+        assert!(!should_show_filter_sidebar(true, false, ":stats", SearchFilter::All, 12));
+        assert!(!should_show_filter_sidebar(true, false, "cb ", SearchFilter::All, 15));
+        assert!(!should_show_filter_sidebar(true, true, "foo", SearchFilter::All, 15));
+        assert!(!should_show_filter_sidebar(false, false, "foo", SearchFilter::All, 15));
+        assert!(should_show_filter_sidebar(true, false, "", SearchFilter::Pdf, 2));
     }
 }

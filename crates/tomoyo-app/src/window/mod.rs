@@ -6,6 +6,7 @@ mod commands;
 mod context_card;
 mod events;
 mod filter_dialog;
+mod filter_dialog_ui;
 mod flow_exec;
 pub(crate) mod hotkey_avoid;
 pub(crate) mod hotkey_override;
