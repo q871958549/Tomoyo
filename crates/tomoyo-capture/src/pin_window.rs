@@ -28,11 +28,12 @@ use windows::Win32::UI::WindowsAndMessaging::{
     DispatchMessageW, GetClientRect, GetCursorPos, GetMessageW, GetSystemMetrics,
     GetWindowLongPtrW, GetWindowRect, LoadCursorW, PostQuitMessage, RegisterClassW,
     SetForegroundWindow, SetLayeredWindowAttributes, SetWindowLongPtrW, SetWindowPos, ShowWindow,
-    TrackPopupMenu, TranslateMessage, CS_DBLCLKS, GWLP_USERDATA, HWND_NOTOPMOST, HWND_TOPMOST,
+    TrackPopupMenu, CS_DBLCLKS, GWLP_USERDATA, HWND_NOTOPMOST, HWND_TOPMOST,
     IDC_SIZEALL, LWA_ALPHA, MF_CHECKED, MF_SEPARATOR, MF_STRING, MF_UNCHECKED, MSG, SM_CXSCREEN,
     SM_CYSCREEN, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SW_HIDE, SW_SHOW,
     SW_SHOWNOACTIVATE, TPM_LEFTALIGN,
-    TPM_RETURNCMD, WM_CAPTURECHANGED, WM_DESTROY, WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDBLCLK,
+    TPM_RETURNCMD, WM_CAPTURECHANGED, WM_CHAR, WM_DESTROY, WM_ERASEBKGND, WM_IME_COMPOSITION,
+    WM_IME_SETCONTEXT, WM_IME_STARTCOMPOSITION, WM_KEYDOWN, WM_LBUTTONDBLCLK,
     WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCLBUTTONDBLCLK,
     WM_NCMBUTTONUP, WM_NCRBUTTONUP, WM_PAINT, WM_RBUTTONUP, WNDCLASSW, WS_EX_LAYERED,
     WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
@@ -250,13 +251,13 @@ pub fn run_pin_window_with_text(
         .map_err(|e| format!("CreateWindowExW pin failed: {e}"))?;
 
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, &mut *st as *mut PinState as isize);
+        crate::overlay_ime::disable_ime_for_window(hwnd);
         st.apply_opacity(hwnd);
         let _ = ShowWindow(hwnd, SW_SHOW);
         let _ = InvalidateRect(Some(hwnd), None, false);
 
         let mut msg = MSG::default();
         while GetMessageW(&mut msg, None, 0, 0).into() {
-            let _ = TranslateMessage(&msg);
             DispatchMessageW(&msg);
         }
     }
@@ -408,8 +409,9 @@ unsafe extern "system" fn pin_wndproc(
             st.show_context_menu(hwnd);
             LRESULT(0)
         }
+        WM_IME_SETCONTEXT | WM_IME_STARTCOMPOSITION | WM_IME_COMPOSITION | WM_CHAR => LRESULT(0),
         WM_KEYDOWN => {
-            let vk = wparam.0 as u16;
+            let vk = crate::overlay_ime::resolve_physical_vk(hwnd, wparam.0 as u16, lparam);
             let ctrl = unsafe { (GetKeyState(VK_CONTROL.0 as i32) as u16 & 0x8000) != 0 };
             if vk == VK_ESCAPE.0 {
                 unsafe { let _ = DestroyWindow(hwnd); }

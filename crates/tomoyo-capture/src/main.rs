@@ -31,6 +31,8 @@ mod overlay_actions;
 mod overlay_draw;
 mod overlay_icons;
 #[cfg(windows)]
+mod overlay_ime;
+#[cfg(windows)]
 mod overlay_input;
 #[cfg(windows)]
 mod overlay_text;

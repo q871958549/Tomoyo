@@ -106,6 +106,7 @@ impl InlineTextEditor {
                 let end = wide.len().saturating_sub(1);
                 SendMessageW(h, EM_SETSEL, Some(WPARAM(end)), Some(LPARAM(end as isize)));
             }
+            crate::overlay_ime::enable_ime_for_window(h);
             let _ = SetFocus(Some(h));
         }
         let mut ed = Self {

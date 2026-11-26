@@ -7,6 +7,7 @@ use crate::overlay_draw::{
     build_toolbar_layout, compose_overlay_pixels, precompute_dimmed, precompute_hover_dimmed,
     ToolbarCmd, ToolbarLayout, ToolbarStyleState,
 };
+use crate::overlay_ime::{activate_overlay_window, disable_ime_for_window, resolve_physical_vk};
 use crate::overlay_input::{
     cursor_for_hover, handle_key_down, handle_lbutton_dblclk, handle_lbutton_down,
     handle_mouse_move, handle_mouse_wheel,
@@ -30,14 +31,15 @@ use windows::Win32::Graphics::Gdi::{
     HBITMAP, HDC, HFONT, OUT_DEFAULT_PRECIS, PAINTSTRUCT, SRCCOPY,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
-use windows::Win32::UI::Input::KeyboardAndMouse::{ReleaseCapture, SetFocus, VK_MENU};
+use windows::Win32::UI::Input::KeyboardAndMouse::{ReleaseCapture, SetFocus, VK_F4, VK_MENU};
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DispatchMessageW, GetCursorPos, GetMessageW, GetWindowLongPtrW,
     KillTimer, LoadCursorW, PostQuitMessage, RegisterClassW, SetCursor, SetTimer,
     SetWindowLongPtrW, ShowWindow, TranslateMessage, CS_DBLCLKS, GWLP_USERDATA, IDC_CROSS, MSG,
-    SW_SHOW, WM_DESTROY, WM_ERASEBKGND, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN,
-    WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_PAINT, WM_RBUTTONUP, WM_SETCURSOR, WM_SYSKEYDOWN,
-    WM_SYSKEYUP, WM_TIMER, WNDCLASSW, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
+    SW_SHOW, WM_CHAR, WM_DESTROY, WM_ERASEBKGND, WM_IME_COMPOSITION, WM_IME_ENDCOMPOSITION,
+    WM_IME_SETCONTEXT, WM_IME_STARTCOMPOSITION, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDBLCLK,
+    WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_PAINT, WM_RBUTTONUP, WM_SETCURSOR,
+    WM_SYSKEYDOWN, WM_SYSKEYUP, WM_TIMER, WNDCLASSW, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
 };
 
 pub(crate) const TIMER_WHEEL_HUD: usize = 601;
@@ -222,12 +224,16 @@ pub fn run_capture_overlay(mode: CaptureMode) -> Result<CaptureOutcome, String> 
             ox, oy, w, h, None, None, Some(hinst.into()), None,
         ).map_err(|e| format!("CreateWindowExW overlay failed: {e}"))?;
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, &mut *st as *mut OverlayState as isize);
+        disable_ime_for_window(hwnd);
         let _ = ShowWindow(hwnd, SW_SHOW);
+        activate_overlay_window(hwnd);
         let _ = InvalidateRect(Some(hwnd), None, false);
 
         let mut msg = MSG::default();
         while GetMessageW(&mut msg, None, 0, 0).into() {
-            let _ = TranslateMessage(&msg);
+            if msg.hwnd != hwnd {
+                let _ = TranslateMessage(&msg);
+            }
             DispatchMessageW(&msg);
         }
         Ok(st.outcome.take().unwrap_or(CaptureOutcome::Done))
@@ -400,13 +406,22 @@ unsafe extern "system" fn overlay_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, 
             }
             LRESULT(0)
         }
-        WM_SYSKEYDOWN if wparam.0 as u16 == VK_MENU.0 => {
-            if st.sel.is_none() && st.drag == DragMode::None {
-                let now_ms = st.now_ms();
-                let tick = st.snap_motion.on_alt_changed(&mut st.snap_ctx, &st.snap, st.cursor.0, st.cursor.1, true, now_ms);
-                st.apply_snap_tick(hwnd, tick);
+        WM_SYSKEYDOWN => {
+            let raw_vk = wparam.0 as u16;
+            if raw_vk == VK_MENU.0 {
+                if st.sel.is_none() && st.drag == DragMode::None {
+                    let now_ms = st.now_ms();
+                    let tick = st.snap_motion.on_alt_changed(&mut st.snap_ctx, &st.snap, st.cursor.0, st.cursor.1, true, now_ms);
+                    st.apply_snap_tick(hwnd, tick);
+                }
+                LRESULT(0)
+            } else if raw_vk == VK_F4.0 {
+                unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
+            } else {
+                let vk = resolve_physical_vk(hwnd, raw_vk, lparam);
+                handle_key_down(st, hwnd, vk);
+                LRESULT(0)
             }
-            LRESULT(0)
         }
         WM_SYSKEYUP | WM_KEYUP if wparam.0 as u16 == VK_MENU.0 => {
             if st.sel.is_none() && st.drag == DragMode::None {
@@ -416,7 +431,12 @@ unsafe extern "system" fn overlay_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, 
             }
             if msg == WM_SYSKEYUP { LRESULT(0) } else { unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) } }
         }
-        WM_KEYDOWN => { handle_key_down(st, hwnd, wparam.0 as u16); LRESULT(0) }
+        WM_IME_SETCONTEXT | WM_IME_STARTCOMPOSITION | WM_IME_COMPOSITION | WM_IME_ENDCOMPOSITION | WM_CHAR => LRESULT(0),
+        WM_KEYDOWN => {
+            let vk = resolve_physical_vk(hwnd, wparam.0 as u16, lparam);
+            handle_key_down(st, hwnd, vk);
+            LRESULT(0)
+        }
         WM_DESTROY => { unsafe { PostQuitMessage(0); } LRESULT(0) }
         _ => unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) },
     }
