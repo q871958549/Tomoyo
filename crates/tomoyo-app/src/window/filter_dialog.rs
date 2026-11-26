@@ -6,6 +6,7 @@ use super::filter_dialog_ui::{
     COND_CHIPS, DLG_H_DIP, DLG_W_DIP, FIELD_RECTS, HEADER_H_DIP, PRESETS,
 };
 use super::{suppress_edit_change, AppShell, EM_SETCUEBANNER};
+use crate::renderer::Rgb;
 use std::ffi::c_void;
 use tomoyo_core::{CustomFilterTab, Lang, TypographyConfig};
 use tomoyo_protocol::SearchFilter;
@@ -21,7 +22,7 @@ use windows::Win32::Graphics::Gdi::{
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Controls::WM_MOUSELEAVE;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    EnableWindow, SetFocus, TrackMouseEvent, TME_LEAVE, TRACKMOUSEEVENT,
+    SetFocus, TrackMouseEvent, TME_LEAVE, TRACKMOUSEEVENT,
 };
 use windows::Win32::UI::Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass};
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -30,8 +31,9 @@ use windows::Win32::UI::WindowsAndMessaging::{
     LoadCursorW, RegisterClassW, SendMessageW, SetCursor, SetForegroundWindow, SetWindowLongPtrW,
     SetWindowPos, SetWindowTextW, ShowWindow, TranslateMessage, ES_AUTOHSCROLL, ES_LEFT,
     GWLP_USERDATA, HMENU, HTCAPTION, HTCLIENT, HWND_TOP, IDC_ARROW, IDC_HAND, MSG, SW_SHOW,
-    WINDOW_STYLE, WM_CLOSE, WM_COMMAND, WM_CTLCOLOREDIT, WM_ERASEBKGND, WM_KEYDOWN,
-    WM_KILLFOCUS, WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCHITTEST, WM_PAINT, WM_SETCURSOR, WM_SETFOCUS,
+    WINDOW_STYLE, WM_ACTIVATE, WM_CLOSE, WM_COMMAND, WM_CTLCOLOREDIT, WM_ERASEBKGND, WM_KEYDOWN,
+    WM_KILLFOCUS, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MOUSEMOVE, WM_NCLBUTTONDOWN,
+    WM_NCRBUTTONDOWN, WM_NCHITTEST, WM_PAINT, WM_RBUTTONDOWN, WM_SETCURSOR, WM_SETFOCUS,
     WM_SETFONT, WNDCLASSW, WS_CHILD, WS_CLIPCHILDREN, WS_POPUP, WS_TABSTOP, WS_VISIBLE,
 };
 
@@ -41,6 +43,7 @@ const EN_KILLFOCUS_CODE: u32 = 0x0200;
 const EN_CHANGE_CODE: u32 = 0x0300;
 
 struct DlgState {
+    owner_hwnd: HWND,
     pal: crate::renderer::ThemePalette,
     lang: Lang,
     typo: TypographyConfig,
@@ -50,10 +53,10 @@ struct DlgState {
     scale: f32,
     gfx: DlgGfx,
     bg_brush: HBRUSH,
-    edit_font: HFONT,
+    cue_font: HFONT,
     bg_ref: COLORREF,
     fg_ref: COLORREF,
-    muted_ref: COLORREF,
+    cue_ref: COLORREF,
     cues: [&'static str; 3],
     edits: [HWND; 3],
     focused: Option<u8>,
@@ -63,6 +66,7 @@ struct DlgState {
     live_expr: String,
     live_preview: String,
     error: Option<String>,
+    closed_by_deactivate: bool,
     saved: bool,
     done: bool,
     out_label: String,
@@ -70,11 +74,18 @@ struct DlgState {
     out_expr: String,
 }
 
+fn blend_rgb(a: Rgb, b: Rgb, t: f32) -> Rgb {
+    let mix = |x: u8, y: u8| ((x as f32) * (1.0 - t) + (y as f32) * t).round() as u8;
+    Rgb(mix(a.0, b.0), mix(a.1, b.1), mix(a.2, b.2))
+}
+
 fn parse_extensions(raw: &str) -> Vec<String> {
     let mut out = Vec::new();
     for part in raw.split([',', ';', ' ', '\t', '，', '；']) {
         let ext = part.trim().trim_start_matches('.').to_ascii_lowercase();
-        if !ext.is_empty() && !out.contains(&ext) { out.push(ext); }
+        if !ext.is_empty() && !out.contains(&ext) {
+            out.push(ext);
+        }
     }
     out
 }
@@ -108,11 +119,7 @@ fn try_submit(st: &mut DlgState) {
         unsafe { let _ = SetFocus(Some(st.edits[1])); }
         return;
     }
-    st.out_label = name;
-    st.out_exts = exts;
-    st.out_expr = expr;
-    st.saved = true;
-    st.done = true;
+    (st.out_label, st.out_exts, st.out_expr, st.saved, st.done) = (name, exts, expr, true, true);
 }
 
 unsafe extern "system" fn dlg_edit_subclass_proc(
@@ -133,9 +140,9 @@ unsafe extern "system" fn dlg_edit_subclass_proc(
         let dc = unsafe { GetDC(Some(hwnd)) };
         if !dc.0.is_null() {
             unsafe {
-                let old = SelectObject(dc, st.edit_font.into());
+                let old = SelectObject(dc, st.cue_font.into());
                 let _ = SetBkMode(dc, TRANSPARENT);
-                let _ = SetTextColor(dc, st.muted_ref);
+                let _ = SetTextColor(dc, st.cue_ref);
                 let _ = DrawTextW(dc, &mut wide, &mut rc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
                 let _ = SelectObject(dc, old);
                 let _ = ReleaseDC(Some(hwnd), dc);
@@ -158,16 +165,27 @@ unsafe extern "system" fn filter_dlg_proc(
     let st = unsafe { &mut *ptr };
     match msg {
         WM_ERASEBKGND => LRESULT(1),
+        WM_ACTIVATE => {
+            if (wparam.0 & 0xFFFF) == 0 {
+                let next = HWND(lparam.0 as *mut c_void);
+                if next != hwnd && !st.edits.contains(&next) {
+                    st.closed_by_deactivate = next != st.owner_hwnd;
+                    st.done = true;
+                }
+            }
+            LRESULT(0)
+        }
         WM_PAINT => {
             let mut ps = PAINTSTRUCT::default();
             let hdc = unsafe { BeginPaint(hwnd, &mut ps) };
             let mut rc = RECT::default();
             unsafe { let _ = GetClientRect(hwnd, &mut rc); }
+            let has_rule = !st.live_exts.is_empty() || !st.live_expr.is_empty();
             st.gfx.paint(hdc, rc.right - rc.left, rc.bottom - rc.top, &DlgRenderParams {
                 pal: st.pal, lang: st.lang, typo: &st.typo,
                 font_regular: st.font_regular, font_medium: st.font_medium,
                 is_edit: st.is_edit, scale: st.scale,
-                focused: st.focused, hovered: st.hovered,
+                focused: st.focused, hovered: st.hovered, has_rule,
                 live_expr: &st.live_expr, preview: &st.live_preview,
                 error: st.error.as_deref(),
             });
@@ -177,20 +195,16 @@ unsafe extern "system" fn filter_dlg_proc(
         WM_NCHITTEST => {
             let mut pt = POINT { x: (lparam.0 & 0xFFFF) as i16 as i32, y: ((lparam.0 >> 16) & 0xFFFF) as i16 as i32 };
             unsafe { let _ = ScreenToClient(hwnd, &mut pt); }
-            let (xd, yd) = (pt.x as f32 / st.scale, pt.y as f32 / st.scale);
-            if yd <= HEADER_H_DIP && hit_test_dlg(xd, yd).is_none() {
+            if (pt.y as f32 / st.scale) <= HEADER_H_DIP && hit_test_dlg(pt.x as f32 / st.scale, pt.y as f32 / st.scale).is_none() {
                 LRESULT(HTCAPTION as isize)
-            } else {
-                LRESULT(HTCLIENT as isize)
-            }
+            } else { LRESULT(HTCLIENT as isize) }
         }
         WM_SETCURSOR => {
             if (lparam.0 & 0xFFFF) as u32 == HTCLIENT {
                 let mut pt = POINT::default();
                 unsafe { let _ = GetCursorPos(&mut pt); let _ = ScreenToClient(hwnd, &mut pt); }
                 if hit_test_dlg(pt.x as f32 / st.scale, pt.y as f32 / st.scale).is_some()
-                    && let Ok(cur) = unsafe { LoadCursorW(None, IDC_HAND) }
-                {
+                    && let Ok(cur) = unsafe { LoadCursorW(None, IDC_HAND) } {
                     unsafe { SetCursor(Some(cur)); }
                     return LRESULT(1);
                 }
@@ -205,27 +219,19 @@ unsafe extern "system" fn filter_dlg_proc(
             }
             let (x, y) = ((lparam.0 & 0xFFFF) as i16 as f32, ((lparam.0 >> 16) & 0xFFFF) as i16 as f32);
             let next = hit_test_dlg(x / st.scale, y / st.scale);
-            if next != st.hovered {
-                st.hovered = next;
-                unsafe { let _ = InvalidateRect(Some(hwnd), None, false); }
-            }
+            if next != st.hovered { st.hovered = next; unsafe { let _ = InvalidateRect(Some(hwnd), None, false); } }
             LRESULT(0)
         }
         WM_MOUSELEAVE => {
             st.mouse_tracked = false;
-            if st.hovered.take().is_some() {
-                unsafe { let _ = InvalidateRect(Some(hwnd), None, false); }
-            }
+            if st.hovered.take().is_some() { unsafe { let _ = InvalidateRect(Some(hwnd), None, false); } }
             LRESULT(0)
         }
         WM_LBUTTONUP => {
             let (x, y) = ((lparam.0 & 0xFFFF) as i16 as f32, ((lparam.0 >> 16) & 0xFFFF) as i16 as f32);
             match hit_test_dlg(x / st.scale, y / st.scale) {
                 Some(DlgHit::Close | DlgHit::Cancel) => st.done = true,
-                Some(DlgHit::Save) => {
-                    try_submit(st);
-                    unsafe { let _ = InvalidateRect(Some(hwnd), None, false); }
-                }
+                Some(DlgHit::Save) => { try_submit(st); unsafe { let _ = InvalidateRect(Some(hwnd), None, false); } }
                 Some(DlgHit::Preset(idx)) => {
                     let (lz, le, exts) = PRESETS[idx];
                     set_edit_str(st.edits[0], if st.lang == Lang::Zh { lz } else { le });
@@ -251,20 +257,13 @@ unsafe extern "system" fn filter_dlg_proc(
             LRESULT(st.bg_brush.0 as isize)
         }
         WM_COMMAND => {
-            let id = wparam.0 & 0xFFFF;
-            let code = ((wparam.0 >> 16) & 0xFFFF) as u32;
+            let (id, code) = (wparam.0 & 0xFFFF, ((wparam.0 >> 16) & 0xFFFF) as u32);
             if let Some(fi) = ID_EDITS.iter().position(|&eid| eid == id) {
-                if code == EN_SETFOCUS_CODE {
-                    st.focused = Some(fi as u8);
-                    unsafe { let _ = InvalidateRect(Some(hwnd), None, false); }
-                } else if code == EN_KILLFOCUS_CODE && st.focused == Some(fi as u8) {
-                    st.focused = None;
-                    unsafe { let _ = InvalidateRect(Some(hwnd), None, false); }
-                } else if code == EN_CHANGE_CODE {
-                    st.error = None;
-                    refresh_live_preview(st);
-                    unsafe { let _ = InvalidateRect(Some(hwnd), None, false); }
-                }
+                if code == EN_SETFOCUS_CODE { st.focused = Some(fi as u8); }
+                else if code == EN_KILLFOCUS_CODE && st.focused == Some(fi as u8) { st.focused = None; }
+                else if code == EN_CHANGE_CODE { st.error = None; refresh_live_preview(st); }
+                else { return LRESULT(0); }
+                unsafe { let _ = InvalidateRect(Some(hwnd), None, false); }
             }
             LRESULT(0)
         }
@@ -273,8 +272,8 @@ unsafe extern "system" fn filter_dlg_proc(
     }
 }
 
-fn create_input_font(scale: f32, face: &str) -> HFONT {
-    let h = -(15.5 * scale).round() as i32;
+fn create_dlg_font(scale: f32, dip_h: f32, face: &str) -> HFONT {
+    let h = -(dip_h * scale).round() as i32;
     let fw: Vec<u16> = face.encode_utf16().chain(std::iter::once(0)).collect();
     unsafe {
         CreateFontW(
@@ -302,29 +301,18 @@ impl AppShell {
         let cls = w!("TomoyoFluentFilterDlg");
         let hinst = unsafe { GetModuleHandleW(None).unwrap() };
         unsafe {
-            let wc = WNDCLASSW {
-                lpfnWndProc: Some(filter_dlg_proc),
-                hInstance: hinst.into(),
-                hCursor: LoadCursorW(None, IDC_ARROW).unwrap_or_default(),
-                lpszClassName: cls,
-                ..Default::default()
-            };
+            let wc = WNDCLASSW { lpfnWndProc: Some(filter_dlg_proc), hInstance: hinst.into(), hCursor: LoadCursorW(None, IDC_ARROW).unwrap_or_default(), lpszClassName: cls, ..Default::default() };
             let _ = RegisterClassW(&wc);
         }
-
-        let Ok(dlg) = (unsafe {
-            CreateWindowExW(
-                Default::default(), cls, w!("Tomoyo Tag"),
-                WS_POPUP | WS_CLIPCHILDREN,
-                dx, dy, dw, dh, Some(self.hwnd), None, Some(hinst.into()), None,
-            )
-        }) else {
+        let Ok(dlg) = (unsafe { CreateWindowExW(Default::default(), cls, w!("Tomoyo Tag"), WS_POPUP | WS_CLIPCHILDREN, dx, dy, dw, dh, Some(self.hwnd), None, Some(hinst.into()), None) }) else {
             return;
         };
         apply_dwm_attributes(dlg, pal.is_dark);
 
         let gfx = DlgGfx::new();
-        let edit_font = create_input_font(scale, gfx.edit_font_face(&self.typography, self.font_regular, self.font_medium));
+        let face = gfx.edit_font_face(&self.typography, self.font_regular, self.font_medium);
+        let edit_font = create_dlg_font(scale, 13.0, face);
+        let cue_font = create_dlg_font(scale, 12.0, face);
         let bg_brush = unsafe { CreateSolidBrush(pal.bg.to_colorref()) };
         let initial_vals = [
             existing.as_ref().map(|t| t.label.clone()).unwrap_or_default(),
@@ -332,9 +320,9 @@ impl AppShell {
             existing.as_ref().map(|t| t.everything_expr.clone()).unwrap_or_default(),
         ];
         let cues = if lang == Lang::Zh {
-            ["例如：代码、视频、合同", "逗号或空格分隔，如 rs, ts, py", "可选，留空按扩展名筛选或点下方条件"]
+            ["如：代码、视频、合同", "如：rs, ts, py（逗号或空格分隔）", "留空按扩展名筛选，或点选下方条件"]
         } else {
-            ["e.g. Code, Videos, Contracts", "Comma/space separated, e.g. rs, ts, py", "Optional, or click condition chips below"]
+            ["e.g. Code, Videos, Contracts", "e.g. rs, ts, py (comma/space separated)", "Optional — or click chips below"]
         };
 
         let mut edits = [HWND::default(); 3];
@@ -346,8 +334,8 @@ impl AppShell {
                 CreateWindowExW(
                     Default::default(), w!("EDIT"), PCWSTR(vw.as_ptr()),
                     WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE((ES_LEFT | ES_AUTOHSCROLL) as u32),
-                    ((x0 + 11.0) * scale).round() as i32, ((y0 + 7.0) * scale).round() as i32,
-                    ((x1 - x0 - 22.0) * scale).round() as i32, ((y1 - y0 - 14.0) * scale).round() as i32,
+                    ((x0 + 12.0) * scale).round() as i32, ((y0 + 8.0) * scale).round() as i32,
+                    ((x1 - x0 - 24.0) * scale).round() as i32, ((y1 - y0 - 16.0) * scale).round() as i32,
                     Some(dlg), Some(HMENU(ID_EDITS[i] as *mut c_void)), Some(hinst.into()), None,
                 ).unwrap_or_default()
             };
@@ -357,27 +345,36 @@ impl AppShell {
             }
             edits[i] = ed;
         }
+
         let init_exts = parse_extensions(&initial_vals[1]);
         let init_expr = initial_vals[2].trim().to_string();
         let init_preview = format_rule_preview(&init_exts, &init_expr, lang);
         let mut st = Box::new(DlgState {
-            pal, lang, typo: self.typography.clone(), font_regular: self.font_regular, font_medium: self.font_medium,
-            is_edit: existing.is_some(), scale, gfx, bg_brush, edit_font,
-            bg_ref: pal.bg.to_colorref(), fg_ref: pal.text_primary.to_colorref(), muted_ref: pal.text_muted.to_colorref(),
+            owner_hwnd: self.hwnd, pal, lang, typo: self.typography.clone(), font_regular: self.font_regular, font_medium: self.font_medium,
+            is_edit: existing.is_some(), scale, gfx, bg_brush, cue_font,
+            bg_ref: pal.bg.to_colorref(), fg_ref: pal.text_primary.to_colorref(),
+            cue_ref: blend_rgb(pal.text_muted, pal.bg, 0.42).to_colorref(),
             cues, edits, focused: Some(0), hovered: None, mouse_tracked: false,
             live_exts: init_exts, live_expr: init_expr, live_preview: init_preview,
-            error: None, saved: false, done: false, out_label: String::new(), out_exts: Vec::new(), out_expr: String::new(),
+            error: None, closed_by_deactivate: false, saved: false, done: false,
+            out_label: String::new(), out_exts: Vec::new(), out_expr: String::new(),
         });
         let st_ptr = &mut *st as *mut DlgState;
         unsafe {
             for (i, &ed) in edits.iter().enumerate() { let _ = SetWindowSubclass(ed, Some(dlg_edit_subclass_proc), i + 1, st_ptr as usize); }
             SetWindowLongPtrW(dlg, GWLP_USERDATA, st_ptr as isize);
-            let _ = EnableWindow(self.hwnd, false);
             let _ = ShowWindow(dlg, SW_SHOW);
             let _ = SetWindowPos(dlg, Some(HWND_TOP), dx, dy, dw, dh, Default::default());
+            let _ = SetForegroundWindow(dlg);
             let _ = SetFocus(Some(edits[0]));
             let mut msg = MSG::default();
             while !(*st_ptr).done && GetMessageW(&mut msg, None, 0, 0).into() {
+                if matches!(msg.message, WM_LBUTTONDOWN | WM_RBUTTONDOWN | WM_MBUTTONDOWN | WM_NCLBUTTONDOWN | WM_NCRBUTTONDOWN)
+                    && msg.hwnd != dlg && !(*st_ptr).edits.contains(&msg.hwnd)
+                {
+                    (*st_ptr).done = true;
+                    continue;
+                }
                 if msg.message == WM_KEYDOWN {
                     let vk = msg.wParam.0 as u32;
                     if vk == 0x1B { (*st_ptr).done = true; continue; }
@@ -386,11 +383,11 @@ impl AppShell {
                 if !IsDialogMessageW(dlg, &msg).as_bool() { let _ = TranslateMessage(&msg); DispatchMessageW(&msg); }
             }
             for (i, &ed) in edits.iter().enumerate() { let _ = RemoveWindowSubclass(ed, Some(dlg_edit_subclass_proc), i + 1); }
-            let _ = EnableWindow(self.hwnd, true);
             SetWindowLongPtrW(dlg, GWLP_USERDATA, 0);
             let _ = DestroyWindow(dlg);
             let _ = DeleteObject(bg_brush.into());
             let _ = DeleteObject(edit_font.into());
+            let _ = DeleteObject(cue_font.into());
         }
 
         if st.saved {
@@ -424,6 +421,8 @@ impl AppShell {
                 self.show_toast(&format!("{}: {}", self.lang.pick("已保存标签", "Saved tag"), st.out_label));
             }
         }
-        unsafe { let _ = SetForegroundWindow(self.hwnd); let _ = SetFocus(Some(self.edit_hwnd)); }
+        if !st.closed_by_deactivate {
+            unsafe { let _ = SetForegroundWindow(self.hwnd); let _ = SetFocus(Some(self.edit_hwnd)); }
+        }
     }
 }

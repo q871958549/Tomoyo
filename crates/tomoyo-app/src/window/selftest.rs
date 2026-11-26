@@ -107,7 +107,7 @@ impl AppShell {
 
     pub fn compact_os_heaps(&self) {
         unsafe {
-            windows::Win32::System::Com::CoFreeUnusedLibraries();
+            windows::Win32::System::Com::CoFreeUnusedLibrariesEx(0, None);
             mi_collect(true);
             if let Ok(heap) = windows::Win32::System::Memory::GetProcessHeap() {
                 let _ = windows::Win32::System::Memory::HeapCompact(

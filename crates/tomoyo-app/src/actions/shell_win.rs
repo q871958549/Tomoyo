@@ -276,8 +276,8 @@ pub fn focus_window(raw_hwnd: isize) {
 }
 
 pub fn reveal_in_file_manager(path: &str) -> bool {
-    let arg = format!("/select,\"{path}\"");
-    shell_open("explorer.exe", Some(&arg), None)
+    let (target, arg) = tomoyo_core::resolve_reveal_file_command(path);
+    shell_open(&target, Some(&arg), None)
 }
 
 pub fn open_terminal_at(dir: &str) -> bool {

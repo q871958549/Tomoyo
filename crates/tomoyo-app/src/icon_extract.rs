@@ -50,25 +50,22 @@ impl Drop for OwnedHIcon {
 }
 
 #[inline]
-fn should_use_image_factory(path: &str) -> bool {
-    path.starts_with("shell:")
-        || std::path::Path::new(path).extension().and_then(|s| s.to_str()).is_some_and(|e| {
-            ["exe", "lnk", "ico", "cur", "url", "appref-ms", "msc", "cpl"]
-                .iter()
-                .any(|k| e.eq_ignore_ascii_case(k))
-        })
+fn has_per_file_icon(path: &str) -> bool {
+    std::path::Path::new(path).extension().and_then(|s| s.to_str()).is_some_and(|e| {
+        ["exe", "lnk", "ico", "cur", "url", "appref-ms", "msc", "cpl"]
+            .iter()
+            .any(|k| e.eq_ignore_ascii_case(k))
+    })
 }
 
 /// Extracts a razor-sharp straight-alpha RGBA icon resampled to exact `target_px x target_px`.
 pub fn extract_shell_icon_rgba(path: &str, target_px: u32) -> Option<DecodedRgba> {
     let dst = target_px.clamp(16, 128);
     let req = (dst * 2).clamp(64, 128) as i32;
-    let raw = if should_use_image_factory(path) {
-        extract_via_image_factory(path, req)
-            .or_else(|| extract_via_shell_image_list(path, false))
-            .or_else(|| extract_via_shgetfileinfo(path))?
+    let raw = if path.starts_with("shell:") {
+        extract_via_image_factory(path, req)?
     } else {
-        extract_via_shell_image_list(path, true)
+        extract_via_shell_image_list(path, !has_per_file_icon(path))
             .or_else(|| extract_via_shgetfileinfo(path))?
     };
 

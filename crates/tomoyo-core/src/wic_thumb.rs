@@ -215,18 +215,96 @@ pub fn scale_rgba_bilinear(src: &[u8], sw: u32, sh: u32, dw: u32, dh: u32) -> Ve
     out
 }
 
-/// Pure-Rust PNG thumbnail decoder bounded to `max_w x max_h` without spawning external loaders.
+fn flush_acc_row(acc: &mut [[u32; 5]], out_row: &mut [u8]) {
+    for (cell, px) in acc.iter_mut().zip(out_row.chunks_exact_mut(4)) {
+        let cnt = cell[4];
+        if cnt > 0 {
+            let half = cnt / 2;
+            for c in 0..4 {
+                px[c] = ((cell[c] + half) / cnt).min(255) as u8;
+            }
+        }
+        *cell = [0; 5];
+    }
+}
+
+fn accumulate_row(row: &[u8], color: png::ColorType, sw: u32, dw: u32, acc: &mut [[u32; 5]]) -> bool {
+    let step = match color {
+        png::ColorType::Rgba => 4,
+        png::ColorType::Rgb => 3,
+        png::ColorType::GrayscaleAlpha => 2,
+        png::ColorType::Grayscale => 1,
+        _ => return false,
+    };
+    if row.len() < (sw as usize).saturating_mul(step) {
+        return false;
+    }
+    for sx in 0..sw {
+        let dx = (((sx as u64) * (dw as u64)) / (sw as u64)) as usize;
+        let off = (sx as usize) * step;
+        let (r, g, b, a) = match color {
+            png::ColorType::Rgba => (row[off], row[off + 1], row[off + 2], row[off + 3]),
+            png::ColorType::Rgb => (row[off], row[off + 1], row[off + 2], 255),
+            png::ColorType::GrayscaleAlpha => (row[off], row[off], row[off], row[off + 1]),
+            png::ColorType::Grayscale => (row[off], row[off], row[off], 255),
+            _ => unreachable!(),
+        };
+        let cell = &mut acc[dx];
+        cell[0] += r as u32;
+        cell[1] += g as u32;
+        cell[2] += b as u32;
+        cell[3] += a as u32;
+        cell[4] += 1;
+    }
+    true
+}
+
+/// Pure-Rust streaming PNG thumbnail decoder bounded to `max_w x max_h` with O(width) scanline RAM.
 pub fn decode_png_thumbnail(
     path: &Path,
     max_w: u32,
     max_h: u32,
 ) -> Option<(u32, u32, u32, u32, Vec<u8>)> {
-    let (sw, sh, rgba) = read_png_rgba_file(path)?;
+    let meta = std::fs::metadata(path).ok()?;
+    if meta.len() == 0 || meta.len() > MAX_PNG_FILE_BYTES || !has_png_magic(path) {
+        return None;
+    }
+    let file = std::fs::File::open(path).ok()?;
+    let mut dec = png::Decoder::new(std::io::BufReader::new(file));
+    dec.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
+    let mut reader = dec.read_info().ok()?;
+    let (sw, sh) = (reader.info().width, reader.info().height);
+    let color = reader.info().color_type;
+    let interlaced = reader.info().interlaced;
+    let px_count = (sw as usize).checked_mul(sh as usize)?;
+    if sw == 0 || sh == 0 || sw > 12_000 || sh > 12_000 || px_count > 64_000_000 {
+        return None;
+    }
     let scale = ((max_w as f32 / sw as f32).min(max_h as f32 / sh as f32)).min(1.0);
-    let dw = ((sw as f32 * scale).round() as u32).max(1);
-    let dh = ((sh as f32 * scale).round() as u32).max(1);
-    let scaled = scale_rgba_bilinear(&rgba, sw, sh, dw, dh);
-    Some((sw, sh, dw, dh, scaled))
+    let dw = ((sw as f32 * scale).round() as u32).max(1).min(sw);
+    let dh = ((sh as f32 * scale).round() as u32).max(1).min(sh);
+    if interlaced {
+        drop(reader);
+        let (_, _, rgba) = read_png_rgba_file(path)?;
+        return Some((sw, sh, dw, dh, scale_rgba_bilinear(&rgba, sw, sh, dw, dh)));
+    }
+    let mut out = vec![0u8; (dw as usize) * (dh as usize) * 4];
+    let mut row_acc = vec![[0u32; 5]; dw as usize];
+    let mut cur_dy = 0usize;
+    let row_stride = (dw as usize) * 4;
+    for sy in 0..sh {
+        let row = reader.next_row().ok()??;
+        let dy = (((sy as u64) * (dh as u64)) / (sh as u64)) as usize;
+        if dy != cur_dy {
+            flush_acc_row(&mut row_acc, &mut out[cur_dy * row_stride..(cur_dy + 1) * row_stride]);
+            cur_dy = dy;
+        }
+        if !accumulate_row(row.data(), color, sw, dw, &mut row_acc) {
+            return None;
+        }
+    }
+    flush_acc_row(&mut row_acc, &mut out[cur_dy * row_stride..(cur_dy + 1) * row_stride]);
+    Some((sw, sh, dw, dh, out))
 }
 
 /// Decodes a PNG file into a `sz x sz` premultiplied BGRA buffer suitable for Cairo blitting.
@@ -273,5 +351,26 @@ mod tests {
         let scaled = scale_rgba_bilinear(&rgba, w, h, 2, 2);
         assert_eq!(scaled.len(), 16);
         assert_eq!(&scaled[..4], &[255, 0, 0, 128]);
+    }
+
+    #[test]
+    fn streaming_png_thumbnail_downsamples_with_bounded_memory() {
+        let tmp = std::env::temp_dir().join("tomoyo_stream_thumb_test.png");
+        let mut png_bytes = Vec::new();
+        {
+            let mut enc = png::Encoder::new(&mut png_bytes, 16, 12);
+            enc.set_color(png::ColorType::Rgba);
+            enc.set_depth(png::BitDepth::Eight);
+            let mut wr = enc.write_header().unwrap();
+            let px = [40u8, 120, 200, 255].repeat(16 * 12);
+            wr.write_image_data(&px).unwrap();
+        }
+        std::fs::write(&tmp, &png_bytes).unwrap();
+        let res = decode_png_thumbnail(&tmp, 4, 3);
+        let _ = std::fs::remove_file(&tmp);
+        let (sw, sh, dw, dh, out) = res.unwrap();
+        assert_eq!((sw, sh, dw, dh), (16, 12, 4, 3));
+        assert_eq!(out.len(), 48);
+        assert_eq!(&out[..4], &[40, 120, 200, 255]);
     }
 }

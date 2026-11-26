@@ -102,11 +102,10 @@ impl AppShell {
                 false,
                 false,
             ),
-            ActionKind::RevealInExplorer { path } => (
-                LaunchSpec::Shell { verb_admin: false, target: "explorer.exe".into(), args: Some(format!("/select,\"{path}\"")), workdir: None },
-                false,
-                false,
-            ),
+            ActionKind::RevealInExplorer { path } => {
+                let (target, arg) = tomoyo_core::resolve_reveal_file_command(path);
+                (LaunchSpec::Shell { verb_admin: false, target, args: Some(arg), workdir: None }, false, false)
+            }
             ActionKind::OpenTerminalAt { dir } => (LaunchSpec::Terminal { dir: dir.clone() }, false, false),
             _ => return false,
         };
