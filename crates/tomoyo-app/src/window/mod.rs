@@ -150,6 +150,7 @@ pub(super) struct InteractionState {
     pub hovered_overflow: bool,
     pub hovered_add_tag: bool,
     pub sidebar_scroll: f32,
+    pub(super) sidebar_drag: Option<sidebar_menu::SidebarDragState>,
     pub hovered_logo: bool,
     pub pressed_logo: bool,
     pub settings_pending: bool,
@@ -243,6 +244,7 @@ impl AppShell {
         self.inter.hovered_filter = None;
         self.inter.hovered_overflow = false;
         self.inter.hovered_add_tag = false;
+        self.inter.sidebar_drag = None;
         self.inter.hovered_logo = false;
         self.inter.pressed_logo = false;
         self.inter.dragging_scrollbar = None;

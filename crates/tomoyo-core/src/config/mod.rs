@@ -82,6 +82,9 @@ pub struct TomoyoConfig {
     /// User-extensible custom filter tabs shown in the search filter bar.
     #[serde(default)]
     pub custom_filters: Vec<CustomFilterTab>,
+    /// Custom sidebar display order keyed by `"app"`, `"pdf"`, `"custom:<id>"`, etc. (`"all"` always pinned first).
+    #[serde(default)]
+    pub filter_tab_order: Vec<String>,
     /// Result & input box typography preferences (font family, weights, size).
     #[serde(default)]
     pub typography: TypographyConfig,
@@ -149,6 +152,7 @@ impl Default for TomoyoConfig {
             filter_bar_layout: typography::default_filter_layout(),
             hidden_builtin_filters: Vec::new(),
             custom_filters: Vec::new(),
+            filter_tab_order: Vec::new(),
             typography: TypographyConfig::default(),
             disabled_plugins: Vec::new(),
             plugin_hotkeys: BTreeMap::new(),

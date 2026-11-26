@@ -17,7 +17,7 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 use windows::Win32::UI::WindowsAndMessaging::{
     DefWindowProcW, GetClientRect, GetCursorPos, LoadCursorW, SetCursor, HTBOTTOM, HTBOTTOMLEFT,
     HTBOTTOMRIGHT, HTCAPTION, HTCLIENT, HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT, IDC_ARROW,
-    IDC_HAND, IDC_SIZEWE,
+    IDC_HAND, IDC_SIZENS, IDC_SIZEWE,
 };
 
 pub(super) fn unpack_xy(lparam: LPARAM) -> (i32, i32) {
@@ -85,6 +85,12 @@ pub(super) fn handle_set_cursor(
     lparam: LPARAM,
 ) -> LRESULT {
     if (lparam.0 & 0xFFFF) as u32 == HTCLIENT {
+        if app.inter.sidebar_drag.is_some_and(|d| d.active)
+            && let Ok(cur) = unsafe { LoadCursorW(None, IDC_SIZENS) }
+        {
+            unsafe { SetCursor(Some(cur)); }
+            return LRESULT(1);
+        }
         if app.inter.dragging_scrollbar.is_some()
             && let Ok(cur) = unsafe { LoadCursorW(None, IDC_ARROW) }
         {
@@ -124,6 +130,11 @@ pub(super) fn handle_set_cursor(
 }
 
 pub(super) fn handle_rbutton_up(app: &mut AppShell, lparam: LPARAM) -> LRESULT {
+    if app.cancel_sidebar_tab_drag() {
+        unsafe { let _ = ReleaseCapture(); }
+        app.invalidate();
+        return LRESULT(0);
+    }
     let (x, y) = unpack_xy(lparam);
     let y_dip = y as f32 / app.dpi_scale.max(1.0);
     if y_dip < HEADER_HEIGHT_DIP as f32 {
@@ -183,10 +194,7 @@ pub(super) fn handle_mouse_down(hwnd: HWND, app: &mut AppShell, lparam: LPARAM) 
     }
     if let Some(hit) = app.hit_test_sidebar(x, y) {
         match hit {
-            SidebarHit::Tab(f) => {
-                app.set_active_filter(f);
-                unsafe { let _ = SetFocus(Some(app.edit_hwnd)); }
-            }
+            SidebarHit::Tab(f) => app.begin_sidebar_tab_press(hwnd, f, y_dip),
             SidebarHit::AddTag => app.open_custom_filter_dialog(None),
             SidebarHit::Empty => {}
         }
@@ -258,39 +266,31 @@ pub(super) fn handle_mouse_move(
         let (lx0, _) = app.list_bounds_dip(w_dip);
         let max_pw = ((w_dip - lx0) - 320.0).clamp(220.0, 620.0);
         let clamped = (w_dip - x as f32 / scale).round().clamp(220.0, max_pw) as i32;
-        if clamped != app.geom.preview_width_dip {
-            app.geom.preview_width_dip = clamped;
-            app.invalidate();
-        }
+        if clamped != app.geom.preview_width_dip { app.geom.preview_width_dip = clamped; app.invalidate(); }
+        return LRESULT(0);
+    }
+    if app.update_sidebar_tab_drag(y as f32 / scale) {
         return LRESULT(0);
     }
     let lbtn_down = (wparam.0 & 0x0001) != 0;
     let drag_thresh = (12.0 * scale).round() as i32;
-    if lbtn_down
-        && !app.has_in_flight_launch()
+    if lbtn_down && !app.has_in_flight_launch()
         && let Some((ox, oy, path)) = app.inter.drag_origin.clone()
         && ((x - ox).abs() > drag_thresh || (y - oy).abs() > drag_thresh)
     {
         app.inter.drag_origin = None;
         app.inter.last_click = None;
-        {
-            let _modal = super::enter_modal_overlay();
-            let _ = start_file_drag(&path);
-        }
+        { let _modal = super::enter_modal_overlay(); let _ = start_file_drag(&path); }
         return LRESULT(0);
     }
-    let sb_hover = current_scrollbar_metrics(app)
-        .and_then(|sb| sb.hit_test(x as f32 / scale, y as f32 / scale));
+    let sb_hover = current_scrollbar_metrics(app).and_then(|sb| sb.hit_test(x as f32 / scale, y as f32 / scale));
     let new_logo_hover = app.hit_test_logo_icon(x, y);
     let sb_side = app.hit_test_sidebar(x, y);
     let new_filter_hover = match sb_side { Some(SidebarHit::Tab(f)) => Some(f), _ => None };
     let new_add_hover = matches!(sb_side, Some(SidebarHit::AddTag));
     let new_hover = if sb_side.is_some() || sb_hover.is_some() { None } else { app.hit_test_row(x, y) };
-    if new_hover != app.inter.hovered
-        || new_filter_hover != app.inter.hovered_filter
-        || new_add_hover != app.inter.hovered_add_tag
-        || new_logo_hover != app.inter.hovered_logo
-        || sb_hover != app.inter.scrollbar_hover
+    if new_hover != app.inter.hovered || new_filter_hover != app.inter.hovered_filter
+        || new_add_hover != app.inter.hovered_add_tag || new_logo_hover != app.inter.hovered_logo || sb_hover != app.inter.scrollbar_hover
     {
         app.inter.hovered = new_hover;
         app.inter.hovered_filter = new_filter_hover;
@@ -311,54 +311,36 @@ pub(super) fn handle_mouse_leave(app: &mut AppShell) -> LRESULT {
         | std::mem::replace(&mut app.inter.hovered_overflow, false)
         | std::mem::replace(&mut app.inter.hovered_logo, false)
         | (app.inter.dragging_scrollbar.is_none() && app.inter.scrollbar_hover.take().is_some());
-    if changed {
-        app.invalidate();
-    }
+    if changed { app.invalidate(); }
     LRESULT(0)
 }
 
 pub(super) fn handle_capture_changed(app: &mut AppShell) -> LRESULT {
     let mut dirty = false;
-    if app.inter.dragging_scrollbar.take().is_some() {
-        app.inter.scrollbar_hover = None;
-        dirty = true;
-    }
-    if app.inter.dragging_divider {
-        app.inter.dragging_divider = false;
-        dirty = true;
-    }
-    if dirty {
-        app.invalidate();
-    }
+    if app.inter.dragging_scrollbar.take().is_some() { app.inter.scrollbar_hover = None; dirty = true; }
+    if app.inter.dragging_divider { app.inter.dragging_divider = false; dirty = true; }
+    if app.cancel_sidebar_tab_drag() { dirty = true; }
+    if dirty { app.invalidate(); }
     LRESULT(0)
 }
 
 pub(super) fn handle_lbutton_up(app: &mut AppShell) -> LRESULT {
     app.inter.drag_origin = None;
+    if app.finish_sidebar_tab_drag() { return LRESULT(0); }
     if app.inter.dragging_scrollbar.take().is_some() {
         unsafe { let _ = ReleaseCapture(); }
         let mut pt = POINT::default();
-        unsafe {
-            let _ = GetCursorPos(&mut pt);
-            let _ = ScreenToClient(app.hwnd, &mut pt);
-        }
+        unsafe { let _ = GetCursorPos(&mut pt); let _ = ScreenToClient(app.hwnd, &mut pt); }
         let scale = app.dpi_scale.max(1.0);
-        app.inter.scrollbar_hover = current_scrollbar_metrics(app)
-            .and_then(|sb| sb.hit_test(pt.x as f32 / scale, pt.y as f32 / scale));
+        app.inter.scrollbar_hover = current_scrollbar_metrics(app).and_then(|sb| sb.hit_test(pt.x as f32 / scale, pt.y as f32 / scale));
         app.invalidate();
         return LRESULT(0);
     }
     if app.inter.pressed_logo {
         app.inter.pressed_logo = false;
         let mut pt = POINT::default();
-        unsafe {
-            let _ = GetCursorPos(&mut pt);
-            let _ = ScreenToClient(app.hwnd, &mut pt);
-        }
-        if app.hit_test_logo_icon(pt.x, pt.y) {
-            app.open_settings_center();
-            return LRESULT(0);
-        }
+        unsafe { let _ = GetCursorPos(&mut pt); let _ = ScreenToClient(app.hwnd, &mut pt); }
+        if app.hit_test_logo_icon(pt.x, pt.y) { app.open_settings_center(); return LRESULT(0); }
     }
     if app.inter.dragging_divider {
         app.inter.dragging_divider = false;

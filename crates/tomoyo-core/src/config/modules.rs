@@ -134,6 +134,19 @@ pub fn sanitize_filters_and_plugins(cfg: &mut TomoyoConfig) {
     }
     cfg.custom_filters = clean_tabs;
 
+    let mut seen_order = HashSet::new();
+    cfg.filter_tab_order = std::mem::take(&mut cfg.filter_tab_order)
+        .into_iter()
+        .map(|s| s.trim().to_ascii_lowercase())
+        .filter(|s| {
+            let valid = BUILTIN_FILTER_IDS.contains(&s.as_str())
+                || s.strip_prefix("custom:")
+                    .is_some_and(|cid| cfg.custom_filters.iter().any(|t| t.id.eq_ignore_ascii_case(cid)));
+            valid && seen_order.insert(s.clone())
+        })
+        .take(64)
+        .collect();
+
     // 4. Protocol v2: plugin_hotkeys & plugin_settings (bounded & TOML-safe primitives only)
     let mut clean_phk = BTreeMap::new();
     for (k, v) in std::mem::take(&mut cfg.plugin_hotkeys) {

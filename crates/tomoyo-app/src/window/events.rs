@@ -4,7 +4,7 @@ use super::bootstrap::read_edit_text;
 use super::{AppShell, QueryJob};
 use crate::renderer::{compute_filter_counts, RenderState};
 use tomoyo_core::Lang;
-use tomoyo_protocol::{build_visible_filter_tabs, SearchFilter, VisibleFilterTab};
+use tomoyo_protocol::{build_visible_filter_tabs_ordered, SearchFilter, VisibleFilterTab};
 use windows::Win32::Graphics::Gdi::HDC;
 use windows::Win32::UI::WindowsAndMessaging::IsWindowVisible;
 
@@ -24,8 +24,15 @@ impl AppShell {
         let zh = self.lang == Lang::Zh;
         self.config
             .read()
-            .map(|c| build_visible_filter_tabs(zh, &c.hidden_builtin_filters, &c.custom_filters))
-            .unwrap_or_else(|_| build_visible_filter_tabs(zh, &[], &[]))
+            .map(|c| {
+                build_visible_filter_tabs_ordered(
+                    zh,
+                    &c.hidden_builtin_filters,
+                    &c.custom_filters,
+                    &c.filter_tab_order,
+                )
+            })
+            .unwrap_or_else(|_| build_visible_filter_tabs_ordered(zh, &[], &[], &[]))
     }
 
     pub(super) fn on_results_ready(&mut self) {
@@ -115,6 +122,7 @@ impl AppShell {
             filter_pill_override: None,
             sidebar_scroll: self.inter.sidebar_scroll,
             hovered_add_tag: self.inter.hovered_add_tag,
+            sidebar_drag: self.sidebar_drag_visual(),
             typography: &self.typography,
             items: &self.results, selected: self.selected, hovered: self.inter.hovered,
             launching_row,

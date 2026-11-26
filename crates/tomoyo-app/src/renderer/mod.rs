@@ -18,8 +18,8 @@ pub use filter_bar::{compute_filter_bar_layout, FilterHit};
 pub use filter_bar::{compute_filter_counts, FilterCounts};
 #[cfg(windows)]
 pub use filter_sidebar::{
-    compute_sidebar_layout, hit_test_sidebar, should_show_filter_sidebar, SidebarHit,
-    SIDEBAR_WIDTH_DIP,
+    compute_drag_drop_slot, compute_sidebar_layout, hit_test_sidebar, should_show_filter_sidebar,
+    SidebarDragVisual, SidebarHit, SIDEBAR_WIDTH_DIP,
 };
 pub use scrollbar::ScrollbarVisual;
 #[cfg(windows)]
@@ -79,6 +79,8 @@ pub struct RenderState<'a> {
     pub sidebar_scroll: f32,
     #[cfg(windows)]
     pub hovered_add_tag: bool,
+    #[cfg(windows)]
+    pub sidebar_drag: Option<SidebarDragVisual>,
     pub typography: &'a TypographyConfig,
     pub items: &'a [ResultItem],
     pub selected: usize,

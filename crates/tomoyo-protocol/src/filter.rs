@@ -77,6 +77,16 @@ pub fn build_visible_filter_tabs(
     hidden_builtins: &[String],
     custom_tabs: &[CustomFilterTab],
 ) -> Vec<VisibleFilterTab> {
+    build_visible_filter_tabs_ordered(zh, hidden_builtins, custom_tabs, &[])
+}
+
+/// Builds visible filter tabs honoring `order` (keyed by `SearchFilter::order_key`), keeping `All` pinned first.
+pub fn build_visible_filter_tabs_ordered(
+    zh: bool,
+    hidden_builtins: &[String],
+    custom_tabs: &[CustomFilterTab],
+    order: &[String],
+) -> Vec<VisibleFilterTab> {
     let mut out = Vec::with_capacity(SearchFilter::ALL.len() + custom_tabs.len());
     for &f in &SearchFilter::ALL {
         if f != SearchFilter::All
@@ -98,6 +108,16 @@ pub fn build_visible_filter_tabs(
                 extensions: tab.extensions.clone(),
             });
         }
+    }
+    if !order.is_empty() && out.len() > 2 {
+        let rank_of = |f: SearchFilter| -> usize {
+            let key = f.order_key(custom_tabs);
+            order
+                .iter()
+                .position(|k| k.eq_ignore_ascii_case(&key))
+                .unwrap_or(usize::MAX)
+        };
+        out[1..].sort_by_key(|t| rank_of(t.filter));
     }
     out
 }
@@ -127,6 +147,16 @@ impl SearchFilter {
             Self::Image => "image",
             Self::Archive => "archive",
             Self::Custom(_) => "custom",
+        }
+    }
+
+    pub fn order_key(self, custom_tabs: &[CustomFilterTab]) -> String {
+        match self {
+            Self::Custom(idx) => custom_tabs
+                .get(idx as usize)
+                .map(|t| format!("custom:{}", t.id.trim().to_ascii_lowercase()))
+                .unwrap_or_else(|| format!("custom:{idx}")),
+            _ => self.id_key().to_string(),
         }
     }
 
@@ -281,5 +311,15 @@ mod tests {
         let vis = build_visible_filter_tabs(true, &["ppt".into()], &custom);
         assert!(!vis.iter().any(|t| t.filter == SearchFilter::Ppt));
         assert!(vis.iter().any(|t| t.filter == SearchFilter::Custom(0) && t.label == "代码"));
+
+        let ordered = build_visible_filter_tabs_ordered(
+            true,
+            &["ppt".into()],
+            &custom,
+            &["custom:code".into(), "all".into(), "pdf".into()],
+        );
+        assert_eq!(ordered[0].filter, SearchFilter::All);
+        assert_eq!(ordered[1].filter, SearchFilter::Custom(0));
+        assert_eq!(ordered[2].filter, SearchFilter::Pdf);
     }
 }

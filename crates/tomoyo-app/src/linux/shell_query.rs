@@ -15,7 +15,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tomoyo_core::{Lang, QueryRouter, UpdateStatus};
 use tomoyo_protocol::{
-    build_visible_filter_tabs, AttachedContext, ClipboardSnapshot, ResultItem, SearchFilter,
+    build_visible_filter_tabs_ordered, AttachedContext, ClipboardSnapshot, ResultItem, SearchFilter,
     VisibleFilterTab,
 };
 
@@ -33,8 +33,15 @@ impl AppCore {
         let zh = self.lang == Lang::Zh;
         self.config
             .read()
-            .map(|c| build_visible_filter_tabs(zh, &c.hidden_builtin_filters, &c.custom_filters))
-            .unwrap_or_else(|_| build_visible_filter_tabs(zh, &[], &[]))
+            .map(|c| {
+                build_visible_filter_tabs_ordered(
+                    zh,
+                    &c.hidden_builtin_filters,
+                    &c.custom_filters,
+                    &c.filter_tab_order,
+                )
+            })
+            .unwrap_or_else(|_| build_visible_filter_tabs_ordered(zh, &[], &[], &[]))
     }
 
     pub(super) fn is_preview_visible(&self) -> bool {

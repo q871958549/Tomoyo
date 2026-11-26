@@ -115,6 +115,9 @@ pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isi
         HostMessage::DbPut { id, doc } => { db.put(id, doc); HostAction::default() }
         HostMessage::DbRemove { id } => { db.remove(&id); HostAction::default() }
         HostMessage::SaveSettings { mut config, autostart } => {
+            if config.filter_tab_order.is_empty() {
+                config.filter_tab_order = tomoyo_core::TomoyoConfig::load_or_create().filter_tab_order;
+            }
             let notes = config.sanitize();
             let theme = config.theme.clone();
             let _ = config.save();
