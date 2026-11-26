@@ -46,6 +46,7 @@ mod pin_window;
 mod region_prefs;
 mod screen;
 mod snap_detect;
+mod snap_motion;
 #[cfg(windows)]
 mod scroll_capture;
 #[cfg(windows)]

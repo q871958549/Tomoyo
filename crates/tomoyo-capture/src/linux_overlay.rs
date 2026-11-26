@@ -10,11 +10,12 @@ use crate::linux_overlay_input::{on_key_cb, on_mouse_cb};
 use crate::linux_record::{has_valid_monitor_token, RecAudio, RecFormat, RecordRequest};
 use crate::overlay_draw::{
     build_toolbar_layout, compose_overlay_pixels_ex, dim_badge_rect, loupe_rect, precompute_dimmed,
-    rec_hint_rect, snap_badge_rect, tooltip_rect_for, wheel_hud_rect, ToolbarCmd, ToolbarLayout,
-    ToolbarStyleState,
+    precompute_hover_dimmed, rec_hint_rect, snap_badge_rect_avoiding, tooltip_rect_for,
+    wheel_hud_rect, ToolbarCmd, ToolbarLayout, ToolbarStyleState,
 };
 use crate::screen::{capture_virtual_desktop, DesktopSnapshot, ScreenRect};
-use crate::snap_detect::{build_linux_snap_context, SnapCandidate, SnapContext};
+use crate::snap_detect::{build_linux_snap_context, SnapContext};
+use crate::snap_motion::{SnapMotion, SnapTickRequest};
 use std::ffi::{c_char, c_int, c_void, CString};
 use tomoyo_core::{CaptureToolHotkeys, TomoyoConfig};
 
@@ -64,10 +65,13 @@ pub(super) struct OverlayState {
     pub mode: CaptureMode,
     pub snap: DesktopSnapshot,
     pub snap_ctx: SnapContext,
+    pub snap_motion: SnapMotion,
+    pub start_time: std::time::Instant,
+    pub snap_timer_deadline: Option<std::time::Instant>,
     pub dimmed: Vec<u8>,
+    pub hover_dimmed: Vec<u8>,
     pub frame_buf: Vec<u8>,
     pub sel: Option<ScreenRect>,
-    pub hover_snap: Option<SnapCandidate>,
     pub drag: Drag,
     pub cursor: (i32, i32),
     pub tool: ToolKind,
@@ -100,6 +104,21 @@ pub(super) struct OverlayState {
 }
 
 impl OverlayState {
+    pub(super) fn now_ms(&self) -> u64 {
+        self.start_time.elapsed().as_millis() as u64
+    }
+
+    pub(super) fn schedule_snap_tick(&mut self, tick: SnapTickRequest) {
+        if let Some(ms) = tick.next_timer_ms {
+            let want = std::time::Instant::now() + std::time::Duration::from_millis(ms.max(10) as u64);
+            let need = self.snap_timer_deadline.is_none_or(|cur| want < cur);
+            if need {
+                self.snap_timer_deadline = Some(want);
+                unsafe { tomoyo_cap_schedule_redraw(ms.max(10) as c_int); }
+            }
+        }
+    }
+
     pub(super) fn map_pt(&self, wx: i32, wy: i32) -> (i32, i32) {
         let (ww, wh) = (self.win_dims.0.max(1) as i64, self.win_dims.1.max(1) as i64);
         (
@@ -260,13 +279,24 @@ fn cursor_kind_for_handle(idx: usize) -> c_int {
 unsafe extern "C" fn on_draw(ctx: *mut c_void, cr: *mut c_void, ww: c_int, wh: c_int) {
     let st = unsafe { &mut *(ctx as *mut OverlayState) };
     st.win_dims = (ww.max(1), wh.max(1));
+    if st.sel.is_none() && st.drag == Drag::None {
+        let now = std::time::Instant::now();
+        if st.snap_timer_deadline.is_some_and(|dl| now >= dl) {
+            st.snap_timer_deadline = None;
+        }
+        let now_ms = st.now_ms();
+        let tick = st.snap_motion.on_timer(&mut st.snap_ctx, &st.snap, now_ms);
+        st.schedule_snap_tick(tick);
+    }
     let show_loupe = st.sel.is_none() || matches!(st.drag, Drag::Creating(..) | Drag::Resizing(..));
     let hud_str = st.wheel_hud.as_ref().filter(|(_, exp)| std::time::Instant::now() < *exp).map(|(s, _)| s.as_str());
     let rec_first_hint = st.record_open && !st.has_monitor_token && st.layout.sub_bar.is_some();
+    let vis_snap = st.snap_motion.visual_rect();
+    let target_snap = st.snap_motion.target();
     compose_overlay_pixels_ex(
-        &mut st.frame_buf, &st.snap, &st.dimmed, st.sel, st.hover_snap.map(|c| c.rect),
+        &mut st.frame_buf, &st.snap, &st.dimmed, &st.hover_dimmed, st.sel, vis_snap,
         st.ann_stack.items(), st.ann_stack.selected, st.hovered_annot, st.live_ann.as_ref(),
-        st.cursor, show_loupe, &st.layout, st.hovered_cmd, hud_str, rec_first_hint,
+        st.cursor, show_loupe, st.snap_motion.fast_moving, &st.layout, st.hovered_cmd, hud_str, rec_first_hint,
     );
     unsafe { tomoyo_cap_cairo_blit_bgra(cr, st.frame_buf.as_ptr(), st.snap.width, st.snap.height, ww, wh); }
     let sx = ww as f64 / st.snap.width.max(1) as f64;
@@ -278,12 +308,14 @@ unsafe extern "C" fn on_draw(ctx: *mut c_void, cr: *mut c_void, ww: c_int, wh: c
         let db = dim_badge_rect(r, st.snap.width);
         let badge = if st.record_open { format!("录制 {} × {}", r.w, r.h) } else { format!("{} × {}", r.w, r.h) };
         draw_txt(cr, &fnt, 0xF3F5FA, 1, &badge, [db.x as f64 * sx, db.y as f64 * sy, db.w as f64 * sx, db.h as f64 * sy]);
-    } else if let Some(h) = st.hover_snap {
-        let sb = snap_badge_rect(h.rect, st.snap.width);
+    } else if let Some(h) = target_snap {
+        let vis_r = vis_snap.unwrap_or(h.rect);
+        let avoid = show_loupe.then(|| loupe_rect(st.cursor, st.snap.width, st.snap.height));
+        let sb = snap_badge_rect_avoiding(vis_r, st.snap.width, st.snap.height, avoid);
         let msg = if st.snap_ctx.cycle_count <= 1 {
-            format!("{} {}×{} · 拖拽框选 / 单击全屏", h.kind.label(), h.rect.w, h.rect.h)
+            format!("{} {}×{} · 拖拽/单击 · Alt免吸附", h.kind.label(), h.rect.w, h.rect.h)
         } else {
-            format!("{} {}×{} · 单击选中 · Tab切层", h.kind.label(), h.rect.w, h.rect.h)
+            format!("{} {}×{} · 单击 · Tab切层 · Alt免", h.kind.label(), h.rect.w, h.rect.h)
         };
         draw_txt(cr, &fnt, 0xE0F2FE, 1, &msg, [sb.x as f64 * sx, sb.y as f64 * sy, sb.w as f64 * sx, sb.h as f64 * sy]);
     }
@@ -338,9 +370,12 @@ fn draw_txt(cr: *mut c_void, fnt: &CString, rgb: u32, align: c_int, txt: &str, r
 
 pub fn run_capture_overlay(mode: CaptureMode) -> Result<CaptureOutcome, String> {
     let snap = capture_virtual_desktop()?;
+    let start_time = std::time::Instant::now();
     let (mut snap_ctx, init_cursor) = build_linux_snap_context(&snap);
-    let hover_snap = snap_ctx.hover_at(&snap, init_cursor.0, init_cursor.1);
+    let initial_snap = snap_ctx.hover_at(&snap, init_cursor.0, init_cursor.1);
+    let snap_motion = SnapMotion::new(initial_snap, 0);
     let dimmed = precompute_dimmed(&snap.bgra);
+    let hover_dimmed = precompute_hover_dimmed(&snap.bgra);
     let cfg = TomoyoConfig::load_or_create();
     let frame_buf = vec![0u8; snap.bgra.len()];
     let (w, h) = (snap.width, snap.height);
@@ -349,10 +384,13 @@ pub fn run_capture_overlay(mode: CaptureMode) -> Result<CaptureOutcome, String> 
         mode,
         snap,
         snap_ctx,
+        snap_motion,
+        start_time,
+        snap_timer_deadline: None,
         dimmed,
+        hover_dimmed,
         frame_buf,
         sel: None,
-        hover_snap,
         drag: Drag::None,
         cursor: init_cursor,
         tool: ToolKind::Select,

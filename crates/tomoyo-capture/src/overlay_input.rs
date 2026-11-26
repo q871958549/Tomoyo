@@ -6,10 +6,11 @@ use crate::annotate::{
     constrain_shift_line, constrain_shift_point_rect, Annotation, ToolKind, COLOR_PRESETS,
 };
 use crate::export::copy_text_to_clipboard;
-use crate::overlay::{DragMode, OverlayState};
+use crate::overlay::{DragMode, OverlayState, TIMER_SNAP_MOTION};
 use crate::overlay_draw::{hit_test_handle, resize_rect_by_handle, ToolbarCmd};
 use crate::overlay_text_editor::{InlineTextEditor, TextHitZone};
 use crate::screen::ScreenRect;
+use crate::snap_motion::SnapTickRequest;
 use tomoyo_core::CaptureToolHotkeys;
 use windows::core::PCWSTR;
 use windows::Win32::Foundation::HWND;
@@ -19,7 +20,8 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     VK_SHIFT, VK_SPACE, VK_TAB,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    IDC_CROSS, IDC_HAND, IDC_IBEAM, IDC_SIZEALL, IDC_SIZENESW, IDC_SIZENS, IDC_SIZENWSE, IDC_SIZEWE,
+    KillTimer, IDC_CROSS, IDC_HAND, IDC_IBEAM, IDC_SIZEALL, IDC_SIZENESW, IDC_SIZENS,
+    IDC_SIZENWSE, IDC_SIZEWE,
 };
 
 fn box_handle_cursor(h_idx: usize) -> PCWSTR {
@@ -210,7 +212,8 @@ pub fn handle_lbutton_down(st: &mut OverlayState, hwnd: HWND, x: i32, y: i32) {
     }
     st.drag = DragMode::Creating(x, y);
     st.sel = None;
-    unsafe { SetCapture(hwnd); }
+    st.snap_motion.clear_pending();
+    unsafe { let _ = KillTimer(Some(hwnd), TIMER_SNAP_MOTION); SetCapture(hwnd); }
 }
 
 pub fn handle_lbutton_dblclk(st: &mut OverlayState, hwnd: HWND, x: i32, y: i32) {
@@ -268,10 +271,13 @@ pub fn handle_mouse_move(st: &mut OverlayState, hwnd: HWND, x: i32, y: i32) {
         st.hovered_annot = None;
     }
     let shift = unsafe { (GetKeyState(VK_SHIFT.0 as i32) as u16 & 0x8000) != 0 };
+    let alt = unsafe { (GetKeyState(VK_MENU.0 as i32) as u16 & 0x8000) != 0 };
     match st.drag {
         DragMode::None => {
             if st.sel.is_none() {
-                st.hover_snap = st.snap_ctx.hover_at(&st.snap, x, y);
+                let now_ms = st.now_ms();
+                let tick = st.snap_motion.on_pointer_move(&mut st.snap_ctx, &st.snap, x, y, alt, now_ms);
+                st.apply_snap_tick(hwnd, SnapTickRequest { needs_redraw: false, ..tick });
             }
         }
         DragMode::Creating(sx, sy) => st.sel = Some(ScreenRect::from_points(sx, sy, x, y)),
@@ -353,8 +359,9 @@ pub fn handle_key_down(st: &mut OverlayState, hwnd: HWND, vk: u16) {
     if vk == VK_ESCAPE.0 {
         st.execute_action(hwnd, ToolbarCmd::Cancel);
     } else if vk == VK_TAB.0 && st.sel.is_none() {
-        st.hover_snap = st.snap_ctx.cycle_next(&st.snap, st.cursor.0, st.cursor.1);
-        unsafe { let _ = InvalidateRect(Some(hwnd), None, false); }
+        let now_ms = st.now_ms();
+        let tick = st.snap_motion.on_cycle_next(&mut st.snap_ctx, &st.snap, st.cursor.0, st.cursor.1, now_ms);
+        st.apply_snap_tick(hwnd, tick);
     } else if (vk == VK_DELETE.0 || vk == VK_BACK.0) && st.stack.selected.is_some() {
         st.stack.delete_selected();
         unsafe { let _ = InvalidateRect(Some(hwnd), None, false); }

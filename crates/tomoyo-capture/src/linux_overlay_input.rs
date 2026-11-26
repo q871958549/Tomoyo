@@ -28,7 +28,9 @@ pub(super) unsafe extern "C" fn on_key_cb(ctx: *mut c_void, kv: u32, state: u32)
         return c_int::from(st.exec_cmd(ToolbarCmd::Cancel));
     }
     if kv == 0xFF09 && st.sel.is_none() {
-        st.hover_snap = st.snap_ctx.cycle_next(&st.snap, st.cursor.0, st.cursor.1);
+        let now_ms = st.now_ms();
+        let tick = st.snap_motion.on_cycle_next(&mut st.snap_ctx, &st.snap, st.cursor.0, st.cursor.1, now_ms);
+        st.schedule_snap_tick(tick);
         unsafe { tomoyo_cap_win_redraw(); }
         return 0;
     }
@@ -115,7 +117,7 @@ pub(super) unsafe extern "C" fn on_mouse_cb(
                 unsafe { tomoyo_cap_win_redraw(); }
                 return 0;
             }
-            if st.sel.is_none() { st.sel = st.hover_snap.map(|c| c.rect); }
+            if st.sel.is_none() { st.sel = st.snap_motion.target().map(|c| c.rect); }
             if st.sel.is_some_and(ScreenRect::is_valid) {
                 let cmd = if st.record_open { ToolbarCmd::RecStart } else { ToolbarCmd::Copy };
                 return c_int::from(st.exec_cmd(cmd));
@@ -124,7 +126,7 @@ pub(super) unsafe extern "C" fn on_mouse_cb(
         1 if btn == 3 => return handle_right_click(st, x, y),
         1 if btn == 1 => if handle_left_down(st, x, y) != 0 { return 1; },
         4 => return handle_left_up(st),
-        5 => handle_move(st, x, y, (delta & 1) != 0),
+        5 => handle_move(st, x, y, delta),
         _ => {}
     }
     unsafe { tomoyo_cap_win_redraw(); }
@@ -165,7 +167,9 @@ fn handle_right_click(st: &mut OverlayState, x: i32, y: i32) -> c_int {
         st.ann_stack = Default::default();
         st.tool = ToolKind::Select;
         st.record_open = st.mode == CaptureMode::Record;
-        st.hover_snap = st.snap_ctx.hover_at(&st.snap, x, y);
+        let now_ms = st.now_ms();
+        st.snap_motion.reset_at(&mut st.snap_ctx, &st.snap, x, y, now_ms);
+        st.snap_timer_deadline = None;
         st.rebuild_layout();
         st.update_hover_cursor();
         return 0;
@@ -226,6 +230,8 @@ fn handle_left_down(st: &mut OverlayState, x: i32, y: i32) -> c_int {
     }
     st.sel = None;
     st.drag = Drag::Creating(x, y);
+    st.snap_motion.clear_pending();
+    st.snap_timer_deadline = None;
     st.rebuild_layout();
     0
 }
@@ -238,7 +244,7 @@ fn handle_left_up(st: &mut OverlayState) -> c_int {
     st.drag = Drag::None;
     st.pen_pts.clear();
     if was_creating && !st.sel.is_some_and(ScreenRect::is_valid) {
-        st.sel = st.hover_snap.map(|c| c.rect);
+        st.sel = st.snap_motion.target().map(|c| c.rect);
     }
     if st.sel.is_some_and(ScreenRect::is_valid) && st.mode == CaptureMode::Record {
         st.record_open = true;
@@ -255,7 +261,9 @@ fn handle_left_up(st: &mut OverlayState) -> c_int {
     0
 }
 
-fn handle_move(st: &mut OverlayState, x: i32, y: i32, shift: bool) {
+fn handle_move(st: &mut OverlayState, x: i32, y: i32, mod_state: c_int) {
+    let shift = (mod_state & 1) != 0;
+    let alt = (mod_state & 8) != 0;
     match st.drag {
         Drag::Creating(sx, sy) => {
             st.sel = Some(ScreenRect::from_points(sx, sy, x, y).clamp_to(st.snap.width, st.snap.height));
@@ -304,7 +312,9 @@ fn handle_move(st: &mut OverlayState, x: i32, y: i32, shift: bool) {
         Drag::None => {
             st.hovered_cmd = st.layout.hits.iter().find(|h| h.rect.contains(x, y)).map(|h| h.cmd);
             if st.sel.is_none() {
-                st.hover_snap = st.snap_ctx.hover_at(&st.snap, x, y);
+                let now_ms = st.now_ms();
+                let tick = st.snap_motion.on_pointer_move(&mut st.snap_ctx, &st.snap, x, y, alt, now_ms);
+                st.schedule_snap_tick(tick);
             } else if st.hovered_cmd.is_none() {
                 st.hovered_ctrl = st.ann_stack.hit_test_any_control(x, y);
                 st.hovered_annot = st.hovered_ctrl.map(|(i, _)| i).or_else(|| st.ann_stack.hit_test_top(x, y));

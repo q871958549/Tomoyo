@@ -338,11 +338,41 @@ pub fn rec_hint_rect(sub: ScreenRect, screen_w: i32, screen_h: i32) -> ScreenRec
     ScreenRect { x, y, w, h }
 }
 
+#[inline]
+fn rects_overlap(a: ScreenRect, b: ScreenRect, pad: i32) -> bool {
+    a.x < b.right() + pad && a.right() + pad > b.x && a.y < b.bottom() + pad && a.bottom() + pad > b.y
+}
+
+pub fn snap_badge_rect_avoiding(
+    snap_r: ScreenRect,
+    screen_w: i32,
+    screen_h: i32,
+    avoid: Option<ScreenRect>,
+) -> ScreenRect {
+    let (w, h) = (248, 24);
+    let clamp_x = |x: i32| x.clamp(8, (screen_w - w - 8).max(8));
+    let clamp_y = |y: i32| y.clamp(8, (screen_h - h - 8).max(8));
+    let top_y = if snap_r.y >= 32 { snap_r.y - h - 6 } else { clamp_y(snap_r.y + 8) };
+    let bot_y = if snap_r.bottom() + h + 10 <= screen_h { snap_r.bottom() + 6 } else { clamp_y(snap_r.bottom() - h - 8) };
+    let cands = [
+        ScreenRect { x: clamp_x(snap_r.x), y: top_y, w, h },
+        ScreenRect { x: clamp_x(snap_r.x + 8), y: clamp_y(snap_r.y + 8), w, h },
+        ScreenRect { x: clamp_x(snap_r.right() - w), y: top_y, w, h },
+        ScreenRect { x: clamp_x(snap_r.x), y: bot_y, w, h },
+    ];
+    if let Some(av) = avoid {
+        for &c in &cands {
+            if !rects_overlap(c, av, 4) {
+                return c;
+            }
+        }
+    }
+    cands[0]
+}
+
+#[allow(dead_code)]
 pub fn snap_badge_rect(snap_r: ScreenRect, screen_w: i32) -> ScreenRect {
-    let (w, h) = (236, 24);
-    let x = snap_r.x.clamp(8, (screen_w - w - 8).max(8));
-    let y = if snap_r.y >= 32 { snap_r.y - h - 6 } else { snap_r.y + 8 };
-    ScreenRect { x, y, w, h }
+    snap_badge_rect_avoiding(snap_r, screen_w, screen_w.max(1080), None)
 }
 
 pub fn tooltip_rect_for(btn: &ToolbarHit, screen_w: i32, screen_h: i32) -> Option<ScreenRect> {
@@ -379,5 +409,10 @@ mod tests {
         let win_lay = build_toolbar_layout(ScreenRect { x: 400, y: 200, w: 500, h: 400 }, 1920, 1080, &win_st, &CaptureToolHotkeys::default());
         assert!(!win_lay.hits.iter().any(|h| h.cmd == ToolbarCmd::Record));
         assert!(win_lay.sub_bar.is_none());
+
+        let snap_r = ScreenRect { x: 200, y: 200, w: 600, h: 420 };
+        let loupe_blocking = ScreenRect { x: 200, y: 165, w: 164, h: 192 };
+        let reloc = snap_badge_rect_avoiding(snap_r, 1920, 1080, Some(loupe_blocking));
+        assert!(!rects_overlap(reloc, loupe_blocking, 4));
     }
 }

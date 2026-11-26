@@ -4,8 +4,8 @@
 
 use crate::annotate::{Annotation, AnnotationStack, ToolKind};
 use crate::overlay_draw::{
-    build_toolbar_layout, compose_overlay_pixels, precompute_dimmed, ToolbarCmd, ToolbarLayout,
-    ToolbarStyleState,
+    build_toolbar_layout, compose_overlay_pixels, precompute_dimmed, precompute_hover_dimmed,
+    ToolbarCmd, ToolbarLayout, ToolbarStyleState,
 };
 use crate::overlay_input::{
     cursor_for_hover, handle_key_down, handle_lbutton_dblclk, handle_lbutton_down,
@@ -16,7 +16,8 @@ use crate::overlay_text_editor::{
     InlineTextEditor, TIMER_TEXT_CARET, WM_APP_TEXT_CANCEL, WM_APP_TEXT_COMMIT, WM_APP_TEXT_SYNC,
 };
 use crate::screen::{capture_virtual_desktop, enumerate_snap_windows, DesktopSnapshot, ScreenRect};
-use crate::snap_detect::{SnapCandidate, SnapContext};
+use crate::snap_detect::SnapContext;
+use crate::snap_motion::{SnapMotion, SnapTickRequest};
 use crate::win_record::RecordRequest;
 use std::ffi::c_void;
 use tomoyo_core::{CaptureToolHotkeys, PrivateFonts, TomoyoConfig};
@@ -29,17 +30,18 @@ use windows::Win32::Graphics::Gdi::{
     HBITMAP, HDC, HFONT, OUT_DEFAULT_PRECIS, PAINTSTRUCT, SRCCOPY,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
-use windows::Win32::UI::Input::KeyboardAndMouse::{ReleaseCapture, SetFocus};
+use windows::Win32::UI::Input::KeyboardAndMouse::{ReleaseCapture, SetFocus, VK_MENU};
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DispatchMessageW, GetCursorPos, GetMessageW, GetWindowLongPtrW,
-    KillTimer, LoadCursorW, PostQuitMessage, RegisterClassW, SetCursor, SetWindowLongPtrW,
-    ShowWindow, TranslateMessage, CS_DBLCLKS, GWLP_USERDATA, IDC_CROSS, MSG, SW_SHOW, WM_DESTROY,
-    WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE,
-    WM_MOUSEWHEEL, WM_PAINT, WM_RBUTTONUP, WM_SETCURSOR, WM_TIMER, WNDCLASSW, WS_EX_TOOLWINDOW,
-    WS_EX_TOPMOST, WS_POPUP,
+    KillTimer, LoadCursorW, PostQuitMessage, RegisterClassW, SetCursor, SetTimer,
+    SetWindowLongPtrW, ShowWindow, TranslateMessage, CS_DBLCLKS, GWLP_USERDATA, IDC_CROSS, MSG,
+    SW_SHOW, WM_DESTROY, WM_ERASEBKGND, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN,
+    WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_PAINT, WM_RBUTTONUP, WM_SETCURSOR, WM_SYSKEYDOWN,
+    WM_SYSKEYUP, WM_TIMER, WNDCLASSW, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
 };
 
 pub(crate) const TIMER_WHEEL_HUD: usize = 601;
+pub(crate) const TIMER_SNAP_MOTION: usize = 602;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CaptureMode {
@@ -74,14 +76,16 @@ pub(crate) struct OverlayState {
     pub font_face: &'static str,
     pub snap: DesktopSnapshot,
     pub dimmed: Vec<u8>,
+    pub hover_dimmed: Vec<u8>,
     pub snap_ctx: SnapContext,
+    pub snap_motion: SnapMotion,
+    pub start_time: std::time::Instant,
     pub mode: CaptureMode,
     pub save_dir: String,
     pub hex_lower: bool,
     pub rgb_mode: bool,
     pub tool_hotkeys: CaptureToolHotkeys,
     pub sel: Option<ScreenRect>,
-    pub hover_snap: Option<SnapCandidate>,
     pub tool: ToolKind,
     pub color_idx: usize,
     pub thickness: i32,
@@ -114,6 +118,25 @@ pub(crate) struct OverlayState {
     pub outcome: Option<CaptureOutcome>,
 }
 
+impl OverlayState {
+    pub(crate) fn now_ms(&self) -> u64 {
+        self.start_time.elapsed().as_millis() as u64
+    }
+
+    pub(crate) fn apply_snap_tick(&self, hwnd: HWND, tick: SnapTickRequest) {
+        unsafe {
+            if let Some(ms) = tick.next_timer_ms {
+                let _ = SetTimer(Some(hwnd), TIMER_SNAP_MOTION, ms.max(10), None);
+            } else {
+                let _ = KillTimer(Some(hwnd), TIMER_SNAP_MOTION);
+            }
+            if tick.needs_redraw {
+                let _ = InvalidateRect(Some(hwnd), None, false);
+            }
+        }
+    }
+}
+
 impl Drop for OverlayState {
     fn drop(&mut self) {
         if let Some(ed) = self.text_editor.take() {
@@ -137,9 +160,12 @@ pub fn run_capture_overlay(mode: CaptureMode) -> Result<CaptureOutcome, String> 
         (pt.x - snap.origin_x).clamp(0, (snap.width - 1).max(0)),
         (pt.y - snap.origin_y).clamp(0, (snap.height - 1).max(0)),
     );
+    let start_time = std::time::Instant::now();
     let mut snap_ctx = SnapContext::with_fullscreen(sw.windows, sw.fullscreen, sw.monitors, snap.width, snap.height);
-    let hover_snap = snap_ctx.hover_at(&snap, init_cursor.0, init_cursor.1);
+    let initial_snap = snap_ctx.hover_at(&snap, init_cursor.0, init_cursor.1);
+    let snap_motion = SnapMotion::new(initial_snap, 0);
     let dimmed = precompute_dimmed(&snap.bgra);
+    let hover_dimmed = precompute_hover_dimmed(&snap.bgra);
 
     unsafe {
         let mem_dc = CreateCompatibleDC(None);
@@ -178,9 +204,9 @@ pub fn run_capture_overlay(mode: CaptureMode) -> Result<CaptureOutcome, String> 
         let rec_cursor = cap.record_cursor;
         let mut st = Box::new(OverlayState {
             _private_fonts: private_fonts, font_face,
-            snap, dimmed, snap_ctx, mode, save_dir: cap.save_dir,
+            snap, dimmed, hover_dimmed, snap_ctx, snap_motion, start_time, mode, save_dir: cap.save_dir,
             hex_lower: cap.copy_hex_lowercase, rgb_mode: false,
-            tool_hotkeys: cap.tool_hotkeys, sel: None, hover_snap,
+            tool_hotkeys: cap.tool_hotkeys, sel: None,
             tool: ToolKind::Select, color_idx: 0, thickness: 4, step_radius: 13, text_size: 22,
             text_bold: false, shape_filled: false, mosaic_blur: false,
             record_open: mode == CaptureMode::Record, rec_is_gif, rec_fps, rec_audio, rec_cursor,
@@ -219,6 +245,16 @@ unsafe extern "system" fn overlay_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, 
         WM_TIMER if wparam.0 == TIMER_WHEEL_HUD => {
             st.wheel_hud = None;
             unsafe { let _ = KillTimer(Some(hwnd), TIMER_WHEEL_HUD); let _ = InvalidateRect(Some(hwnd), None, false); }
+            LRESULT(0)
+        }
+        WM_TIMER if wparam.0 == TIMER_SNAP_MOTION => {
+            if st.sel.is_none() && st.drag == DragMode::None {
+                let now_ms = st.now_ms();
+                let tick = st.snap_motion.on_timer(&mut st.snap_ctx, &st.snap, now_ms);
+                st.apply_snap_tick(hwnd, tick);
+            } else {
+                unsafe { let _ = KillTimer(Some(hwnd), TIMER_SNAP_MOTION); }
+            }
             LRESULT(0)
         }
         WM_TIMER if wparam.0 == TIMER_TEXT_CARET => {
@@ -272,9 +308,10 @@ unsafe extern "system" fn overlay_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, 
             let byte_len = (st.snap.width as usize) * (st.snap.height as usize) * 4;
             let dst = unsafe { std::slice::from_raw_parts_mut(st.dib_bits, byte_len) };
             compose_overlay_pixels(
-                dst, &st.snap, &st.dimmed, st.sel, st.hover_snap.map(|c| c.rect), st.stack.items(),
+                dst, &st.snap, &st.dimmed, &st.hover_dimmed, st.sel,
+                st.snap_motion.visual_rect(), st.stack.items(),
                 st.stack.selected, st.hovered_annot, st.live_ann.as_ref(), st.cursor, show_loupe,
-                &st.layout, st.hovered_cmd, st.wheel_hud.as_deref(),
+                st.snap_motion.fast_moving, &st.layout, st.hovered_cmd, st.wheel_hud.as_deref(),
             );
             if st.sel.is_some() {
                 render_text_annotations_bgra(
@@ -286,7 +323,8 @@ unsafe extern "system" fn overlay_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, 
                 }
             }
             paint_overlay_gdi_labels(
-                st.mem_dc, st.font, &st.snap, st.sel, st.hover_snap, st.snap_ctx.cycle_count,
+                st.mem_dc, st.font, &st.snap, st.sel, st.snap_motion.target(),
+                st.snap_motion.visual_rect(), st.snap_ctx.cycle_count,
                 st.cursor, show_loupe, &st.layout, st.hovered_cmd, st.hex_lower, st.rgb_mode, st.wheel_hud.as_deref(),
             );
             unsafe {
@@ -304,7 +342,7 @@ unsafe extern "system" fn overlay_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, 
             unsafe { let _ = ReleaseCapture(); }
             match prev {
                 DragMode::Creating(_, _) => {
-                    if !st.sel.is_some_and(ScreenRect::is_valid) { st.sel = st.hover_snap.map(|c| c.rect); }
+                    if !st.sel.is_some_and(ScreenRect::is_valid) { st.sel = st.snap_motion.target().map(|c| c.rect); }
                     if st.sel.is_some_and(ScreenRect::is_valid) {
                         match st.mode {
                             CaptureMode::QuickOcr => { st.execute_action(hwnd, ToolbarCmd::Ocr); return LRESULT(0); }
@@ -354,12 +392,29 @@ unsafe extern "system" fn overlay_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, 
                 st.sel = None;
                 st.tool = ToolKind::Select;
                 st.record_open = st.mode == CaptureMode::Record;
-                st.hover_snap = st.snap_ctx.hover_at(&st.snap, st.cursor.0, st.cursor.1);
-                unsafe { let _ = InvalidateRect(Some(hwnd), None, false); }
+                let now_ms = st.now_ms();
+                st.snap_motion.reset_at(&mut st.snap_ctx, &st.snap, st.cursor.0, st.cursor.1, now_ms);
+                unsafe { let _ = KillTimer(Some(hwnd), TIMER_SNAP_MOTION); let _ = InvalidateRect(Some(hwnd), None, false); }
             } else {
                 st.execute_action(hwnd, ToolbarCmd::Cancel);
             }
             LRESULT(0)
+        }
+        WM_SYSKEYDOWN if wparam.0 as u16 == VK_MENU.0 => {
+            if st.sel.is_none() && st.drag == DragMode::None {
+                let now_ms = st.now_ms();
+                let tick = st.snap_motion.on_alt_changed(&mut st.snap_ctx, &st.snap, st.cursor.0, st.cursor.1, true, now_ms);
+                st.apply_snap_tick(hwnd, tick);
+            }
+            LRESULT(0)
+        }
+        WM_SYSKEYUP | WM_KEYUP if wparam.0 as u16 == VK_MENU.0 => {
+            if st.sel.is_none() && st.drag == DragMode::None {
+                let now_ms = st.now_ms();
+                let tick = st.snap_motion.on_alt_changed(&mut st.snap_ctx, &st.snap, st.cursor.0, st.cursor.1, false, now_ms);
+                st.apply_snap_tick(hwnd, tick);
+            }
+            if msg == WM_SYSKEYUP { LRESULT(0) } else { unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) } }
         }
         WM_KEYDOWN => { handle_key_down(st, hwnd, wparam.0 as u16); LRESULT(0) }
         WM_DESTROY => { unsafe { PostQuitMessage(0); } LRESULT(0) }

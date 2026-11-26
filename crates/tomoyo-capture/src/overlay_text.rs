@@ -5,8 +5,8 @@
 
 use crate::annotate::{text_line_height, AnnotColor, Annotation};
 use crate::overlay_draw::{
-    dim_badge_rect, loupe_rect, snap_badge_rect, tooltip_rect_for, wheel_hud_rect, ToolbarCmd,
-    ToolbarLayout,
+    dim_badge_rect, loupe_rect, snap_badge_rect_avoiding, tooltip_rect_for, wheel_hud_rect,
+    ToolbarCmd, ToolbarLayout,
 };
 use crate::overlay_icons::blend_px;
 use crate::screen::{DesktopSnapshot, ScreenRect};
@@ -351,6 +351,7 @@ pub fn paint_overlay_gdi_labels(
     snap: &DesktopSnapshot,
     sel: Option<ScreenRect>,
     hover_snap: Option<SnapCandidate>,
+    hover_visual: Option<ScreenRect>,
     cycle_count: usize,
     cursor: (i32, i32),
     show_loupe: bool,
@@ -380,13 +381,15 @@ pub fn paint_overlay_gdi_labels(
             let mut w: Vec<u16> = badge_txt.encode_utf16().collect();
             DrawTextW(mem_dc, &mut w, &mut rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         } else if let Some(h) = hover_snap {
-            let b = snap_badge_rect(h.rect, snap.width);
+            let vis_r = hover_visual.unwrap_or(h.rect);
+            let avoid = show_loupe.then(|| loupe_rect(cursor, snap.width, snap.height));
+            let b = snap_badge_rect_avoiding(vis_r, snap.width, snap.height, avoid);
             let mut rc = RECT { left: b.x, top: b.y, right: b.right(), bottom: b.bottom() };
             SetTextColor(mem_dc, COLORREF(0x00FE_F2E0));
             let txt = if cycle_count <= 1 {
-                format!("{} {}×{} · 拖拽框选 / 单击全屏", h.kind.label(), h.rect.w, h.rect.h)
+                format!("{} {}×{} · 拖拽/单击 · Alt免吸附", h.kind.label(), h.rect.w, h.rect.h)
             } else {
-                format!("{} {}×{} · 单击选中 · Tab切层", h.kind.label(), h.rect.w, h.rect.h)
+                format!("{} {}×{} · 单击 · Tab切层 · Alt免", h.kind.label(), h.rect.w, h.rect.h)
             };
             let mut w: Vec<u16> = txt.encode_utf16().collect();
             DrawTextW(mem_dc, &mut w, &mut rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
