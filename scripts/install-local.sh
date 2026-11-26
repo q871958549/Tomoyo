@@ -96,7 +96,10 @@ done
 install -Dm644 "$REPO_ROOT/LICENSE-MIT" "$DATA_DIR/LICENSE-MIT"
 install -Dm644 "$REPO_ROOT/LICENSE-APACHE" "$DATA_DIR/LICENSE-APACHE"
 install -Dm644 "$REPO_ROOT/README.md" "$DATA_DIR/README.md"
-install -Dm644 "$REPO_ROOT"/assets/fonts/*.ttf "$DATA_DIR/fonts/"
+rm -f "$DATA_DIR/fonts/AlibabaPuHuiTi-"*.ttf
+if compgen -G "$REPO_ROOT/assets/fonts/*.ttf" >/dev/null; then
+  install -Dm644 "$REPO_ROOT"/assets/fonts/*.ttf "$DATA_DIR/fonts/"
+fi
 install -Dm644 "$REPO_ROOT"/assets/plugin-icons/*.png "$DATA_DIR/plugin-icons/"
 install -Dm644 "$REPO_ROOT/assets/tomoyo-icon.png" "$DATA_DIR/assets/tomoyo-icon.png"
 install -Dm644 "$REPO_ROOT/registry/index.json" "$DATA_DIR/registry/index.json"

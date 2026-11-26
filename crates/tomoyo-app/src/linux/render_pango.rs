@@ -2,52 +2,36 @@
 
 use crate::renderer::{compute_frame_layout, paint_sdf_pass, Canvas, FrameLayout, RenderState, Rgb};
 use lru::LruCache;
+use std::borrow::Cow;
 use std::ffi::{c_char, c_int, c_void, CString};
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use tomoyo_core::{current_process_stats, highlight_title_ranges, Lang};
 use tomoyo_protocol::{extension_short_tag, IconSpec, ResultCategory, ResultItem};
 
+#[derive(Clone, Copy)]
+pub(super) struct PangoFont<'a> {
+    pub family: &'a str,
+    pub weight: i32,
+    pub size_px: f64,
+    pub tnum: bool,
+}
+
 unsafe extern "C" {
+    fn tomoyo_cairo_target_scale(cr: *mut c_void) -> f64;
+    fn tomoyo_opaque_cairo_begin(bgra: *mut u8, w: c_int, h: c_int) -> *mut c_void;
+    fn tomoyo_opaque_cairo_end(cr: *mut c_void);
     fn tomoyo_cairo_begin_rounded(cr: *mut c_void, w: f64, h: f64, r: f64);
     fn tomoyo_cairo_end_rounded(cr: *mut c_void, w: f64, h: f64, r: f64, border_rgb: u32);
-    fn tomoyo_cairo_blit_bgra(
-        cr: *mut c_void,
-        bgra: *const u8,
-        w: c_int,
-        h: c_int,
-        x: f64,
-        y: f64,
-        dw: f64,
-        dh: f64,
-    );
+    fn tomoyo_cairo_blit_rgb24(cr: *mut c_void, bgra: *const u8, w: c_int, h: c_int, x: f64, y: f64, dw: f64, dh: f64);
+    fn tomoyo_cairo_blit_bgra(cr: *mut c_void, bgra: *const u8, w: c_int, h: c_int, x: f64, y: f64, dw: f64, dh: f64);
     fn tomoyo_pango_draw_text(
-        cr: *mut c_void,
-        font_desc: *const c_char,
-        rgb: u32,
-        align: c_int,
-        single_line: c_int,
-        text: *const c_char,
-        x: f64,
-        y: f64,
-        w: f64,
-        h: f64,
-        hl_pairs: *const u32,
-        hl_count: usize,
-        hl_rgb: u32,
+        cr: *mut c_void, family: *const c_char, weight: c_int, size_px: f64, tabular_nums: c_int,
+        rgb: u32, align: c_int, single_line: c_int, text: *const c_char, x: f64, y: f64, w: f64, h: f64,
+        hl_pairs: *const u32, hl_count: usize, hl_rgb: u32,
     );
-    fn tomoyo_linux_resolve_icon_path(
-        icon_name: *const c_char,
-        sz: c_int,
-        out: *mut c_char,
-        out_len: usize,
-    ) -> c_int;
-    fn tomoyo_linux_load_icon_bgra(
-        icon_name_or_path: *const c_char,
-        sz: c_int,
-        out: *mut u8,
-        out_len: usize,
-    ) -> c_int;
+    fn tomoyo_linux_resolve_icon_path(icon_name: *const c_char, sz: c_int, out: *mut c_char, out_len: usize) -> c_int;
+    fn tomoyo_linux_load_icon_bgra(icon_name_or_path: *const c_char, sz: c_int, out: *mut u8, out_len: usize) -> c_int;
     fn tomoyo_offscreen_cairo_create(w: c_int, h: c_int, bgra: *mut u8) -> *mut c_void;
     fn tomoyo_offscreen_cairo_destroy(cr: *mut c_void);
 }
@@ -109,18 +93,23 @@ impl LinuxRenderer {
         // Draw category fallback rect for rows without loaded theme icons before blitting SDF
         self.draw_fallback_icon_tiles(&lay, width, height, scale, state);
         let radius = 12.0 * (scale as f64);
+        let dev_scale = unsafe { tomoyo_cairo_target_scale(cr) };
+        if dev_scale <= 1.25 && scale <= 1.25 {
+            let img_cr = unsafe { tomoyo_opaque_cairo_begin(self.pixels.as_mut_ptr(), width, height) };
+            if !img_cr.is_null() {
+                self.paint_pango_pass(img_cr, scale, &lay, state);
+                unsafe {
+                    tomoyo_opaque_cairo_end(img_cr);
+                    tomoyo_cairo_begin_rounded(cr, width as f64, height as f64, radius);
+                    tomoyo_cairo_blit_rgb24(cr, self.pixels.as_ptr(), width, height, 0.0, 0.0, width as f64, height as f64);
+                    tomoyo_cairo_end_rounded(cr, width as f64, height as f64, radius, rgb_u32(state.theme.border));
+                }
+                return;
+            }
+        }
         unsafe {
             tomoyo_cairo_begin_rounded(cr, width as f64, height as f64, radius);
-            tomoyo_cairo_blit_bgra(
-                cr,
-                self.pixels.as_ptr(),
-                width,
-                height,
-                0.0,
-                0.0,
-                width as f64,
-                height as f64,
-            );
+            tomoyo_cairo_blit_rgb24(cr, self.pixels.as_ptr(), width, height, 0.0, 0.0, width as f64, height as f64);
         }
         self.paint_pango_pass(cr, scale, &lay, state);
         unsafe {
@@ -200,43 +189,39 @@ impl LinuxRenderer {
 
     fn paint_pango_pass(&mut self, cr: *mut c_void, scale: f32, lay: &FrameLayout, state: &RenderState<'_>) {
         let pal = state.theme;
-        let pango_w = |w: u16| match w {
-            0..=349 => "Light",
-            350..=449 => "Normal",
-            450..=549 => "Medium",
-            550..=649 => "SemiBold",
-            _ => "Bold",
-        };
-        let eff_family = if state.typography.font_family.is_empty() {
-            self.font_family
+        let eff_family: Cow<'_, str> = if state.typography.font_family.is_empty() {
+            Cow::Borrowed(self.font_family)
         } else {
-            state.typography.font_family.as_str()
+            Cow::Owned(format!("{}, sans-serif", state.typography.font_family))
         };
-        let sub_dip = state.typography.subtitle_size_dip();
+        let fam = eff_family.as_ref();
+        let sub_dip = state.typography.subtitle_size_dip() as f64;
         let chip_dip = sub_dip.clamp(11.5, 13.5);
-        let f_reg = format!("{eff_family} {}px", (13.0 * scale).round() as i32);
-        let f_title = format!("{eff_family} {} {}px", pango_w(state.typography.title_weight), (state.typography.title_size as f32 * scale).round() as i32);
-        let f_sub = format!("{eff_family} {} {}px", pango_w(state.typography.subtitle_weight), (sub_dip * scale).round() as i32);
-        let f_chip = format!("{eff_family} {} {}px", pango_w(state.typography.subtitle_weight.min(500)), (chip_dip * scale).round() as i32);
-        let f_chip_active = format!("{eff_family} SemiBold {}px", (chip_dip * scale).round() as i32);
-        let f_badge = format!("{eff_family} Medium {}px", (10.5 * scale).round() as i32);
-        let f_mono = format!("monospace {}px", (11.5 * scale).round() as i32);
+        let sc = scale as f64;
+        let f_reg = PangoFont { family: fam, weight: 400, size_px: 13.0 * sc, tnum: false };
+        let f_title = PangoFont { family: fam, weight: state.typography.title_weight.clamp(300, 700) as i32, size_px: state.typography.title_size as f64 * sc, tnum: false };
+        let f_sub = PangoFont { family: fam, weight: state.typography.subtitle_weight.clamp(300, 600) as i32, size_px: sub_dip * sc, tnum: false };
+        let f_sub_num = PangoFont { tnum: true, ..f_sub };
+        let f_chip = PangoFont { family: fam, weight: state.typography.subtitle_weight.clamp(300, 500) as i32, size_px: chip_dip * sc, tnum: false };
+        let f_chip_active = PangoFont { family: fam, weight: 600, size_px: chip_dip * sc, tnum: false };
+        let f_badge = PangoFont { family: fam, weight: 500, size_px: 10.5 * sc, tnum: true };
+        let f_mono = PangoFont { family: "monospace", weight: 400, size_px: 11.5 * sc, tnum: true };
 
         let mut header_right_x = lay.w_dip - 16.0;
         if let Some(mode) = state.mode_badge {
             let pill_w = (mode.chars().count() as f32 * 9.5 + 22.0).clamp(58.0, 130.0);
             let px0 = header_right_x - pill_w;
-            draw_pango(cr, &f_badge, pal.chip_active_text, 1, true, mode, px0, 19.0, pill_w, 24.0, scale, &[], pal.accent);
+            draw_pango(cr, f_badge, pal.chip_active_text, 1, true, mode, px0, 19.0, pill_w, 24.0, scale, &[], pal.accent);
             header_right_x = px0 - 8.0;
         }
         if let Some(cap) = state.attached_capsule {
             let cap_w = (cap.chars().count() as f32 * 8.5 + 24.0).clamp(96.0, 210.0);
             let cx0 = header_right_x - cap_w;
-            draw_pango(cr, &f_chip, pal.text_primary, 1, true, cap, cx0 + 6.0, 18.0, cap_w - 12.0, 26.0, scale, &[], pal.accent);
+            draw_pango(cr, f_chip, pal.text_primary, 1, true, cap, cx0 + 6.0, 18.0, cap_w - 12.0, 26.0, scale, &[], pal.accent);
         }
 
         if state.filter_bar_visible {
-            super::render_sidebar::paint_sidebar_pango(cr, scale, lay, state, &f_chip, &f_chip_active, &f_sub);
+            super::render_sidebar::paint_sidebar_pango(cr, scale, lay, state, f_chip, f_chip_active, f_sub_num);
         }
 
         let icon_sz = (30.0 * scale).round() as i32;
@@ -257,51 +242,51 @@ impl LinuxRenderer {
                 unsafe {
                     tomoyo_cairo_blit_bgra(
                         cr, bgra.as_ptr(), icon_sz, icon_sz,
-                        ((lay.list_x0 + 22.0) * scale) as f64, (icon_top * scale) as f64, icon_sz as f64, icon_sz as f64,
+                        ((lay.list_x0 + 22.0) * scale).round() as f64, (icon_top * scale).round() as f64, icon_sz as f64, icon_sz as f64,
                     );
                 }
                 drew_icon = true;
             }
             if !drew_icon {
                 let lbl = fallback_badge_label(item);
-                draw_pango(cr, &f_badge, Rgb(0xFF, 0xFF, 0xFF), 1, true, lbl, lay.list_x0 + 22.0, icon_top, 30.0, 30.0, scale, &[], pal.accent);
+                draw_pango(cr, f_badge, Rgb(0xFF, 0xFF, 0xFF), 1, true, lbl, lay.list_x0 + 22.0, icon_top, 30.0, 30.0, scale, &[], pal.accent);
             }
 
             let mut text_right = lay.list_x1 - 20.0;
             if let Some((_, done)) = state.launching_row.filter(|(li, _)| *li == idx) {
                 let lbl = if done { state.lang.pick("✓ 已启动", "✓ Opened") } else { state.lang.pick("启动中…", "Opening…") };
-                draw_pango(cr, &f_badge, Rgb(0xFF, 0xFF, 0xFF), 1, true, lbl, text_right - 74.0, badge_top - 1.0, 74.0, 23.0, scale, &[], pal.accent);
+                draw_pango(cr, f_badge, Rgb(0xFF, 0xFF, 0xFF), 1, true, lbl, text_right - 74.0, badge_top - 1.0, 74.0, 23.0, scale, &[], pal.accent);
                 text_right -= 82.0;
             } else if is_sel {
-                draw_pango(cr, &f_badge, pal.chip_active_text, 1, true, "Enter", text_right - 44.0, key_top, 44.0, 20.0, scale, &[], pal.accent);
+                draw_pango(cr, f_badge, pal.chip_active_text, 1, true, "Enter", text_right - 44.0, key_top, 44.0, 20.0, scale, &[], pal.accent);
                 text_right -= 50.0;
             } else if !compact_row && slot < 8 {
-                let sc = format!("Alt+{}", slot + 1);
-                draw_pango(cr, &f_sub, pal.text_muted, 1, true, &sc, text_right - 42.0, key_top, 42.0, 20.0, scale, &[], pal.accent);
+                let sc_lbl = format!("Alt+{}", slot + 1);
+                draw_pango(cr, f_sub_num, pal.text_muted, 1, true, &sc_lbl, text_right - 42.0, key_top, 42.0, 20.0, scale, &[], pal.accent);
                 text_right -= 48.0;
             }
             if (!compact_row || is_sel) && let Some(badge) = &item.badge {
                 let bw = (badge.chars().count() as f32 * 6.8 + 18.0).clamp(44.0, 120.0);
-                draw_pango(cr, &f_badge, pal.text_secondary, 1, true, badge, text_right - bw, badge_top, bw, 21.0, scale, &[], pal.accent);
+                draw_pango(cr, f_badge, pal.text_secondary, 1, true, badge, text_right - bw, badge_top, bw, 21.0, scale, &[], pal.accent);
                 text_right -= bw + 10.0;
             }
             let text_left = lay.list_x0 + 62.0;
             let hl_chars = highlight_title_ranges(state.query, &item.title);
             let hl_bytes = char_spans_to_byte_pairs(&item.title, &hl_chars);
-            draw_pango(cr, &f_title, pal.text_primary, 0, true, &item.title, text_left, y0 + 5.0, (text_right - text_left).max(20.0), lay.row_h * 0.48, scale, &hl_bytes, pal.accent);
+            draw_pango(cr, f_title, pal.text_primary, 0, true, &item.title, text_left, y0 + 5.0, (text_right - text_left).max(20.0), lay.row_h * 0.48, scale, &hl_bytes, pal.accent);
             let clean_sub = strip_icon_tag(&item.subtitle);
-            draw_pango(cr, &f_sub, pal.text_secondary, 0, true, clean_sub, text_left, y0 + lay.row_h * 0.50, (text_right - text_left).max(20.0), lay.row_h * 0.44, scale, &[], pal.accent);
+            draw_pango(cr, f_sub, pal.text_secondary, 0, true, clean_sub, text_left, y0 + lay.row_h * 0.50, (text_right - text_left).max(20.0), lay.row_h * 0.44, scale, &[], pal.accent);
         }
 
         if lay.has_preview && let Some(prev) = state.preview {
             let (px0, px1) = (lay.list_x1 + 14.0, lay.w_dip - 14.0);
-            draw_pango(cr, &f_title, pal.text_primary, 0, true, &prev.title, px0, lay.header_h + 10.0, px1 - px0, 22.0, scale, &[], pal.accent);
-            draw_pango(cr, &f_sub, pal.text_secondary, 0, true, &prev.meta_line, px0, lay.header_h + 32.0, px1 - px0, 18.0, scale, &[], pal.accent);
+            draw_pango(cr, f_title, pal.text_primary, 0, true, &prev.title, px0, lay.header_h + 10.0, px1 - px0, 22.0, scale, &[], pal.accent);
+            draw_pango(cr, f_sub, pal.text_secondary, 0, true, &prev.meta_line, px0, lay.header_h + 32.0, px1 - px0, 18.0, scale, &[], pal.accent);
             let mut bx = px0;
             for b in prev.badges.iter().take(5) {
                 let bw = (b.chars().count() as f32 * 6.5 + 14.0).clamp(36.0, 110.0);
                 if bx + bw > px1 { break; }
-                draw_pango(cr, &f_badge, pal.accent, 1, true, b, bx, lay.header_h + 52.0, bw, 18.0, scale, &[], pal.accent);
+                draw_pango(cr, f_badge, pal.accent, 1, true, b, bx, lay.header_h + 52.0, bw, 18.0, scale, &[], pal.accent);
                 bx += bw + 6.0;
             }
             let bshift = if prev.badges.is_empty() { 0.0 } else { 24.0 };
@@ -309,7 +294,7 @@ impl LinuxRenderer {
                 let (aw, ah) = ((px1 - px0).max(40.0), (lay.fy0 - (lay.header_h + 60.0) - 52.0).clamp(60.0, 210.0));
                 lay.header_h + 66.0 + (*ih as f32 * (aw / *iw as f32).min(ah / *ih as f32).min(1.0)).max(16.0)
             } else { lay.header_h + 58.0 + bshift };
-            draw_pango(cr, if prev.is_monospace { &f_mono } else { &f_reg }, pal.text_primary, 0, false, &prev.body, px0, body_top, (px1 - px0).max(20.0), (lay.fy0 - 10.0 - body_top).max(20.0), scale, &[], pal.accent);
+            draw_pango(cr, if prev.is_monospace { f_mono } else { f_reg }, pal.text_primary, 0, false, &prev.body, px0, body_top, (px1 - px0).max(20.0), (lay.fy0 - 10.0 - body_top).max(20.0), scale, &[], pal.accent);
         }
 
         if state.action_menu_open && let Some(sel) = state.items.get(state.selected) {
@@ -318,14 +303,15 @@ impl LinuxRenderer {
             let (mx0, my0) = (mx1 - 240.0, (my1 - (n as f32 * 30.0 + 16.0)).max(lay.list_top + 4.0));
             for (ai, act) in sel.actions.iter().take(n).enumerate() {
                 let col = if ai == state.selected_action { pal.chip_active_text } else { pal.text_primary };
-                draw_pango(cr, &f_chip, col, 0, true, &act.label, mx0 + 14.0, my0 + 8.0 + (ai as f32) * 30.0, 212.0, 28.0, scale, &[], pal.accent);
+                draw_pango(cr, f_chip, col, 0, true, &act.label, mx0 + 14.0, my0 + 8.0 + (ai as f32) * 30.0, 212.0, 28.0, scale, &[], pal.accent);
             }
         }
 
-        self.paint_footer(cr, scale, lay, state, &f_sub, &f_badge);
+        self.paint_footer(cr, scale, lay, state, f_sub, f_sub_num, f_badge);
     }
 
-    fn paint_footer(&self, cr: *mut c_void, scale: f32, lay: &FrameLayout, state: &RenderState<'_>, f_sub: &str, f_badge: &str) {
+    #[allow(clippy::too_many_arguments)]
+    fn paint_footer(&self, cr: *mut c_void, scale: f32, lay: &FrameLayout, state: &RenderState<'_>, f_sub: PangoFont<'_>, f_sub_num: PangoFont<'_>, f_badge: PangoFont<'_>) {
         let pal = state.theme;
         let left_text = if let Some(toast) = state.toast {
             toast.to_string()
@@ -353,23 +339,22 @@ impl LinuxRenderer {
             Lang::Zh => format!("{} 项 · 内存 {:.1} MB", state.items.len(), stats.private_mb()),
             Lang::En => format!("{} hits · RAM {:.1} MB", state.items.len(), stats.private_mb()),
         };
-        draw_pango(cr, f_sub, pal.text_muted, 2, true, &mem, lay.w_dip - 186.0, lay.fy0, 168.0, lay.h_dip - lay.fy0, scale, &[], pal.accent);
+        draw_pango(cr, f_sub_num, pal.text_muted, 2, true, &mem, lay.w_dip - 186.0, lay.fy0, 168.0, lay.h_dip - lay.fy0, scale, &[], pal.accent);
     }
 }
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn draw_pango(
-    cr: *mut c_void, font: &str, color: Rgb, align: c_int, single: bool,
+    cr: *mut c_void, font: PangoFont<'_>, color: Rgb, align: c_int, single: bool,
     text: &str, x: f32, y: f32, w: f32, h: f32, scale: f32, hl: &[u32], hl_rgb: Rgb,
 ) {
-    if text.is_empty() || w <= 2.0 || h <= 2.0 {
-        return;
-    }
-    let Ok(cf) = CString::new(font) else { return };
+    if text.is_empty() || w <= 2.0 || h <= 2.0 { return; }
+    let Ok(cf) = CString::new(font.family) else { return };
     let Ok(ct) = CString::new(text) else { return };
     unsafe {
         tomoyo_pango_draw_text(
-            cr, cf.as_ptr(), rgb_u32(color), align, c_int::from(single), ct.as_ptr(),
+            cr, cf.as_ptr(), font.weight, font.size_px, c_int::from(font.tnum),
+            rgb_u32(color), align, c_int::from(single), ct.as_ptr(),
             (x * scale) as f64, (y * scale) as f64, (w * scale) as f64, (h * scale) as f64,
             if hl.is_empty() { std::ptr::null() } else { hl.as_ptr() }, hl.len() / 2, rgb_u32(hl_rgb),
         );

@@ -68,6 +68,7 @@ Source: "{#StageDir}\plugins\*"; DestDir: "{app}\plugins"; Components: suite\plu
 
 [InstallDelete]
 Type: files; Name: "{app}\uninstall.ps1"
+Type: files; Name: "{app}\assets\fonts\AlibabaPuHuiTi-*.ttf"
 
 [Icons]
 Name: "{group}\Tomoyo"; Filename: "{app}\tomoyo.exe"; IconFilename: "{app}\tomoyo.exe"

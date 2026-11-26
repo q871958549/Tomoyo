@@ -18,7 +18,7 @@ pub(crate) fn default_filter_layout() -> String {
 /// Configurable typography tokens for search results and input box.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TypographyConfig {
-    /// Custom font family name (`""` = bundled Alibaba PuHuiTi 3.0; e.g. `"Microsoft YaHei UI"` or `"Segoe UI Variable Text"`).
+    /// Custom font family name (`""` = native OS UI stack, e.g. `sans-serif` on Linux or `Microsoft YaHei UI` on Windows).
     #[serde(default)]
     pub font_family: String,
     /// Search result title weight: `300` (Light), `400` (Regular), `500` (Medium), `600` (SemiBold), `700` (Bold).

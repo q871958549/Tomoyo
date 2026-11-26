@@ -187,8 +187,8 @@ uint8_t *tomoyo_cap_render_text_card(
     uint32_t border, double scale, int *ow, int *oh, size_t *olen
 ) {
     char fstr[96], mstr[96];
-    snprintf(fstr, sizeof(fstr), "阿里巴巴普惠体 3.0 55 Regular %dpx", (int)(13.5 * scale));
-    snprintf(mstr, sizeof(mstr), "阿里巴巴普惠体 3.0 55 Regular %dpx", (int)(11.0 * scale));
+    snprintf(fstr, sizeof(fstr), "sans-serif %dpx", (int)(13.5 * scale));
+    snprintf(mstr, sizeof(mstr), "sans-serif %dpx", (int)(11.0 * scale));
     if (swatch_rgb >= 0) {
         int cw = (int)(290.0 * scale + 0.5), ch = (int)(124.0 * scale + 0.5);
         cairo_surface_t *surf = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, cw, ch);

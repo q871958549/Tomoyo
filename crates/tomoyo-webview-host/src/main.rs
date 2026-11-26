@@ -319,7 +319,7 @@ fn main() {
         assert!(script.contains("setSubInput"));
         assert!(settings_js.contains("__TOMOYO_SETTINGS_INIT__"));
         assert!(settings_js.contains("hotkey_health"));
-        assert!(html.contains("AlibabaPuHuiTi-3-55-Regular.ttf"));
+        assert!(html.contains("Noto Sans CJK SC") && html.contains("Microsoft YaHei UI"));
         assert!(html.contains("__TOMOYO_SETTINGS_INIT__"));
         assert!(html.contains("check_hotkey_health"));
         assert!(html.contains("save_settings"));
@@ -363,7 +363,7 @@ fn main() {
         }
         let _ = std::fs::remove_file(&tmp);
         println!(
-            "[OK] tomoyo-webview-host v{} self-test passed (uTools bridge {}B, Settings UI {}B, Store & Updater verified, Alibaba font={})",
+            "[OK] tomoyo-webview-host v{} self-test passed (uTools bridge {}B, Settings UI {}B, Store & Updater verified, custom_fonts={})",
             CURRENT_VERSION,
             script.len(),
             html.len(),

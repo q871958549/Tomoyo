@@ -189,8 +189,8 @@ impl OverlayState {
                     && !text.trim().is_empty()
                     && let Ok(cs) = CString::new(text.as_str())
                 {
-                    let wt = if *bold { "Bold " } else { "" };
-                    let f = CString::new(format!("阿里巴巴普惠体 3.0 65 Medium {wt}{}px", (*size).max(12))).unwrap();
+                    let wt = if *bold { "Bold " } else { "Medium " };
+                    let f = CString::new(format!("sans-serif {wt}{}px", (*size).max(12))).unwrap();
                     let rgb = ((color.0 as u32) << 16) | ((color.1 as u32) << 8) | (color.2 as u32);
                     unsafe {
                         tomoyo_cap_bake_pango_text(
@@ -301,8 +301,8 @@ unsafe extern "C" fn on_draw(ctx: *mut c_void, cr: *mut c_void, ww: c_int, wh: c
     unsafe { tomoyo_cap_cairo_blit_bgra(cr, st.frame_buf.as_ptr(), st.snap.width, st.snap.height, ww, wh); }
     let sx = ww as f64 / st.snap.width.max(1) as f64;
     let sy = wh as f64 / st.snap.height.max(1) as f64;
-    let fnt = CString::new("阿里巴巴普惠体 3.0 55 Regular 12px").unwrap();
-    let sm_fnt = CString::new("阿里巴巴普惠体 3.0 55 Regular 10.5px").unwrap();
+    let fnt = CString::new("sans-serif 12px").unwrap();
+    let sm_fnt = CString::new("sans-serif 10.5px").unwrap();
 
     if let Some(r) = st.sel.filter(|s| s.is_valid()) {
         let db = dim_badge_rect(r, st.snap.width);
@@ -331,8 +331,8 @@ unsafe extern "C" fn on_draw(ctx: *mut c_void, cr: *mut c_void, ww: c_int, wh: c
     for ann in st.ann_stack.items() {
         if let Annotation::Text { x, y, text, size, color, bold } = ann {
             let rgb = ((color.0 as u32) << 16) | ((color.1 as u32) << 8) | (color.2 as u32);
-            let wt = if *bold { "Bold " } else { "" };
-            let tf = CString::new(format!("阿里巴巴普惠体 3.0 65 Medium {wt}{}px", (*size).max(12))).unwrap();
+            let wt = if *bold { "Bold " } else { "Medium " };
+            let tf = CString::new(format!("sans-serif {wt}{}px", (*size).max(12))).unwrap();
             draw_txt(cr, &tf, rgb, 0, text, [*x as f64 * sx, *y as f64 * sy, 480.0 * sx, 60.0 * sy]);
         }
     }

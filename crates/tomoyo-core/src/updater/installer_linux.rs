@@ -47,6 +47,7 @@ pub(super) fn build_linux_apply_script(
              updated_bins=$((updated_bins + 1))\n\
            fi\n\
          done\n\
+         rm -f \"{data}/fonts/AlibabaPuHuiTi-\"*.ttf\n\
          [ -d \"{stage}/assets/fonts\" ] && cp -af \"{stage}/assets/fonts/.\" \"{data}/fonts/\" 2>/dev/null || true\n\
          [ -d \"{stage}/assets/plugin-icons\" ] && cp -af \"{stage}/assets/plugin-icons/.\" \"{data}/plugin-icons/\" 2>/dev/null || true\n\
          [ -f \"{stage}/assets/tomoyo-icon.png\" ] && install -m 0644 \"{stage}/assets/tomoyo-icon.png\" \"{data}/assets/tomoyo-icon.png\" || true\n\

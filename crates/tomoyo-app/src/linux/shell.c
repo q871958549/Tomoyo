@@ -284,15 +284,16 @@ tomoyo_app_t *tomoyo_linux_ui_create(
     return a;
 }
 
-void tomoyo_linux_ui_set_theme(tomoyo_app_t *a, uint32_t text_rgb, uint32_t bg_rgb, int font_px) {
+void tomoyo_linux_ui_set_theme(tomoyo_app_t *a, uint32_t text_rgb, uint32_t bg_rgb, const char *font_css, int font_px) {
     if (!a) return;
+    const char *fam = (font_css && font_css[0]) ? font_css : "sans-serif";
     char css[768];
     snprintf(css, sizeof(css),
         "window#tomoyo-shell { background-color: transparent; background-image: none; border: none; box-shadow: none; } "
         "entry#tomoyo-input { background: transparent; background-color: rgba(%u,%u,%u,0.01); "
         "color: #%06x; caret-color: #%06x; border: none; box-shadow: none; outline: none; "
-        "font-family: \"阿里巴巴普惠体 3.0 55 Regular\", \"Noto Sans CJK SC\", sans-serif; font-size: %dpx; padding: 0; }",
-        (bg_rgb >> 16) & 0xff, (bg_rgb >> 8) & 0xff, bg_rgb & 0xff, text_rgb & 0xffffff, text_rgb & 0xffffff, font_px);
+        "font-family: %s; font-size: %dpx; padding: 0; }",
+        (bg_rgb >> 16) & 0xff, (bg_rgb >> 8) & 0xff, bg_rgb & 0xff, text_rgb & 0xffffff, text_rgb & 0xffffff, fam, font_px);
     gtk_css_provider_load_from_data(a->css, css, -1, NULL);
 }
 

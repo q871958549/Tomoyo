@@ -62,7 +62,7 @@ unsafe extern "C" {
     ) -> *mut c_void;
     pub fn tomoyo_kwin_pos_update_target(handle: *mut c_void, has_pos: c_int, x: c_int, y: c_int);
     pub fn tomoyo_kwin_pos_stop(handle: *mut c_void);
-    pub fn tomoyo_linux_ui_set_theme(a: *mut c_void, text_rgb: u32, bg_rgb: u32, font_px: c_int);
+    pub fn tomoyo_linux_ui_set_theme(a: *mut c_void, text_rgb: u32, bg_rgb: u32, font_css: *const c_char, font_px: c_int);
     pub fn tomoyo_linux_ui_begin_drag(a: *mut c_void);
     pub fn tomoyo_wl_clip_start(on_change: unsafe extern "C" fn());
     pub fn tomoyo_wl_clip_stop();

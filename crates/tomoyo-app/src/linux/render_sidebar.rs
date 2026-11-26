@@ -1,6 +1,6 @@
 //! Pango text pass for the scrollable left filter sidebar rail and floating drag ghost.
 
-use crate::linux::render_pango::draw_pango;
+use crate::linux::render_pango::{draw_pango, PangoFont};
 use crate::renderer::filter_sidebar::{
     blend_rgb, compute_sidebar_layout, count_for_filter, SidebarItemRect, SIDEBAR_WIDTH_DIP,
     TAB_ROW_H,
@@ -23,9 +23,9 @@ fn paint_tab_pango_row(
     is_recessed: bool,
     x_left: f32,
     counts: Option<&FilterCounts>,
-    f_chip: &str,
-    f_chip_active: &str,
-    f_sub: &str,
+    f_chip: PangoFont<'_>,
+    f_chip_active: PangoFont<'_>,
+    f_sub_num: PangoFont<'_>,
 ) {
     let n = count_for_filter(counts, item.filter);
     let muted = if is_recessed {
@@ -38,7 +38,7 @@ fn paint_tab_pango_row(
         let col = if is_active && !is_recessed { pal.accent } else { muted };
         draw_pango(
             cr,
-            f_sub,
+            f_sub_num,
             col,
             2,
             true,
@@ -56,7 +56,7 @@ fn paint_tab_pango_row(
         let col = if is_active && !is_recessed { pal.accent } else { muted };
         draw_pango(
             cr,
-            f_sub,
+            f_sub_num,
             col,
             2,
             true,
@@ -105,9 +105,9 @@ pub(super) fn paint_sidebar_pango(
     scale: f32,
     lay: &FrameLayout,
     state: &RenderState<'_>,
-    f_chip: &str,
-    f_chip_active: &str,
-    f_sub: &str,
+    f_chip: PangoFont<'_>,
+    f_chip_active: PangoFont<'_>,
+    f_sub_num: PangoFont<'_>,
 ) {
     let pal = state.theme;
     let sl = compute_sidebar_layout(lay.header_h, lay.fy0, state.filter_tabs, state.sidebar_scroll);
@@ -134,7 +134,7 @@ pub(super) fn paint_sidebar_pango(
             state.filter_counts,
             f_chip,
             f_chip_active,
-            f_sub,
+            f_sub_num,
         );
     }
     if let Some(d) = drag
@@ -155,7 +155,7 @@ pub(super) fn paint_sidebar_pango(
             state.filter_counts,
             f_chip,
             f_chip_active,
-            f_sub,
+            f_sub_num,
         );
     }
     let (ax0, ay0, ax1, ay1) = sl.add_btn;

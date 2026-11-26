@@ -421,7 +421,7 @@
   .det-meta { display: grid; grid-template-columns: 150px 1fr auto; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--border); background: var(--canvas); }
   .det-ta {
     flex: 1; width: 100%; border: 0; outline: none; resize: none; padding: 14px; background: transparent;
-    color: var(--text); font-family: "Cascadia Mono", Consolas, "Alibaba PuHuiTi 3.0", monospace; font-size: 13px; line-height: 1.65;
+    color: var(--text); font-family: var(--font-mono); font-size: 13px; line-height: 1.65;
   }
   .img-stage { flex: 1; display: grid; place-items: center; overflow: auto; padding: 16px; background: var(--img-stage); }
   .img-stage img { max-width: 100%; max-height: 100%; border-radius: 8px; box-shadow: var(--shadow-pop); }
@@ -430,6 +430,6 @@
   .modal-box { width: 520px; max-width: 92vw; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
   .modal-ta {
     width: 100%; height: 180px; border: 1px solid var(--border); border-radius: 8px; padding: 10px;
-    background: var(--canvas); color: var(--text); font-family: "Cascadia Mono", Consolas, monospace; font-size: 12px; outline: none;
+    background: var(--canvas); color: var(--text); font-family: var(--font-mono); font-size: 12px; outline: none;
   }
 </style>

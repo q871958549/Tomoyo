@@ -291,7 +291,7 @@
   .ne-mode-edit { grid-template-columns: 1fr; }
   .ne-mode-preview { grid-template-columns: 1fr; }
   .ne-mode-split { grid-template-columns: 1fr 1fr; }
-  .ne-ta { width: 100%; height: 100%; border: 0; outline: none; resize: none; padding: 14px 16px; background: transparent; color: var(--text); font-family: "Cascadia Mono", Consolas, "Alibaba PuHuiTi 3.0", monospace; font-size: 13px; line-height: 1.7; border-right: 1px solid var(--border); overflow-y: auto; }
+  .ne-ta { width: 100%; height: 100%; border: 0; outline: none; resize: none; padding: 14px 16px; background: transparent; color: var(--text); font-family: var(--font-mono); font-size: 13px; line-height: 1.7; border-right: 1px solid var(--border); overflow-y: auto; }
   .ne-mode-edit .ne-ta { border-right: 0; }
   .ne-prev { padding: 14px 18px; overflow-y: auto; font-size: 13.5px; line-height: 1.65; color: var(--text); word-break: break-word; }
   .ne-prev :global(.md-h1) { font-size: 18px; font-weight: 700; margin: 4px 0 8px; }
@@ -301,8 +301,8 @@
   .ne-prev :global(.md-gap) { height: 7px; }
   .ne-prev :global(.md-hr) { border: 0; border-top: 1px solid var(--border); margin: 10px 0; }
   .ne-prev :global(.md-quote) { border-left: 3px solid var(--accent); padding: 2px 10px; color: var(--text-secondary); margin: 4px 0; }
-  .ne-prev :global(.md-pre) { background: var(--canvas); border: 1px solid var(--border); border-radius: 7px; padding: 8px 10px; font-family: "Cascadia Mono", Consolas, monospace; font-size: 12px; overflow-x: auto; margin: 6px 0; }
-  .ne-prev :global(.md-code) { background: var(--subtle); padding: 1px 5px; border-radius: 4px; font-family: "Cascadia Mono", Consolas, monospace; font-size: 12px; }
+  .ne-prev :global(.md-pre) { background: var(--canvas); border: 1px solid var(--border); border-radius: 7px; padding: 8px 10px; font-family: var(--font-mono); font-size: 12px; overflow-x: auto; margin: 6px 0; }
+  .ne-prev :global(.md-code) { background: var(--subtle); padding: 1px 5px; border-radius: 4px; font-family: var(--font-mono); font-size: 12px; }
   .ne-prev :global(.md-todo) { display: flex; align-items: flex-start; gap: 7px; margin: 3px 0; cursor: pointer; }
   .ne-prev :global(.md-todo input) { margin-top: 4px; accent-color: var(--accent); cursor: pointer; }
   .ne-prev :global(.md-todo.is-done span) { text-decoration: line-through; color: var(--muted); }

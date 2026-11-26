@@ -420,6 +420,7 @@ impl AppCore {
         self.lang = fresh.lang();
         self.preview_enabled = fresh.auto_preview;
         self.show_filter_bar = fresh.show_filter_bar;
+        self.typography = fresh.typography.clone();
         self.sync_window_geom_from_config(&fresh);
         self.apply_theme(&fresh.theme, false);
         let cfg_clone = fresh.clone();

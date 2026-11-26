@@ -99,7 +99,9 @@ package() {
     "$pkgdir/usr/share/tomoyo/plugin-icons" \
     "$pkgdir/usr/share/tomoyo/registry" \
     "$pkgdir/usr/share/tomoyo/plugins"
-  install -Dm644 assets/fonts/*.ttf "$pkgdir/usr/share/tomoyo/fonts/"
+  if compgen -G "assets/fonts/*.ttf" >/dev/null; then
+    install -Dm644 assets/fonts/*.ttf "$pkgdir/usr/share/tomoyo/fonts/"
+  fi
   install -Dm644 assets/plugin-icons/*.png "$pkgdir/usr/share/tomoyo/plugin-icons/"
   install -Dm644 registry/index.json "$pkgdir/usr/share/tomoyo/registry/index.json"
   if [ -d registry/shards ]; then

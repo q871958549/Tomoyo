@@ -1,40 +1,37 @@
-//! Process-private Alibaba PuHuiTi 3.0 TrueType font loader (`AddFontResourceExW(FR_PRIVATE)`).
-//!
-//! Zero system pollution and zero heap copy: Windows memory-maps the `.ttf` files read-only
-//! for this process only and cleanly unloads them on drop.
+//! Native OS UI font stack defaults, system Fontconfig/GDI font enumeration, and optional private TTF loader.
 
 use std::path::PathBuf;
 
-/// Exact TrueType family names verified from Alibaba PuHuiTi 3.0 TTF headers.
+/// Legacy bundled TrueType family names (loaded automatically only if user drops them in `assets/fonts/`).
 pub const FONT_ALIBABA_REGULAR: &str = "阿里巴巴普惠体 3.0 55 Regular";
 pub const FONT_ALIBABA_MEDIUM: &str = "阿里巴巴普惠体 3.0 65 Medium";
 #[cfg(windows)]
 pub const FONT_FALLBACK_UI: &str = "Microsoft YaHei UI";
-#[cfg(not(windows))]
-pub const FONT_FALLBACK_UI: &str = "Noto Sans CJK SC";
+#[cfg(target_os = "linux")]
+pub const FONT_FALLBACK_UI: &str = "sans-serif";
+#[cfg(all(not(windows), not(target_os = "linux")))]
+pub const FONT_FALLBACK_UI: &str = ".AppleSystemUIFont";
 
-/// RAII guard that registers bundled Alibaba PuHuiTi TTF files privately for the process.
+/// RAII guard for optional process-private TrueType fonts (defaults to native OS UI stack).
 pub struct PrivateFonts {
     loaded_paths: Vec<PathBuf>,
 }
 
 impl PrivateFonts {
-    /// Discovers and loads `AlibabaPuHuiTi-3-55-Regular.ttf` and `AlibabaPuHuiTi-3-65-Medium.ttf`.
+    /// Initializes Tomoyo's default font engine (uses the host OS native UI font stack with zero bundled TTF bloat).
     pub fn load_default() -> Self {
-        let mut loaded_paths = Vec::new();
-        if let Some(dir) = locate_fonts_dir() {
-            for fname in [
-                "AlibabaPuHuiTi-3-55-Regular.ttf",
-                "AlibabaPuHuiTi-3-65-Medium.ttf",
-            ] {
-                let path = dir.join(fname);
-                if path.is_file() && register_private_font(&path) {
-                    tracing::info!("Loaded private font: {}", path.display());
-                    loaded_paths.push(path);
-                }
-            }
+        Self { loaded_paths: Vec::new() }
+    }
+
+    /// Optionally registers a custom process-private TrueType font file until this guard is dropped.
+    pub fn load_custom_ttf(&mut self, path: &std::path::Path) -> bool {
+        if path.is_file() && register_private_font(path) {
+            tracing::info!("Loaded private font: {}", path.display());
+            self.loaded_paths.push(path.to_path_buf());
+            true
+        } else {
+            false
         }
-        Self { loaded_paths }
     }
 
     pub fn has_alibaba_regular(&self) -> bool {
@@ -50,21 +47,11 @@ impl PrivateFonts {
     }
 
     pub fn regular_family(&self) -> &'static str {
-        if self.has_alibaba_regular() {
-            FONT_ALIBABA_REGULAR
-        } else {
-            FONT_FALLBACK_UI
-        }
+        FONT_FALLBACK_UI
     }
 
     pub fn medium_family(&self) -> &'static str {
-        if self.has_alibaba_medium() {
-            FONT_ALIBABA_MEDIUM
-        } else if self.has_alibaba_regular() {
-            FONT_ALIBABA_REGULAR
-        } else {
-            FONT_FALLBACK_UI
-        }
+        FONT_FALLBACK_UI
     }
 }
 
@@ -153,19 +140,28 @@ fn unregister_private_font(_path: &std::path::Path) {}
 /// Enumerates clean, non-vertical UI font families installed on the host OS, prioritized for CJK/UI legibility.
 pub fn list_system_font_families() -> Vec<String> {
     const CURATED: &[&str] = &[
-        "Microsoft YaHei UI",
-        "Segoe UI Variable Text",
-        "Segoe UI Variable Display",
-        "Segoe UI",
-        "PingFang SC",
+        "Inter",
+        "Inter Variable",
+        "Noto Sans CJK SC",
+        "Noto Sans SC",
+        "Source Han Sans SC",
+        "Sarasa UI SC",
         "HarmonyOS Sans SC",
         "MiSans",
         "OPPO Sans",
-        "Noto Sans SC",
-        "Noto Sans CJK SC",
-        "Source Han Sans SC",
-        "Sarasa UI SC",
+        "PingFang SC",
+        "LXGW WenKai Screen",
+        "Segoe UI Variable Text",
+        "Segoe UI Variable Display",
+        "Segoe UI",
+        "Microsoft YaHei UI",
+        "JetBrainsMono Nerd Font",
+        "JetBrains Mono",
         "Cascadia Mono",
+        "Cantarell",
+        "Ubuntu",
+        "Noto Sans",
+        "DejaVu Sans",
         "Consolas",
     ];
     #[cfg(windows)]
@@ -213,10 +209,19 @@ pub fn list_system_font_families() -> Vec<String> {
         }
         set.into_iter().collect()
     };
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    let mut raw: Vec<String> = {
+        let fc = crate::linux_sys::fc_list_font_families();
+        if fc.is_empty() {
+            CURATED.iter().map(|s| (*s).to_string()).collect()
+        } else {
+            fc
+        }
+    };
+    #[cfg(all(not(windows), not(target_os = "linux")))]
     let mut raw: Vec<String> = CURATED.iter().map(|s| (*s).to_string()).collect();
 
-    let mut out = Vec::with_capacity(raw.len().min(120));
+    let mut out = Vec::with_capacity(raw.len().min(160));
     for pref in CURATED {
         if let Some(pos) = raw.iter().position(|r| r.eq_ignore_ascii_case(pref)) {
             out.push(raw.swap_remove(pos));
@@ -224,10 +229,27 @@ pub fn list_system_font_families() -> Vec<String> {
     }
     raw.sort_by_key(|a| a.to_ascii_lowercase());
     for name in raw {
-        if out.len() >= 120 {
+        if out.len() >= 160 {
             break;
         }
         out.push(name);
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn system_font_enumeration_returns_unique_clean_families() {
+        let fonts = list_system_font_families();
+        assert!(!fonts.is_empty());
+        assert!(fonts.len() <= 160);
+        let mut seen = std::collections::HashSet::new();
+        for f in &fonts {
+            assert!(!f.is_empty() && !f.starts_with('@') && !f.starts_with('.'));
+            assert!(seen.insert(f.to_ascii_lowercase()), "duplicate font `{f}`");
+        }
+    }
 }

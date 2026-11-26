@@ -88,7 +88,9 @@ jobs:
           done
           for target_dir in "$stage" "$core_stage"; do
             install -Dm644 LICENSE-MIT LICENSE-APACHE README.md "$target_dir/"
-            install -Dm644 assets/fonts/*.ttf "$target_dir/assets/fonts/"
+            if compgen -G "assets/fonts/*.ttf" >/dev/null; then
+              install -Dm644 assets/fonts/*.ttf "$target_dir/assets/fonts/"
+            fi
             install -Dm644 assets/plugin-icons/*.png "$target_dir/assets/plugin-icons/"
             install -Dm644 assets/tomoyo-icon.png assets/tomoyo-icon.svg "$target_dir/assets/"
             install -Dm644 registry/index.json "$target_dir/registry/index.json"
@@ -252,7 +254,7 @@ jobs:
             }
             foreach ($dir in @($stage, $coreStage)) {
               Copy-Item LICENSE-MIT, LICENSE-APACHE, README.md "$dir/"
-              Copy-Item assets/fonts/*.ttf "$dir/assets/fonts/"
+              if (Test-Path assets/fonts/*.ttf) { Copy-Item assets/fonts/*.ttf "$dir/assets/fonts/" }
               Copy-Item assets/plugin-icons/*.png "$dir/assets/plugin-icons/"
               Copy-Item assets/tomoyo.ico "$dir/assets/"
               Copy-Item registry/index.json "$dir/registry/"
@@ -390,7 +392,7 @@ jobs:
             Copy-Item "target/release/$bin" "$stage/"
           }
           Copy-Item LICENSE-MIT, LICENSE-APACHE, README.md "$stage/"
-          Copy-Item assets/fonts/*.ttf "$stage/assets/fonts/"
+          if (Test-Path assets/fonts/*.ttf) { Copy-Item assets/fonts/*.ttf "$stage/assets/fonts/" }
           Copy-Item assets/plugin-icons/*.png "$stage/assets/plugin-icons/"
           Copy-Item assets/tomoyo.ico "$stage/assets/"
           Copy-Item registry/index.json "$stage/registry/"

@@ -27,11 +27,11 @@
   let typo = $derived<TypographyConfig>({ ...DEF, ...(cfg.typography || {}) });
   let previewFont = $derived(
     typo.font_family
-      ? `"${typo.font_family.replace(/"/g, '')}","Microsoft YaHei UI",sans-serif`
-      : '"Alibaba PuHuiTi 3.0","Microsoft YaHei UI",sans-serif'
+      ? `"${typo.font_family.replace(/"/g, '')}","Noto Sans CJK SC","Microsoft YaHei UI",sans-serif`
+      : 'var(--font-ui)'
   );
   let fontOpts = $derived([
-    { value: '', label: t('内置阿里巴巴普惠体 3.0（推荐）', 'Alibaba PuHuiTi 3.0 (Default)') },
+    { value: '', label: t('跟随系统原生 UI 字体（推荐）', 'System Native UI Stack (Recommended)') },
     ...systemFonts.map((f) => ({ value: f, label: f })),
   ]);
 
@@ -90,7 +90,7 @@
         <span class="tp-i">T</span>
         <div class="tp-m">
           <div style:font-weight={typo.title_weight} style:font-size="{typo.title_size}px"><mark>Tomoyo</mark> {t('启动器 · 排版预览', 'Launcher · Typography')}</div>
-          <div class="tp-s" style:font-weight={typo.subtitle_weight} style:font-size="{Math.max(11, typo.title_size - 3)}px">{t('系统应用 · ClearType 渲染', 'App · ClearType')}</div>
+          <div class="tp-s" style:font-weight={typo.subtitle_weight} style:font-size="{Math.max(11, typo.title_size - 3)}px">{t('系统应用 · 原生次像素渲染', 'App · Native Subpixel')}</div>
         </div>
         <span class="t-kbd">Enter</span>
       </div>
@@ -108,7 +108,7 @@
   <div class="t-row">
     <div>
       <div class="t-label">{t('字体选择', 'Font Family')}</div>
-      <div class="t-desc">{t('默认普惠体 3.0，可搜索系统字体', 'PuHuiTi 3.0 or OS font')}</div>
+      <div class="t-desc">{t('默认跟随系统原生 UI 字体，可搜索本机已装字体', 'Native OS UI stack by default, or search installed fonts')}</div>
     </div>
     <Select value={typo.font_family} options={fontOpts} searchable={true} align="right" minWidth="248px" onchange={(v) => setTypo({ font_family: v })} />
   </div>

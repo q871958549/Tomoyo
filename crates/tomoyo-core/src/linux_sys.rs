@@ -29,6 +29,7 @@ unsafe extern "C" {
     ) -> c_int;
     fn tomoyo_fc_add_font(path: *const c_char) -> c_int;
     fn tomoyo_fc_clear_fonts();
+    fn tomoyo_fc_list_families(cb: StrCb, ctx: *mut c_void) -> c_int;
     fn tomoyo_decode_image_rgba(
         path: *const c_char,
         max_w: c_int,
@@ -258,6 +259,36 @@ pub fn fc_add_font(path: &Path) -> bool {
 
 pub fn fc_clear_fonts() {
     unsafe { tomoyo_fc_clear_fonts(); }
+}
+
+pub fn fc_list_font_families() -> Vec<String> {
+    use std::collections::HashSet;
+    struct Collect {
+        seen: HashSet<String>,
+        out: Vec<String>,
+    }
+    unsafe extern "C" fn on_fam(ctx: *mut c_void, s: *const c_char, len: usize) {
+        if ctx.is_null() || s.is_null() || len == 0 {
+            return;
+        }
+        let c = unsafe { &mut *(ctx as *mut Collect) };
+        let raw = unsafe { std::slice::from_raw_parts(s.cast::<u8>(), len) };
+        let name = String::from_utf8_lossy(raw).trim().to_string();
+        if !name.is_empty() && !name.starts_with('@') && !name.starts_with('.') {
+            let key = name.to_ascii_lowercase();
+            if c.seen.insert(key) {
+                c.out.push(name);
+            }
+        }
+    }
+    let mut col = Collect {
+        seen: HashSet::new(),
+        out: Vec::new(),
+    };
+    unsafe {
+        tomoyo_fc_list_families(on_fam, (&mut col as *mut Collect).cast());
+    }
+    col.out
 }
 
 unsafe extern "C" fn collect_rgba_row(ctx: *mut c_void, data: *const u8, len: usize) -> usize {

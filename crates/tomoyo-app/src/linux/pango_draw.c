@@ -64,6 +64,68 @@ void tomoyo_cairo_end_rounded(void *cr_v, double w, double h, double r, uint32_t
     cairo_restore(cr);
 }
 
+static inline double snap_px(double v) {
+    return (double)(long long)(v >= 0.0 ? (v + 0.5) : (v - 0.5));
+}
+
+double tomoyo_cairo_target_scale(void *cr_v) {
+    cairo_t *cr = (cairo_t *)cr_v;
+    if (!cr) return 1.0;
+    double sx = 1.0, sy = 1.0;
+    cairo_surface_t *t = cairo_get_target(cr);
+    if (t) cairo_surface_get_device_scale(t, &sx, &sy);
+    return sx > sy ? sx : sy;
+}
+
+void *tomoyo_opaque_cairo_begin(uint8_t *bgra, int w, int h) {
+    if (!bgra || w <= 0 || h <= 0) return NULL;
+    cairo_surface_t *s = cairo_image_surface_create_for_data(bgra, CAIRO_FORMAT_RGB24, w, h, w * 4);
+    if (cairo_surface_status(s) != CAIRO_STATUS_SUCCESS) {
+        cairo_surface_destroy(s);
+        return NULL;
+    }
+    cairo_t *cr = cairo_create(s);
+    cairo_surface_destroy(s);
+    GdkScreen *scr = gdk_display_get_default() ? gdk_screen_get_default() : NULL;
+    const cairo_font_options_t *sfo = scr ? gdk_screen_get_font_options(scr) : NULL;
+    cairo_font_options_t *fo = sfo ? cairo_font_options_copy(sfo) : cairo_font_options_create();
+    if (fo) {
+        if (cairo_font_options_get_antialias(fo) != CAIRO_ANTIALIAS_NONE) {
+            cairo_font_options_set_antialias(fo, CAIRO_ANTIALIAS_SUBPIXEL);
+        }
+        if (cairo_font_options_get_subpixel_order(fo) == CAIRO_SUBPIXEL_ORDER_DEFAULT) {
+            cairo_font_options_set_subpixel_order(fo, CAIRO_SUBPIXEL_ORDER_RGB);
+        }
+        if (cairo_font_options_get_hint_style(fo) == CAIRO_HINT_STYLE_DEFAULT) {
+            cairo_font_options_set_hint_style(fo, CAIRO_HINT_STYLE_SLIGHT);
+        }
+        cairo_font_options_set_hint_metrics(fo, CAIRO_HINT_METRICS_ON);
+        cairo_set_font_options(cr, fo);
+        cairo_font_options_destroy(fo);
+    }
+    return cr;
+}
+
+void tomoyo_opaque_cairo_end(void *cr_v) {
+    cairo_t *cr = (cairo_t *)cr_v;
+    if (!cr) return;
+    cairo_surface_flush(cairo_get_target(cr));
+    cairo_destroy(cr);
+}
+
+void tomoyo_cairo_blit_rgb24(void *cr_v, const uint8_t *bgra, int w, int h, double x, double y, double dw, double dh) {
+    cairo_t *cr = (cairo_t *)cr_v;
+    if (!cr || !bgra || w <= 0 || h <= 0 || dw <= 0 || dh <= 0) return;
+    cairo_surface_t *s = cairo_image_surface_create_for_data((unsigned char *)bgra, CAIRO_FORMAT_RGB24, w, h, w * 4);
+    cairo_save(cr);
+    cairo_translate(cr, x, y);
+    cairo_scale(cr, dw / (double)w, dh / (double)h);
+    cairo_set_source_surface(cr, s, 0, 0);
+    cairo_paint(cr);
+    cairo_restore(cr);
+    cairo_surface_destroy(s);
+}
+
 void tomoyo_cairo_blit_bgra(void *cr_v, const uint8_t *bgra, int w, int h, double x, double y, double dw, double dh) {
     cairo_t *cr = (cairo_t *)cr_v;
     if (!cr || !bgra || w <= 0 || h <= 0 || dw <= 0 || dh <= 0) return;
@@ -78,14 +140,18 @@ void tomoyo_cairo_blit_bgra(void *cr_v, const uint8_t *bgra, int w, int h, doubl
 }
 
 void tomoyo_pango_draw_text(
-    void *cr_v, const char *font_desc, uint32_t rgb, int align, int single_line,
+    void *cr_v, const char *family, int weight, double size_px, int tabular_nums,
+    uint32_t rgb, int align, int single_line,
     const char *text, double x, double y, double w, double h,
     const uint32_t *hl_pairs, size_t hl_count, uint32_t hl_rgb
 ) {
     cairo_t *cr = (cairo_t *)cr_v;
     if (!cr || !text || !text[0] || w <= 2.0 || h <= 2.0) return;
     PangoLayout *ly = pango_cairo_create_layout(cr);
-    PangoFontDescription *desc = pango_font_description_from_string(font_desc);
+    PangoFontDescription *desc = pango_font_description_new();
+    pango_font_description_set_family(desc, (family && family[0]) ? family : "sans-serif");
+    pango_font_description_set_weight(desc, (PangoWeight)(weight > 0 ? weight : 400));
+    pango_font_description_set_absolute_size(desc, (size_px > 4.0 ? size_px : 12.0) * (double)PANGO_SCALE);
     pango_layout_set_font_description(ly, desc);
     pango_layout_set_text(ly, text, -1);
     pango_layout_set_width(ly, (int)(w * PANGO_SCALE));
@@ -100,30 +166,39 @@ void tomoyo_pango_draw_text(
         pango_layout_set_height(ly, (int)(h * PANGO_SCALE));
     }
 
-    if (hl_pairs && hl_count > 0) {
+    if (tabular_nums || (hl_pairs && hl_count > 0)) {
         PangoAttrList *al = pango_attr_list_new();
-        for (size_t i = 0; i < hl_count; i++) {
-            PangoAttribute *at = pango_attr_foreground_new(
-                ((hl_rgb >> 16) & 0xff) * 257,
-                ((hl_rgb >> 8) & 0xff) * 257,
-                (hl_rgb & 0xff) * 257
-            );
-            at->start_index = hl_pairs[i * 2];
-            at->end_index = hl_pairs[i * 2 + 1];
-            pango_attr_list_insert(al, at);
+#if PANGO_VERSION_CHECK(1, 38, 0)
+        if (tabular_nums) {
+            pango_attr_list_insert(al, pango_attr_font_features_new("tnum=1"));
+        }
+#endif
+        if (hl_pairs && hl_count > 0) {
+            for (size_t i = 0; i < hl_count; i++) {
+                PangoAttribute *at = pango_attr_foreground_new(
+                    ((hl_rgb >> 16) & 0xff) * 257,
+                    ((hl_rgb >> 8) & 0xff) * 257,
+                    (hl_rgb & 0xff) * 257
+                );
+                at->start_index = hl_pairs[i * 2];
+                at->end_index = hl_pairs[i * 2 + 1];
+                pango_attr_list_insert(al, at);
+            }
         }
         pango_layout_set_attributes(ly, al);
         pango_attr_list_unref(al);
     }
 
+    pango_cairo_update_layout(cr, ly);
     int pw = 0, ph = 0;
     pango_layout_get_pixel_size(ly, &pw, &ph);
-    double dy = single_line ? (y + (h - (double)ph) * 0.5) : y;
+    double dx = snap_px(x);
+    double dy = snap_px(single_line ? (y + (h - (double)ph) * 0.5) : y);
     cairo_save(cr);
     cairo_rectangle(cr, x, y, w, h);
     cairo_clip(cr);
     cairo_set_source_rgb(cr, ((rgb >> 16) & 0xff) / 255.0, ((rgb >> 8) & 0xff) / 255.0, (rgb & 0xff) / 255.0);
-    cairo_move_to(cr, x, dy);
+    cairo_move_to(cr, dx, dy);
     pango_cairo_show_layout(cr, ly);
     cairo_restore(cr);
     pango_font_description_free(desc);

@@ -202,7 +202,7 @@
   }
   .pane-txt textarea {
     flex: 1; width: 100%; border: 0; outline: none; resize: none; padding: 14px 16px;
-    background: transparent; color: var(--text); font-family: "Alibaba PuHuiTi 3.0", "Cascadia Mono", Consolas, monospace;
+    background: transparent; color: var(--text); font-family: var(--font-ui);
     font-size: 13.5px; line-height: 1.7;
   }
 </style>

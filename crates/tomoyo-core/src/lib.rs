@@ -1,5 +1,5 @@
 //! Core engine for Tomoyo: configuration, native WinHTTP auto-updater, i18n,
-//! private Alibaba PuHuiTi fonts, query routing, bounded file/image preview,
+//! native OS UI font engine, query routing, bounded file/image preview,
 //! Pinyin + fuzzy matching, frecency ranking, intent detection, and memory telemetry.
 
 pub mod config;

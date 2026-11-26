@@ -1,5 +1,5 @@
 ﻿# Local Windows Installation Script for Tomoyo
-# Installs built release binaries + Alibaba PuHuiTi 3.0 fonts + reference plugins into
+# Installs built release binaries + reference plugins (native OS UI typography) into
 # %LOCALAPPDATA%\Programs\Tomoyo, creates Start Menu & Desktop shortcuts, registers in
 # Windows Add/Remove Programs, and optionally launches Tomoyo immediately.
 
@@ -51,7 +51,10 @@ foreach ($bin in $bins) {
     if (Test-Path $srcBin) { Copy-Item $srcBin $InstallDir -Force }
 }
 Copy-Item (Join-Path $repoRoot "LICENSE-MIT"), (Join-Path $repoRoot "LICENSE-APACHE"), (Join-Path $repoRoot "README.md") $InstallDir -Force
-Copy-Item (Join-Path $repoRoot "assets\fonts\*.ttf") (Join-Path $InstallDir "assets\fonts") -Force
+Remove-Item (Join-Path $InstallDir "assets\fonts\AlibabaPuHuiTi-*.ttf") -Force -ErrorAction SilentlyContinue
+if (Test-Path (Join-Path $repoRoot "assets\fonts\*.ttf")) {
+    Copy-Item (Join-Path $repoRoot "assets\fonts\*.ttf") (Join-Path $InstallDir "assets\fonts") -Force
+}
 Copy-Item (Join-Path $repoRoot "assets\plugin-icons\*.png") (Join-Path $InstallDir "assets\plugin-icons") -Force
 Copy-Item (Join-Path $repoRoot "assets\tomoyo.ico") (Join-Path $InstallDir "assets\tomoyo.ico") -Force
 Copy-Item (Join-Path $repoRoot "registry\index.json") (Join-Path $InstallDir "registry\index.json") -Force

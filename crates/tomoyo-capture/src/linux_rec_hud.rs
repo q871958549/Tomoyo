@@ -219,7 +219,7 @@ unsafe extern "C" fn hud_draw_cb(ctx: *mut c_void, cr: *mut c_void, w: c_int, h:
         3 => format!("已保存 · {:02}:{:02} · {:.1} MB", secs / 60, secs % 60, mb),
         _ => st.shared.status_note.lock().ok().and_then(|g| g.clone()).unwrap_or_else(|| "录屏已取消".into()),
     };
-    let fnt = CString::new("阿里巴巴普惠体 3.0 55 Regular 12px").unwrap();
+    let fnt = CString::new("sans-serif 12px").unwrap();
     let txt_w = match m { 3 => (w - 260).max(80), 4 => (w - 74).max(120), _ => (w - 208).max(80) };
     if let Ok(cs) = CString::new(label) {
         unsafe { tomoyo_cap_pango_draw(cr, fnt.as_ptr(), 0xF8FAFC, 0, 0, cs.as_ptr(), 30.0, 0.0, txt_w as f64, h as f64); }

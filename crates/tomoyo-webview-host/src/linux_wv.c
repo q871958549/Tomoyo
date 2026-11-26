@@ -243,7 +243,7 @@ tomoyo_wv_t *tomoyo_wv_create(
     h->webview = WEBKIT_WEB_VIEW(webkit_web_view_new_with_user_content_manager(ucm));
     WebKitSettings *ws = webkit_web_view_get_settings(h->webview);
     webkit_settings_set_enable_developer_extras(ws, FALSE);
-    webkit_settings_set_default_font_family(ws, "阿里巴巴普惠体 3.0 55 Regular");
+    webkit_settings_set_default_font_family(ws, "sans-serif");
     tomoyo_wv_apply_theme(h, mode);
 
     gtk_container_add(GTK_CONTAINER(h->window), GTK_WIDGET(h->webview));

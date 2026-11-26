@@ -45,7 +45,7 @@ pub(crate) fn run_self_test(fonts: &PrivateFonts, strict_budget: bool) {
     disable_third_party_ime_for_selftest();
     println!("=== Tomoyo v{CURRENT_VERSION} Full-Stack Anti-Leak & Ecosystem Self-Test ===");
     println!(
-        "Font engine: Regular=`{}` · Medium=`{}` (Alibaba PuHuiTi loaded={})",
+        "Font engine: Regular=`{}` · Medium=`{}` (custom_bundled={})",
         fonts.regular_family(),
         fonts.medium_family(),
         fonts.has_alibaba_regular()
@@ -70,7 +70,7 @@ pub(crate) fn run_self_test(fonts: &PrivateFonts, strict_budget: bool) {
     log_mem("2. after AppShell::create");
 
     let _ = shell.self_test_paint_and_hibernate(":stats");
-    log_mem("2a. SDF+AlibabaFont+Preview paint");
+    log_mem("2a. SDF+NativeFont+Preview paint");
     let _ = shell.self_test_paint_and_hibernate("");
     log_mem("2b. after shell icon paint");
 

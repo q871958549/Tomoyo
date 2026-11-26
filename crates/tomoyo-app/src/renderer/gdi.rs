@@ -121,13 +121,13 @@ pub fn resolve_face_and_weight<'a>(
     regular_face: &'a str,
     medium_face: &'a str,
 ) -> (&'a str, i32) {
-    if !custom_family.is_empty() {
-        return (custom_family, requested_weight as i32);
+    if !custom_family.is_empty() || regular_face == medium_face {
+        let face = if custom_family.is_empty() { regular_face } else { custom_family };
+        return (face, requested_weight as i32);
     }
     match requested_weight {
         0..=449 => (regular_face, requested_weight as i32),
-        // Alibaba PuHuiTi 3.0 65 Medium is registered as a standalone face whose natural outline
-        // is already weight 500; passing FW_NORMAL avoids GDI faux-bold horizontal double-striking.
+        // Standalone Medium face already has natural weight 500; FW_NORMAL avoids GDI faux-bold.
         450..=549 => (medium_face, FW_NORMAL.0 as i32),
         _ => (medium_face, requested_weight as i32),
     }

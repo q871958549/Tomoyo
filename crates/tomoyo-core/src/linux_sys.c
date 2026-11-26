@@ -177,6 +177,37 @@ void tomoyo_fc_clear_fonts(void) {
 #endif
 }
 
+int tomoyo_fc_list_families(tomoyo_str_cb cb, void *ctx) {
+#ifdef HAVE_FONTCONFIG
+    if (!cb || !FcInit()) return 0;
+    FcPattern *pat = FcPatternCreate();
+    FcObjectSet *os = FcObjectSetBuild(FC_FAMILY, (char *)0);
+    if (!pat || !os) {
+        if (pat) FcPatternDestroy(pat);
+        if (os) FcObjectSetDestroy(os);
+        return 0;
+    }
+    FcFontSet *fs = FcFontList(NULL, pat, os);
+    int count = 0;
+    if (fs) {
+        for (int i = 0; i < fs->nfont; i++) {
+            FcChar8 *fam = NULL;
+            if (FcPatternGetString(fs->fonts[i], FC_FAMILY, 0, &fam) == FcResultMatch && fam && fam[0]) {
+                cb(ctx, (const char *)fam, strlen((const char *)fam));
+                count++;
+            }
+        }
+        FcFontSetDestroy(fs);
+    }
+    FcObjectSetDestroy(os);
+    FcPatternDestroy(pat);
+    return count;
+#else
+    (void)cb; (void)ctx;
+    return 0;
+#endif
+}
+
 int tomoyo_decode_image_rgba(
     const char *path,
     int max_w,
