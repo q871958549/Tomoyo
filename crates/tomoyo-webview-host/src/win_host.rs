@@ -14,8 +14,8 @@ use crate::win_msg::{dispatch_webview_message, pick_builtin_html};
 use crate::win_theme::{
     configure_controller_visuals, create_themed_host_window, destroy_owned_icons,
     handle_frameless_erasebkgnd, handle_frameless_getminmaxinfo, handle_frameless_nccalcsize,
-    handle_frameless_nchittest, load_window_icons, map_vdir, reveal_host_window_and_notify,
-    set_webview_bounds_for_window,
+    handle_frameless_nchittest, handle_frameless_paint, load_window_icons, map_vdir,
+    reveal_host_window_and_notify, set_webview_bounds_for_window,
 };
 use crate::LaunchArgs;
 use std::cell::RefCell;
@@ -43,7 +43,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     IsWindow, PostQuitMessage, SetForegroundWindow, SetTimer, SetWindowLongPtrW, SetWindowPos,
     ShowWindow, TranslateMessage, GWLP_USERDATA, MSG, SWP_FRAMECHANGED, SWP_NOACTIVATE,
     SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SW_RESTORE, SW_SHOW, WM_ACTIVATE, WM_CLOSE, WM_DESTROY,
-    WM_ERASEBKGND, WM_GETMINMAXINFO, WM_NCCALCSIZE, WM_NCHITTEST, WM_SIZE, WM_TIMER,
+    WM_ERASEBKGND, WM_GETMINMAXINFO, WM_NCCALCSIZE, WM_NCHITTEST, WM_PAINT, WM_SIZE, WM_TIMER,
 };
 
 pub(crate) const WM_APP_WEBVIEW_EVENT: u32 = 0x8000 + 31;
@@ -83,6 +83,9 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         }
         WM_ERASEBKGND if !ptr.is_null() && unsafe { (*ptr).settings_mode } => {
             unsafe { handle_frameless_erasebkgnd(hwnd, wparam, &(*ptr).theme) }
+        }
+        WM_PAINT if !ptr.is_null() && unsafe { (*ptr).settings_mode } => {
+            unsafe { handle_frameless_paint(hwnd, &(*ptr).theme) }
         }
         WM_GETMINMAXINFO if !ptr.is_null() && unsafe { (*ptr).settings_mode } => {
             unsafe { handle_frameless_getminmaxinfo(lparam) }

@@ -14,7 +14,9 @@ use std::sync::mpsc;
 use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2;
 use windows::core::{HSTRING, PCWSTR};
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
-use windows::Win32::Graphics::Gdi::InvalidateRect;
+use windows::Win32::Graphics::Gdi::{
+    RedrawWindow, RDW_FRAME, RDW_INVALIDATE, RDW_UPDATENOW,
+};
 use windows::Win32::UI::Input::KeyboardAndMouse::ReleaseCapture;
 use windows::Win32::UI::WindowsAndMessaging::{
     IsZoomed, PostMessageW, SendMessageW, ShowWindow, HTCAPTION, SW_MAXIMIZE, SW_MINIMIZE,
@@ -42,7 +44,7 @@ pub(crate) unsafe fn dispatch_webview_message(
             unsafe { configure_controller_visuals(ctrl, theme); }
         }
         apply_host_window_theme(hwnd, theme);
-        unsafe { let _ = InvalidateRect(Some(hwnd), None, true); }
+        unsafe { let _ = RedrawWindow(Some(hwnd), None, None, RDW_INVALIDATE | RDW_UPDATENOW | RDW_FRAME); }
     }
     match act.window_control {
         1 => unsafe {

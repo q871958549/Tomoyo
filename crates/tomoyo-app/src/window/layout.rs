@@ -234,16 +234,20 @@ impl AppShell {
     }
 
     pub(super) fn desired_height_dip(&self) -> i32 {
-        let min_sidebar_body = if self.is_filter_bar_visible() { 268 } else { 0 };
+        if self.is_filter_bar_visible() {
+            return HEADER_HEIGHT_DIP
+                + 8
+                + (self.geom.max_visible_rows as i32) * self.typography.row_height_dip()
+                + FOOTER_HEIGHT_DIP;
+        }
         let rows = self.results.len().min(self.geom.max_visible_rows) as i32;
-        let body_h = if rows == 0 {
-            0
+        if rows == 0 {
+            HEADER_HEIGHT_DIP + FOOTER_HEIGHT_DIP
         } else {
             let min_preview_rows = if self.inter.inline_dock_pid.is_some() { 7 } else if self.cached_preview.is_some() { 5 } else { 0 };
             let eff_rows = rows.max(min_preview_rows);
-            8 + eff_rows * self.typography.row_height_dip()
-        };
-        HEADER_HEIGHT_DIP + body_h.max(min_sidebar_body) + FOOTER_HEIGHT_DIP
+            HEADER_HEIGHT_DIP + 8 + eff_rows * self.typography.row_height_dip() + FOOTER_HEIGHT_DIP
+        }
     }
 
     pub(super) fn ensure_selected_visible(&mut self) {

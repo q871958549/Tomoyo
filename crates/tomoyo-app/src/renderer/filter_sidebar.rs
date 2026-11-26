@@ -136,7 +136,12 @@ pub fn hit_test_sidebar(
     }
     if y_dip >= sl.list_top && y_dip <= sl.list_bot {
         for item in &sl.items {
-            if y_dip >= item.y0 && y_dip <= item.y1 && (6.0..=SIDEBAR_WIDTH_DIP - 6.0).contains(&x_dip) {
+            if item.y0 >= sl.list_top - 1.0
+                && item.y1 <= sl.list_bot + 1.0
+                && y_dip >= item.y0
+                && y_dip <= item.y1
+                && (6.0..=SIDEBAR_WIDTH_DIP - 6.0).contains(&x_dip)
+            {
                 return Some(SidebarHit::Tab(item.filter));
             }
         }
@@ -162,7 +167,7 @@ pub(super) fn paint_sidebar_sdf(
 
     let sl = compute_sidebar_layout(lay.header_h, lay.fy0, state.filter_tabs, state.sidebar_scroll);
     for item in &sl.items {
-        if item.y1 < sl.list_top + 4.0 || item.y0 > sl.list_bot - 4.0 {
+        if item.y0 < sl.list_top - 1.0 || item.y1 > sl.list_bot + 1.0 {
             continue;
         }
         let is_active = item.filter == state.active_filter;
@@ -199,7 +204,7 @@ pub(super) fn paint_sidebar_gdi(
     let sl = compute_sidebar_layout(lay.header_h, lay.fy0, state.filter_tabs, state.sidebar_scroll);
     unsafe {
         for item in &sl.items {
-            if item.y1 < sl.list_top + 4.0 || item.y0 > sl.list_bot - 4.0 {
+            if item.y0 < sl.list_top - 1.0 || item.y1 > sl.list_bot + 1.0 {
                 continue;
             }
             let is_active = item.filter == state.active_filter;
@@ -289,6 +294,13 @@ mod tests {
             Some(SidebarHit::AddTag)
         );
         assert_eq!(hit_test_sidebar(150.0, 120.0, 62.0, 312.0, &tabs, 0.0), None);
+        // Partially clipped bottom item must not be hit-tested over the divider / add button
+        let hidden = sl.items.iter().find(|it| it.y1 > sl.list_bot + 1.0).unwrap();
+        assert_eq!(
+            hit_test_sidebar(50.0, sl.list_bot - 1.0, 62.0, 312.0, &tabs, 0.0)
+                .filter(|h| *h == SidebarHit::Tab(hidden.filter)),
+            None
+        );
     }
 
     #[test]

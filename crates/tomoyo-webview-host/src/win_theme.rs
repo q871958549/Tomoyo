@@ -9,14 +9,13 @@ use webview2_com::Microsoft::Web::WebView2::Win32::{
 use windows::core::{Interface, HSTRING, PCWSTR};
 use windows::Win32::Foundation::{COLORREF, HMODULE, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Dwm::{
-    DwmExtendFrameIntoClientArea, DwmSetWindowAttribute, DWMWA_CAPTION_COLOR, DWMWA_TEXT_COLOR,
+    DwmSetWindowAttribute, DWMWA_BORDER_COLOR, DWMWA_CAPTION_COLOR, DWMWA_TEXT_COLOR,
     DWMWA_USE_IMMERSIVE_DARK_MODE, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND,
 };
 use windows::Win32::Graphics::Gdi::{
-    CreateBitmap, CreateDIBSection, CreateSolidBrush, DeleteObject, FillRect, BITMAPINFO,
-    BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS, HBRUSH, HDC,
+    BeginPaint, CreateBitmap, CreateDIBSection, CreateSolidBrush, DeleteObject, EndPaint, FillRect,
+    BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS, HBRUSH, HDC, PAINTSTRUCT,
 };
-use windows::Win32::UI::Controls::MARGINS;
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateIconIndirect, CreateWindowExW, DestroyIcon, GetClientRect, GetSystemMetrics,
     GetWindowRect, IsZoomed, LoadCursorW, LoadImageW, RegisterClassExW, SendMessageW,
@@ -256,13 +255,6 @@ pub unsafe fn apply_frameless_dwm_style(hwnd: HWND) {
             &corner as *const _ as *const c_void,
             std::mem::size_of_val(&corner) as u32,
         );
-        let margins = MARGINS {
-            cxLeftWidth: 0,
-            cxRightWidth: 0,
-            cyTopHeight: 1,
-            cyBottomHeight: 0,
-        };
-        let _ = DwmExtendFrameIntoClientArea(hwnd, &margins);
     }
 }
 
@@ -270,10 +262,10 @@ const WPARAM_SETICON_SMALL: windows::Win32::Foundation::WPARAM = windows::Win32:
 const WPARAM_SETICON_BIG: windows::Win32::Foundation::WPARAM = windows::Win32::Foundation::WPARAM(ICON_BIG as usize);
 
 pub fn apply_host_window_theme(hwnd: HWND, theme: &str) {
-    let (is_dark, caption_bgr, text_bgr) = match theme.trim().to_ascii_lowercase().as_str() {
-        "light" | "white" => (0i32, COLORREF(0x00FBF7F6), COLORREF(0x00221815)),
-        "midnight" => (1i32, COLORREF(0x001A100E), COLORREF(0x00F9F5F1)),
-        _ => (1i32, COLORREF(0x001C1413), COLORREF(0x00F8F4F3)),
+    let (is_dark, caption_bgr, text_bgr, border_bgr) = match theme.trim().to_ascii_lowercase().as_str() {
+        "light" | "white" => (0i32, COLORREF(0x00FBF7F6), COLORREF(0x00221815), COLORREF(0x00E9DDD6)),
+        "midnight" => (1i32, COLORREF(0x001A100E), COLORREF(0x00F9F5F1), COLORREF(0x004A3026)),
+        _ => (1i32, COLORREF(0x001C1413), COLORREF(0x00F8F4F3), COLORREF(0x00372826)),
     };
 
     unsafe {
@@ -293,6 +285,12 @@ pub fn apply_host_window_theme(hwnd: HWND, theme: &str) {
             hwnd,
             DWMWA_TEXT_COLOR,
             &text_bgr as *const _ as *const c_void,
+            std::mem::size_of::<COLORREF>() as u32,
+        );
+        let _ = DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_BORDER_COLOR,
+            &border_bgr as *const _ as *const c_void,
             std::mem::size_of::<COLORREF>() as u32,
         );
         let _ = SetWindowPos(
@@ -339,10 +337,9 @@ pub fn set_webview_bounds_for_window(
         let mut rc = RECT::default();
         let _ = GetClientRect(hwnd, &mut rc);
         if frameless && !IsZoomed(hwnd).as_bool() {
-            rc.left += 4;
-            rc.top += 3;
-            rc.right = (rc.right - 4).max(rc.left + 100);
-            rc.bottom = (rc.bottom - 4).max(rc.top + 100);
+            rc.left += 3;
+            rc.right = (rc.right - 3).max(rc.left + 100);
+            rc.bottom = (rc.bottom - 3).max(rc.top + 100);
         }
         let _ = ctrl.SetBounds(rc);
     }
@@ -396,6 +393,20 @@ pub unsafe fn handle_frameless_erasebkgnd(hwnd: HWND, wparam: WPARAM, theme: &st
         let _ = FillRect(dc, &rc, brush);
         let _ = DeleteObject(brush.into());
         LRESULT(1)
+    }
+}
+
+pub unsafe fn handle_frameless_paint(hwnd: HWND, theme: &str) -> LRESULT {
+    unsafe {
+        let mut ps = PAINTSTRUCT::default();
+        let dc = BeginPaint(hwnd, &mut ps);
+        let mut rc = RECT::default();
+        let _ = GetClientRect(hwnd, &mut rc);
+        let brush = create_theme_bg_brush(theme);
+        let _ = FillRect(dc, &rc, brush);
+        let _ = DeleteObject(brush.into());
+        let _ = EndPaint(hwnd, &ps);
+        LRESULT(0)
     }
 }
 
