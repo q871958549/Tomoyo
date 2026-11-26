@@ -183,6 +183,10 @@ tomoyo_wv_t *tomoyo_wv_create(
     h->css = gtk_css_provider_new();
     gtk_style_context_add_provider(gtk_widget_get_style_context(h->window), GTK_STYLE_PROVIDER(h->css), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
     if (h->frameless) {
+        GtkWidget *zero_hb = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+        gtk_widget_set_size_request(zero_hb, 0, 0);
+        gtk_widget_set_no_show_all(zero_hb, TRUE);
+        gtk_window_set_titlebar(GTK_WINDOW(h->window), zero_hb);
         gtk_window_set_decorated(GTK_WINDOW(h->window), FALSE);
         gtk_window_set_resizable(GTK_WINDOW(h->window), TRUE);
     } else {

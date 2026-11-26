@@ -1,4 +1,5 @@
 <script lang="ts">
+  import tomoyoLogo from '../../assets/tomoyo-logo.png';
   import { postHost } from '../../lib/ipc';
   import type { Lang } from '../../lib/i18n';
 
@@ -19,10 +20,7 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <header class="titlebar" onmousedown={onBarMouseDown} ondblclick={onBarDblClick}>
   <div class="brand-area">
-    <svg class="mark" viewBox="0 0 24 24" width="15" height="15" fill="none" aria-hidden="true">
-      <rect x="2" y="2" width="20" height="20" rx="6" fill="var(--accent)" />
-      <path d="M7.5 8.5h9M12 8.5v7.5" stroke="#fff" stroke-width="2.1" stroke-linecap="round" />
-    </svg>
+    <img class="mark" src={tomoyoLogo} alt="Tomoyo" width="16" height="16" draggable="false" />
     <span class="title">{lang === 'en' ? 'Tomoyo Settings Center' : 'Tomoyo 设置中心'}</span>
   </div>
 
@@ -83,7 +81,7 @@
     min-width: 0;
     pointer-events: none;
   }
-  .mark { flex-shrink: 0; }
+  .mark { width: 16px; height: 16px; border-radius: 4px; display: block; flex-shrink: 0; }
   .title {
     font-size: 12.5px;
     font-weight: 600;

@@ -116,7 +116,12 @@ describe('Tomoyo Svelte 5 WebView UIs', () => {
 
     const navBtns = document.querySelectorAll<HTMLButtonElement>('nav button[data-tab]');
     expect(navBtns.length).toBe(6);
-    expect(document.querySelector<HTMLImageElement>('img.brand-logo')?.getAttribute('src')).toBeTruthy();
+    const brandSrc = document.querySelector<HTMLImageElement>('img.brand-logo')?.getAttribute('src');
+    expect(brandSrc).toBeTruthy();
+    const titlebarMark = document.querySelector<HTMLImageElement>('header.titlebar img.mark');
+    expect(titlebarMark).not.toBeNull();
+    expect(titlebarMark?.getAttribute('src')).toBe(brandSrc);
+    expect(document.querySelector('header.titlebar svg.mark')).toBeNull();
 
     // Hotkey conflict bar + Hotkey Doctor rescue flow
     const conflictBtn = document.querySelector<HTMLButtonElement>('button#toast.conflict-bar-btn');
