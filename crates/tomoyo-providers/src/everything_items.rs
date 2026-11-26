@@ -137,14 +137,19 @@ pub(super) fn empty_result_item(
         } else {
             format!("[{scope_label}] 未找到匹配 `{search_text}` 的文件")
         },
-        subtitle: "支持扩展筛选：ext:rs · folder: · @pdf/@code/@img".into(),
+        subtitle: lang
+            .pick(
+                "试试自然语言：f 今天 pdf · f 大文件 · f 下载目录 · @pdf",
+                "Try: f today pdf · f large · f downloads · @pdf",
+            )
+            .into(),
         category: ResultCategory::File,
         score: 100,
         icon: IconSpec::Monogram("FILE".into()),
         badge: Some("0 hits".into()),
         copy_text: None,
         actions: vec![],
-        preview: Some(everything_syntax_preview()),
+        preview: Some(everything_syntax_preview(lang)),
     }
 }
 
@@ -161,7 +166,7 @@ pub(super) fn offline_item(provider_id: &str) -> ResultItem {
             badge: Some("Offline".into()),
             copy_text: None,
             actions: vec![],
-            preview: Some(everything_syntax_preview()),
+            preview: Some(everything_syntax_preview(Lang::Zh)),
         };
     }
     ResultItem {
@@ -183,23 +188,40 @@ pub(super) fn offline_item(provider_id: &str) -> ResultItem {
                 url: "https://www.voidtools.com/".into(),
             },
         }],
-        preview: Some(everything_syntax_preview()),
+        preview: Some(everything_syntax_preview(Lang::En)),
     }
 }
 
-fn everything_syntax_preview() -> PreviewSpec {
+fn everything_syntax_preview(lang: Lang) -> PreviewSpec {
+    let zh = lang == Lang::Zh;
     PreviewSpec::KeyValue {
         title: if cfg!(target_os = "linux") {
-            "File Search Filters (fd / plocate)".into()
+            if zh { "文件快捷筛选" } else { "File Search Filters (fd)" }
+        } else if zh {
+            "自然语言与快捷筛选"
         } else {
-            "Everything Power Filters".into()
+            "Natural & Power Filters"
+        }
+        .into(),
+        entries: if zh {
+            vec![
+                ("f 今天 pdf".into(), "今天修改的 PDF 文档".into()),
+                ("f 大文件".into(), "大于 50MB 的大文件".into()),
+                ("f 近7天 合同".into(), "近 7 天内含“合同”的文件".into()),
+                ("f 下载目录".into(), "仅在 Downloads 目录查找".into()),
+                ("@pdf / @excel".into(), "一键切换分类过滤标签".into()),
+                ("Tab".into(), "打开定位 / 终端 / 校验等动作".into()),
+            ]
+        } else {
+            vec![
+                ("f today pdf".into(), "PDFs modified today".into()),
+                ("f large".into(), "Files larger than 50MB".into()),
+                ("f last7days".into(), "Modified within 7 days".into()),
+                ("f downloads".into(), "Files inside Downloads".into()),
+                ("ext:rs;toml".into(), "Raw extension filter".into()),
+                ("Tab".into(), "Open reveal / terminal / SHA-256".into()),
+            ]
         },
-        entries: vec![
-            ("ext:rs;toml".into(), "Match extensions".into()),
-            ("folder: docs".into(), "Folders only".into()),
-            ("@pdf / @excel".into(), "Quick group filter tags".into()),
-            ("Tab".into(), "Open file actions / SHA-256 / Pin".into()),
-        ],
     }
 }
 
@@ -230,14 +252,14 @@ pub(super) fn hint_items(lang: Lang, config: &Arc<RwLock<TomoyoConfig>>) -> Vec<
         provider_id: "builtin.everything".into(),
         title: lang
             .pick(
-                "输入关键词快速检索本地文件...",
-                "Type to search local files...",
+                "直接说人话搜索本地文件，例如 `f 今天 pdf`...",
+                "Search files naturally, e.g. `f today pdf`...",
             )
             .into(),
         subtitle: lang
             .pick(
-                "支持语法：f Cargo.toml · f ext:rs tomoyo · 下方为收藏筛选器与历史记录",
-                "Examples: f Cargo.toml · f ext:rs · Favorites & history listed below",
+                "支持自然筛选：f 今天 · f 大文件 · f 近7天 合同 · f 下载目录（也兼容 ext: / dm:）",
+                "Natural filters: f today · f large · f last7days · f downloads (plus ext:/dm:)",
             )
             .into(),
         category: ResultCategory::File,
@@ -246,8 +268,35 @@ pub(super) fn hint_items(lang: Lang, config: &Arc<RwLock<TomoyoConfig>>) -> Vec<
         badge: Some(status.into()),
         copy_text: None,
         actions: vec![],
-        preview: Some(everything_syntax_preview()),
+        preview: Some(everything_syntax_preview(lang)),
     }];
+
+    let starters: [(&str, &str, &str, &str, &str); 4] = [
+        ("nl:today", "今日修改的文件", "Files modified today", "f 今天 ", "TODAY"),
+        ("nl:large", "查找大文件（>50MB）", "Large files (>50MB)", "f 大文件 ", ">50M"),
+        ("nl:pdf7", "近 7 天 PDF 文档", "Recent 7-day PDFs", "f 近7天 pdf ", "PDF"),
+        ("nl:dl", "下载目录里的文件", "Files in Downloads", "f 下载目录 ", "DL"),
+    ];
+    for (idx, (sid, tz, te, q, bdg)) in starters.into_iter().enumerate() {
+        items.push(ResultItem {
+            id: format!("ev:{sid}"),
+            provider_id: "builtin.everything".into(),
+            title: if lang == Lang::Zh { tz } else { te }.into(),
+            subtitle: format!("{q}· {}", lang.pick("回车一键填入并筛选", "Enter to apply starter")),
+            category: ResultCategory::File,
+            score: 9_400 - (idx as i64 * 15),
+            icon: IconSpec::Monogram(bdg.into()),
+            badge: Some(bdg.into()),
+            copy_text: None,
+            actions: vec![ActionSpec {
+                id: "fill_starter".into(),
+                label: lang.pick("填入此筛选条件", "Apply Starter").into(),
+                shortcut: Some("Enter".into()),
+                kind: ActionKind::FillQuery { query: q.into() },
+            }],
+            preview: Some(everything_syntax_preview(lang)),
+        });
+    }
 
     if let Ok(cfg) = config.read() {
         for (idx, fav) in cfg.everything.favorites.iter().take(6).enumerate() {
@@ -269,7 +318,7 @@ pub(super) fn hint_items(lang: Lang, config: &Arc<RwLock<TomoyoConfig>>) -> Vec<
                         query: format!("f {} ", fav.expr),
                     },
                 }],
-                preview: Some(everything_syntax_preview()),
+                preview: Some(everything_syntax_preview(lang)),
             });
         }
     }

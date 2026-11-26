@@ -1,5 +1,6 @@
 //! System commands, Super Match attached-capsule actions, Auto-Update (`:update`), and Diagnostics.
 
+mod command_hub;
 mod diagnostics;
 mod plugins_search;
 mod super_match;
@@ -38,8 +39,15 @@ impl SystemProvider {
         config: Arc<RwLock<TomoyoConfig>>,
         updater: Arc<UpdateManager>,
     ) -> Self {
-        let specs: [(&str, &str, &str, &str, ActionKind); 8] = if cfg!(target_os = "linux") {
+        let specs: [(&str, &str, &str, &str, ActionKind); 9] = if cfg!(target_os = "linux") {
             [
+                (
+                    "sys:command_hub",
+                    "指令与快捷键速查 Help / 帮助",
+                    "输入 ? 或 / 随时查看全部内置指令与自然语言文件筛选技巧",
+                    "?",
+                    ActionKind::FillQuery { query: "?".into() },
+                ),
                 (
                     "sys:tomoyo_settings",
                     "Tomoyo 设置中心 Settings",
@@ -99,6 +107,13 @@ impl SystemProvider {
             ]
         } else {
             [
+                (
+                    "sys:command_hub",
+                    "指令与快捷键速查 Help / 帮助",
+                    "输入 ? 或 / 随时查看全部内置指令与自然语言文件筛选技巧",
+                    "?",
+                    ActionKind::FillQuery { query: "?".into() },
+                ),
                 (
                     "sys:tomoyo_settings",
                     "Tomoyo 设置中心 Settings",
@@ -208,6 +223,9 @@ impl Provider for SystemProvider {
                 &self.config,
                 &self.updater,
             );
+        }
+        if command_hub::is_command_hub_query(trimmed) {
+            return command_hub::build_command_hub_items(self.id(), trimmed, lang);
         }
         if trimmed.is_empty() {
             return Vec::new();

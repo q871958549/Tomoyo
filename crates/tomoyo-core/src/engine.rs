@@ -177,8 +177,11 @@ impl QueryRouter {
         ctx.clipboard = clipboard;
         ctx.attached = attached;
 
-        // 1. Dedicated `:` system commands
-        if trimmed.starts_with(':') {
+        // 1. Dedicated `:` system commands & `?` / `/` command hub
+        let is_cmd_hub = trimmed.starts_with('?')
+            || trimmed.starts_with('？')
+            || (trimmed.starts_with('/') && !trimmed[1..].contains('/'));
+        if trimmed.starts_with(':') || is_cmd_hub {
             let mut results = Vec::new();
             for p in &self.providers {
                 if p.prefixes().contains(&":") {

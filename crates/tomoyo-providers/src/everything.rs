@@ -149,12 +149,28 @@ impl Provider for EverythingProvider {
         } else {
             ctx.limit.min(cfg_global).clamp(1, 10)
         };
+        let nl = if expanded && !search_text.is_empty() {
+            Some(crate::everything_nl::translate_natural_query(search_text, lang))
+        } else {
+            None
+        };
+        let translated_nl = nl.as_ref().is_some_and(|t| t.translated);
+        let query_text = nl
+            .as_ref()
+            .filter(|t| t.translated)
+            .map(|t| t.everything_query.as_str())
+            .unwrap_or(search_text);
+        let score_text = nl
+            .as_ref()
+            .filter(|t| t.translated)
+            .map(|t| t.score_keywords.as_str())
+            .unwrap_or(search_text);
 
         #[cfg(target_os = "linux")]
         {
             let _ = _custom_expr;
             match crate::everything_linux::query_linux_files(
-                search_text,
+                query_text,
                 ctx.filter,
                 custom_tab.as_ref(),
                 target_cap,
@@ -168,7 +184,7 @@ impl Provider for EverythingProvider {
                         .into_iter()
                         .enumerate()
                         .map(|(idx, entry)| {
-                            let score = compute_ev_score(search_text, &entry, expanded, idx);
+                            let score = compute_ev_score(score_text, &entry, expanded, idx);
                             build_entry_item(self.id(), entry, score, lang)
                         })
                         .collect();
@@ -194,8 +210,8 @@ impl Provider for EverythingProvider {
                 return Vec::new();
             }
             let mut parts: Vec<String> = Vec::with_capacity(3);
-            if !search_text.is_empty() {
-                parts.push(search_text.to_string());
+            if !query_text.is_empty() {
+                parts.push(query_text.to_string());
             }
             if let Some(expr) = ctx.filter.everything_expr() {
                 parts.push(expr.to_string());
@@ -206,14 +222,14 @@ impl Provider for EverythingProvider {
                 parts.push(_extra_filter.trim().to_string());
             }
             let effective_query = parts.join(" ");
-            let fetch_limit = if search_text.is_empty() {
+            let fetch_limit = if score_text.is_empty() {
                 target_cap as u32
             } else {
                 (target_cap * 6).clamp(48, 80) as u32
             };
             let opts = EverythingQueryOptions {
                 max_results: fetch_limit,
-                sort: if search_text.is_empty() {
+                sort: if score_text.is_empty() {
                     SortOrder::DateModifiedDesc
                 } else {
                     SortOrder::NameAsc
@@ -226,12 +242,13 @@ impl Provider for EverythingProvider {
                 Ok(mut resp) => {
                     EV_TIMEOUT_STREAK.store(0, Ordering::Relaxed);
                     EV_COOLDOWN_UNTIL_MS.store(0, Ordering::Relaxed);
-                    let is_plain_token = !search_text.is_empty()
-                        && !search_text.contains(char::is_whitespace)
-                        && !search_text.contains(':');
+                    let is_plain_token = !translated_nl
+                        && !score_text.is_empty()
+                        && !score_text.contains(char::is_whitespace)
+                        && !score_text.contains(':');
                     if is_plain_token && resp.total_items > fetch_limit {
                         let prefix_q =
-                            build_prefix_query(search_text, ctx.filter, &_extra_filter, expanded);
+                            build_prefix_query(score_text, ctx.filter, &_extra_filter, expanded);
                         let prefix_opts = EverythingQueryOptions {
                             max_results: 32,
                             sort: SortOrder::NameAsc,
@@ -252,7 +269,7 @@ impl Provider for EverythingProvider {
                         .into_iter()
                         .enumerate()
                         .map(|(idx, entry)| {
-                            let score = compute_ev_score(search_text, &entry, expanded, idx);
+                            let score = compute_ev_score(score_text, &entry, expanded, idx);
                             build_entry_item(self.id(), entry, score, lang)
                         })
                         .collect();
