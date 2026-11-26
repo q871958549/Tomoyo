@@ -1,8 +1,6 @@
 //! Pure-Rust SDF anti-aliased shape, surface, card, scrollbar, and overlay pass.
 
 use super::canvas::Canvas;
-#[cfg(not(windows))]
-use super::filter_bar::paint_filter_bar_sdf;
 use super::scrollbar::{compute_scrollbar_metrics, ScrollbarVisual};
 use super::theme::{category_rgb, Rgb};
 use super::{FrameLayout, RenderState};
@@ -104,22 +102,7 @@ fn paint_sdf_pass_inner(
     }
 
     if state.filter_bar_visible {
-        #[cfg(windows)]
         super::filter_sidebar::paint_sidebar_sdf(&mut canvas, lay, state);
-        #[cfg(not(windows))]
-        paint_filter_bar_sdf(
-            &mut canvas,
-            pal,
-            lay.list_w_dip,
-            lay.header_h,
-            state.filter_tabs,
-            state.active_filter,
-            state.hovered_filter,
-            state.hovered_overflow,
-            state.filter_counts,
-            state.filter_bar_wrap,
-            state.filter_pill_override,
-        );
     } else if !state.items.is_empty() {
         canvas.fill_rect_dip(12.0, lay.header_h, lay.w_dip - 12.0, lay.header_h + 1.0, pal.divider);
     }

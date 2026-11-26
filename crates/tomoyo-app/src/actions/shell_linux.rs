@@ -23,6 +23,10 @@ pub fn spawn_settings_window_at(
 ) -> Result<bool, String> {
     let mut args = vec!["--settings", "--title", "Tomoyo 设置中心"];
     let clean = route.map(str::trim).filter(|s| !s.is_empty());
+    let wake_payload = clean.map(|r| {
+        let j = serde_json::to_string(r).unwrap_or_else(|_| "\"\"".into());
+        format!("navigate_route:{j}\n")
+    });
     if let Some(r) = clean {
         args.push("--query");
         args.push(r);
@@ -34,6 +38,7 @@ pub fn spawn_settings_window_at(
         &args,
         960,
         670,
+        wake_payload.as_deref(),
     )
     .map(|()| true)
 }
@@ -60,8 +65,9 @@ fn spawn_ephemeral_singleton(
     extra: &[&str],
     width: i32,
     height: i32,
+    wake_payload: Option<&str>,
 ) -> Result<(), String> {
-    if try_wake_singleton_socket(mode_tag, "activate\n") {
+    if try_wake_singleton_socket(mode_tag, wake_payload.unwrap_or("activate\n")) {
         return Ok(());
     }
     let host_exe = locate_sibling_exe("tomoyo-webview-host")?;

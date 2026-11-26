@@ -95,6 +95,13 @@ pub fn eval_dispatch_json(wv: *mut c_void, json: &str) {
         }
         return;
     }
+    if let Some(r_json) = json.strip_prefix("__TOMOYO_NAVIGATE_ROUTE__:") {
+        let script = format!("window.__TOMOYO_NAVIGATE_ROUTE__ && window.__TOMOYO_NAVIGATE_ROUTE__({r_json});");
+        if let Ok(cs) = CString::new(script) {
+            unsafe { tomoyo_wv_eval_js(wv, cs.as_ptr()); }
+        }
+        return;
+    }
     let quoted = serde_json::to_string(json).unwrap_or_else(|_| "\"{}\"".into());
     let script = format!("window.__tomoyoDispatchHostEvent && window.__tomoyoDispatchHostEvent({quoted});");
     if let Ok(cs) = CString::new(script) {
@@ -351,6 +358,7 @@ impl Drop for SocketGuard {
 pub fn try_acquire_instance(
     mode_tag: &str,
     plugin_query: Option<&str>,
+    settings_route: Option<&str>,
     ch: &Arc<HostChannel>,
 ) -> Result<SocketGuard, ()> {
     unsafe extern "C" {
@@ -365,6 +373,9 @@ pub fn try_acquire_instance(
         if let Some(q) = plugin_query {
             let jq = serde_json::to_string(q).unwrap_or_else(|_| "\"\"".into());
             let _ = stream.write_all(format!("activate_plugin:{jq}\n").as_bytes());
+        } else if let Some(r) = settings_route.map(str::trim).filter(|s| !s.is_empty()) {
+            let jr = serde_json::to_string(r).unwrap_or_else(|_| "\"\"".into());
+            let _ = stream.write_all(format!("navigate_route:{jr}\n").as_bytes());
         } else {
             let _ = stream.write_all(b"activate\n");
         }
@@ -386,8 +397,11 @@ pub fn try_acquire_instance(
                 let t = TomoyoConfig::load_or_create().theme;
                 let mode = if t.eq_ignore_ascii_case("light") { 0 } else if t.eq_ignore_ascii_case("midnight") { 2 } else { 1 };
                 c.desired_theme.store(mode, Ordering::SeqCst);
-                if let Some(q_json) = cmd.trim().strip_prefix("activate_plugin:") {
+                let trimmed = cmd.trim();
+                if let Some(q_json) = trimmed.strip_prefix("activate_plugin:") {
                     c.push(format!("__TOMOYO_REACTIVATE__:{q_json}"));
+                } else if let Some(r_json) = trimmed.strip_prefix("navigate_route:") {
+                    c.push(format!("__TOMOYO_NAVIGATE_ROUTE__:{r_json}"));
                 }
                 c.request_present();
             }

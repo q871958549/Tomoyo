@@ -6,7 +6,7 @@ use crate::linux::{
 };
 use crate::linux::ipc::schedule_on_ui;
 use crate::linux::shell_state::{with_current_core, AppCore};
-use crate::renderer::{compute_filter_bar_layout, FilterHit, HEADER_HEIGHT_DIP};
+use crate::renderer::{hit_test_sidebar, SidebarHit, FOOTER_HEIGHT_DIP, HEADER_HEIGHT_DIP, SIDEBAR_WIDTH_DIP};
 use std::cell::RefCell;
 use std::ffi::{c_int, c_void, CStr};
 use std::time::Duration;
@@ -56,6 +56,7 @@ pub unsafe extern "C" fn on_focus_out_cb(ctx: *mut c_void) {
     if let Some(cell) = borrow_core(ctx)
         && let Ok(mut st) = cell.try_borrow_mut()
         && !st.menu_open
+        && !st.sidebar.modal_open
         && !st.menu_closed_at.is_some_and(|t| t.elapsed() < Duration::from_millis(220))
         && st.shown_at.elapsed() > Duration::from_millis(180)
     {
@@ -139,7 +140,8 @@ pub unsafe extern "C" fn on_key_cb(ctx: *mut c_void, keyval: u32, state: u32) ->
     }
     match keyval {
         0xFF1B => {
-            if st.action_menu_open { st.action_menu_open = false; st.invalidate(); }
+            if st.cancel_sidebar_tab_drag() { st.invalidate(); }
+            else if st.action_menu_open { st.action_menu_open = false; st.invalidate(); }
             else if !st.current_query.is_empty() { st.set_query_text(""); }
             else if st.attached.take().is_some() { st.dispatch_query(); }
             else if st.active_filter != SearchFilter::All { st.set_active_filter(SearchFilter::All); }
@@ -179,41 +181,44 @@ pub unsafe extern "C" fn on_key_cb(ctx: *mut c_void, keyval: u32, state: u32) ->
 pub unsafe extern "C" fn on_mouse_cb(ctx: *mut c_void, kind: c_int, x: c_int, y: c_int, delta: c_int) {
     let Some(cell) = borrow_core(ctx) else { return; };
     let Ok(mut st) = cell.try_borrow_mut() else { return; };
-    let xd = x as f32;
-    let yd = y as f32;
+    let (xd, yd) = (x as f32, y as f32);
     let header_h = HEADER_HEIGHT_DIP as f32;
-    let filter_h = st.filter_bar_height_dip() as f32;
-    let list_top = header_h + filter_h + 4.0;
+    let fy0 = (st.desired_height_dip() - FOOTER_HEIGHT_DIP) as f32;
+    let list_top = header_h + 4.0;
+    let (lx0, lx1) = st.list_bounds_dip(st.desired_width_dip() as f32);
     let row_h = st.typography.row_height_dip() as f32;
-    let row_from_y = (yd >= list_top).then(|| st.scroll_offset + ((yd - list_top) / row_h) as usize).filter(|&i| i < st.results.len());
+    let row_from_y = ((lx0..lx1).contains(&xd) && yd >= list_top && yd < fy0)
+        .then(|| st.scroll_offset + ((yd - list_top) / row_h) as usize)
+        .filter(|&i| i < st.results.len());
+    let sidebar_hit = if st.is_filter_bar_visible() && xd < SIDEBAR_WIDTH_DIP && yd >= header_h && yd < fy0 {
+        let tabs = st.visible_filter_tabs();
+        hit_test_sidebar(xd, yd, header_h, fy0, &tabs, st.sidebar.scroll)
+    } else {
+        None
+    };
 
     match kind {
+        4 => {
+            st.dragging_divider = false;
+            let _ = st.finish_sidebar_tab_drag();
+        }
         6 => {
-            let max_off = st.results.len().saturating_sub(st.max_visible_rows);
-            st.scroll_offset = if delta > 0 { st.scroll_offset.saturating_sub(1) } else { (st.scroll_offset + 1).min(max_off) };
-            st.invalidate();
+            if st.is_filter_bar_visible() && xd < SIDEBAR_WIDTH_DIP && yd >= header_h && yd < fy0 {
+                st.scroll_sidebar(delta);
+            } else {
+                let max_off = st.results.len().saturating_sub(st.max_visible_rows);
+                st.scroll_offset = if delta > 0 { st.scroll_offset.saturating_sub(1) } else { (st.scroll_offset + 1).min(max_off) };
+                st.invalidate();
+            }
         }
         5 => {
+            if st.update_sidebar_tab_drag(yd) {
+                return;
+            }
+            st.hovered_logo = (10.0..=54.0).contains(&xd) && (9.0..=53.0).contains(&yd);
             st.hovered = row_from_y;
-            let hit = if st.is_filter_bar_visible() && yd >= header_h && yd < header_h + filter_h {
-                let tabs = st.visible_filter_tabs();
-                compute_filter_bar_layout(
-                    st.list_width_dip as f32,
-                    header_h,
-                    &tabs,
-                    st.active_filter,
-                    st.filter_counts.as_ref(),
-                    st.filter_bar_wrap,
-                )
-                .hit_test(xd, yd)
-            } else {
-                None
-            };
-            st.hovered_filter = match hit {
-                Some(FilterHit::Tab(f)) => Some(f),
-                _ => None,
-            };
-            st.hovered_overflow = matches!(hit, Some(FilterHit::Overflow));
+            st.hovered_filter = match sidebar_hit { Some(SidebarHit::Tab(f)) => Some(f), _ => None };
+            st.sidebar.hovered_add_tag = matches!(sidebar_hit, Some(SidebarHit::AddTag));
             st.invalidate();
         }
         1 | 2 => {
@@ -225,24 +230,12 @@ pub unsafe extern "C" fn on_mouse_cb(ctx: *mut c_void, kind: c_int, x: c_int, y:
                 unsafe { tomoyo_linux_ui_begin_drag(st.ui); }
                 return;
             }
-            if st.is_filter_bar_visible() && yd >= header_h && yd < header_h + filter_h {
-                let tabs = st.visible_filter_tabs();
-                let fl = compute_filter_bar_layout(
-                    st.list_width_dip as f32,
-                    header_h,
-                    &tabs,
-                    st.active_filter,
-                    st.filter_counts.as_ref(),
-                    st.filter_bar_wrap,
-                );
-                match fl.hit_test(xd, yd) {
-                    Some(FilterHit::Tab(f)) => st.set_active_filter(f),
-                    Some(FilterHit::Overflow) => {
-                        if let Some(first) = fl.overflow_tabs.first() {
-                            st.set_active_filter(first.filter);
-                        }
-                    }
-                    None => {}
+            if let Some(hit) = sidebar_hit {
+                match hit {
+                    SidebarHit::Tab(f) if kind == 1 => st.begin_sidebar_tab_press(f, yd),
+                    SidebarHit::Tab(f) => st.set_active_filter(f),
+                    SidebarHit::AddTag => st.schedule_tag_dialog(None),
+                    SidebarHit::Empty => {}
                 }
                 return;
             }
@@ -257,6 +250,7 @@ pub unsafe extern "C" fn on_mouse_cb(ctx: *mut c_void, kind: c_int, x: c_int, y:
         3 => {
             if yd < header_h && xd < 56.0 { st.show_launcher_context_menu(false); }
             else if yd < header_h { st.show_launcher_context_menu(true); }
+            else if let Some(hit) = sidebar_hit { st.show_sidebar_context_menu(hit); }
             else if let Some(i) = row_from_y {
                 st.selected = i;
                 st.action_menu_open = true;

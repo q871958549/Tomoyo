@@ -245,8 +245,25 @@ static gboolean on_cap_draw(GtkWidget *w, cairo_t *cr, gpointer ud) {
     return FALSE;
 }
 static gboolean on_cap_key(GtkWidget *w, GdkEventKey *ev, gpointer ud) {
-    (void)w; cap_win_t *c = (cap_win_t *)ud;
-    if (c && c->on_key && c->on_key(c->ctx, ev->keyval, ev->state)) { gtk_main_quit(); return TRUE; }
+    cap_win_t *c = (cap_win_t *)ud;
+    guint kv = ev->keyval;
+    if (kv > 0x00FFu && (kv < 0xFF00u || kv > 0xFFFFu)) {
+        GdkDisplay *disp = gtk_widget_get_display(w);
+        GdkKeymap *km = disp ? gdk_keymap_get_for_display(disp) : NULL;
+        guint base = 0;
+        if (km && gdk_keymap_translate_keyboard_state(km, ev->hardware_keycode, (GdkModifierType)ev->state, 0, &base, NULL, NULL, NULL) && base != 0) {
+            kv = base;
+        }
+    }
+    if (c && c->on_key && c->on_key(c->ctx, (uint32_t)kv, (uint32_t)ev->state)) { gtk_main_quit(); return TRUE; }
+    return FALSE;
+}
+static gboolean on_cap_key_rel(GtkWidget *w, GdkEventKey *ev, gpointer ud) {
+    (void)w;
+    cap_win_t *c = (cap_win_t *)ud;
+    if (c && c->on_key && (ev->keyval == 0xFFE9u || ev->keyval == 0xFFEAu || ev->keyval == 0xFFE7u)) {
+        c->on_key(c->ctx, (uint32_t)ev->keyval, (uint32_t)ev->state | (1u << 30));
+    }
     return FALSE;
 }
 static gboolean on_cap_btn(GtkWidget *w, GdkEventButton *ev, gpointer ud) {
@@ -306,6 +323,7 @@ void *tomoyo_cap_win_run(
     g_signal_connect(c->darea, "motion-notify-event", G_CALLBACK(on_cap_mot), c);
     g_signal_connect(c->darea, "scroll-event", G_CALLBACK(on_cap_scr), c);
     g_signal_connect(c->win, "key-press-event", G_CALLBACK(on_cap_key), c);
+    g_signal_connect(c->win, "key-release-event", G_CALLBACK(on_cap_key_rel), c);
     g_signal_connect(c->win, "delete-event", G_CALLBACK(on_cap_delete), NULL);
     gtk_widget_show_all(c->win);
     if (fullscreen) {

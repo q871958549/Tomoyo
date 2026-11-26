@@ -8,7 +8,7 @@ pub(crate) struct NlTranslation {
     pub translated: bool,
 }
 
-fn split_tokens_preserving_quotes(raw: &str) -> Vec<&str> {
+pub(crate) fn split_tokens_preserving_quotes(raw: &str) -> Vec<&str> {
     let mut out = Vec::new();
     let bytes = raw.as_bytes();
     let mut i = 0;

@@ -222,9 +222,9 @@ mod tests {
         assert_eq!(list[1].port, 8080);
     }
 
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     #[test]
-    fn windows_tcp_listener_is_detected_by_port_scanner() {
+    fn tcp_listener_is_detected_by_port_scanner() {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("ephemeral bind");
         let port = listener.local_addr().unwrap().port();
         let pid = std::process::id();

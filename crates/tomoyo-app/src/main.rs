@@ -7,6 +7,7 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 mod actions;
 mod brand;
+mod context_card;
 mod crash_guard;
 #[cfg(windows)]
 mod drag;

@@ -1,9 +1,6 @@
 //! Hybrid SDF + PangoCairo Linux renderer reusing `paint_sdf_pass` and GTK icon theme cache.
 
-use crate::renderer::{
-    compute_filter_bar_layout, compute_frame_layout, paint_sdf_pass, Canvas, FrameLayout,
-    RenderState, Rgb,
-};
+use crate::renderer::{compute_frame_layout, paint_sdf_pass, Canvas, FrameLayout, RenderState, Rgb};
 use lru::LruCache;
 use std::ffi::{c_char, c_int, c_void, CString};
 use std::num::NonZeroUsize;
@@ -144,6 +141,7 @@ impl LinuxRenderer {
             let idx = state.scroll_offset + slot;
             let Some(item) = state.items.get(idx) else { break };
             let y0 = lay.list_top + (slot as f32) * lay.row_h;
+            let icon_top = y0 + (lay.row_h - 30.0) * 0.5;
             let has_theme_icon = extract_icon_hint(item)
                 .and_then(|hint| self.load_cached_icon(hint, icon_sz))
                 .is_some();
@@ -155,10 +153,10 @@ impl LinuxRenderer {
                     scale,
                 };
                 c.fill_rounded_rect(
-                    22.0,
-                    y0 + 11.0,
-                    52.0,
-                    y0 + 41.0,
+                    lay.list_x0 + 22.0,
+                    icon_top,
+                    lay.list_x0 + 52.0,
+                    icon_top + 30.0,
                     7.0,
                     crate::renderer::category_rgb(item.category),
                 );
@@ -220,6 +218,7 @@ impl LinuxRenderer {
         let f_title = format!("{eff_family} {} {}px", pango_w(state.typography.title_weight), (state.typography.title_size as f32 * scale).round() as i32);
         let f_sub = format!("{eff_family} {} {}px", pango_w(state.typography.subtitle_weight), (sub_dip * scale).round() as i32);
         let f_chip = format!("{eff_family} {} {}px", pango_w(state.typography.subtitle_weight.min(500)), (chip_dip * scale).round() as i32);
+        let f_chip_active = format!("{eff_family} SemiBold {}px", (chip_dip * scale).round() as i32);
         let f_badge = format!("{eff_family} Medium {}px", (10.5 * scale).round() as i32);
         let f_mono = format!("monospace {}px", (11.5 * scale).round() as i32);
 
@@ -237,41 +236,18 @@ impl LinuxRenderer {
         }
 
         if state.filter_bar_visible {
-            let fl = compute_filter_bar_layout(
-                lay.list_w_dip,
-                lay.header_h,
-                state.filter_tabs,
-                state.active_filter,
-                state.filter_counts,
-                state.filter_bar_wrap,
-            );
-            for hb in &fl.visible {
-                let col = if hb.filter == state.active_filter {
-                    pal.chip_active_text
-                } else if state.hovered_filter == Some(hb.filter) {
-                    pal.chip_hover_text
-                } else {
-                    pal.chip_text
-                };
-                draw_pango(cr, &f_chip, col, 1, true, &hb.label, hb.x0, hb.y0, hb.x1 - hb.x0, hb.y1 - hb.y0, scale, &[], pal.accent);
-            }
-            if let Some(ov) = &fl.overflow_pill {
-                let col = if fl.active_in_overflow {
-                    pal.chip_active_text
-                } else if state.hovered_overflow {
-                    pal.chip_hover_text
-                } else {
-                    pal.text_secondary
-                };
-                draw_pango(cr, &f_chip, col, 1, true, &ov.label, ov.x0, ov.y0, ov.x1 - ov.x0, ov.y1 - ov.y0, scale, &[], pal.accent);
-            }
+            super::render_sidebar::paint_sidebar_pango(cr, scale, lay, state, &f_chip, &f_chip_active, &f_sub);
         }
 
         let icon_sz = (30.0 * scale).round() as i32;
+        let compact_row = lay.has_preview && lay.list_w_dip < 520.0;
         for slot in 0..lay.visible_count {
             let idx = state.scroll_offset + slot;
             let Some(item) = state.items.get(idx) else { break };
             let y0 = lay.list_top + (slot as f32) * lay.row_h;
+            let icon_top = y0 + (lay.row_h - 30.0) * 0.5;
+            let badge_top = y0 + (lay.row_h - 21.0) * 0.5;
+            let key_top = y0 + (lay.row_h - 20.0) * 0.5;
             let is_sel = idx == state.selected;
 
             let mut drew_icon = false;
@@ -279,42 +255,46 @@ impl LinuxRenderer {
                 && let Some(bgra) = self.load_cached_icon(hint, icon_sz)
             {
                 unsafe {
-                    tomoyo_cairo_blit_bgra(cr, bgra.as_ptr(), icon_sz, icon_sz, (22.0 * scale) as f64, ((y0 + 11.0) * scale) as f64, icon_sz as f64, icon_sz as f64);
+                    tomoyo_cairo_blit_bgra(
+                        cr, bgra.as_ptr(), icon_sz, icon_sz,
+                        ((lay.list_x0 + 22.0) * scale) as f64, (icon_top * scale) as f64, icon_sz as f64, icon_sz as f64,
+                    );
                 }
                 drew_icon = true;
             }
             if !drew_icon {
                 let lbl = fallback_badge_label(item);
-                draw_pango(cr, &f_badge, Rgb(0xFF, 0xFF, 0xFF), 1, true, lbl, 22.0, y0 + 11.0, 30.0, 30.0, scale, &[], pal.accent);
+                draw_pango(cr, &f_badge, Rgb(0xFF, 0xFF, 0xFF), 1, true, lbl, lay.list_x0 + 22.0, icon_top, 30.0, 30.0, scale, &[], pal.accent);
             }
 
-            let mut text_right = lay.list_w_dip - 20.0;
+            let mut text_right = lay.list_x1 - 20.0;
             if let Some((_, done)) = state.launching_row.filter(|(li, _)| *li == idx) {
                 let lbl = if done { state.lang.pick("✓ 已启动", "✓ Opened") } else { state.lang.pick("启动中…", "Opening…") };
-                draw_pango(cr, &f_badge, Rgb(0xFF, 0xFF, 0xFF), 1, true, lbl, text_right - 74.0, y0 + 14.5, 74.0, 23.0, scale, &[], pal.accent);
+                draw_pango(cr, &f_badge, Rgb(0xFF, 0xFF, 0xFF), 1, true, lbl, text_right - 74.0, badge_top - 1.0, 74.0, 23.0, scale, &[], pal.accent);
                 text_right -= 82.0;
-            } else {
-                let shortcut = if is_sel { "Enter".into() } else if slot < 8 { format!("Alt+{}", slot + 1) } else { String::new() };
-                if !shortcut.is_empty() {
-                    let col = if is_sel { pal.chip_active_text } else { pal.text_muted };
-                    draw_pango(cr, &f_sub, col, 2, true, &shortcut, text_right - 44.0, y0 + 8.0, 44.0, lay.row_h - 18.0, scale, &[], pal.accent);
-                    text_right -= 50.0;
-                }
+            } else if is_sel {
+                draw_pango(cr, &f_badge, pal.chip_active_text, 1, true, "Enter", text_right - 44.0, key_top, 44.0, 20.0, scale, &[], pal.accent);
+                text_right -= 50.0;
+            } else if !compact_row && slot < 8 {
+                let sc = format!("Alt+{}", slot + 1);
+                draw_pango(cr, &f_sub, pal.text_muted, 1, true, &sc, text_right - 42.0, key_top, 42.0, 20.0, scale, &[], pal.accent);
+                text_right -= 48.0;
             }
-            if let Some(badge) = &item.badge {
+            if (!compact_row || is_sel) && let Some(badge) = &item.badge {
                 let bw = (badge.chars().count() as f32 * 6.8 + 18.0).clamp(44.0, 120.0);
-                draw_pango(cr, &f_badge, pal.text_secondary, 1, true, badge, text_right - bw, y0 + 15.5, bw, 21.0, scale, &[], pal.accent);
+                draw_pango(cr, &f_badge, pal.text_secondary, 1, true, badge, text_right - bw, badge_top, bw, 21.0, scale, &[], pal.accent);
                 text_right -= bw + 10.0;
             }
+            let text_left = lay.list_x0 + 62.0;
             let hl_chars = highlight_title_ranges(state.query, &item.title);
             let hl_bytes = char_spans_to_byte_pairs(&item.title, &hl_chars);
-            draw_pango(cr, &f_title, pal.text_primary, 0, true, &item.title, 62.0, y0 + 5.0, (text_right - 62.0).max(20.0), 23.0, scale, &hl_bytes, pal.accent);
+            draw_pango(cr, &f_title, pal.text_primary, 0, true, &item.title, text_left, y0 + 5.0, (text_right - text_left).max(20.0), lay.row_h * 0.48, scale, &hl_bytes, pal.accent);
             let clean_sub = strip_icon_tag(&item.subtitle);
-            draw_pango(cr, &f_sub, pal.text_secondary, 0, true, clean_sub, 62.0, y0 + 28.0, (text_right - 62.0).max(20.0), 19.0, scale, &[], pal.accent);
+            draw_pango(cr, &f_sub, pal.text_secondary, 0, true, clean_sub, text_left, y0 + lay.row_h * 0.50, (text_right - text_left).max(20.0), lay.row_h * 0.44, scale, &[], pal.accent);
         }
 
         if lay.has_preview && let Some(prev) = state.preview {
-            let (px0, px1) = (lay.list_w_dip + 14.0, lay.w_dip - 14.0);
+            let (px0, px1) = (lay.list_x1 + 14.0, lay.w_dip - 14.0);
             draw_pango(cr, &f_title, pal.text_primary, 0, true, &prev.title, px0, lay.header_h + 10.0, px1 - px0, 22.0, scale, &[], pal.accent);
             draw_pango(cr, &f_sub, pal.text_secondary, 0, true, &prev.meta_line, px0, lay.header_h + 32.0, px1 - px0, 18.0, scale, &[], pal.accent);
             let mut bx = px0;
@@ -334,7 +314,7 @@ impl LinuxRenderer {
 
         if state.action_menu_open && let Some(sel) = state.items.get(state.selected) {
             let n = sel.actions.len().min(6);
-            let (mx1, my1) = (lay.list_w_dip - 14.0, lay.fy0 - 10.0);
+            let (mx1, my1) = (lay.list_x1 - 14.0, lay.fy0 - 10.0);
             let (mx0, my0) = (mx1 - 240.0, (my1 - (n as f32 * 30.0 + 16.0)).max(lay.list_top + 4.0));
             for (ai, act) in sel.actions.iter().take(n).enumerate() {
                 let col = if ai == state.selected_action { pal.chip_active_text } else { pal.text_primary };
@@ -378,7 +358,7 @@ impl LinuxRenderer {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn draw_pango(
+pub(super) fn draw_pango(
     cr: *mut c_void, font: &str, color: Rgb, align: c_int, single: bool,
     text: &str, x: f32, y: f32, w: f32, h: f32, scale: f32, hl: &[u32], hl_rgb: Rgb,
 ) {

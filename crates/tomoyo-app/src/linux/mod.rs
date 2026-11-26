@@ -3,11 +3,13 @@
 mod hotkeys;
 mod ipc;
 mod render_pango;
+mod render_sidebar;
 mod shell_commands;
 mod shell_events;
 mod shell_menus;
 mod shell_query;
 mod shell_state;
+mod sidebar_ctrl;
 
 pub use ipc::{wake_existing_instance, SingletonGuard};
 
@@ -64,6 +66,28 @@ unsafe extern "C" {
     pub fn tomoyo_linux_tray_setup(a: *mut c_void, icon_path: *const c_char, hotkey_lbl: *const c_char);
     pub fn tomoyo_linux_tray_set_title(a: *mut c_void, title: *const c_char);
     pub fn tomoyo_linux_tray_set_menu(a: *mut c_void, items: *const LinuxTrayMenuItem, n: usize);
+    pub fn tomoyo_linux_show_popup(
+        a: *mut c_void,
+        items: *const LinuxTrayMenuItem,
+        n: usize,
+        cb: unsafe extern "C" fn(*mut c_void, u32),
+        ctx: *mut c_void,
+    );
+    pub fn tomoyo_linux_show_tag_dialog(
+        a: *mut c_void,
+        is_edit: c_int,
+        theme_mode: c_int,
+        is_en: c_int,
+        init_label: *const c_char,
+        init_exts: *const c_char,
+        init_expr: *const c_char,
+        out_label: *mut c_char,
+        label_sz: usize,
+        out_exts: *mut c_char,
+        exts_sz: usize,
+        out_expr: *mut c_char,
+        expr_sz: usize,
+    ) -> c_int;
     pub fn tomoyo_linux_ui_focus_entry(a: *mut c_void);
     pub fn tomoyo_linux_ui_is_active(a: *mut c_void) -> c_int;
     pub fn tomoyo_linux_entry_has_selection(a: *mut c_void) -> c_int;

@@ -23,6 +23,7 @@ fn compile_linux_shell(out_dir: &Path) {
     println!("cargo:rerun-if-changed=src/linux/shell_internal.h");
     println!("cargo:rerun-if-changed=src/linux/shell.c");
     println!("cargo:rerun-if-changed=src/linux/shell_popup.c");
+    println!("cargo:rerun-if-changed=src/linux/tag_dialog.c");
     println!("cargo:rerun-if-changed=src/linux/pango_draw.c");
     println!("cargo:rerun-if-changed=src/linux/kga_x11.c");
     println!("cargo:rerun-if-changed=src/linux/wl_clip.c");
@@ -66,6 +67,7 @@ fn compile_linux_shell(out_dir: &Path) {
     for (src, name) in [
         ("src/linux/shell.c", "linux_app_shell.o"),
         ("src/linux/shell_popup.c", "linux_app_popup.o"),
+        ("src/linux/tag_dialog.c", "linux_app_tagdlg.o"),
         ("src/linux/pango_draw.c", "linux_app_pango.o"),
         ("src/linux/kga_x11.c", "linux_app_kga.o"),
         ("src/linux/wl_clip.c", "linux_app_wlclip.o"),

@@ -14,8 +14,9 @@ use crate::linux::{
     tomoyo_wl_clip_start, tomoyo_wl_clip_stop,
 };
 use crate::linux::shell_events;
+use crate::linux::sidebar_ctrl::SidebarState;
 use crate::preview_loader::AsyncPreviewLoader;
-use crate::renderer::{FilterCounts, FilterPillAnim, ThemePalette, MIN_WINDOW_WIDTH_DIP};
+use crate::renderer::{FilterCounts, ThemePalette, MAX_WINDOW_WIDTH_DIP, MIN_WINDOW_WIDTH_DIP};
 use std::cell::RefCell;
 use std::ffi::{c_int, c_void, CStr, CString};
 use std::rc::{Rc, Weak};
@@ -27,7 +28,7 @@ use tomoyo_core::{
     trim_working_set, Lang, QueryRouter, ResolvedPreview, TomoyoConfig, TypographyConfig, UpdateManager,
 };
 use tomoyo_plugin_host::{ActivePluginTrayAction, PluginHost};
-use tomoyo_protocol::{AttachedContext, ClipboardSnapshot, PluginEventKind, ResultItem, SearchFilter};
+use tomoyo_protocol::{AttachedContext, ClipboardSnapshot, ResultItem, SearchFilter};
 use tomoyo_providers::everything_linux::is_linux_file_search_available;
 
 thread_local! {
@@ -69,11 +70,9 @@ pub struct AppCore {
     pub(super) cached_all_results: Vec<ResultItem>,
     pub(super) active_filter: SearchFilter,
     pub(super) hovered_filter: Option<SearchFilter>,
-    pub(super) hovered_overflow: bool,
-    pub(super) pill_anim: Option<FilterPillAnim>,
-    pub(super) anim_source: u32,
+    pub(super) hovered_logo: bool,
+    pub(super) sidebar: SidebarState,
     pub(super) show_filter_bar: bool,
-    pub(super) filter_bar_wrap: bool,
     pub(super) typography: TypographyConfig,
     pub(super) preview_enabled: bool,
     pub(super) preview_width_dip: i32,
@@ -144,15 +143,13 @@ impl AppCore {
             cached_all_results: Vec::new(),
             active_filter: SearchFilter::All,
             hovered_filter: None,
-            hovered_overflow: false,
-            pill_anim: None,
-            anim_source: 0,
+            hovered_logo: false,
+            sidebar: SidebarState::default(),
             show_filter_bar: cfg.show_filter_bar,
-            filter_bar_wrap: cfg.filter_bar_layout != "single",
             typography: cfg.typography.clone(),
             preview_enabled: cfg.auto_preview,
             preview_width_dip: cfg.window.preview_width_dip.clamp(220, 620),
-            list_width_dip: cfg.window.width_dip.clamp(MIN_WINDOW_WIDTH_DIP, 1400),
+            list_width_dip: cfg.window.width_dip.clamp(MIN_WINDOW_WIDTH_DIP, MAX_WINDOW_WIDTH_DIP),
             max_visible_rows: cfg.window.max_visible_rows.clamp(4, 18),
             dpi_scale: 1.0,
             custom_pos: cfg.window.custom_x.zip(cfg.window.custom_y),
@@ -238,14 +235,9 @@ impl AppCore {
     }
 
     pub(super) fn sync_clipboard_watcher(&mut self) {
-        let need = self.plugin_host.has_event_subscriber(PluginEventKind::ClipboardText)
-            || self.plugin_host.has_event_subscriber(PluginEventKind::ClipboardImage);
-        if need && !self.wl_clip_active {
+        if !self.wl_clip_active {
             unsafe { tomoyo_wl_clip_start(shell_events::on_wl_clip_cb); }
             self.wl_clip_active = true;
-        } else if !need && self.wl_clip_active {
-            unsafe { tomoyo_wl_clip_stop(); }
-            self.wl_clip_active = false;
         }
     }
 
@@ -326,9 +318,11 @@ impl AppCore {
         self.dragging_divider = false;
         self.hovered = None;
         self.hovered_filter = None;
+        self.hovered_logo = false;
+        self.sidebar.drag = None;
+        self.sidebar.hovered_add_tag = false;
+        self.sidebar.modal_open = false;
         self.active_filter = SearchFilter::All;
-        self.cancel_anim_timer();
-        self.pill_anim = None;
         if !self.ui.is_null() {
             unsafe { tomoyo_linux_ui_hide(self.ui); }
         }
@@ -373,8 +367,6 @@ impl AppCore {
 
     pub(super) fn run_hibernate(&mut self) -> u64 {
         self.cancel_hibernate_timer();
-        self.cancel_anim_timer();
-        self.pill_anim = None;
         self.preview_loader.purge_worker();
         self.renderer.hibernate_release();
         self.results.clear();
@@ -414,7 +406,6 @@ impl AppCore {
         if self.shutting_down { return; }
         self.shutting_down = true;
         self.cancel_hibernate_timer();
-        self.cancel_anim_timer();
         self.alive.store(false, Ordering::Release);
         self.hotkeys.unregister_all();
         self.plugin_host.shutdown_all();

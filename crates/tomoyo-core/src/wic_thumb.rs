@@ -216,7 +216,7 @@ pub fn scale_rgba_bilinear(src: &[u8], sw: u32, sh: u32, dw: u32, dh: u32) -> Ve
 }
 
 fn flush_acc_row(acc: &mut [[u32; 5]], out_row: &mut [u8]) {
-    for (cell, px) in acc.iter_mut().zip(out_row.chunks_exact_mut(4)) {
+    for (cell, px) in acc.iter_mut().zip(out_row.chunks_mut(4)) {
         let cnt = cell[4];
         if cnt > 0 {
             let half = cnt / 2;

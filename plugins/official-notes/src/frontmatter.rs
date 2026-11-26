@@ -192,10 +192,9 @@ pub(crate) fn toggle_todo_in_body(body: &str, line_idx: usize) -> Option<String>
         format!("{indent}* [x]{tail}")
     } else if let Some(tail) = rest.strip_prefix("- [x]").or_else(|| rest.strip_prefix("- [X]")) {
         format!("{indent}- [ ]{tail}")
-    } else if let Some(tail) = rest.strip_prefix("* [x]").or_else(|| rest.strip_prefix("* [X]")) {
-        format!("{indent}* [ ]{tail}")
     } else {
-        return None;
+        let tail = rest.strip_prefix("* [x]").or_else(|| rest.strip_prefix("* [X]"))?;
+        format!("{indent}* [ ]{tail}")
     };
     *target = updated;
     let mut joined = lines.join("\n");

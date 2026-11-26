@@ -1,5 +1,5 @@
-//! Search result category filter bar: responsive multi-row wrap, single-row `+N` overflow & live counts.
-#![cfg_attr(windows, allow(dead_code))]
+//! Search result category filter bar: category matching, live counts & legacy wrap layout.
+#![allow(dead_code)]
 
 use super::canvas::Canvas;
 #[cfg(windows)]

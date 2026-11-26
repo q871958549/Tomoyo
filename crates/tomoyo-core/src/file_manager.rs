@@ -48,6 +48,7 @@ fn read_reg_default_sz(root: windows::Win32::System::Registry::HKEY, subkey: &st
     }
 }
 
+#[cfg_attr(not(windows), allow(dead_code))]
 pub(crate) fn parse_registered_command(raw_cmd: &str) -> Option<(String, String)> {
     let s = raw_cmd.trim();
     if s.is_empty() {
@@ -72,6 +73,7 @@ pub(crate) fn parse_registered_command(raw_cmd: &str) -> Option<(String, String)
     (!exe.is_empty()).then(|| (exe.into(), rest.into()))
 }
 
+#[cfg_attr(not(windows), allow(dead_code))]
 fn target_dir_for_generic(path: &str) -> String {
     let p = Path::new(path);
     if p.is_dir() {
@@ -84,14 +86,16 @@ fn target_dir_for_generic(path: &str) -> String {
     }
 }
 
+#[cfg_attr(not(windows), allow(dead_code))]
 pub(crate) fn build_reveal_from_template(
     exe: &str,
     args_tpl: &str,
     path: &str,
 ) -> Option<(String, String)> {
-    let exe_name = Path::new(exe)
-        .file_name()
-        .and_then(|s| s.to_str())
+    let exe_name = exe
+        .trim_end_matches(['\\', '/'])
+        .rsplit(['\\', '/'])
+        .next()
         .unwrap_or("")
         .to_ascii_lowercase();
     if exe_name.is_empty() || exe_name == "explorer.exe" {

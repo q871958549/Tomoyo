@@ -89,15 +89,12 @@ impl AppCore {
     }
 
     pub(super) fn on_clipboard_update(&mut self) {
-        let sub_text = self.plugin_host.has_event_subscriber(PluginEventKind::ClipboardText);
-        let sub_img = self.plugin_host.has_event_subscriber(PluginEventKind::ClipboardImage);
-        if (!sub_text && !sub_img)
-            || self.suppress_clipboard.load(Ordering::Acquire)
-            || is_clipboard_confidential()
-        {
+        if self.suppress_clipboard.load(Ordering::Acquire) || is_clipboard_confidential() {
             return;
         }
-        let src = clipboard_source_app_name();
+        let sub_text = self.plugin_host.has_event_subscriber(PluginEventKind::ClipboardText);
+        let sub_img = self.plugin_host.has_event_subscriber(PluginEventKind::ClipboardImage);
+        let src = if sub_text || sub_img { clipboard_source_app_name() } else { String::new() };
         if sub_text && let Some(files) = read_clipboard_files() {
             self.dispatch_clipboard_event(
                 PluginEventKind::ClipboardText,
@@ -423,7 +420,7 @@ impl AppCore {
         self.lang = fresh.lang();
         self.preview_enabled = fresh.auto_preview;
         self.show_filter_bar = fresh.show_filter_bar;
-        self.list_width_dip = fresh.window.width_dip.clamp(520, 1400);
+        self.list_width_dip = fresh.window.width_dip.clamp(520, 1600);
         self.max_visible_rows = fresh.window.max_visible_rows.clamp(4, 18);
         self.preview_width_dip = fresh.window.preview_width_dip.clamp(220, 620);
         self.apply_theme(&fresh.theme, false);

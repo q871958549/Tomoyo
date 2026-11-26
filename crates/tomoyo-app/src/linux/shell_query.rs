@@ -2,13 +2,12 @@
 
 use crate::linux::ipc::schedule_on_ui;
 use crate::linux::shell_state::{with_current_core, AppCore};
-use crate::linux::{tomoyo_linux_add_timeout, tomoyo_linux_remove_source};
 use crate::renderer::{
-    compute_filter_bar_layout, compute_filter_counts, item_matches_filter, FilterPillAnim,
-    RenderState, FOOTER_HEIGHT_DIP, HEADER_HEIGHT_DIP, MAX_WINDOW_WIDTH_DIP,
-    MIN_WINDOW_WIDTH_DIP,
+    compute_filter_counts, item_matches_filter, should_show_filter_sidebar, RenderState,
+    FOOTER_HEIGHT_DIP, HEADER_HEIGHT_DIP, MAX_WINDOW_WIDTH_DIP, MIN_WINDOW_WIDTH_DIP,
+    SIDEBAR_WIDTH_DIP,
 };
-use std::ffi::{c_int, c_void};
+use std::ffi::c_void;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::sync::Arc;
@@ -49,58 +48,18 @@ impl AppCore {
     }
 
     pub(super) fn is_filter_bar_visible(&self) -> bool {
-        self.show_filter_bar
-            && self.attached.is_none()
-            && (!self.results.is_empty() || self.active_filter != SearchFilter::All)
-    }
-
-    pub(super) fn cancel_anim_timer(&mut self) {
-        if self.anim_source != 0 {
-            unsafe { tomoyo_linux_remove_source(self.anim_source); }
-            self.anim_source = 0;
-        }
-    }
-
-    fn current_pill_span(&self, tabs: &[VisibleFilterTab]) -> Option<(f32, f32)> {
-        if let Some(a) = &self.pill_anim {
-            let (x0, x1, done) = a.span_now();
-            if !done {
-                return Some((x0, x1));
-            }
-        }
-        compute_filter_bar_layout(
-            self.list_width_dip as f32,
-            HEADER_HEIGHT_DIP as f32,
-            tabs,
+        should_show_filter_sidebar(
+            self.show_filter_bar,
+            self.attached.is_some(),
+            &self.current_query,
             self.active_filter,
-            self.filter_counts.as_ref(),
-            self.filter_bar_wrap,
+            self.results.len(),
         )
-        .visible
-        .into_iter()
-        .find(|b| b.filter == self.active_filter)
-        .map(|b| (b.x0, b.x1))
     }
 
     pub(super) fn set_active_filter(&mut self, filter: SearchFilter) {
         if self.active_filter == filter {
             return;
-        }
-        let tabs = self.visible_filter_tabs();
-        let boxes = compute_filter_bar_layout(
-            self.list_width_dip as f32,
-            HEADER_HEIGHT_DIP as f32,
-            &tabs,
-            filter,
-            self.filter_counts.as_ref(),
-            self.filter_bar_wrap,
-        )
-        .visible;
-        let from_span = self.current_pill_span(&tabs);
-        let to_span = boxes.iter().find(|b| b.filter == filter).map(|b| (b.x0, b.x1));
-        if let Some(anim) = FilterPillAnim::from_spans(from_span, to_span) {
-            self.pill_anim = Some(anim);
-            self.ensure_anim_timer();
         }
         self.active_filter = filter;
         self.selected = 0;
@@ -110,58 +69,37 @@ impl AppCore {
         self.dispatch_query_inner(true);
     }
 
-    fn ensure_anim_timer(&mut self) {
-        self.cancel_anim_timer();
-        unsafe extern "C" fn on_anim_tick(_d: *mut c_void) -> c_int {
-            let mut cont = 0;
-            with_current_core(|st| {
-                let done = st.pill_anim.is_none_or(|a| a.span_now().2);
-                if done {
-                    st.pill_anim = None;
-                    st.anim_source = 0;
-                } else {
-                    cont = 1;
-                }
-                st.invalidate();
-            });
-            cont
-        }
-        self.anim_source = unsafe { tomoyo_linux_add_timeout(16, on_anim_tick, std::ptr::null_mut()) };
-    }
-
     pub(super) fn desired_width_dip(&self) -> i32 {
         self.list_width_dip.clamp(MIN_WINDOW_WIDTH_DIP, MAX_WINDOW_WIDTH_DIP)
     }
 
-    pub(super) fn filter_bar_height_dip(&self) -> i32 {
-        if !self.is_filter_bar_visible() {
-            return 0;
-        }
-        let total_w = self.desired_width_dip() as f32;
-        let list_w = if self.is_preview_visible() && total_w >= 680.0 {
-            let pw = (self.preview_width_dip as f32).clamp(220.0, (total_w * 0.48).max(220.0));
-            (total_w - pw).max(360.0)
+    pub(super) fn list_bounds_dip(&self, w_dip: f32) -> (f32, f32) {
+        let lx0 = if self.is_filter_bar_visible() { SIDEBAR_WIDTH_DIP } else { 0.0 };
+        let avail_w = (w_dip - lx0).max(320.0);
+        let list_w = if self.is_preview_visible() && avail_w >= 540.0 {
+            let pw = (self.preview_width_dip as f32).clamp(220.0, (avail_w * 0.46).max(220.0));
+            (avail_w - pw).max(320.0)
         } else {
-            total_w
+            avail_w
         };
-        let tabs = self.visible_filter_tabs();
-        compute_filter_bar_layout(
-            list_w,
-            HEADER_HEIGHT_DIP as f32,
-            &tabs,
-            self.active_filter,
-            self.filter_counts.as_ref(),
-            self.filter_bar_wrap,
-        )
-        .height_dip
+        (lx0, lx0 + list_w)
     }
 
     pub(super) fn desired_height_dip(&self) -> i32 {
-        let n = self.results.len().min(self.max_visible_rows);
-        let filter_h = self.filter_bar_height_dip();
-        let row_h = self.typography.row_height_dip();
-        let body = if n == 0 { 0 } else { 4 + (n as i32) * row_h + 4 };
-        HEADER_HEIGHT_DIP + filter_h + body + FOOTER_HEIGHT_DIP
+        if self.is_filter_bar_visible() {
+            return HEADER_HEIGHT_DIP
+                + 8
+                + (self.max_visible_rows as i32) * self.typography.row_height_dip()
+                + FOOTER_HEIGHT_DIP;
+        }
+        let rows = self.results.len().min(self.max_visible_rows) as i32;
+        if rows == 0 {
+            HEADER_HEIGHT_DIP + FOOTER_HEIGHT_DIP
+        } else {
+            let min_preview_rows = if self.is_preview_visible() { 5 } else { 0 };
+            let eff_rows = rows.max(min_preview_rows);
+            HEADER_HEIGHT_DIP + 8 + eff_rows * self.typography.row_height_dip() + FOOTER_HEIGHT_DIP
+        }
     }
 
     pub(super) fn active_mode_badge(&self) -> Option<&'static str> {
@@ -237,8 +175,43 @@ impl AppCore {
         }
     }
 
+    pub(super) fn inject_context_clipboard_card(&mut self) {
+        if self.ui.is_null()
+            || !self.current_query.trim().is_empty()
+            || self.active_filter != SearchFilter::All
+            || self.attached.is_some()
+        {
+            return;
+        }
+        let Ok(cfg) = self.config.read().map(|c| c.clone()) else {
+            return;
+        };
+        let now_unix = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        let has_img = crate::actions::clipboard_has_image();
+        let Some(card) = crate::context_card::build_context_card(
+            self.last_clip_snapshot.as_ref(),
+            has_img,
+            now_unix,
+            &cfg,
+            self.lang,
+        ) else {
+            return;
+        };
+        if self.results.iter().any(|r| r.id == card.id) {
+            return;
+        }
+        self.results.insert(0, card);
+        if self.results.len() > 16 {
+            self.results.truncate(16);
+        }
+    }
+
     pub(super) fn apply_results(&mut self, items: Vec<ResultItem>) {
         self.results = items;
+        self.inject_context_clipboard_card();
         if self.selected >= self.results.len() {
             self.selected = 0;
         }
@@ -321,26 +294,25 @@ impl AppCore {
             UpdateStatus::Available { release, .. } => Some(format!("发现 v{}", release.version)),
             _ => None,
         };
-        let pill_override = self.pill_anim.and_then(|a| {
-            let (x0, x1, done) = a.span_now();
-            (!done).then_some((x0, x1))
-        });
         let state = RenderState {
             lang: self.lang,
             theme: self.theme,
             query: &self.current_query,
-            hovered_logo: false,
+            hovered_logo: self.hovered_logo,
             mode_badge: badge,
             attached_capsule: cap.as_deref(),
             update_badge: upd_badge.as_deref(),
             filter_bar_visible: self.is_filter_bar_visible(),
-            filter_bar_wrap: self.filter_bar_wrap,
+            filter_bar_wrap: false,
             filter_tabs: &tabs,
             active_filter: self.active_filter,
             hovered_filter: self.hovered_filter,
-            hovered_overflow: self.hovered_overflow,
+            hovered_overflow: false,
             filter_counts: self.filter_counts.as_ref(),
-            filter_pill_override: pill_override,
+            filter_pill_override: None,
+            sidebar_scroll: self.sidebar.scroll,
+            hovered_add_tag: self.sidebar.hovered_add_tag,
+            sidebar_drag: self.sidebar_drag_visual(),
             typography: &self.typography,
             items: &self.results,
             selected: self.selected,

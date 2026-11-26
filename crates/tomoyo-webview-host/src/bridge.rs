@@ -67,7 +67,6 @@ pub struct HostAction {
     pub window_ready: bool,
     #[cfg_attr(not(windows), allow(dead_code))]
     pub pop_out_window: bool,
-    #[cfg_attr(not(windows), allow(dead_code))]
     pub window_control: u8,
     pub apply_theme: Option<String>,
     pub toggle_topmost: bool,

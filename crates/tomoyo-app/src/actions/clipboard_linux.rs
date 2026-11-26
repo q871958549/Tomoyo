@@ -53,6 +53,10 @@ pub fn clipboard_has_rich_attachment() -> bool {
     unsafe { tomoyo_linux_clipboard_has_rich() != 0 }
 }
 
+pub fn clipboard_has_image() -> bool {
+    clipboard_has_rich_attachment() && read_clipboard_files().is_none()
+}
+
 pub fn read_clipboard_files() -> Option<Vec<String>> {
     let raw = take_c_string(unsafe { tomoyo_linux_clipboard_get_uris() })?;
     let files: Vec<String> = raw

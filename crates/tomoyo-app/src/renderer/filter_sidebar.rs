@@ -2,15 +2,20 @@
 
 use super::canvas::Canvas;
 use super::filter_bar::FilterCounts;
+#[cfg(windows)]
 use super::gdi::{dip_rect, draw_text_gdi, FontPack};
-use super::theme::{Rgb, ThemePalette};
+use super::theme::Rgb;
+#[cfg(windows)]
+use super::theme::ThemePalette;
 use super::{FrameLayout, RenderState};
+#[cfg(windows)]
 use tomoyo_core::Lang;
 use tomoyo_protocol::{SearchFilter, VisibleFilterTab};
+#[cfg(windows)]
 use windows::Win32::Graphics::Gdi::{HDC, DT_CENTER, DT_LEFT, DT_RIGHT};
 
 pub const SIDEBAR_WIDTH_DIP: f32 = 118.0;
-const TAB_ROW_H: f32 = 30.0;
+pub(crate) const TAB_ROW_H: f32 = 30.0;
 const TAB_GAP: f32 = 2.0;
 const ADD_AREA_H: f32 = 40.0;
 
@@ -103,11 +108,11 @@ pub fn hit_test_sidebar(
     Some(SidebarHit::Empty)
 }
 
-fn count_for_filter(counts: Option<&FilterCounts>, filter: SearchFilter) -> usize {
+pub(crate) fn count_for_filter(counts: Option<&FilterCounts>, filter: SearchFilter) -> usize {
     counts.and_then(|c| c.iter().find(|(f, _)| *f == filter).map(|(_, n)| *n)).unwrap_or(0)
 }
 
-fn blend_rgb(a: Rgb, b: Rgb, t: f32) -> Rgb {
+pub(crate) fn blend_rgb(a: Rgb, b: Rgb, t: f32) -> Rgb {
     let mix = |x: u8, y: u8| ((x as f32) * (1.0 - t) + (y as f32) * t).round() as u8;
     Rgb(mix(a.0, b.0), mix(a.1, b.1), mix(a.2, b.2))
 }
@@ -194,6 +199,7 @@ pub(super) fn paint_sidebar_sdf(canvas: &mut Canvas<'_>, lay: &FrameLayout, stat
     canvas.stroke_rounded_rect(ax0, ay0, ax1, ay1, 7.0, btn_bd);
 }
 
+#[cfg(windows)]
 #[allow(clippy::too_many_arguments)]
 unsafe fn paint_tab_gdi_row(
     dc: HDC, fonts: &FontPack, pal: ThemePalette, item: &SidebarItemRect, y0: f32, y1: f32,
@@ -229,6 +235,7 @@ unsafe fn paint_tab_gdi_row(
     unsafe { draw_text_gdi(dc, fnt, col, &item.label, dip_rect(x_left, y0, label_right, y1, scale), DT_LEFT); }
 }
 
+#[cfg(windows)]
 pub(super) fn paint_sidebar_gdi(dc: HDC, fonts: &FontPack, lay: &FrameLayout, state: &RenderState<'_>, scale: f32) {
     let pal = state.theme;
     let sl = compute_sidebar_layout(lay.header_h, lay.fy0, state.filter_tabs, state.sidebar_scroll);

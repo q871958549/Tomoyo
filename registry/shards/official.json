@@ -1,7 +1,7 @@
 {
   "schema_version": 2,
   "name": "Tomoyo Registry Shard (official)",
-  "updated_at": "2026-11-25",
+  "updated_at": "2026-11-26",
   "total_count": null,
   "shards": [],
   "plugins": [
@@ -25,7 +25,7 @@
         "clipboard"
       ],
       "source": "plugins/builtin-ocr",
-      "sha256": "c35a20de0b36409c607c6119465cb4b4e85d2982d1a73aaef8d57eef6cc2776e",
+      "sha256": "df660bb294452be3009cca5a47ef5d8805c14332d9269a22bb4ccf194cbd08a6",
       "platforms": {},
       "min_tomoyo_version": null,
       "homepage": null,
@@ -69,7 +69,7 @@
         "shell_exec"
       ],
       "source": "plugins/official-capture",
-      "sha256": "dcca41813407252a3b3381ad1bd218932445a9e8ca7ba496e1bba9d9618a4bb0",
+      "sha256": "6cabe5f8a4f321f264e3a5c90302ea5181558bf31e05009c84e115e1d292b953",
       "platforms": {},
       "min_tomoyo_version": null,
       "homepage": "https://github.com/q871958549/Tomoyo",
@@ -105,7 +105,7 @@
         "filesystem_write"
       ],
       "source": "plugins/official-clipboard",
-      "sha256": "1cc852c92278b9eb11862a911beeb7c2ad467f241b514e23792b526cd01bb134",
+      "sha256": "c1c6ad6104f004d0be49c2a7f387b8835670593ecdf20eae1020738b5e63309b",
       "platforms": {},
       "min_tomoyo_version": null,
       "homepage": "https://github.com/q871958549/Tomoyo",
@@ -191,23 +191,33 @@
     {
       "id": "dev.tomoyo.notes",
       "name": "本地快速备忘录 (Quick Notes)",
-      "version": "2.6.0",
-      "description": "轻量即时备忘录插件（与专业 Markdown 编辑器解耦）：支持 note/memo 秒级检索、#标签过滤、剪贴板一键记录与交付 Quiet.md 精编（0 常驻内存）",
+      "version": "3.2.0",
+      "description": "Protocol v3 混合架构本地优先备忘录：开放 .md + YAML Frontmatter 存储，支持 note/memo/bw 秒级检索、@pin/@todo/#标签过滤、[[双向链接]]、每日速记与独立工作台（0 常驻内存）",
       "author": "Tomoyo Contributors",
       "license": "MIT",
       "runtime_kind": "stdio_jsonrpc",
       "category": "docs",
       "icon": "icon.png",
-      "display_mode": "inline",
-      "tags": [],
+      "display_mode": "window",
+      "tags": [
+        "notes",
+        "markdown",
+        "memo",
+        "todo",
+        "wiki",
+        "local-first"
+      ],
       "keywords": [
         "note",
         "memo",
         "bw"
       ],
-      "permissions": [],
+      "permissions": [
+        "filesystem_read",
+        "filesystem_write"
+      ],
       "source": "plugins/official-notes",
-      "sha256": "e38933c78f2eef650e14b583147c18fc77f6b9be6ec1bc34ce77676d0c1a81ce",
+      "sha256": "582991f79568856f03c064ffe0542b9b49d6e60d41ade8ca5df8aaf468b84c48",
       "platforms": {},
       "min_tomoyo_version": null,
       "homepage": null,
@@ -243,7 +253,7 @@
         "selection_read"
       ],
       "source": "plugins/official-translate",
-      "sha256": "b5e95c41c541855420b4fe07fcbb3daeadeee139015051195efb78cf6cad361b",
+      "sha256": "c9231a94a396787715b7b871e60d4539c0bfc86e05e30cb7ca2664b863535252",
       "platforms": {},
       "min_tomoyo_version": null,
       "homepage": "https://github.com/q871958549/Tomoyo",

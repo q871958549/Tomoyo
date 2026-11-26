@@ -23,6 +23,9 @@ typedef struct {
     void *ctx;
     int capture_hotkeys;
     int topmost;
+    int frameless;
+    gint last_btn, last_rx, last_ry;
+    guint32 last_time;
 } tomoyo_wv_t;
 
 static const char *BRIDGE_INIT_JS =
@@ -76,6 +79,28 @@ static gboolean on_focus_out_ev(GtkWidget *w, GdkEventFocus *ev, gpointer ud) {
     return FALSE;
 }
 
+static gboolean on_wv_btn_press(GtkWidget *w, GdkEventButton *ev, gpointer ud) {
+    tomoyo_wv_t *h = (tomoyo_wv_t *)ud;
+    if (!h || !ev) return FALSE;
+    h->last_btn = (gint)ev->button;
+    h->last_rx = (gint)ev->x_root;
+    h->last_ry = (gint)ev->y_root;
+    h->last_time = ev->time;
+    if (h->frameless && ev->button == 1 && ev->type == GDK_BUTTON_PRESS) {
+        int ww = gtk_widget_get_allocated_width(w), wh = gtk_widget_get_allocated_height(w);
+        int l = ev->x <= 5.0, r = ev->x >= ww - 5.0 && ev->y >= 36.0;
+        int t = ev->y <= 3.0 && ev->x < ww - 135.0, b = ev->y >= wh - 5.0;
+        if (l || r || t || b) {
+            GdkWindowEdge edge = l ? (t ? GDK_WINDOW_EDGE_NORTH_WEST : (b ? GDK_WINDOW_EDGE_SOUTH_WEST : GDK_WINDOW_EDGE_WEST))
+                : (r ? (t ? GDK_WINDOW_EDGE_NORTH_EAST : (b ? GDK_WINDOW_EDGE_SOUTH_EAST : GDK_WINDOW_EDGE_EAST))
+                : (t ? GDK_WINDOW_EDGE_NORTH : GDK_WINDOW_EDGE_SOUTH));
+            gtk_window_begin_resize_drag(GTK_WINDOW(h->window), edge, (gint)ev->button, (gint)ev->x_root, (gint)ev->y_root, ev->time);
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+
 static gboolean on_delete_ev(GtkWidget *w, GdkEvent *ev, gpointer ud) {
     (void)w; (void)ev;
     tomoyo_wv_t *h = (tomoyo_wv_t *)ud;
@@ -99,15 +124,16 @@ void tomoyo_wv_apply_theme(tomoyo_wv_t *h, int mode) {
         bg = "#0f1320"; fg = "#eef2ff"; bd = "#1f2740"; hov = "#1c243a";
         wvbg = (GdkRGBA){0.043, 0.055, 0.09, 1.0};
     }
-    char css[1024];
+    char css[1280];
     snprintf(css, sizeof(css),
+        "window#tomoyo-wv-win { background: %s; border: 1px solid %s; } "
         "headerbar#tomoyo-hb { background: %s; background-image: none; color: %s; "
         "border-bottom: 1px solid %s; box-shadow: none; min-height: 36px; padding: 0 10px; } "
         "headerbar#tomoyo-hb .title { color: %s; font-size: 13px; font-weight: 600; } "
         "headerbar#tomoyo-hb button.titlebutton { color: %s; background: transparent; border: none; "
         "box-shadow: none; min-width: 24px; min-height: 24px; border-radius: 6px; padding: 2px; } "
         "headerbar#tomoyo-hb button.titlebutton:hover { background: %s; }",
-        bg, fg, bd, fg, fg, hov);
+        bg, bd, bg, fg, bd, fg, fg, hov);
     gtk_css_provider_load_from_data(h->css, css, -1, NULL);
     if (h->webview) webkit_web_view_set_background_color(h->webview, &wvbg);
 }
@@ -125,6 +151,7 @@ tomoyo_wv_t *tomoyo_wv_create(
     const uint8_t *icon_rgba,
     int icon_w,
     int icon_h,
+    int frameless,
     const char *extra_init_js,
     wv_msg_cb on_msg,
     wv_key_cb on_key,
@@ -145,19 +172,27 @@ tomoyo_wv_t *tomoyo_wv_create(
     h->on_focus_in = on_focus_in;
     h->on_close = on_close;
     h->ctx = ctx;
+    h->frameless = frameless ? 1 : 0;
 
     h->window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+    gtk_widget_set_name(h->window, "tomoyo-wv-win");
     gtk_window_set_title(GTK_WINDOW(h->window), title ? title : "Tomoyo");
     gtk_window_set_icon_name(GTK_WINDOW(h->window), "tomoyo");
     gtk_window_set_default_size(GTK_WINDOW(h->window), width > 200 ? width : 960, height > 200 ? height : 670);
     gtk_window_set_position(GTK_WINDOW(h->window), GTK_WIN_POS_CENTER);
-    h->header = gtk_header_bar_new();
-    gtk_widget_set_name(h->header, "tomoyo-hb");
-    gtk_header_bar_set_title(GTK_HEADER_BAR(h->header), title ? title : "Tomoyo");
-    gtk_header_bar_set_show_close_button(GTK_HEADER_BAR(h->header), TRUE);
-    gtk_window_set_titlebar(GTK_WINDOW(h->window), h->header);
     h->css = gtk_css_provider_new();
-    gtk_style_context_add_provider(gtk_widget_get_style_context(h->header), GTK_STYLE_PROVIDER(h->css), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    gtk_style_context_add_provider(gtk_widget_get_style_context(h->window), GTK_STYLE_PROVIDER(h->css), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    if (h->frameless) {
+        gtk_window_set_decorated(GTK_WINDOW(h->window), FALSE);
+        gtk_window_set_resizable(GTK_WINDOW(h->window), TRUE);
+    } else {
+        h->header = gtk_header_bar_new();
+        gtk_widget_set_name(h->header, "tomoyo-hb");
+        gtk_header_bar_set_title(GTK_HEADER_BAR(h->header), title ? title : "Tomoyo");
+        gtk_header_bar_set_show_close_button(GTK_HEADER_BAR(h->header), TRUE);
+        gtk_window_set_titlebar(GTK_WINDOW(h->window), h->header);
+        gtk_style_context_add_provider(gtk_widget_get_style_context(h->header), GTK_STYLE_PROVIDER(h->css), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    }
 
     if (icon_rgba && icon_w > 0 && icon_h > 0) {
         size_t sz = (size_t)icon_w * (size_t)icon_h * 4;
@@ -208,6 +243,7 @@ tomoyo_wv_t *tomoyo_wv_create(
     tomoyo_wv_apply_theme(h, mode);
 
     gtk_container_add(GTK_CONTAINER(h->window), GTK_WIDGET(h->webview));
+    g_signal_connect(h->webview, "button-press-event", G_CALLBACK(on_wv_btn_press), h);
     g_signal_connect(h->window, "key-press-event", G_CALLBACK(on_key_press), h);
     g_signal_connect(h->window, "focus-in-event", G_CALLBACK(on_focus_in_ev), h);
     g_signal_connect(h->window, "focus-out-event", G_CALLBACK(on_focus_out_ev), h);
@@ -306,6 +342,22 @@ void tomoyo_wv_present(tomoyo_wv_t *h) {
 
 void tomoyo_wv_close(tomoyo_wv_t *h) {
     if (h && h->window) gtk_window_close(GTK_WINDOW(h->window));
+}
+
+void tomoyo_wv_begin_drag(tomoyo_wv_t *h) {
+    if (!h || !h->window) return;
+    gtk_window_begin_move_drag(GTK_WINDOW(h->window), h->last_btn ? h->last_btn : 1, h->last_rx, h->last_ry, h->last_time ? h->last_time : gtk_get_current_event_time());
+}
+
+void tomoyo_wv_minimize(tomoyo_wv_t *h) {
+    if (h && h->window) gtk_window_iconify(GTK_WINDOW(h->window));
+}
+
+void tomoyo_wv_toggle_maximize(tomoyo_wv_t *h) {
+    if (!h || !h->window) return;
+    GdkWindow *gw = gtk_widget_get_window(h->window);
+    if (gw && (gdk_window_get_state(gw) & GDK_WINDOW_STATE_MAXIMIZED)) gtk_window_unmaximize(GTK_WINDOW(h->window));
+    else gtk_window_maximize(GTK_WINDOW(h->window));
 }
 
 int tomoyo_wv_toggle_topmost(tomoyo_wv_t *h) {

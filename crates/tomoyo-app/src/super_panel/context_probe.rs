@@ -21,31 +21,10 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     VK_CONTROL, VK_MENU, VK_SHIFT,
 };
 
+pub use crate::context_card::{classify_text_kind, normalize_url, TextKind};
+
 const MAX_SNAPSHOT_BYTES: usize = 24 * 1024 * 1024;
 const MAX_SELECTED_CHARS: usize = 4000;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TextKind {
-    Plain,
-    Url,
-    Json,
-    Color,
-    Path,
-    Code,
-}
-
-impl TextKind {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Plain => "text",
-            Self::Url => "url",
-            Self::Json => "json",
-            Self::Color => "color",
-            Self::Path => "path",
-            Self::Code => "code",
-        }
-    }
-}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SuperContext {
@@ -248,97 +227,4 @@ pub fn is_image_path(path: &str) -> bool {
         .unwrap_or("")
         .to_ascii_lowercase();
     matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "webp" | "bmp" | "gif" | "ico")
-}
-
-/// Classifies selected text into a semantic kind for Super Panel contextual actions.
-pub fn classify_text_kind(text: &str) -> TextKind {
-    let t = text.trim();
-    if is_http_like_url(t) {
-        return TextKind::Url;
-    }
-    if is_color_literal(t) {
-        return TextKind::Color;
-    }
-    if ((t.starts_with('{') && t.ends_with('}')) || (t.starts_with('[') && t.ends_with(']')))
-        && serde_json::from_str::<serde_json::Value>(t).is_ok()
-    {
-        return TextKind::Json;
-    }
-    if looks_like_windows_path(t) {
-        return TextKind::Path;
-    }
-    if looks_like_code(t) {
-        return TextKind::Code;
-    }
-    TextKind::Plain
-}
-
-pub fn normalize_url(text: &str) -> Option<String> {
-    let t = text.trim();
-    if t.is_empty() || t.chars().any(char::is_whitespace) {
-        return None;
-    }
-    let low = t.to_ascii_lowercase();
-    if low.starts_with("https://") || low.starts_with("http://") {
-        tomoyo_core::is_safe_http_url(t).then(|| t.to_string())
-    } else if low.starts_with("www.") {
-        let full = format!("https://{t}");
-        tomoyo_core::is_safe_http_url(&full).then_some(full)
-    } else {
-        None
-    }
-}
-
-fn is_http_like_url(t: &str) -> bool {
-    normalize_url(t).is_some()
-}
-
-fn is_color_literal(t: &str) -> bool {
-    if let Some(hex) = t.strip_prefix('#') {
-        return matches!(hex.len(), 3 | 6 | 8) && hex.bytes().all(|b| b.is_ascii_hexdigit());
-    }
-    let low = t.to_ascii_lowercase();
-    (low.starts_with("rgb(") || low.starts_with("rgba(")) && low.ends_with(')') && low.len() <= 36
-}
-
-fn looks_like_windows_path(t: &str) -> bool {
-    if t.contains('\n') || t.len() < 3 || t.len() > 260 {
-        return false;
-    }
-    let unquoted = t.trim_matches('"');
-    let bytes = unquoted.as_bytes();
-    bytes.len() >= 3
-        && bytes[0].is_ascii_alphabetic()
-        && bytes[1] == b':'
-        && (bytes[2] == b'\\' || bytes[2] == b'/')
-        && Path::new(unquoted).exists()
-}
-
-fn looks_like_code(t: &str) -> bool {
-    if t.lines().count() >= 3 && (t.contains('{') || t.contains("fn ") || t.contains("def ") || t.contains("const ") || t.contains("import ")) {
-        return true;
-    }
-    false
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn classifies_selected_text_kinds_accurately() {
-        assert_eq!(classify_text_kind("https://github.com/q871958549/Tomoyo"), TextKind::Url);
-        assert_eq!(classify_text_kind("www.rust-lang.org"), TextKind::Url);
-        assert_eq!(classify_text_kind("#7C6AF7"), TextKind::Color);
-        assert_eq!(classify_text_kind("rgb(16, 185, 129)"), TextKind::Color);
-        assert_eq!(classify_text_kind(r#"{"ok":true,"n":42}"#), TextKind::Json);
-        assert_eq!(classify_text_kind("serendipity"), TextKind::Plain);
-        assert_eq!(classify_text_kind("选中文本快捷翻译"), TextKind::Plain);
-        assert_eq!(
-            classify_text_kind("fn main() {\n    let x = 1;\n    println!(\"{x}\");\n}"),
-            TextKind::Code
-        );
-        assert_eq!(normalize_url("www.example.com/a").as_deref(), Some("https://www.example.com/a"));
-        assert!(normalize_url("javascript:alert(1)").is_none());
-    }
 }

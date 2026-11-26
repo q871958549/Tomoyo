@@ -197,7 +197,7 @@ pub(super) fn build_command_hub_items(
             preview: Some(preview.clone()),
         });
     }
-    out.sort_by(|a, b| b.score.cmp(&a.score));
+    out.sort_by_key(|a| std::cmp::Reverse(a.score));
     out
 }
 

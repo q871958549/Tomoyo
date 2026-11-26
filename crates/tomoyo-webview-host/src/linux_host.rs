@@ -32,6 +32,7 @@ unsafe extern "C" {
         icon_rgba: *const u8,
         icon_w: c_int,
         icon_h: c_int,
+        frameless: c_int,
         extra_init_js: *const c_char,
         on_msg: WvMsgCb,
         on_key: WvKeyCb,
@@ -43,6 +44,9 @@ unsafe extern "C" {
     fn tomoyo_wv_load_uri(h: *mut c_void, uri: *const c_char);
     fn tomoyo_wv_show_and_run(h: *mut c_void);
     fn tomoyo_wv_close(h: *mut c_void);
+    fn tomoyo_wv_begin_drag(h: *mut c_void);
+    fn tomoyo_wv_minimize(h: *mut c_void);
+    fn tomoyo_wv_toggle_maximize(h: *mut c_void);
     fn tomoyo_wv_toggle_topmost(h: *mut c_void) -> c_int;
     fn tomoyo_wv_enable_devtools(h: *mut c_void);
     fn tomoyo_wv_destroy(h: *mut c_void);
@@ -81,6 +85,12 @@ unsafe extern "C" fn on_msg_cb(ctx: *mut c_void, json_ptr: *const c_char) {
     }
     if act.toggle_topmost {
         unsafe { tomoyo_wv_toggle_topmost(st.wv); }
+    }
+    match act.window_control {
+        1 => unsafe { tomoyo_wv_begin_drag(st.wv); },
+        2 => unsafe { tomoyo_wv_minimize(st.wv); },
+        3 => unsafe { tomoyo_wv_toggle_maximize(st.wv); },
+        _ => {}
     }
     if act.pick_folder_mode != 0 {
         st.channel.schedule_folder_picker(act.pick_folder_mode);
@@ -201,8 +211,9 @@ pub fn run_linux_host(opts: LaunchArgs) {
         None
     };
     let plugin_query = (!opts.settings_mode).then_some(opts.query.as_str());
+    let settings_route = opts.settings_mode.then_some(opts.query.as_str());
     let _sock_guard = match mode_tag {
-        Some(tag) => match try_acquire_instance(tag, plugin_query, &channel) {
+        Some(tag) => match try_acquire_instance(tag, plugin_query, settings_route, &channel) {
             Ok(g) => Some(g),
             Err(()) => return,
         },
@@ -243,7 +254,7 @@ pub fn run_linux_host(opts: LaunchArgs) {
     let wv = unsafe {
         tomoyo_wv_create(
             c_title.as_ptr(), opts.width, opts.height, mode,
-            icon_ptr, icon_w, icon_h,
+            icon_ptr, icon_w, icon_h, c_int::from(opts.settings_mode),
             c_init.as_ptr(), on_msg_cb, on_key_cb, on_focus_in_cb, on_close_cb,
             ctx_ptr as *mut c_void,
         )

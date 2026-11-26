@@ -1,7 +1,7 @@
 {
   "schema_version": 2,
   "name": "Tomoyo Registry Shard (examples)",
-  "updated_at": "2026-11-25",
+  "updated_at": "2026-11-26",
   "total_count": null,
   "shards": [],
   "plugins": [

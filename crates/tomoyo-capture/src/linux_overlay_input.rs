@@ -20,6 +20,26 @@ fn gdk_key_to_vk(kv: u32) -> Option<u8> {
 
 pub(super) unsafe extern "C" fn on_key_cb(ctx: *mut c_void, kv: u32, state: u32) -> c_int {
     let st = unsafe { &mut *(ctx as *mut OverlayState) };
+    let is_release = (state & (1 << 30)) != 0;
+    if matches!(kv, 0xFFE9 | 0xFFEA | 0xFFE7) {
+        if st.sel.is_none() {
+            let now_ms = st.now_ms();
+            let tick = st.snap_motion.on_alt_changed(
+                &mut st.snap_ctx,
+                &st.snap,
+                st.cursor.0,
+                st.cursor.1,
+                !is_release,
+                now_ms,
+            );
+            st.schedule_snap_tick(tick);
+            unsafe { tomoyo_cap_win_redraw(); }
+        }
+        return 0;
+    }
+    if is_release {
+        return 0;
+    }
     let shift = (state & (1 << 0)) != 0;
     let ctrl = (state & (1 << 2)) != 0;
     let alt = (state & (1 << 3)) != 0;

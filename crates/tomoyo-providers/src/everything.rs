@@ -154,6 +154,7 @@ impl Provider for EverythingProvider {
         } else {
             None
         };
+        #[cfg_attr(target_os = "linux", allow(unused_variables))]
         let translated_nl = nl.as_ref().is_some_and(|t| t.translated);
         let query_text = nl
             .as_ref()
