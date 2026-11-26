@@ -123,3 +123,54 @@ void tomoyo_linux_show_popup(
     if (ev) gdk_event_free(ev);
     if (a) a->popup_from_kb = 0;
 }
+
+static void cb_toggle_overwrite(GtkEntry *e, gpointer ud) {
+    (void)ud;
+    g_signal_stop_emission_by_name(e, "toggle-overwrite");
+    gtk_entry_set_overwrite_mode(e, FALSE);
+}
+
+static void cb_preedit_changed(GtkEntry *e, const gchar *preedit, gpointer ud) {
+    (void)e;
+    tomoyo_app_t *a = (tomoyo_app_t *)ud;
+    if (!a) return;
+    int next = (preedit && preedit[0] != '\0') ? 1 : 0;
+    if (next != a->has_preedit) {
+        a->has_preedit = next;
+        if (a->darea) gtk_widget_queue_draw(a->darea);
+    }
+}
+
+void tomoyo_linux_entry_init_guards(tomoyo_app_t *a) {
+    if (!a || !a->entry) return;
+    gtk_entry_set_overwrite_mode(GTK_ENTRY(a->entry), FALSE);
+    g_signal_connect(a->entry, "toggle-overwrite", G_CALLBACK(cb_toggle_overwrite), a);
+    g_signal_connect(a->entry, "preedit-changed", G_CALLBACK(cb_preedit_changed), a);
+}
+
+int tomoyo_linux_entry_has_preedit(tomoyo_app_t *a) {
+    return (a && a->has_preedit) ? 1 : 0;
+}
+
+void tomoyo_linux_ui_set_theme(
+    tomoyo_app_t *a, uint32_t text_rgb, uint32_t bg_rgb, uint32_t accent_rgb,
+    const char *font_css, int font_px
+) {
+    if (!a) return;
+    const char *fam = (font_css && font_css[0]) ? font_css : "sans-serif";
+    char css[1280];
+    snprintf(css, sizeof(css),
+        "window#tomoyo-shell { background-color: transparent; background-image: none; border: none; box-shadow: none; } "
+        "entry#tomoyo-input { background: transparent; background-color: rgba(%u,%u,%u,0.01); "
+        "color: #%06x; caret-color: #%06x; -GtkWidget-cursor-aspect-ratio: 0.07; "
+        "border: none; box-shadow: none; outline: none; min-height: 0; padding: 0; "
+        "font-family: %s; font-size: %dpx; } "
+        "entry#tomoyo-input:focus { border: none; box-shadow: none; outline: none; } "
+        "entry#tomoyo-input selection, entry#tomoyo-input selection:focus { "
+        "background-color: rgba(%u,%u,%u,0.24); color: #%06x; }",
+        (bg_rgb >> 16) & 0xff, (bg_rgb >> 8) & 0xff, bg_rgb & 0xff,
+        text_rgb & 0xffffff, accent_rgb & 0xffffff, fam, font_px,
+        (accent_rgb >> 16) & 0xff, (accent_rgb >> 8) & 0xff, accent_rgb & 0xff,
+        text_rgb & 0xffffff);
+    gtk_css_provider_load_from_data(a->css, css, -1, NULL);
+}

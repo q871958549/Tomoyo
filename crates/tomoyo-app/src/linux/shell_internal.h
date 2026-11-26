@@ -37,6 +37,7 @@ typedef struct {
     guint32 last_time;
     int menu_picked;
     int popup_from_kb;
+    int has_preedit;
     int last_w, last_h, last_ex, last_ey, last_ew, last_eh;
     int last_x, last_y, prog_x, prog_y, prog_w, prog_h, ever_shown, in_user_resize, cur_cursor;
     gint64 user_resize_until, show_until;
@@ -51,5 +52,7 @@ typedef struct {
     tomoyo_void_cb on_clip_change;
     tomoyo_cmd_cb on_tray_cmd;
 } tomoyo_app_t;
+
+void tomoyo_linux_entry_init_guards(tomoyo_app_t *a);
 
 #endif

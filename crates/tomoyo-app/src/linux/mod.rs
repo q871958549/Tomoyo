@@ -62,7 +62,7 @@ unsafe extern "C" {
     ) -> *mut c_void;
     pub fn tomoyo_kwin_pos_update_target(handle: *mut c_void, has_pos: c_int, x: c_int, y: c_int);
     pub fn tomoyo_kwin_pos_stop(handle: *mut c_void);
-    pub fn tomoyo_linux_ui_set_theme(a: *mut c_void, text_rgb: u32, bg_rgb: u32, font_css: *const c_char, font_px: c_int);
+    pub fn tomoyo_linux_ui_set_theme(a: *mut c_void, text_rgb: u32, bg_rgb: u32, accent_rgb: u32, font_css: *const c_char, font_px: c_int);
     pub fn tomoyo_linux_ui_begin_drag(a: *mut c_void);
     pub fn tomoyo_wl_clip_start(on_change: unsafe extern "C" fn());
     pub fn tomoyo_wl_clip_stop();
@@ -104,6 +104,7 @@ unsafe extern "C" {
     pub fn tomoyo_linux_ui_focus_entry(a: *mut c_void);
     pub fn tomoyo_linux_ui_is_active(a: *mut c_void) -> c_int;
     pub fn tomoyo_linux_entry_has_selection(a: *mut c_void) -> c_int;
+    pub fn tomoyo_linux_entry_has_preedit(a: *mut c_void) -> c_int;
     pub fn tomoyo_linux_entry_edit_cmd(a: *mut c_void, op: c_int);
     pub fn tomoyo_linux_schedule_idle(fn_cb: unsafe extern "C" fn(*mut c_void), data: *mut c_void);
     pub fn tomoyo_linux_add_timeout(ms: u32, cb: unsafe extern "C" fn(*mut c_void) -> c_int, data: *mut c_void) -> u32;

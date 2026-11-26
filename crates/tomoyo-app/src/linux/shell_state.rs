@@ -254,17 +254,14 @@ impl AppCore {
 
     pub(super) fn apply_entry_theme_and_placeholder(&self) {
         if self.ui.is_null() { return; }
-        let (t, b) = (self.theme.text_primary, self.theme.bg);
+        let (t, b, ac) = (self.theme.text_primary, self.theme.bg, self.theme.accent);
         let rgb = ((t.0 as u32) << 16) | ((t.1 as u32) << 8) | (t.2 as u32);
         let bgrgb = ((b.0 as u32) << 16) | ((b.1 as u32) << 8) | (b.2 as u32);
+        let acrgb = ((ac.0 as u32) << 16) | ((ac.1 as u32) << 8) | (ac.2 as u32);
         let fam_css = tomoyo_core::format_css_font_stack(&self.typography.font_family, "sans-serif");
         let font_px = (self.typography.title_size as i32).clamp(15, 18);
-        if let Ok(cf) = CString::new(fam_css) { unsafe { tomoyo_linux_ui_set_theme(self.ui, rgb, bgrgb, cf.as_ptr(), font_px); } }
-        let ph = self.lang.pick(
-            "搜索应用、文件 (f )、计算、网页 (g/bd )、工作流 (flow )…",
-            "Search apps, files (f ), calc, web (g ), flows (flow )…",
-        );
-        if let Ok(cs) = CString::new(ph) { unsafe { tomoyo_linux_ui_set_placeholder(self.ui, cs.as_ptr()); } }
+        if let Ok(cf) = CString::new(fam_css) { unsafe { tomoyo_linux_ui_set_theme(self.ui, rgb, bgrgb, acrgb, cf.as_ptr(), font_px); } }
+        unsafe { tomoyo_linux_ui_set_placeholder(self.ui, c"".as_ptr()); }
     }
 
     pub(super) fn apply_font_family(&mut self, family: &str, label: &str) {

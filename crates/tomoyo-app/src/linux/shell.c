@@ -253,6 +253,7 @@ tomoyo_app_t *tomoyo_linux_ui_create(
     a->entry = gtk_entry_new();
     gtk_widget_set_name(a->entry, "tomoyo-input");
     gtk_entry_set_has_frame(GTK_ENTRY(a->entry), FALSE);
+    tomoyo_linux_entry_init_guards(a);
     gtk_fixed_put(GTK_FIXED(a->fixed), a->entry, 62, 14);
     gtk_widget_set_size_request(a->entry, 140, 34);
 
@@ -282,19 +283,6 @@ tomoyo_app_t *tomoyo_linux_ui_create(
     GtkClipboard *cb = gtk_clipboard_get(GDK_SELECTION_CLIPBOARD);
     if (cb) g_signal_connect(cb, "owner-change", G_CALLBACK(cb_clip_owner), a);
     return a;
-}
-
-void tomoyo_linux_ui_set_theme(tomoyo_app_t *a, uint32_t text_rgb, uint32_t bg_rgb, const char *font_css, int font_px) {
-    if (!a) return;
-    const char *fam = (font_css && font_css[0]) ? font_css : "sans-serif";
-    char css[768];
-    snprintf(css, sizeof(css),
-        "window#tomoyo-shell { background-color: transparent; background-image: none; border: none; box-shadow: none; } "
-        "entry#tomoyo-input { background: transparent; background-color: rgba(%u,%u,%u,0.01); "
-        "color: #%06x; caret-color: #%06x; border: none; box-shadow: none; outline: none; "
-        "font-family: %s; font-size: %dpx; padding: 0; }",
-        (bg_rgb >> 16) & 0xff, (bg_rgb >> 8) & 0xff, bg_rgb & 0xff, text_rgb & 0xffffff, text_rgb & 0xffffff, fam, font_px);
-    gtk_css_provider_load_from_data(a->css, css, -1, NULL);
 }
 
 void tomoyo_linux_ui_begin_drag(tomoyo_app_t *a) {
@@ -345,6 +333,8 @@ void tomoyo_linux_ui_show(tomoyo_app_t *a, int x, int y, int w, int h) {
     a->show_until = g_get_monotonic_time() + 180000;
     gtk_window_resize(GTK_WINDOW(a->window), w, h);
     if (!is_wayland_display()) gtk_window_move(GTK_WINDOW(a->window), x, y);
+    gtk_entry_set_overwrite_mode(GTK_ENTRY(a->entry), FALSE);
+    a->has_preedit = 0;
     gtk_widget_show_all(a->window);
     gtk_window_present(GTK_WINDOW(a->window));
     gtk_widget_grab_focus(a->entry);

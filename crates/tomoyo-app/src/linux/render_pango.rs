@@ -45,6 +45,7 @@ pub struct LinuxRenderer {
     pixels: Vec<u8>,
     icon_cache: LruCache<String, Option<Vec<u8>>>,
     font_family: &'static str,
+    placeholder: Option<&'static str>,
 }
 
 impl LinuxRenderer {
@@ -53,7 +54,12 @@ impl LinuxRenderer {
             pixels: Vec::new(),
             icon_cache: LruCache::new(NonZeroUsize::new(256).unwrap()),
             font_family,
+            placeholder: None,
         }
+    }
+
+    pub fn set_placeholder(&mut self, ph: Option<&'static str>) {
+        self.placeholder = ph;
     }
 
     pub fn hibernate_release(&mut self) {
@@ -218,6 +224,12 @@ impl LinuxRenderer {
             let cap_w = (cap.chars().count() as f32 * 8.5 + 24.0).clamp(96.0, 210.0);
             let cx0 = header_right_x - cap_w;
             draw_pango(cr, f_chip, pal.text_primary, 1, true, cap, cx0 + 6.0, 18.0, cap_w - 12.0, 26.0, scale, &[], pal.accent);
+            header_right_x = cx0 - 8.0;
+        }
+        if state.query.is_empty() && let Some(ph) = self.placeholder {
+            let ph_col = crate::renderer::filter_sidebar::blend_rgb(pal.text_muted, pal.bg, 0.28);
+            let f_ph = PangoFont { family: fam, weight: 400, size_px: (state.typography.title_size as f64).clamp(15.0, 18.0) * sc, tnum: false };
+            draw_pango(cr, f_ph, ph_col, 0, true, ph, 65.0, 14.0, (header_right_x - 68.0).max(40.0), 34.0, scale, &[], pal.accent);
         }
 
         if state.filter_bar_visible {

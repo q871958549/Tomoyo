@@ -336,6 +336,14 @@ impl AppCore {
             toast: toast_str,
             dpi_scale: self.dpi_scale,
         };
+        let has_preedit = !self.ui.is_null()
+            && unsafe { crate::linux::tomoyo_linux_entry_has_preedit(self.ui) != 0 };
+        self.renderer.set_placeholder((self.current_query.is_empty() && !has_preedit).then(|| {
+            self.lang.pick(
+                "搜索应用、文件 (f )、计算、网页 (g/bd )、工作流 (flow )…",
+                "Search apps, files (f ), calc, web (g ), flows (flow )…",
+            )
+        }));
         match cr {
             Some(c) => self.renderer.paint_cairo(c, w, h, &state),
             None => self.renderer.paint_offscreen_for_test(w, h, &state),
