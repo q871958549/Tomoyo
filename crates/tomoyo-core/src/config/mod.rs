@@ -2,6 +2,7 @@
 
 mod capture;
 mod hotkey;
+mod local_override;
 mod modules;
 mod paths;
 mod sanitize;
@@ -23,6 +24,7 @@ pub use hotkey::{
     save_hotkey_health, set_autostart_enabled, vk_to_key_name, HotkeyHealthReport, HotkeySlotStatus,
     ParsedHotkey,
 };
+pub use local_override::LocalConfigOverride;
 pub use modules::{
     migrate_legacy_plugin_config, sanitize_filters_and_plugins, PLUGIN_CAPTURE, PLUGIN_CLIPBOARD,
     PLUGIN_MD_EDITOR, PLUGIN_NOTES, PLUGIN_OCR, PLUGIN_TRANSLATE,
@@ -174,7 +176,15 @@ impl TomoyoConfig {
     pub fn sanitize(&mut self) -> Vec<String> { sanitize_config(self) }
     pub fn lang(&self) -> crate::Lang { crate::Lang::from_code(&self.language) }
     pub fn config_path() -> PathBuf { crate::sync_root_dir().join("config.toml") }
-    pub fn load_or_create() -> Self { Self::load_from_path(&Self::config_path()) }
+    pub fn load_or_create() -> Self {
+        let mut cfg = Self::load_from_path(&Self::config_path());
+        if crate::configured_sync_dir().is_some()
+            && local_override::apply_local_override_from(&mut cfg, &local_override::local_override_path())
+        {
+            let _ = cfg.sanitize();
+        }
+        cfg
+    }
 
     pub fn load_from_path(path: &Path) -> Self {
         if let Ok(raw) = std::fs::read_to_string(path) {
@@ -204,6 +214,15 @@ impl TomoyoConfig {
     }
 
     pub fn save(&self) -> std::io::Result<()> {
+        if crate::configured_sync_dir().is_some() {
+            let _ = local_override::save_local_override_to(self, &local_override::local_override_path());
+            let shared_path = Self::config_path();
+            let existing_shared = std::fs::read_to_string(&shared_path)
+                .ok()
+                .and_then(|raw| toml::from_str::<Self>(&raw).ok());
+            let shared = local_override::prepare_shared_config_for_sync(self, existing_shared.as_ref());
+            return shared.save_to_path(&shared_path);
+        }
         self.save_to_path(&Self::config_path())
     }
 

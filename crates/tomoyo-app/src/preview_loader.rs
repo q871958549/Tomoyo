@@ -73,10 +73,6 @@ impl AsyncPreviewLoader {
                     let mut ran_heavy_decode = false;
                     match job {
                         PreviewJob::Purge => {
-                            #[cfg(windows)]
-                            unsafe {
-                                windows::Win32::System::Com::CoFreeUnusedLibrariesEx(0, None);
-                            }
                             ran_heavy_decode = true;
                         }
                         PreviewJob::Resolve(job_seq, item_id, spec) => {

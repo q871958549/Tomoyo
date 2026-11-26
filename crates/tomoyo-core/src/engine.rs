@@ -234,7 +234,7 @@ impl QueryRouter {
                 let exact_match = p.matches_prefix(&first_lower);
                 let trigger_now = exact_match
                     && (has_space_after
-                        || matches!(first_lower.as_str(), "cb" | "w" | "kill" | "ps"));
+                        || matches!(first_lower.as_str(), "cb" | "w" | "kill" | "ps" | "port"));
                 if trigger_now {
                     matched_prefix_providers.push(p);
                 }

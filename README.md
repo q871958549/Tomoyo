@@ -15,7 +15,7 @@
   <a href="https://github.com/q871958549/Tomoyo/actions/workflows/ci.yml"><img src="https://github.com/q871958549/Tomoyo/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="LICENSE-MIT"><img src="https://img.shields.io/badge/license-MIT%20%2F%20Apache--2.0-blue.svg" alt="License" /></a>
   <img src="https://img.shields.io/badge/platform-Linux%20(KDE%20Wayland%2FX11)%20%7C%20Windows%2010%2F11%20(x64%2FARM64)-1793D1.svg" alt="Linux & Windows" />
-  <img src="https://img.shields.io/badge/version-v3.2.0-7c6af7.svg" alt="Version" />
+  <img src="https://img.shields.io/badge/version-v3.2.1-7c6af7.svg" alt="Version" />
 </p>
 
 ---
@@ -39,8 +39,8 @@
    - **Linux**: Incremental `inotify` watching of XDG `.desktop` / Flatpak / Snap entries, KWin `/WindowsRunner` window switching, `fd` + `plocate` file search, and `org.freedesktop.FileManager1` file reveal.
    - **Windows**: Pure-Rust **Everything 1.4 / 1.5a** `WM_COPYDATA` IPC client (`tomoyo-everything`, zero external DLLs), crisp Hi-DPI Shell icons, draggable Fluent scrollbar, 1–12 level BFS custom-directory deep indexing with live watcher hot-sync, plus Start Menu / DeskBox / UWP indexing.
    - **Native Zero-WebView Super Panel & Context-Aware Cards (`v3.1`–`v3.2`)**: Minimalist cursor popover (right-hold / middle-hold / middle-click) using **zero-clipboard Win32 UI Automation (`IUIAutomationTextPattern`) + terminal `SIGINT` protection**, lock-free plugin-delegated inline translation, Protocol v3 `[[text_actions]]` / `[[file_actions]]`, and empty-query contextual clipboard cards (URL/JSON/Color/Image/Translate).
-   - **Flagship Official Plugins 2.0 + Pure-WASM DevTools (`v3.2.0`)**: Clipboard Sequential Paste Stack (`cb :stack`), Capture Repeat-Last-Region & Pin Boss-Key (`--toggle-pins`), Translator domain style presets (`Academic / Code / Business / Polish`), official zero-permission pure-WASM `dev.tomoyo.devtools` (`ts` / `uuid` / `b64` / `url` / `cron` / JWT), and ready-to-clone [`templates/plugin-wasm-template/`](templates/plugin-wasm-template/).
-   - Bounded async right-pane previews (8 KB text slice, directory listings, `gdk-pixbuf` / WIC thumbnails) and native drag-and-drop.
+   - **Flagship Official Plugins 2.0 + Pure-WASM DevTools (`v3.2.0`–`v3.2.1`)**: Clipboard Sequential Paste Stack (`cb :stack`), anti-flicker velocity-gated smart snap (`SnapMotion`) with `Alt` bypass, Repeat-Last-Region & Pin Boss-Key (`--toggle-pins`), Translator domain style presets (`Academic / Code / Business / Polish`), remote-desktop hotkey pass-through (RustDesk/ToDesk), dual-PC layered `config.local.toml` sync, zero-permission pure-WASM `dev.tomoyo.devtools`, and [`templates/plugin-wasm-template/`](templates/plugin-wasm-template/).
+   - Bounded async right-pane previews (8 KB text, pretty JSON & aligned CSV/TSV tables, ZIP/Office/PDF summaries, `gdk-pixbuf` / WIC thumbnails) and native drag-and-drop.
 4. **4-Tier Extensibility + Declarative Pipelines + `utools` Bridge**:
    - **Built-in Providers**: Apps (with Pinyin/heteronym/multi-word fuzzy matching and query-aware frecency), Everything/`fd`+`plocate`, Clipboard History (SQLite text/image/files), Paste Capsule (`Super Match`), Calculator & Format/Color/Timestamp Inspector, Process Manager, Web Search, Window Switcher, and GitHub Releases updater.
    - **STDIO JSON-RPC 2.0 (`stdio_jsonrpc`)**: Author plugins in Rust (`tomoyo-sdk`), Python, Go, or Node.js; isolated via Linux process groups (`PR_SET_PDEATHSIG`) or Windows Job Objects.
@@ -75,19 +75,19 @@
 
 ---
 
-## Verified Benchmarks & Hygiene Gates (`v2.3.0` Linux / `v2.2.6` Windows Baseline)
+## Verified Benchmarks & Hygiene Gates (`v3.2.1` Baseline)
 
 Every commit and release passes a 7-gate anti-bloat check ([`scripts/check_hygiene.mjs`](scripts/check_hygiene.mjs)) and a 100-cycle leak/handle soak test (`tomoyo --self-test --strict-budget`):
 
-| Metric | Linux Release (`--self-test`) | Windows Release (`v2.2.6`) | Enforced Ceiling |
+| Metric | Windows Release (`v3.2.1`) | Linux Baseline (`v3.2`) | Enforced Ceiling |
 |---|---|---|---|
-| `tomoyo` microkernel binary | **6.85 MB** | **5.80 MB** | ≤ 7.50 MB (Linux) / ≤ 6.50 MB (Win) |
-| `tomoyo-webview-host` (Svelte 5 Settings + Workbenches, gzipped) | **4.96 MB** (0 MB idle) | **4.41 MB** (0 MB idle) | ≤ 5.50 MB / 0 MB idle |
-| `tomoyo-capture` (Screenshot, vector annotation, stitch, pin) | **1.46 MB** (0 MB idle) | **1.15 MB** (0 MB idle) | ≤ 1.50 MB / 0 MB idle |
-| `tomoyo-plugin-ocr` / `tomoyo-plugin-notes` | **0.57 MB** / **0.51 MB** | **0.38 MB** / **0.33 MB** | ≤ 0.80 MB / 0 MB idle |
-| Hibernated Private Commit (`--self-test`) | **22.35 MB** (70 apps, SQLite, fonts) | **22.03 MB** (343 entries; **1.50–1.52 MB** WS) | ≤ 45.0 MB (Linux) / ≤ 28.0 MB (Win) |
-| 100-cycle query/hibernate/reap soak delta | **GDI `+0` · USER `+0` · Handles `+0` · Private `+0.09 MB`** | **GDI `+0` · USER `+0` · Handles `+0` · Private `+0.08 MB`** | Handles ≤ +2 / Private ≤ +0.50 MB |
-| Repository hygiene & static checks ([`docs/CODING_STANDARDS.md`](docs/CODING_STANDARDS.md)) | **272 source files all ≤ 450 lines · 47 IPC cmds + 27 events 1:1 parity · `clippy -D warnings` clean · `happy-dom` 4 bundles clean** | **SLSA Provenance + ARM64 builds** | ≤ 450 lines/file · 0 warnings · 0 JS errors |
+| `tomoyo` microkernel binary | **5.14 MB** | **~5.9–6.9 MB** | ≤ 5.80 MB (Win) / ≤ 7.50 MB (Linux) |
+| `tomoyo-webview-host` (Settings UI only, 0 MB idle) | **3.12 MB** (`settings.html` 289.6 KB) | **~3.4–4.9 MB** (0 MB idle) | ≤ 4.20 MB (Win) / ≤ 5.50 MB (Linux) |
+| `tomoyo-capture` (Anti-flicker snap, vector annotation, MP4/GIF, pin) | **1.32 MB** (0 MB idle) | **1.46 MB** (0 MB idle) | ≤ 1.60 MB / 0 MB idle |
+| Official external plugins (OCR / Notes / Translate / Capture / Clipboard) | **0.51 / 0.44 / 0.62 / 0.51 / 2.09 MB** | **0 MB idle (auto-reaped)** | ≤ 0.80 MB (`2.50 MB` Clipboard) |
+| Hibernated Private Commit (`--self-test`) | **23.64–24.80 MB** (**1.05–1.08 MB** WS; 406 apps) | **~22.35 MB** (70 apps, SQLite, fonts) | ≤ 28.0 MB (Win) / ≤ 45.0 MB (Linux) |
+| 100-cycle query/hibernate/reap soak delta | **GDI `+0` · USER `+0` · Handles `+0` · Private `+0.06..+0.48 MB`** | **Handles `+0` · Private `+0.09 MB`** | Handles ≤ +2 / Private ≤ +0.50 MB |
+| Repository hygiene & static checks ([`docs/CODING_STANDARDS.md`](docs/CODING_STANDARDS.md)) | **All 348+ source files ≤ 450 lines · IPC 1:1 parity · `clippy -D warnings` clean · `happy-dom` 4 bundles clean** | **SLSA Provenance + ARM64 builds** | ≤ 450 lines/file · 0 warnings · 0 JS errors |
 
 ---
 
@@ -162,7 +162,7 @@ pwsh -File scripts\check_hygiene.ps1 -CheckBinaries
 | `Esc` *(in search box)* | Silent two-stage clear/dismiss: first press clears query while keeping focus, second press hides window with zero system beep |
 | `Alt+V` / `Alt+C` / `cb` / `clip` | SQLite clipboard manager (`@pin/@img/@link/@file/@code/#tag`, source app tracking, privacy blocklist, `Shift+Enter` plain-paste / image OCR, `Ctrl+E` workbench) |
 | `note` / `memo` / `bw` | Official external Protocol v2 STDIO plugin for local Markdown notes (`dev.tomoyo.notes`, reaps after 30s to 0 MB) |
-| `kill <name>` / `ps <name>` | Process list sorted by memory usage with termination support |
+| `kill <name>` / `ps <name>` / `port <port\|name>` | Process & TCP listening port inspector sorted by RAM / port number with Enter to terminate |
 | `g` / `gh` / `crates` / `docs` / `bd` / `zh` / `mdn` | Customizable web search prefixes |
 | `w <title>` | Live open-window switcher |
 | `:settings` (`Ctrl+,`) / `:update` / `:logs` / `:stats` / `:plugins` / `:gc` | Settings Center, GitHub Releases updater, redacted diagnostics, memory/handle telemetry, and manual hibernation trim |

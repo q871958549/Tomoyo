@@ -15,7 +15,7 @@
   <a href="https://github.com/q871958549/Tomoyo/actions/workflows/ci.yml"><img src="https://github.com/q871958549/Tomoyo/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="LICENSE-MIT"><img src="https://img.shields.io/badge/license-MIT%20%2F%20Apache--2.0-blue.svg" alt="License" /></a>
   <img src="https://img.shields.io/badge/platform-Linux%20(CachyOS%2FArch%20KDE%20Wayland%2FX11)%20%7C%20Windows%2010%2F11-1793D1.svg" alt="Linux & Windows" />
-  <img src="https://img.shields.io/badge/version-v3.2.0-7c6af7.svg" alt="Version" />
+  <img src="https://img.shields.io/badge/version-v3.2.1-7c6af7.svg" alt="Version" />
 </p>
 
 ---
@@ -33,8 +33,8 @@
    - **Linux 原生栈**：扫描 XDG `.desktop` / Flatpak / Snap 应用并用 `inotify` 零轮询增量监听，整合 KWin `/WindowsRunner` 窗口切换、`fd` + `plocate` 极速全盘文件索引与 `org.freedesktop.FileManager1` 文件定位。
    - **Windows 原生栈**：内置纯 Rust **Everything 1.4 / 1.5a** `WM_COPYDATA` IPC 客户端、`SHGetImageList` 高 DPI 抗锯齿图标、Fluent 可拖动滚动条、1–12 层 BFS 深层自定义目录索引与动态热监听，以及 DeskBox/UWP 应用扫描。
    - **原生零 WebView 超级面板与上下文剪贴板卡（`v3.1`–`v3.2`）**：支持右键长按 / 中键长按 / 中键单击极简光标浮窗，**优先通过 Win32 UI Automation 无痕划词（零剪贴板触碰 + 终端 `SIGINT` 防误杀）**，内置委托翻译插件的无锁内联快捷翻译、Protocol v3 `[[text_actions]]` / `[[file_actions]]` 生态动作与空输入上下文直达卡（URL / JSON 美化 / 色值贴图 / 位图 OCR）。
-   - **旗舰官方插件 2.0 + 零权限纯 WASM 开发者工具箱（`v3.2.0`）**：剪贴板顺序粘贴队列（`cb :stack`）、截图重截上次选区与多贴图老板键（`--toggle-pins`）、翻译 5 档领域风格预设（学术/代码/商务/润色）、仅 ~262 KB 跨平台零权限纯 WASM `dev.tomoyo.devtools`（时间戳 / UUID / Base64 / URL / JWT / Cron）及开箱即用社区插件模板 [`templates/plugin-wasm-template/`](templates/plugin-wasm-template/)。
-   - 支持异步有界右侧预览（文本 8 KB 截断、目录列表与 Linux `gdk-pixbuf` / Windows WIC 全格式图片缩略图）及原生文件拖拽。
+   - **旗舰官方插件 2.0 + 零权限纯 WASM 工具箱（`v3.2.0`–`v3.2.1`）**：剪贴板顺序粘贴队列（`cb :stack`）、防闪烁速度门控截图磁吸选区（含 `Alt` 临时关闭吸附）、重截上次选区与多贴图老板键（`--toggle-pins`）、翻译 5 档领域预设、RustDesk/ToDesk 远控热键穿透、双机分层 `config.local.toml` 同步、仅 ~262 KB 跨平台零权限纯 WASM `dev.tomoyo.devtools` 及 [`templates/plugin-wasm-template/`](templates/plugin-wasm-template/)。
+   - 支持异步有界右侧预览（8 KB 文本、`JSON` 美化与 `CSV/TSV` 对齐表格、ZIP/Office/PDF 摘要与 Linux `gdk-pixbuf` / Windows WIC 图片缩略图）及原生文件拖拽。
 4. **界面交互与系统集成**：
    - 内置阿里巴巴普惠体 3.0 字体，支持简体中文与英文切换，提供浅色（Light）、深色（Dark）、午夜（Midnight）三种配色方案。
    - Linux 下通过 `org.kde.kglobalaccel` D-Bus 注册 Wayland 全局热键并在 X11/XWayland 回退 `XGrabKey`，Windows 下通过 `RegisterHotKey` + 按需钩子无损接管。
@@ -47,17 +47,17 @@
 
 ---
 
-## 实测数据与自检阈值 (`v2.3.0` Linux / `v2.2.6` Windows 基线)
+## 实测数据与自检阈值 (`v3.2.1` 基线)
 
-| 指标 | Linux Release (`--strict-budget`) | Windows Release (`v2.2.6`) | 自检阈值 (`--strict-budget` / `check_hygiene.mjs`) |
+| 指标 | Windows Release (`v3.2.1`) | Linux Baseline (`v3.2`) | 自检阈值 (`--strict-budget` / `check_hygiene.mjs`) |
 |---|---|---|---|
-| `tomoyo` 微内核主程序体积（含原生外壳、6 槽位热键、SQLite 与 `wasmi` 宿主） | **6.85 MB** | **5.80 MB** | ≤ 7.50 MB (Linux) / ≤ 6.50 MB (Win) |
-| `tomoyo-webview-host` Svelte 5 设置中心 & 3 大工作台（Linux WebKitGTK 4.1 / Windows WebView2，Gzip 嵌入，关闭即退出） | **4.96 MB**（0 MB 常驻） | **4.41 MB**（0 MB 常驻） | ≤ 5.50 MB / 0 MB 常驻 |
-| `tomoyo-capture` 极简矢量标注 + 长截图 + 贴图 + 一键 OCR（Spectacle/`grim`/X11 + GTK3/Cairo / Win32 GDI） | **1.46 MB**（0 MB 常驻） | **1.15 MB**（0 MB 常驻） | ≤ 1.50 MB / 0 MB 常驻 |
-| `tomoyo-plugin-ocr` / `tomoyo-plugin-notes` 官方按需 STDIO 插件（Linux Tesseract 5 / Windows WinRT OCR / Markdown 备忘录） | **0.57 MB** / **0.51 MB** | **0.38 MB** / **0.33 MB** | ≤ 0.80 MB / 0 MB 常驻 |
-| 休眠态 Private Commit (`--self-test` Release) | **22.35 MB**（70 本机桌面应用索引、SQLite 与字体） | **22.03 MB**（343 条目；Working Set 1.50–1.52 MB） | ≤ 45.0 MB (Linux) / ≤ 28.0 MB (Win) |
-| 100 轮查询 / 休眠 / 清理压测 Delta | **GDI `+0` · USER `+0` · Handles `+0` · Private `+0.09 MB`** | **GDI `+0` · USER `+0` · Handles `+0` · Private `+0.08 MB`** | 句柄 ≤ +2 / 内存 ≤ +0.50 MB |
-| 7 道防膨胀卫生门禁（[编码规范](docs/CODING_STANDARDS.md)） | **全仓 272 源码文件 100% ≤ 450 行 · 47 IPC 指令 + 27 事件 1:1 对齐 · Clippy 0 警告 · `happy-dom` 4 产物全绿** | **SLSA Provenance + ARM64 构建** | ≤ 450 行/文件 · 0 警告 · 0 JS 异常 |
+| `tomoyo` 微内核主程序体积（纯微内核 + 多运行时宿主） | **5.14 MB** | **~5.9–6.9 MB** | ≤ 5.80 MB (Win) / ≤ 7.50 MB (Linux) |
+| `tomoyo-webview-host` 设置中心（关闭即退出，0 常驻） | **3.12 MB**（仅 `settings.html` 289.6 KB） | **~3.4–4.9 MB**（0 MB 常驻） | ≤ 4.20 MB (Win) / ≤ 5.50 MB (Linux) |
+| `tomoyo-capture` 防闪烁智能选区 + 矢量标注 + MP4/GIF 录屏 + 贴图 | **1.32 MB**（0 MB 常驻） | **1.46 MB**（0 MB 常驻） | ≤ 1.60 MB / 0 MB 常驻 |
+| 官方独立插件（OCR / 备忘录 / 翻译 / 截图 / 剪贴板） | **0.51 / 0.44 / 0.62 / 0.51 / 2.09 MB** | **闲置自动回收 0 MB** | ≤ 0.80 MB（剪贴板 ≤ 2.50 MB） |
+| 休眠态 Private Commit (`--self-test` Release) | **23.64–24.80 MB**（Working Set 1.05–1.08 MB；406 应用） | **~22.35 MB**（70 本机应用、字体） | ≤ 28.0 MB (Win) / ≤ 45.0 MB (Linux) |
+| 100 轮查询 / 休眠 / 清理压测 Delta | **GDI `+0` · USER `+0` · Handles `+0` · Private `+0.06..+0.48 MB`** | **Handles `+0` · Private `+0.09 MB`** | 句柄 ≤ +2 / 内存 ≤ +0.50 MB |
+| 7 道防膨胀卫生门禁（[编码规范](docs/CODING_STANDARDS.md)） | **全仓 348+ 源码文件 100% ≤ 450 行 · IPC 1:1 对齐 · Clippy 0 警告 · `happy-dom` 4 产物全绿** | **SLSA Provenance + ARM64 构建** | ≤ 450 行/文件 · 0 警告 · 0 JS 异常 |
 
 ---
 
@@ -131,7 +131,7 @@ pwsh -File scripts\check_hygiene.ps1 -CheckBinaries
 | `Esc` *(搜索框内)* | 零提示音两段式智能回退：有输入内容时先一键清空搜索词（保留焦点继续检索），搜索框为空时再按一次静默收起窗口；彻底消除单行编辑框系统蜂鸣声 |
 | `Alt+V` / `Alt+C` / `cb` / `clip` | 增强剪贴板管理中心（文本/图片/文件、语义分类、来源应用、`@pin/@img/@link/@file/@code/#标签` 与拼音检索、`Shift+Enter` 单行纯文本贴回或图片一键 OCR、`Ctrl+E` 工作台；Linux KGlobalAccel/X11 与 Windows 热键冲突自动提示与接管） |
 | `note` / `memo` / `bw` | 纯外部独立官方 Protocol v2 插件 **本地 Markdown 备忘录 (`dev.tomoyo.notes`)**（`0.33 MB`–`0.51 MB`、闲置 30 秒回收 0 MB 常驻）：支持在设置中心声明式配置全局热键与目录/上限/默认标签参数，支持全文/#标签检索、`note + 标题 :: 内容` 一键新建与 `note clip` 剪贴板转存 |
-| `kill <词>` / `ps <词>` | 进程列表查看与终止进程（按内存占用降序排列） |
+| `kill <词>` / `ps <词>` / `port <端口\|进程>` | 进程与监听 TCP 端口检查及终止（按内存或端口号排序，回车结束占用进程） |
 | `g` / `gh` / `crates` / `docs` / `bd` / `zh` / `mdn` | 可在设置中心自定义的快捷网页搜索前缀 |
 | `w <词>` | 已打开窗口列表筛选与切换 |
 | `:update` | 检查 GitHub Releases 更新、查看更新说明并跳转下载 |

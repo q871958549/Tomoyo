@@ -189,6 +189,34 @@ pub fn read_file_preview(path_str: &str) -> ResolvedPreview {
     }
 
     let text = String::from_utf8_lossy(&buf);
+    let trimmed = text.trim();
+    if ext == "json"
+        && size as usize <= MAX_PREVIEW_READ_BYTES
+        && let Some(pretty) = format_json_preview(trimmed)
+    {
+        return ResolvedPreview {
+            title,
+            meta_line: format!("JSON (Formatted) · {size_str} · {modified}"),
+            body: pretty,
+            is_monospace: true,
+            image_rgba: None,
+            badges: Vec::new(),
+        };
+    }
+    if matches!(ext.as_str(), "csv" | "tsv")
+        && let Some((cols, rows, formatted)) = format_delimited_table_preview(trimmed, ext == "tsv")
+    {
+        let kind = if ext == "tsv" { "TSV" } else { "CSV" };
+        return ResolvedPreview {
+            title,
+            meta_line: format!("{kind} · {cols} 列 / {rows} 行预览 · {size_str} · {modified}"),
+            body: formatted,
+            is_monospace: true,
+            image_rgba: None,
+            badges: Vec::new(),
+        };
+    }
+
     let mut lines: Vec<String> = text
         .lines()
         .take(MAX_PREVIEW_LINES)
@@ -205,6 +233,102 @@ pub fn read_file_preview(path_str: &str) -> ResolvedPreview {
         is_monospace: true,
         image_rgba: None,
         badges: Vec::new(),
+    }
+}
+
+fn format_json_preview(raw: &str) -> Option<String> {
+    let val = serde_json::from_str::<serde_json::Value>(raw).ok()?;
+    let pretty = serde_json::to_string_pretty(&val).ok()?;
+    let mut lines: Vec<&str> = pretty.lines().take(MAX_PREVIEW_LINES).collect();
+    let total = pretty.lines().count();
+    let mut out = lines.join("\n");
+    if total > lines.len() {
+        out.push_str(&format!("\n... (+{} lines)", total - lines.len()));
+    }
+    lines.clear();
+    Some(out)
+}
+
+fn format_delimited_table_preview(raw: &str, is_tsv: bool) -> Option<(usize, usize, String)> {
+    let sep = if is_tsv { '\t' } else { ',' };
+    let mut rows: Vec<Vec<String>> = Vec::new();
+    for line in raw.lines().filter(|l| !l.trim().is_empty()).take(22) {
+        let mut cells = parse_delimited_row(line, sep, 8);
+        if !cells.is_empty() {
+            for c in &mut cells {
+                *c = truncate_cell(c, 18);
+            }
+            rows.push(cells);
+        }
+    }
+    if rows.is_empty() {
+        return None;
+    }
+    let col_count = rows.iter().map(Vec::len).max().unwrap_or(0).clamp(1, 8);
+    let mut widths = vec![1usize; col_count];
+    for r in &rows {
+        for (i, c) in r.iter().enumerate().take(col_count) {
+            widths[i] = widths[i].max(c.chars().count());
+        }
+    }
+    let fmt_row = |cells: &[String]| -> String {
+        (0..col_count)
+            .map(|i| {
+                let s = cells.get(i).map(String::as_str).unwrap_or("");
+                let pad = widths[i].saturating_sub(s.chars().count());
+                format!("{s}{}", " ".repeat(pad))
+            })
+            .collect::<Vec<_>>()
+            .join(" │ ")
+    };
+    let mut out_lines = Vec::with_capacity(rows.len() + 2);
+    out_lines.push(fmt_row(&rows[0]));
+    if rows.len() > 1 {
+        let sep_line = widths.iter().map(|&w| "─".repeat(w)).collect::<Vec<_>>().join("─┼─");
+        out_lines.push(sep_line);
+        for r in &rows[1..] {
+            out_lines.push(fmt_row(r));
+        }
+    }
+    Some((col_count, rows.len(), out_lines.join("\n")))
+}
+
+fn parse_delimited_row(line: &str, sep: char, max_cols: usize) -> Vec<String> {
+    let mut cols = Vec::new();
+    let mut cur = String::new();
+    let mut in_quotes = false;
+    let mut chars = line.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '"' {
+            if in_quotes && chars.peek() == Some(&'"') {
+                cur.push('"');
+                let _ = chars.next();
+            } else {
+                in_quotes = !in_quotes;
+            }
+        } else if ch == sep && !in_quotes {
+            cols.push(cur.trim().to_string());
+            cur.clear();
+            if cols.len() >= max_cols {
+                return cols;
+            }
+        } else {
+            cur.push(ch);
+        }
+    }
+    if cols.len() < max_cols {
+        cols.push(cur.trim().to_string());
+    }
+    cols
+}
+
+fn truncate_cell(s: &str, max_chars: usize) -> String {
+    let cnt = s.chars().count();
+    if cnt <= max_chars {
+        s.to_string()
+    } else {
+        let head: String = s.chars().take(max_chars.saturating_sub(1)).collect();
+        format!("{head}…")
     }
 }
 
@@ -253,5 +377,43 @@ fn format_size(bytes: u64) -> String {
         format!("{bytes} B")
     } else {
         format!("{v:.1} {}", UNITS[i])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pretty_prints_minified_json_file_preview() {
+        let p = std::env::temp_dir().join(format!("tomoyo_prev_{}.json", std::process::id()));
+        std::fs::write(&p, r#"{"app":"Tomoyo","port":8080,"ok":true}"#).unwrap();
+        let prev = read_file_preview(p.to_str().unwrap());
+        assert!(prev.meta_line.starts_with("JSON (Formatted)"));
+        assert!(prev.body.contains("\"app\": \"Tomoyo\""));
+        assert!(prev.body.lines().count() >= 4);
+        let _ = std::fs::remove_file(&p);
+    }
+
+    #[test]
+    fn formats_csv_with_quoted_fields_into_aligned_table() {
+        let p = std::env::temp_dir().join(format!("tomoyo_prev_{}.csv", std::process::id()));
+        std::fs::write(&p, "name,note,count\nalpha,\"hello, world\",12\nbeta,plain,9\n").unwrap();
+        let prev = read_file_preview(p.to_str().unwrap());
+        assert!(prev.meta_line.contains("CSV · 3 列"));
+        assert!(prev.body.contains("hello, world"));
+        assert!(prev.body.contains("─┼─"));
+        let _ = std::fs::remove_file(&p);
+    }
+
+    #[test]
+    fn falls_back_cleanly_on_truncated_large_json() {
+        let p = std::env::temp_dir().join(format!("tomoyo_large_{}.json", std::process::id()));
+        let big = format!("[{}]", vec!["1234567890"; 1000].join(","));
+        std::fs::write(&p, big).unwrap();
+        let prev = read_file_preview(p.to_str().unwrap());
+        assert!(prev.meta_line.starts_with("JSON ·"));
+        assert!(prev.body.contains("1234567890"));
+        let _ = std::fs::remove_file(&p);
     }
 }

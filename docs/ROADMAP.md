@@ -456,16 +456,38 @@
    - 新增 **`plugins/official-devtools-wasm`（`dev.tomoyo.devtools`）**：零环境权限（`permissions = []`）、16 MB 线性内存硬顶、仅 ~262 KB 跨平台 `plugin.wasm`，内置 Unix 时间戳/UTC+8/ISO-8601 互转（Howard Hinnant 纯整数历法）、UUID v4/256-bit 密钥生成（接入 ABI v2 `host::kv_get`/`kv_set` 持久递增盐）、Base64/URL 双向编解码与 Query 拆解、JWT 离线过期解析、5 段 Cron 中文释义及超级面板 `[[text_actions]]` 一键直达；
    - 新增 **`templates/plugin-wasm-template/`**：开箱即用的 10 分钟社区 WASM 插件模板仓库（含 `Cargo.toml`、`tomoyo-plugin.toml`、`src/lib.rs`、`README.md` 与一键打包/发布 SHA-256 的 GitHub Actions 工作流）。
 
+### 阶段二十六：`v3.2.1` — 远程桌面穿透、插件读线程内存治理、截图防闪烁磁吸与双机/端口/预览增强（已完成 ✅）
+1. **远程桌面快捷键与鼠标触发全景打通（`3d17a24` + `a42dafd`）**：
+   - 移除 `hotkey_avoid.rs` 中将 `QUNS_BUSY` 误判为全屏独占的逻辑（保留真实 D3D 全屏与演示模式检测 + 3s 节流避让日志）；
+   - 将 `hotkey_override.rs`（`OVERRIDE_EXTRA_INFO`）与 `super_panel/trigger.rs`（`REPLAY_EXTRA_INFO`）的注入过滤精确限定为 Tomoyo 自身发送的 `dwExtraInfo`，放行 RustDesk/ToDesk/向日葵等远程控制服务端转发的鼠标键盘事件，并在 Windows 默认排除列表加入 `rustdesk.exe`；
+   - 同步补齐双端托盘「停用/恢复全局快捷键」快捷开关、Linux `KGlobalAccel` 陈旧槽位清理与双端自更新自动重启加固。
+2. **插件 STDIO 读线程零跨线程堆滞留与 COM/Shell 内存治理（`3d17a24`）**：
+   - 将 `tomoyo-plugin-host/src/process.rs` 中阻塞读线程的 `serde_json::from_str` 移回调用方主线程并回收复用 `<= 8 KB` 行缓冲，消除后台读线程 mimalloc 堆页滞留（休眠 Private Commit 由 `28.56 MB` 降至 `23.6–24.8 MB`，100 轮 `Handles +0`）；
+   - `icon_extract.rs` 将重型 `IShellItemImageFactory` 限定在可执行体/快捷方式，文档类直走轻量 `SHGFI_SYSICONINDEX | SHGFI_USEFILEATTRIBUTES` 并统一休眠期 `CoFreeUnusedLibrariesEx(0, None)` 释放。
+3. **截图智能选区防闪烁与磁吸动画升级（`8df3ada`）**：
+   - 新增跨平台 `crates/tomoyo-capture/src/snap_motion.rs`：引入 **820 px/s / 42 px 单步高速门控 + 58 ms 驻留确认**、**105 ms 小区块回退整窗延迟防抖**、**24 ms 指数磁吸平滑插值与零后台唤醒停表**及 **`Alt` 键即时禁用吸附**；
+   - `overlay_draw.rs` + `overlay_toolbar.rs` 落地柔和悬停暗罩分层（82% 均一底罩 + 94% 柔光预选框）、高速移动十字线淡化与放大镜自动避让角标。
+4. **双机分层配置、原生端口查杀与轻量结构化预览（本轮交付）**：
+   - **双机配置分层隔离（`config/local_override.rs`）**：启用同步目录后自动拆分本机专属字段（`apps.extra_dirs`、`capture.save_dir`、`hotkey_excluded_apps`、窗口位置）至 `%LOCALAPPDATA%\Tomoyo\config.local.toml`，避免工作机/家用机互相覆盖路径；
+   - **原生零子进程 TCP 端口查杀（`providers/src/ports.rs` + `port` 指令）**：Windows 基于 `GetExtendedTcpTable`、Linux 基于 `/proc/net/tcp*` 瞬时检索监听端口与归属进程并支持回车结束占用进程；
+   - **结构化表格与 JSON 预览（`tomoyo-core/src/preview.rs`）**：支持 `<= 8 KB` `.json` 自动美化格式化与 `.csv`/`.tsv` 对齐表格预览。
+
 ---
 
-## 五、中长期演进规划 (`v3.3 → v4.0` · 开放生态与跨平台拉齐)
+## 五、中长期演进规划 (`v3.3 → v4.0` · 双端拉齐、效率工具矩阵与可信分发)
 
-1. **`v3.3` · 开放插件生态飞轮（持续推进）**：
-   - 将 `tomoyo-protocol` / `tomoyo-sdk` / `tomoyo-wasm-sdk` v3 正式发布至 `crates.io`，将 `templates/plugin-wasm-template/` 镜像为独立 GitHub Template Repo；
-   - 基于 WASM 沙箱继续扩展高频零依赖工具（正则在线测试、端口查杀、窗口分屏），插件商店支持后台 ETag 304 静默更新检测。
-2. **`v3.4–v4.0` · 跨平台拉齐与可信分发**：
-   - **Linux 主力拉齐**：在真实 KDE Plasma Wayland/X11 环境实测补齐 Linux 端可拖动滚动条与 Wayland/X11 超级面板（利用 `wl-paste --primary` 原生主选区实现零剪贴板污染划词）；
-   - **分发信任链**：结合社区规模引入 Windows 开源代码签名（如 SignPath.io），消除 SmartScreen 拦截；按实际用户诉求评估落地 macOS 原生 `NSPanel` 外壳。
+1. **`v3.3.0` · Linux 主力体验 100% 拉齐与截图/剪贴板精细化打磨**：
+   - **Linux 原生体验补齐**：基于 `tomoyo-ui-shared` 与 `wl-paste --primary`/X11 `PRIMARY` 落地 Linux 原生零 WebView 超级面板（Wayland 热键触发无剪贴板污染划词 + 内联翻译 + `[[text_actions]]`），补齐 Linux 启动器可拖动 Fluent 滚动条与空输入上下文剪贴板卡，并在 KDE Plasma 6 Wayland/X11 实机验收 `SnapMotion`；
+   - **双机协同进阶**：提供跨机可移植的 Argon2id + AES-256-GCM 离线加密凭据迁移包（一键导出/导入多机 API Keys），免逐项重复录入；
+   - **截图贴图与剪贴板纵深**：加固混合 DPI 多屏（如 150%+100%）跨屏贴图/选区坐标，贴图支持快捷键直接切换阴影圆角与 OCR，剪贴板新增 Token/密码类敏感文本定时自动清理开关，右侧预览补齐 `.xlsx` 纯 zip+xml 首表前 20 行摘要预览；
+   - **前端焦点工程减压**：对 `render_pango.rs`、`annotate.rs`、`snap_detect.rs`、`window/mod.rs`、`window/layout.rs` 等 440+ 行热点做常规模块化拆解，保持 380 行以下健康余量。
+2. **`v3.4.0` · 开放插件生态飞轮与高效开发者工具矩阵**：
+   - **官方零权限纯 WASM 工具扩充**：继 `dev.tomoyo.devtools` 后继续推出 `dev.tomoyo.regex`（正则实时高亮与捕获组 `RichCard` 测试）与 `dev.tomoyo.winlayout`（零常驻键盘窗口分屏/跨屏瞬移）；
+   - **开发者生态发布**：将 `tomoyo-protocol` / `tomoyo-sdk` / `tomoyo-wasm-sdk`（v3）正式发布至 `crates.io`，独立出 `templates/plugin-wasm-template` GitHub Template 仓库并补全插件文档站；
+   - **商店 304 静默检查与 Flows 2.0**：插件商店接入后台低频 `ETag` 更新提示与一键批量升级，Flows 2.0 增加单步干跑调试并允许超级面板划词文本与上下文卡片直达自定义 Flow。
+3. **`v3.5 – v4.0` · 可信分发签名、主流包源与 macOS 外壳落地**：
+   - **代码签名与包管理器**：对接开源代码签名（如 SignPath.io）打通已预置的 `signtool.exe` Release 自动签名消除 Windows SmartScreen 拦截，并推动 **Winget**、**Scoop**、**Arch AUR** 正式包源上架；
+   - **跨平台终局拓展**：基于已就绪的 `tomoyo-ui-macos` 推进 macOS 原生 `NSPanel` 启动器外壳，并将 Windows ARM64 / Linux ARM64 纳入双平台 CI/Release 实测矩阵。
 
 ---
 

@@ -1,3 +1,5 @@
+use crate::ports::list_listening_tcp_ports;
+use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 #[cfg(windows)]
 use tomoyo_core::inspect_pid_working_set;
@@ -32,7 +34,7 @@ impl Provider for ProcessProvider {
     }
 
     fn prefixes(&self) -> &'static [&'static str] {
-        &["kill", "ps"]
+        &["kill", "ps", "port"]
     }
 
     fn supports_global(&self) -> bool {
@@ -41,6 +43,11 @@ impl Provider for ProcessProvider {
 
     fn query(&self, ctx: &QueryContext) -> Vec<ResultItem> {
         let lang = self.lang();
+        if ctx.keyword.as_deref() == Some("port")
+            || ctx.trimmed.split_whitespace().next().is_some_and(|t| t.eq_ignore_ascii_case("port"))
+        {
+            return self.query_ports(ctx, lang);
+        }
         let filter = ctx.args.trim().to_lowercase();
         let my_pid = std::process::id();
 
@@ -109,6 +116,85 @@ impl Provider for ProcessProvider {
                         ],
                     }),
                 }
+            })
+            .collect()
+    }
+}
+
+impl ProcessProvider {
+    fn query_ports(&self, ctx: &QueryContext, lang: Lang) -> Vec<ResultItem> {
+        let raw_filter = ctx.args.trim().to_lowercase();
+        let filter = raw_filter.strip_prefix(':').unwrap_or(&raw_filter);
+        let my_pid = std::process::id();
+        let proc_map: HashMap<u32, (String, u64)> = list_running_processes()
+            .into_iter()
+            .map(|(pid, name, ws)| (pid, (name, ws)))
+            .collect();
+
+        list_listening_tcp_ports()
+            .into_iter()
+            .filter(|p| p.pid != 0 && p.pid != 4 && p.pid != my_pid)
+            .filter_map(|p| {
+                let (name, ws_bytes) = proc_map
+                    .get(&p.pid)
+                    .cloned()
+                    .unwrap_or_else(|| (format!("pid-{}", p.pid), 0));
+                if !filter.is_empty()
+                    && !p.port.to_string().contains(filter)
+                    && !name.to_lowercase().contains(filter)
+                    && !p.pid.to_string().contains(filter)
+                {
+                    return None;
+                }
+                let ram_mb = ws_bytes as f64 / (1024.0 * 1024.0);
+                let ep = format!("{}:{}", p.local_addr, p.port);
+                Some((p, name, ram_mb, ep))
+            })
+            .take(ctx.limit.min(25))
+            .enumerate()
+            .map(|(idx, (p, name, ram_mb, ep))| ResultItem {
+                id: format!("port:{}:{}:{}", p.proto, p.port, p.pid),
+                provider_id: self.id().into(),
+                title: format!(":{} · {}", p.port, name),
+                subtitle: match lang {
+                    Lang::Zh => format!("{} {} · PID {} · {ram_mb:.1} MB · 回车结束占用进程", p.proto, ep, p.pid),
+                    Lang::En => format!("{} {} · PID {} · {ram_mb:.1} MB · Enter to kill owner", p.proto, ep, p.pid),
+                },
+                category: ResultCategory::System,
+                score: 9_300 - (idx as i64 * 12),
+                icon: IconSpec::Monogram("NET".into()),
+                badge: Some(format!(":{}", p.port)),
+                copy_text: Some(ep.clone()),
+                actions: vec![
+                    ActionSpec {
+                        id: "kill_port_owner".into(),
+                        label: lang.pick("结束端口占用进程 (Terminate)", "Kill Port Owner").into(),
+                        shortcut: Some("Enter".into()),
+                        kind: ActionKind::InternalCommand {
+                            command: InternalCommandKind::KillProcess { pid: p.pid, name: name.clone() },
+                        },
+                    },
+                    ActionSpec {
+                        id: "copy_endpoint".into(),
+                        label: lang.pick("复制监听地址与端口", "Copy Address:Port").into(),
+                        shortcut: Some("Ctrl+Enter".into()),
+                        kind: ActionKind::CopyText { text: ep.clone(), paste_immediately: false },
+                    },
+                    ActionSpec {
+                        id: "copy_pid".into(),
+                        label: lang.pick("复制 PID", "Copy PID").into(),
+                        shortcut: Some("Ctrl+C".into()),
+                        kind: ActionKind::CopyText { text: p.pid.to_string(), paste_immediately: false },
+                    },
+                ],
+                preview: Some(PreviewSpec::KeyValue {
+                    title: format!("{name} (:{})", p.port),
+                    entries: vec![
+                        (lang.pick("监听端点", "Endpoint").into(), format!("{} {ep}", p.proto)),
+                        ("PID".into(), p.pid.to_string()),
+                        (lang.pick("占用内存", "Working Set").into(), format!("{ram_mb:.2} MB")),
+                    ],
+                }),
             })
             .collect()
     }

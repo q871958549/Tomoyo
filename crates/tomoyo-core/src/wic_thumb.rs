@@ -10,6 +10,9 @@ pub fn decode_image_thumbnail_wic(
     max_w: u32,
     max_h: u32,
 ) -> Option<(u32, u32, u32, u32, Vec<u8>)> {
+    if let Some(png_res) = decode_png_thumbnail(path, max_w, max_h) {
+        return Some(png_res);
+    }
     use windows::core::HSTRING;
     use windows::Win32::Graphics::Imaging::{
         CLSID_WICImagingFactory, GUID_WICPixelFormat32bppRGBA, IWICImagingFactory,

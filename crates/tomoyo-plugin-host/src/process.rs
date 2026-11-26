@@ -154,17 +154,20 @@ impl LivePluginProcess {
             .name(format!("tomoyo-plug-{pid}"))
             .stack_size(256 * 1024)
             .spawn(move || {
+                const MAX_RECYCLED_LINE_CAP: usize = 128 * 1024;
                 let mut reader = BufReader::with_capacity(4096, stdout);
                 let mut line = String::new();
                 loop {
                     while let Ok(mut recycled) = recycle_rx.try_recv() {
-                        if line.capacity() < recycled.capacity() && recycled.capacity() <= 8192 {
+                        if line.capacity() < recycled.capacity()
+                            && recycled.capacity() <= MAX_RECYCLED_LINE_CAP
+                        {
                             recycled.clear();
                             line = recycled;
                         }
                     }
                     line.clear();
-                    if line.capacity() > 8192 {
+                    if line.capacity() > MAX_RECYCLED_LINE_CAP {
                         line = String::new();
                     }
                     match reader.read_line(&mut line) {
