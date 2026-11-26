@@ -4,10 +4,22 @@ use std::process::Command;
 use tomoyo_plugin_host::JobGuard;
 use tomoyo_protocol::SystemCommandKind;
 
-pub fn spawn_settings_window(parent_hwnd: isize, theme_name: &str) -> Result<bool, String> {
+pub fn spawn_settings_window_at(
+    parent_hwnd: isize,
+    theme_name: &str,
+    route: Option<&str>,
+) -> Result<bool, String> {
+    let clean_route = route.map(str::trim).filter(|s| !s.is_empty());
+    let pending_path = tomoyo_core::logs_dir().join("pending_settings_route.txt");
+    if let Some(r) = clean_route {
+        let _ = std::fs::write(&pending_path, r);
+    } else {
+        let _ = std::fs::remove_file(&pending_path);
+    }
     if try_focus_existing_settings_window() {
         return Ok(false);
     }
+    let _ = std::fs::remove_file(&pending_path);
     let host_exe = locate_webview_host()?;
     let mut cmd = Command::new(&host_exe);
     cmd.args([
@@ -17,6 +29,9 @@ pub fn spawn_settings_window(parent_hwnd: isize, theme_name: &str) -> Result<boo
         "--theme",
         theme_name,
     ]);
+    if let Some(r) = clean_route {
+        cmd.args(["--query", r]);
+    }
     if theme_name.eq_ignore_ascii_case("light") {
         cmd.arg("--light");
     }

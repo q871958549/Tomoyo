@@ -54,6 +54,9 @@ pub enum HostMessage {
     ImportConfigBackup { json: String },
     OpenSettings { #[serde(default)] target: String },
     PopOutWindow,
+    StartWindowDrag,
+    MinimizeWindow,
+    ToggleMaximizeWindow,
     WindowReady,
     Close,
 }
@@ -64,6 +67,8 @@ pub struct HostAction {
     pub window_ready: bool,
     #[cfg_attr(not(windows), allow(dead_code))]
     pub pop_out_window: bool,
+    #[cfg_attr(not(windows), allow(dead_code))]
+    pub window_control: u8,
     pub apply_theme: Option<String>,
     pub toggle_topmost: bool,
     /// `0` = none, `1` = app scan folder, `3` = sync folder.
@@ -257,6 +262,9 @@ pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isi
             HostAction { reply_json: Some(reply), async_refresh_hotkey_health: ok && notify_hwnd.is_some(), ..Default::default() }
         }
         HostMessage::PopOutWindow => HostAction { pop_out_window: true, ..Default::default() },
+        HostMessage::StartWindowDrag => HostAction { window_control: 1, ..Default::default() },
+        HostMessage::MinimizeWindow => HostAction { window_control: 2, ..Default::default() },
+        HostMessage::ToggleMaximizeWindow => HostAction { window_control: 3, ..Default::default() },
         HostMessage::WindowReady => HostAction { window_ready: true, ..Default::default() },
         HostMessage::Close => HostAction { should_close: true, ..Default::default() },
     }

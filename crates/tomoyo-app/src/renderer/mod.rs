@@ -3,6 +3,8 @@
 mod canvas;
 pub(crate) mod filter_bar;
 #[cfg(windows)]
+pub(crate) mod filter_sidebar;
+#[cfg(windows)]
 mod gdi;
 #[cfg(windows)]
 mod gdi_pass;
@@ -11,9 +13,11 @@ mod sdf_pass;
 mod theme;
 
 pub use canvas::Canvas;
-pub use filter_bar::{
-    compute_filter_bar_layout, compute_filter_counts, FilterCounts, FilterHit,
-};
+#[cfg(not(windows))]
+pub use filter_bar::{compute_filter_bar_layout, FilterHit};
+pub use filter_bar::{compute_filter_counts, FilterCounts};
+#[cfg(windows)]
+pub use filter_sidebar::{compute_sidebar_layout, hit_test_sidebar, SidebarHit, SIDEBAR_WIDTH_DIP};
 pub use scrollbar::ScrollbarVisual;
 #[cfg(windows)]
 pub use scrollbar::{compute_scrollbar_metrics, ScrollbarHit, ScrollbarMetrics};
@@ -41,7 +45,7 @@ use tomoyo_protocol::{ResultItem, SearchFilter, VisibleFilterTab};
 use windows::Win32::Graphics::Gdi::HDC;
 
 #[cfg_attr(not(windows), allow(dead_code))]
-pub const DEFAULT_WINDOW_WIDTH_DIP: i32 = 780;
+pub const DEFAULT_WINDOW_WIDTH_DIP: i32 = 840;
 #[cfg_attr(not(windows), allow(dead_code))]
 pub const DEFAULT_PREVIEW_WIDTH_DIP: i32 = 310;
 pub const HEADER_HEIGHT_DIP: i32 = 62;
@@ -58,13 +62,20 @@ pub struct RenderState<'a> {
     pub attached_capsule: Option<&'a str>,
     pub update_badge: Option<&'a str>,
     pub filter_bar_visible: bool,
+    #[cfg_attr(windows, allow(dead_code))]
     pub filter_bar_wrap: bool,
     pub filter_tabs: &'a [VisibleFilterTab],
     pub active_filter: SearchFilter,
     pub hovered_filter: Option<SearchFilter>,
+    #[cfg_attr(windows, allow(dead_code))]
     pub hovered_overflow: bool,
     pub filter_counts: Option<&'a FilterCounts>,
+    #[cfg_attr(windows, allow(dead_code))]
     pub filter_pill_override: Option<(f32, f32)>,
+    #[cfg(windows)]
+    pub sidebar_scroll: f32,
+    #[cfg(windows)]
+    pub hovered_add_tag: bool,
     pub typography: &'a TypographyConfig,
     pub items: &'a [ResultItem],
     pub selected: usize,
@@ -92,6 +103,8 @@ pub(crate) struct FrameLayout {
     pub visible_cap: usize,
     pub visible_count: usize,
     pub has_preview: bool,
+    pub list_x0: f32,
+    pub list_x1: f32,
     pub list_w_dip: f32,
 }
 
@@ -203,22 +216,36 @@ pub(crate) fn compute_frame_layout(width: i32, height: i32, scale: f32, state: &
     let header_h = HEADER_HEIGHT_DIP as f32;
     let footer_h = FOOTER_HEIGHT_DIP as f32;
     let row_h = state.typography.row_height_dip() as f32;
-    let has_preview = state.preview.is_some() && !state.items.is_empty() && w_dip >= 680.0;
-    let preview_w = (state.preview_width_dip as f32).clamp(220.0, (w_dip * 0.48).max(220.0));
-    let list_w_dip = if has_preview { (w_dip - preview_w).max(360.0) } else { w_dip };
-    let filter_h = if state.filter_bar_visible {
-        compute_filter_bar_layout(
-            list_w_dip,
-            header_h,
-            state.filter_tabs,
-            state.active_filter,
-            state.filter_counts,
-            state.filter_bar_wrap,
-        )
-        .height_dip as f32
-    } else {
-        0.0
+    #[cfg(windows)]
+    let (list_x0, has_preview, list_w_dip, filter_h) = {
+        let lx0 = if state.filter_bar_visible { filter_sidebar::SIDEBAR_WIDTH_DIP } else { 0.0 };
+        let avail_w = (w_dip - lx0).max(320.0);
+        let has_prev = state.preview.is_some() && !state.items.is_empty() && avail_w >= 540.0;
+        let preview_w = (state.preview_width_dip as f32).clamp(220.0, (avail_w * 0.46).max(220.0));
+        let lw = if has_prev { (avail_w - preview_w).max(320.0) } else { avail_w };
+        (lx0, has_prev, lw, 0.0f32)
     };
+    #[cfg(not(windows))]
+    let (list_x0, has_preview, list_w_dip, filter_h) = {
+        let has_prev = state.preview.is_some() && !state.items.is_empty() && w_dip >= 680.0;
+        let preview_w = (state.preview_width_dip as f32).clamp(220.0, (w_dip * 0.48).max(220.0));
+        let lw = if has_prev { (w_dip - preview_w).max(360.0) } else { w_dip };
+        let fh = if state.filter_bar_visible {
+            compute_filter_bar_layout(
+                lw,
+                header_h,
+                state.filter_tabs,
+                state.active_filter,
+                state.filter_counts,
+                state.filter_bar_wrap,
+            )
+            .height_dip as f32
+        } else {
+            0.0
+        };
+        (0.0f32, has_prev, lw, fh)
+    };
+    let list_x1 = list_x0 + list_w_dip;
     let list_top = header_h + filter_h + 4.0;
     let max_rows_by_h = ((h_dip - list_top - footer_h).max(0.0) / row_h).floor() as usize;
     let visible_cap = state.max_visible_rows.max(1).min(max_rows_by_h.max(1));
@@ -233,6 +260,8 @@ pub(crate) fn compute_frame_layout(width: i32, height: i32, scale: f32, state: &
         visible_cap,
         visible_count,
         has_preview,
+        list_x0,
+        list_x1,
         list_w_dip,
     }
 }

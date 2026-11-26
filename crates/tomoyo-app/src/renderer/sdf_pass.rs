@@ -1,6 +1,7 @@
 //! Pure-Rust SDF anti-aliased shape, surface, card, scrollbar, and overlay pass.
 
 use super::canvas::Canvas;
+#[cfg(not(windows))]
 use super::filter_bar::paint_filter_bar_sdf;
 use super::scrollbar::{compute_scrollbar_metrics, ScrollbarVisual};
 use super::theme::{category_rgb, Rgb};
@@ -68,8 +69,8 @@ fn paint_sdf_pass_inner(
 
     canvas.clear(pal.bg);
     if lay.has_preview {
-        canvas.fill_rect_dip(lay.list_w_dip, lay.header_h, lay.w_dip, lay.fy0, pal.preview_bg);
-        canvas.fill_rect_dip(lay.list_w_dip, lay.header_h, lay.list_w_dip + 1.0, lay.fy0, pal.divider);
+        canvas.fill_rect_dip(lay.list_x1, lay.header_h, lay.w_dip, lay.fy0, pal.preview_bg);
+        canvas.fill_rect_dip(lay.list_x1, lay.header_h, lay.list_x1 + 1.0, lay.fy0, pal.divider);
     }
     canvas.fill_rect_dip(0.0, lay.fy0, lay.w_dip, lay.h_dip, pal.footer_bg);
     canvas.fill_rect_dip(0.0, lay.fy0, lay.w_dip, lay.fy0 + 1.0, pal.divider);
@@ -103,6 +104,9 @@ fn paint_sdf_pass_inner(
     }
 
     if state.filter_bar_visible {
+        #[cfg(windows)]
+        super::filter_sidebar::paint_sidebar_sdf(&mut canvas, lay, state);
+        #[cfg(not(windows))]
         paint_filter_bar_sdf(
             &mut canvas,
             pal,
@@ -123,7 +127,7 @@ fn paint_sdf_pass_inner(
     if lay.has_preview
         && let Some(prev) = state.preview
     {
-        let (px0, px1) = (lay.list_w_dip + 14.0, lay.w_dip - 14.0);
+        let (px0, px1) = (lay.list_x1 + 14.0, lay.w_dip - 14.0);
         if !prev.badges.is_empty() {
             let mut bx = px0;
             let by = lay.header_h + 52.0;
@@ -159,11 +163,11 @@ fn paint_sdf_pass_inner(
         let badge_top = y0 + (lay.row_h - 21.0) * 0.5;
         let key_top = y0 + (lay.row_h - 20.0) * 0.5;
         if is_sel {
-            canvas.fill_rounded_rect(10.0, y0 + 2.0, lay.list_w_dip - 13.0, y1 - 2.0, 8.0, pal.card_sel);
-            canvas.stroke_rounded_rect(10.0, y0 + 2.0, lay.list_w_dip - 13.0, y1 - 2.0, 8.0, pal.sel_border);
-            canvas.fill_rounded_rect(10.5, y0 + 11.0, 13.5, y1 - 11.0, 1.5, pal.accent);
+            canvas.fill_rounded_rect(lay.list_x0 + 10.0, y0 + 2.0, lay.list_x1 - 13.0, y1 - 2.0, 8.0, pal.card_sel);
+            canvas.stroke_rounded_rect(lay.list_x0 + 10.0, y0 + 2.0, lay.list_x1 - 13.0, y1 - 2.0, 8.0, pal.sel_border);
+            canvas.fill_rounded_rect(lay.list_x0 + 10.5, y0 + 11.0, lay.list_x0 + 13.5, y1 - 11.0, 1.5, pal.accent);
         } else if state.hovered == Some(idx) {
-            canvas.fill_rounded_rect(10.0, y0 + 2.0, lay.list_w_dip - 13.0, y1 - 2.0, 8.0, pal.card_hover);
+            canvas.fill_rounded_rect(lay.list_x0 + 10.0, y0 + 2.0, lay.list_x1 - 13.0, y1 - 2.0, 8.0, pal.card_hover);
         }
         #[cfg(windows)]
         let mut drew_rgba = false;
@@ -172,13 +176,13 @@ fn paint_sdf_pass_inner(
             match &item.icon {
                 IconSpec::ImageFile(path) => {
                     if let Some((iw, ih, rgba)) = img_ic.get_cached(path, sz) {
-                        canvas.draw_rgba_image(21.0, icon_top, 32.0, 32.0, *iw, *ih, rgba);
+                        canvas.draw_rgba_image(lay.list_x0 + 21.0, icon_top, 32.0, 32.0, *iw, *ih, rgba);
                         drew_rgba = true;
                     }
                 }
                 IconSpec::ShellPath(path) => {
                     if let Some((iw, ih, rgba)) = sh_ic.get_cached(path, sz) {
-                        canvas.draw_rgba_image(21.0, icon_top, 32.0, 32.0, *iw, *ih, rgba);
+                        canvas.draw_rgba_image(lay.list_x0 + 21.0, icon_top, 32.0, 32.0, *iw, *ih, rgba);
                         drew_rgba = true;
                     }
                 }
@@ -190,9 +194,9 @@ fn paint_sdf_pass_inner(
         #[cfg(not(windows))]
         let need_tile = !matches!(item.icon, IconSpec::ShellPath(_) | IconSpec::ImageFile(_));
         if need_tile {
-            canvas.fill_rounded_rect(21.0, icon_top, 53.0, icon_top + 32.0, 7.0, category_rgb(item.category));
+            canvas.fill_rounded_rect(lay.list_x0 + 21.0, icon_top, lay.list_x0 + 53.0, icon_top + 32.0, 7.0, category_rgb(item.category));
         }
-        let mut text_right = lay.list_w_dip - 20.0;
+        let mut text_right = lay.list_x1 - 20.0;
         let compact_row = lay.has_preview && lay.list_w_dip < 520.0;
         let row_launch = state.launching_row.filter(|(li, _)| *li == idx);
         if let Some((_, done)) = row_launch {
@@ -217,7 +221,7 @@ fn paint_sdf_pass_inner(
     }
 
     if let Some(sb) = compute_scrollbar_metrics(
-        lay.list_w_dip,
+        lay.list_x1,
         lay.list_top,
         lay.fy0,
         state.items.len(),
@@ -277,7 +281,7 @@ fn paint_sdf_pass_inner(
         && let Some(sel) = state.items.get(state.selected)
             && !sel.actions.is_empty() {
                 let n = sel.actions.len().min(6);
-                let (mx1, my1) = (lay.list_w_dip - 14.0, lay.fy0 - 10.0);
+                let (mx1, my1) = (lay.list_x1 - 14.0, lay.fy0 - 10.0);
                 let (mx0, my0) = (mx1 - 240.0, (my1 - (n as f32 * 30.0 + 16.0)).max(lay.list_top + 4.0));
                 canvas.fill_rounded_rect(mx0, my0, mx1, my1, 8.0, pal.pop_bg);
                 canvas.stroke_rounded_rect(mx0, my0, mx1, my1, 8.0, pal.border);

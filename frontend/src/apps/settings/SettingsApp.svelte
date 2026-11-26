@@ -19,6 +19,7 @@
   import PluginsTab from './PluginsTab.svelte';
   import SearchClipTab from './SearchClipTab.svelte';
   import SettingsSidebar, { type SettingsTabId } from './SettingsSidebar.svelte';
+  import SettingsTitlebar from './SettingsTitlebar.svelte';
   import StoreTab, { type StoreItem, type StorePageMeta, type StoreQueryParams } from './StoreTab.svelte';
   import UpdatesTab from './UpdatesTab.svelte';
   import WebSearchTab from './WebSearchTab.svelte';
@@ -158,6 +159,7 @@
       subSystem = target === 'logs' ? 'logs' : 'updates';
       switchTab('system');
     } else if (tab === 'hotkeys' || tab === 'flows' || tab === 'search' || tab === 'core') {
+      if (tab === 'search') subSearch = target === 'web' ? 'web' : 'indexing';
       switchTab(tab);
     }
   }
@@ -211,6 +213,8 @@
     setToast(tr(lang, 'toast_ready'));
     postHost({ cmd: 'check_hotkey_health' });
     if (init.initial_route) applyInitialRoute(init.initial_route);
+    const g = window as unknown as Record<string, unknown>;
+    g.__TOMOYO_NAVIGATE_ROUTE__ = applyInitialRoute;
     requestAnimationFrame(() => postHost({ cmd: 'window_ready' }));
 
     const unsub = subscribeHost((data) => {
@@ -339,11 +343,20 @@
 
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !e.defaultPrevented) postHost({ cmd: 'close' }); };
     window.addEventListener('keydown', onKey);
-    return () => { unsub(); if (checkTimer) clearTimeout(checkTimer); window.removeEventListener('keydown', onKey); };
+    return () => {
+      unsub();
+      if (checkTimer) clearTimeout(checkTimer);
+      window.removeEventListener('keydown', onKey);
+      delete g.__TOMOYO_NAVIGATE_ROUTE__;
+    };
   });
 </script>
 
-<div class="shell">
+<div class="window-frame">
+  {#if init.frameless !== false}
+    <SettingsTitlebar {lang} />
+  {/if}
+  <div class="shell">
   <SettingsSidebar {lang} {activeTab} conflictCount={conflictSlots.length} onSelectTab={switchTab} onApplyHit={applySearchHit} />
 
   <main class="main">
@@ -407,10 +420,12 @@
       <Button variant="secondary" size="sm" onclick={() => postHost({ cmd: 'close' })}>{tr(lang, 'btn_close')}</Button>
     </footer>
   </main>
+  </div>
 </div>
 
 <style>
-  .shell { display: flex; height: 100%; width: 100%; overflow: hidden; }
+  .window-frame { display: flex; flex-direction: column; height: 100%; width: 100%; overflow: hidden; }
+  .shell { flex: 1; display: flex; width: 100%; min-height: 0; overflow: hidden; }
   .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
   .scroll { flex: 1; overflow-y: auto; padding: 20px 28px; }
   .container { max-width: 740px; }

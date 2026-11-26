@@ -82,7 +82,7 @@ pub struct WindowConfig {
     pub custom_y: Option<i32>,
 }
 
-fn default_win_width() -> i32 { 780 }
+fn default_win_width() -> i32 { 840 }
 fn default_max_rows() -> usize { 8 }
 fn default_preview_width() -> i32 { 310 }
 

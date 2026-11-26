@@ -300,6 +300,7 @@ export interface SettingsInitPayload {
   system_fonts?: string[];
   official_icons?: Record<string, string>;
   initial_route?: string;
+  frameless?: boolean;
 }
 
 export interface SelectOption {

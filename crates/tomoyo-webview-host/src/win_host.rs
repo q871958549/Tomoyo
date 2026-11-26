@@ -12,8 +12,10 @@ use crate::single_instance::{
 };
 use crate::win_msg::{dispatch_webview_message, pick_builtin_html};
 use crate::win_theme::{
-    configure_controller_visuals, create_themed_host_window, destroy_owned_icons, load_window_icons,
-    map_vdir, reveal_host_window_and_notify,
+    configure_controller_visuals, create_themed_host_window, destroy_owned_icons,
+    handle_frameless_erasebkgnd, handle_frameless_getminmaxinfo, handle_frameless_nccalcsize,
+    handle_frameless_nchittest, load_window_icons, map_vdir, reveal_host_window_and_notify,
+    set_webview_bounds_for_window,
 };
 use crate::LaunchArgs;
 use std::cell::RefCell;
@@ -31,16 +33,17 @@ use webview2_com::{
     WebMessageReceivedEventHandler,
 };
 use windows::core::{w, HSTRING, Interface, PCWSTR, PWSTR};
-use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
+use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED};
 use windows::Win32::UI::HiDpi::{
     SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    DefWindowProcW, DestroyWindow, DispatchMessageW, GetClientRect, GetMessageW,
-    GetWindowLongPtrW, IsIconic, IsWindow, PostQuitMessage, SetForegroundWindow,
-    SetTimer, SetWindowLongPtrW, ShowWindow, TranslateMessage, GWLP_USERDATA, MSG, SW_RESTORE,
-    SW_SHOW, WM_ACTIVATE, WM_CLOSE, WM_DESTROY, WM_SIZE, WM_TIMER,
+    DefWindowProcW, DestroyWindow, DispatchMessageW, GetMessageW, GetWindowLongPtrW, IsIconic,
+    IsWindow, PostQuitMessage, SetForegroundWindow, SetTimer, SetWindowLongPtrW, SetWindowPos,
+    ShowWindow, TranslateMessage, GWLP_USERDATA, MSG, SWP_FRAMECHANGED, SWP_NOACTIVATE,
+    SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SW_RESTORE, SW_SHOW, WM_ACTIVATE, WM_CLOSE, WM_DESTROY,
+    WM_ERASEBKGND, WM_GETMINMAXINFO, WM_NCCALCSIZE, WM_NCHITTEST, WM_SIZE, WM_TIMER,
 };
 
 pub(crate) const WM_APP_WEBVIEW_EVENT: u32 = 0x8000 + 31;
@@ -72,13 +75,23 @@ pub(crate) struct HostWindowState {
 unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     let ptr = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as *mut HostWindowState;
     match msg {
+        WM_NCCALCSIZE if !ptr.is_null() && unsafe { (*ptr).settings_mode } => {
+            unsafe { handle_frameless_nccalcsize(hwnd, wparam, lparam) }
+        }
+        WM_NCHITTEST if !ptr.is_null() && unsafe { (*ptr).settings_mode } => {
+            unsafe { handle_frameless_nchittest(hwnd, lparam) }
+        }
+        WM_ERASEBKGND if !ptr.is_null() && unsafe { (*ptr).settings_mode } => {
+            unsafe { handle_frameless_erasebkgnd(hwnd, wparam, &(*ptr).theme) }
+        }
+        WM_GETMINMAXINFO if !ptr.is_null() && unsafe { (*ptr).settings_mode } => {
+            unsafe { handle_frameless_getminmaxinfo(lparam) }
+        }
         WM_SIZE => {
             if !ptr.is_null() {
                 let st = unsafe { &*ptr };
                 if let Some(ctrl) = &st.controller {
-                    let mut rc = RECT::default();
-                    let _ = unsafe { GetClientRect(hwnd, &mut rc) };
-                    let _ = unsafe { ctrl.SetBounds(rc) };
+                    set_webview_bounds_for_window(hwnd, ctrl, st.settings_mode);
                 }
             }
             LRESULT(0)
@@ -130,6 +143,17 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 }
                 let _ = ShowWindow(hwnd, SW_SHOW);
                 let _ = SetForegroundWindow(hwnd);
+                let p = tomoyo_core::logs_dir().join("pending_settings_route.txt");
+                if let Ok(raw) = std::fs::read_to_string(&p) {
+                    let _ = std::fs::remove_file(&p);
+                    let route = raw.trim();
+                    if !route.is_empty() && !ptr.is_null() && let Some(wv) = &(*ptr).webview {
+                        let r_json = serde_json::to_string(route).unwrap_or_else(|_| "\"\"".into());
+                        let js = format!("window.__TOMOYO_NAVIGATE_ROUTE__ && window.__TOMOYO_NAVIGATE_ROUTE__({r_json});");
+                        let jw = HSTRING::from(js);
+                        let _ = wv.ExecuteScript(PCWSTR(jw.as_ptr()), None);
+                    }
+                }
             }
             LRESULT(0)
         }
@@ -221,7 +245,7 @@ pub fn run_windows_host(opts: LaunchArgs) {
             write_inline_hwnd_marker(h, std::process::id(), &opts.plugin_id);
             h
         } else {
-            create_themed_host_window(cls, Some(wndproc), &opts.title, &opts.theme, opts.width, opts.height, !opts.settings_mode, (icons.0, icons.1))
+            create_themed_host_window(cls, Some(wndproc), &opts.title, &opts.theme, opts.width, opts.height, !opts.settings_mode, opts.settings_mode, (icons.0, icons.1))
         }
     };
 
@@ -251,6 +275,15 @@ pub fn run_windows_host(opts: LaunchArgs) {
     unsafe {
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, state_ptr as isize);
         if opts.settings_mode {
+            let _ = SetWindowPos(
+                hwnd,
+                None,
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
+            );
             let _ = SetTimer(Some(hwnd), TIMER_REVEAL_FALLBACK, 360, None);
         } else {
             let _ = ShowWindow(hwnd, SW_SHOW);
@@ -300,9 +333,7 @@ pub fn run_windows_host(opts: LaunchArgs) {
                         return Ok(());
                     }
                     unsafe {
-                        let mut rc = RECT::default();
-                        let _ = GetClientRect(hwnd, &mut rc);
-                        let _ = controller.SetBounds(rc);
+                        set_webview_bounds_for_window(hwnd, &controller, settings_mode);
                         let _ = controller.SetIsVisible(true);
                         configure_controller_visuals(&controller, &theme_inner);
 

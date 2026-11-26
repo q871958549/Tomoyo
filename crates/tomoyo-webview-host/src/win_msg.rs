@@ -5,7 +5,8 @@ use crate::db::PluginDb;
 use crate::inline_dock::promote_inline_to_window;
 use crate::win_host::{HostWindowState, TIMER_REVEAL_FALLBACK, WM_APP_PICK_FOLDER, WM_APP_WEBVIEW_EVENT};
 use crate::win_theme::{
-    apply_host_window_theme, reveal_host_window_and_notify, toggle_pin_topmost_window,
+    apply_host_window_theme, configure_controller_visuals, reveal_host_window_and_notify,
+    toggle_pin_topmost_window,
 };
 use crate::win_workers::dispatch_async_workers;
 use crate::assemble_settings_html;
@@ -13,7 +14,12 @@ use std::sync::mpsc;
 use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2;
 use windows::core::{HSTRING, PCWSTR};
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
-use windows::Win32::UI::WindowsAndMessaging::{PostMessageW, WM_CLOSE};
+use windows::Win32::Graphics::Gdi::InvalidateRect;
+use windows::Win32::UI::Input::KeyboardAndMouse::ReleaseCapture;
+use windows::Win32::UI::WindowsAndMessaging::{
+    IsZoomed, PostMessageW, SendMessageW, ShowWindow, HTCAPTION, SW_MAXIMIZE, SW_MINIMIZE,
+    SW_RESTORE, WM_CLOSE, WM_NCLBUTTONDOWN,
+};
 
 pub(crate) fn pick_builtin_html(settings_mode: bool) -> Option<String> {
     settings_mode.then(assemble_settings_html)
@@ -32,7 +38,23 @@ pub(crate) unsafe fn dispatch_webview_message(
     let st = unsafe { &mut *state_ptr };
     if let Some(theme) = &act.apply_theme {
         st.theme = theme.clone();
+        if let Some(ctrl) = &st.controller {
+            unsafe { configure_controller_visuals(ctrl, theme); }
+        }
         apply_host_window_theme(hwnd, theme);
+        unsafe { let _ = InvalidateRect(Some(hwnd), None, true); }
+    }
+    match act.window_control {
+        1 => unsafe {
+            let _ = ReleaseCapture();
+            let _ = SendMessageW(hwnd, WM_NCLBUTTONDOWN, Some(WPARAM(HTCAPTION as usize)), Some(LPARAM(0)));
+        },
+        2 => unsafe { let _ = ShowWindow(hwnd, SW_MINIMIZE); },
+        3 => unsafe {
+            let cmd = if IsZoomed(hwnd).as_bool() { SW_RESTORE } else { SW_MAXIMIZE };
+            let _ = ShowWindow(hwnd, cmd);
+        },
+        _ => {}
     }
     if act.pop_out_window {
         unsafe {

@@ -219,6 +219,9 @@ impl AppShell {
                 self.hide_launcher();
             }
             InternalCommandKind::OpenSettingsWindow => self.open_settings_center(),
+            InternalCommandKind::OpenSettingsRoute { route } => {
+                self.open_settings_center_at(Some(&route));
+            }
             InternalCommandKind::ResetWindowGeometry => self.reset_window_geometry(),
             InternalCommandKind::SetTheme { theme } => {
                 self.apply_theme(&theme, true);

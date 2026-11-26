@@ -73,19 +73,18 @@ impl AppShell {
         let scale = self.dpi_scale.max(1.0);
         let w_dip = ((rc.right - rc.left) as f32 / scale).max(self.desired_width_dip() as f32);
         let h_dip = ((rc.bottom - rc.top) as f32 / scale).max(self.desired_height_dip() as f32);
-        let pw = (self.geom.preview_width_dip as f32).clamp(220.0, (w_dip * 0.48).max(220.0));
-        let list_w_dip = if w_dip >= 680.0 { (w_dip - pw).max(380.0) } else { w_dip * 0.54 };
+        let (_, list_x1) = self.list_bounds_dip(w_dip);
         let top_dip = HEADER_HEIGHT_DIP as f32 + 2.0;
         let bot_dip = (h_dip - FOOTER_HEIGHT_DIP as f32 - 2.0).max(top_dip + 180.0);
 
         let mut pt = POINT {
-            x: ((list_w_dip + 2.0) * scale).round() as i32,
+            x: ((list_x1 + 2.0) * scale).round() as i32,
             y: (top_dip * scale).round() as i32,
         };
         unsafe {
             let _ = ClientToScreen(self.hwnd, &mut pt);
         }
-        let w_px = ((w_dip - list_w_dip - 4.0) * scale).round().max(240.0) as i32;
+        let w_px = ((w_dip - list_x1 - 4.0) * scale).round().max(240.0) as i32;
         let h_px = ((bot_dip - top_dip) * scale).round().max(180.0) as i32;
         (pt.x, pt.y, w_px, h_px)
     }

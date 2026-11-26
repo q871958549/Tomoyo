@@ -280,6 +280,7 @@ pub fn build_settings_init_script_for(initial_route: &str) -> String {
         "system_fonts": tomoyo_core::list_system_font_families(),
         "official_icons": official_icons,
         "initial_route": initial_route,
+        "frameless": cfg!(windows),
     });
     format!(
         "window.__TOMOYO_SETTINGS_INIT__ = {};",

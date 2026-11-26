@@ -3,7 +3,7 @@
 use super::bootstrap::{apply_cue_banner, apply_dwm_attributes};
 use super::input::{register_all_hotkeys, unregister_all_hotkeys};
 use super::{mi_collect, AppShell, TIMER_HIBERNATE};
-use crate::actions::spawn_settings_window;
+use crate::actions::spawn_settings_window_at;
 use crate::renderer::{compute_filter_counts, ThemePalette, MIN_WINDOW_WIDTH_DIP};
 use tomoyo_core::{Lang, TomoyoConfig};
 use tomoyo_protocol::{AttachedContext, SearchFilter};
@@ -41,10 +41,14 @@ impl AppShell {
     }
 
     pub fn open_settings_center(&mut self) {
+        self.open_settings_center_at(None);
+    }
+
+    pub fn open_settings_center_at(&mut self, route: Option<&str>) {
         if self.inter.settings_pending {
             return;
         }
-        match spawn_settings_window(self.hwnd.0 as isize, &self.theme_name) {
+        match spawn_settings_window_at(self.hwnd.0 as isize, &self.theme_name, route) {
             Ok(true) => {
                 self.inter.settings_pending = true;
                 super::set_async_modal_overlay(true);

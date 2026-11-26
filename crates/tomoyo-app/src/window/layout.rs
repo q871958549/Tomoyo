@@ -4,9 +4,9 @@ use super::bootstrap::create_edit_font;
 use super::AppShell;
 use crate::actions::shell_open;
 use crate::renderer::{
-    compute_filter_bar_layout, resolve_face_and_weight, FilterHit, DEFAULT_PREVIEW_WIDTH_DIP,
+    hit_test_sidebar, resolve_face_and_weight, SidebarHit, DEFAULT_PREVIEW_WIDTH_DIP,
     DEFAULT_WINDOW_WIDTH_DIP, FOOTER_HEIGHT_DIP, HEADER_HEIGHT_DIP, MAX_WINDOW_WIDTH_DIP,
-    MIN_WINDOW_WIDTH_DIP,
+    MIN_WINDOW_WIDTH_DIP, SIDEBAR_WIDTH_DIP,
 };
 use tomoyo_core::{ExternalPluginBridge, Lang, TomoyoConfig};
 use tomoyo_protocol::{AttachedContext, SearchFilter};
@@ -204,29 +204,7 @@ impl AppShell {
     }
 
     pub(super) fn is_filter_bar_visible(&self) -> bool {
-        if !self.show_filter_bar || self.attached.is_some() {
-            return false;
-        }
-        let t = self.current_query.trim();
-        if t.starts_with(':') {
-            return false;
-        }
-        let low = t.to_lowercase();
-        let is_non_file_kw = low == "cb"
-            || low.starts_with("cb ")
-            || low == "w"
-            || low.starts_with("w ")
-            || low == "kill"
-            || low.starts_with("kill ")
-            || low == "ps"
-            || low.starts_with("ps ")
-            || low.starts_with("= ")
-            || low.starts_with("b64 ")
-            || low.starts_with("b64d ");
-        if is_non_file_kw {
-            return false;
-        }
-        !t.is_empty() || self.active_filter != SearchFilter::All
+        self.show_filter_bar && self.attached.is_none()
     }
 
     pub(super) fn desired_width_dip(&self) -> i32 {
@@ -234,38 +212,32 @@ impl AppShell {
     }
 
     pub(super) fn filter_bar_height_dip(&self) -> i32 {
-        if !self.is_filter_bar_visible() {
-            return 0;
-        }
-        let total_w = self.desired_width_dip() as f32;
-        let list_w = if self.is_preview_visible() && total_w >= 680.0 {
-            let pw = (self.geom.preview_width_dip as f32).clamp(220.0, (total_w * 0.48).max(220.0));
-            (total_w - pw).max(360.0)
+        0
+    }
+
+    pub(super) fn list_bounds_dip(&self, w_dip: f32) -> (f32, f32) {
+        let lx0 = if self.is_filter_bar_visible() { SIDEBAR_WIDTH_DIP } else { 0.0 };
+        let avail_w = (w_dip - lx0).max(320.0);
+        let list_w = if self.is_preview_visible() && avail_w >= 540.0 {
+            let pw = (self.geom.preview_width_dip as f32).clamp(220.0, (avail_w * 0.46).max(220.0));
+            (avail_w - pw).max(320.0)
         } else {
-            total_w
+            avail_w
         };
-        let tabs = self.visible_filter_tabs();
-        compute_filter_bar_layout(
-            list_w,
-            HEADER_HEIGHT_DIP as f32,
-            &tabs,
-            self.active_filter,
-            self.inter.filter_counts.as_ref(),
-            self.filter_bar_wrap,
-        )
-        .height_dip
+        (lx0, lx0 + list_w)
     }
 
     pub(super) fn desired_height_dip(&self) -> i32 {
-        let filter_h = self.filter_bar_height_dip();
+        let min_sidebar_body = if self.is_filter_bar_visible() { 268 } else { 0 };
         let rows = self.results.len().min(self.geom.max_visible_rows) as i32;
-        if rows == 0 {
-            HEADER_HEIGHT_DIP + filter_h + FOOTER_HEIGHT_DIP
+        let body_h = if rows == 0 {
+            0
         } else {
             let min_preview_rows = if self.inter.inline_dock_pid.is_some() { 7 } else if self.cached_preview.is_some() { 5 } else { 0 };
             let eff_rows = rows.max(min_preview_rows);
-            HEADER_HEIGHT_DIP + filter_h + 8 + eff_rows * self.typography.row_height_dip() + FOOTER_HEIGHT_DIP
-        }
+            8 + eff_rows * self.typography.row_height_dip()
+        };
+        HEADER_HEIGHT_DIP + body_h.max(min_sidebar_body) + FOOTER_HEIGHT_DIP
     }
 
     pub(super) fn ensure_selected_visible(&mut self) {
@@ -277,19 +249,16 @@ impl AppShell {
         }
     }
 
-    pub(super) fn current_list_width_dip(&self) -> f32 {
+    pub(super) fn current_client_dip(&self) -> (f32, f32) {
         let mut rc = RECT::default();
-        unsafe {
-            let _ = GetClientRect(self.hwnd, &mut rc);
-        }
+        unsafe { let _ = GetClientRect(self.hwnd, &mut rc); }
         let scale = self.dpi_scale.max(1.0);
-        let w_dip = (rc.right - rc.left) as f32 / scale;
-        if self.is_preview_visible() && w_dip >= 680.0 {
-            let pw = (self.geom.preview_width_dip as f32).clamp(220.0, (w_dip * 0.48).max(220.0));
-            (w_dip - pw).max(360.0)
-        } else {
-            w_dip
-        }
+        ((rc.right - rc.left) as f32 / scale, (rc.bottom - rc.top) as f32 / scale)
+    }
+
+    pub(super) fn current_list_bounds_dip(&self) -> (f32, f32) {
+        let (w_dip, _) = self.current_client_dip();
+        self.list_bounds_dip(w_dip)
     }
 
     pub(super) fn hit_test_logo_icon(&self, x_px: i32, y_px: i32) -> bool {
@@ -318,51 +287,46 @@ impl AppShell {
         if !self.is_preview_visible() {
             return false;
         }
-        let mut rc = RECT::default();
-        unsafe {
-            let _ = GetClientRect(self.hwnd, &mut rc);
-        }
-        let scale = self.dpi_scale.max(1.0);
-        let w_dip = (rc.right - rc.left) as f32 / scale;
-        let h_dip = (rc.bottom - rc.top) as f32 / scale;
-        if w_dip < 680.0 {
+        let (w_dip, h_dip) = self.current_client_dip();
+        let (lx0, lx1) = self.list_bounds_dip(w_dip);
+        if (w_dip - lx0) < 540.0 {
             return false;
         }
+        let scale = self.dpi_scale.max(1.0);
         let y_dip = y_px as f32 / scale;
         if y_dip < HEADER_HEIGHT_DIP as f32 || y_dip > h_dip - FOOTER_HEIGHT_DIP as f32 {
             return false;
         }
-        let pw = (self.geom.preview_width_dip as f32).clamp(220.0, (w_dip * 0.48).max(220.0));
-        let div_x_dip = (w_dip - pw).max(360.0);
-        let dx = x_px as f32 / scale - div_x_dip;
+        let dx = x_px as f32 / scale - lx1;
         (-3.5..=5.0).contains(&dx)
     }
 
-    pub(super) fn hit_test_filter_target(&self, x_px: i32, y_px: i32) -> Option<FilterHit> {
+    pub(super) fn hit_test_sidebar(&self, x_px: i32, y_px: i32) -> Option<SidebarHit> {
         if !self.is_filter_bar_visible() {
             return None;
         }
         let scale = self.dpi_scale.max(1.0);
+        let (_, h_dip) = self.current_client_dip();
         let tabs = self.visible_filter_tabs();
-        compute_filter_bar_layout(
-            self.current_list_width_dip(),
+        hit_test_sidebar(
+            x_px as f32 / scale,
+            y_px as f32 / scale,
             HEADER_HEIGHT_DIP as f32,
+            h_dip - FOOTER_HEIGHT_DIP as f32,
             &tabs,
-            self.active_filter,
-            self.inter.filter_counts.as_ref(),
-            self.filter_bar_wrap,
+            self.inter.sidebar_scroll,
         )
-        .hit_test(x_px as f32 / scale, y_px as f32 / scale)
     }
 
     pub(super) fn hit_test_row(&self, x_px: i32, y_px: i32) -> Option<usize> {
         let scale = self.dpi_scale.max(1.0);
         let x_dip = x_px as f32 / scale;
         let y_dip = y_px as f32 / scale;
-        if x_dip > self.current_list_width_dip() {
+        let (lx0, lx1) = self.current_list_bounds_dip();
+        if x_dip < lx0 || x_dip > lx1 {
             return None;
         }
-        let list_top = HEADER_HEIGHT_DIP as f32 + self.filter_bar_height_dip() as f32 + 4.0;
+        let list_top = HEADER_HEIGHT_DIP as f32 + 4.0;
         if y_dip < list_top {
             return None;
         }

@@ -426,6 +426,11 @@ impl ExternalPluginBridge for PluginHost {
         let st = lock.lock().unwrap();
         collect_file_actions_for(&st.plugins, &st.disabled_ids, full_path, ext_lower)
     }
+
+    fn search_entries(&self) -> Vec<tomoyo_core::PluginSearchEntry> {
+        let (lock, _) = &*self.state;
+        crate::search_meta::collect_plugin_search_entries(&lock.lock().unwrap())
+    }
 }
 
 pub fn discover_from(path: &Path) -> Arc<PluginHost> {

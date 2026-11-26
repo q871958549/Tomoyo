@@ -1,6 +1,7 @@
 //! System commands, Super Match attached-capsule actions, Auto-Update (`:update`), and Diagnostics.
 
 mod diagnostics;
+mod plugins_search;
 mod super_match;
 mod updates;
 
@@ -212,7 +213,7 @@ impl Provider for SystemProvider {
             return Vec::new();
         }
 
-        self.commands
+        let mut out: Vec<ResultItem> = self.commands
             .iter()
             .filter_map(|cmd| {
                 let s = score_match(trimmed, &cmd.indexed)?;
@@ -235,6 +236,15 @@ impl Provider for SystemProvider {
                     preview: None,
                 })
             })
-            .collect()
+            .collect();
+        if let Some(bridge) = &self.plugin_bridge {
+            out.extend(plugins_search::query_installed_plugins(
+                self.id(),
+                bridge.as_ref(),
+                ctx,
+                lang,
+            ));
+        }
+        out
     }
 }

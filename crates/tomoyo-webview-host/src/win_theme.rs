@@ -7,21 +7,26 @@ use webview2_com::Microsoft::Web::WebView2::Win32::{
     COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_ALLOW,
 };
 use windows::core::{Interface, HSTRING, PCWSTR};
-use windows::Win32::Foundation::{COLORREF, HMODULE, HWND};
+use windows::Win32::Foundation::{COLORREF, HMODULE, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Dwm::{
-    DwmSetWindowAttribute, DWMWA_CAPTION_COLOR, DWMWA_TEXT_COLOR, DWMWA_USE_IMMERSIVE_DARK_MODE,
+    DwmExtendFrameIntoClientArea, DwmSetWindowAttribute, DWMWA_CAPTION_COLOR, DWMWA_TEXT_COLOR,
+    DWMWA_USE_IMMERSIVE_DARK_MODE, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND,
 };
 use windows::Win32::Graphics::Gdi::{
-    CreateBitmap, CreateDIBSection, CreateSolidBrush, DeleteObject, BITMAPINFO, BITMAPINFOHEADER,
-    BI_RGB, DIB_RGB_COLORS, HBRUSH,
+    CreateBitmap, CreateDIBSection, CreateSolidBrush, DeleteObject, FillRect, BITMAPINFO,
+    BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS, HBRUSH, HDC,
 };
+use windows::Win32::UI::Controls::MARGINS;
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateIconIndirect, CreateWindowExW, DestroyIcon, GetSystemMetrics, KillTimer, LoadCursorW,
-    LoadImageW, RegisterClassExW, SendMessageW, SetForegroundWindow, SetWindowPos, SetWindowTextW,
-    ShowWindow, HICON, HWND_NOTOPMOST, HWND_TOPMOST, ICONINFO, ICON_BIG, ICON_SMALL, IDC_ARROW,
-    IMAGE_ICON, LR_SHARED, SM_CXICON, SM_CXSCREEN, SM_CXSMICON, SM_CYICON, SM_CYSCREEN,
-    SM_CYSMICON, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SW_SHOW,
-    WM_SETICON, WNDCLASSEXW, WNDPROC, WS_OVERLAPPEDWINDOW, WS_VISIBLE,
+    CreateIconIndirect, CreateWindowExW, DestroyIcon, GetClientRect, GetSystemMetrics,
+    GetWindowRect, IsZoomed, LoadCursorW, LoadImageW, RegisterClassExW, SendMessageW,
+    SetForegroundWindow, SetWindowPos, SetWindowTextW, ShowWindow, HICON, HTBOTTOM,
+    HTBOTTOMLEFT, HTBOTTOMRIGHT, HTCLIENT, HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT,
+    HWND_NOTOPMOST, HWND_TOPMOST, ICONINFO, ICON_BIG, ICON_SMALL, IDC_ARROW, IMAGE_ICON,
+    LR_SHARED, MINMAXINFO, NCCALCSIZE_PARAMS, SM_CXICON, SM_CXPADDEDBORDER, SM_CXSCREEN,
+    SM_CXSIZEFRAME, SM_CXSMICON, SM_CYICON, SM_CYSCREEN, SM_CYSIZEFRAME, SM_CYSMICON,
+    SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SW_SHOW, WM_SETICON,
+    WNDCLASSEXW, WNDPROC, WS_OVERLAPPEDWINDOW, WS_VISIBLE,
 };
 
 /// Loads the embedded Tomoyo application logo (`RT_GROUP_ICON` ID `1` from `winresource`)
@@ -167,6 +172,8 @@ pub unsafe fn configure_controller_visuals(controller: &ICoreWebView2Controller,
     }
 }
 
+use windows::Win32::UI::WindowsAndMessaging::KillTimer;
+
 pub unsafe fn reveal_host_window_and_notify(
     hwnd: HWND,
     fallback_timer_id: usize,
@@ -206,6 +213,7 @@ pub unsafe fn create_themed_host_window(
     width: i32,
     height: i32,
     visible_initially: bool,
+    frameless: bool,
     icons: (Option<HICON>, Option<HICON>),
 ) -> HWND {
     unsafe {
@@ -231,8 +239,30 @@ pub unsafe fn create_themed_host_window(
         )
         .expect("CreateWindowExW failed");
         apply_window_icons(hwnd, icons);
+        if frameless {
+            apply_frameless_dwm_style(hwnd);
+        }
         apply_host_window_theme(hwnd, theme);
         hwnd
+    }
+}
+
+pub unsafe fn apply_frameless_dwm_style(hwnd: HWND) {
+    unsafe {
+        let corner = DWMWCP_ROUND;
+        let _ = DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_WINDOW_CORNER_PREFERENCE,
+            &corner as *const _ as *const c_void,
+            std::mem::size_of_val(&corner) as u32,
+        );
+        let margins = MARGINS {
+            cxLeftWidth: 0,
+            cxRightWidth: 0,
+            cyTopHeight: 1,
+            cyBottomHeight: 0,
+        };
+        let _ = DwmExtendFrameIntoClientArea(hwnd, &margins);
     }
 }
 
@@ -299,3 +329,82 @@ pub fn to_file_url(entry: &str) -> String {
     let cleaned = s.strip_prefix(r"\\?\").unwrap_or(&s).replace('\\', "/");
     format!("file:///{cleaned}")
 }
+
+pub fn set_webview_bounds_for_window(
+    hwnd: HWND,
+    ctrl: &ICoreWebView2Controller,
+    frameless: bool,
+) {
+    unsafe {
+        let mut rc = RECT::default();
+        let _ = GetClientRect(hwnd, &mut rc);
+        if frameless && !IsZoomed(hwnd).as_bool() {
+            rc.left += 4;
+            rc.top += 3;
+            rc.right = (rc.right - 4).max(rc.left + 100);
+            rc.bottom = (rc.bottom - 4).max(rc.top + 100);
+        }
+        let _ = ctrl.SetBounds(rc);
+    }
+}
+
+pub unsafe fn handle_frameless_nccalcsize(hwnd: HWND, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    unsafe {
+        if wparam.0 != 0 && IsZoomed(hwnd).as_bool() {
+            let params = &mut *(lparam.0 as *mut NCCALCSIZE_PARAMS);
+            let pad_x = GetSystemMetrics(SM_CXSIZEFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER);
+            let pad_y = GetSystemMetrics(SM_CYSIZEFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER);
+            params.rgrc[0].left += pad_x;
+            params.rgrc[0].top += pad_y;
+            params.rgrc[0].right -= pad_x;
+            params.rgrc[0].bottom -= pad_y;
+        }
+        LRESULT(0)
+    }
+}
+
+pub unsafe fn handle_frameless_nchittest(hwnd: HWND, lparam: LPARAM) -> LRESULT {
+    unsafe {
+        if !IsZoomed(hwnd).as_bool() {
+            let sx = (lparam.0 & 0xFFFF) as i16 as i32;
+            let sy = ((lparam.0 >> 16) & 0xFFFF) as i16 as i32;
+            let mut rc = RECT::default();
+            let _ = GetWindowRect(hwnd, &mut rc);
+            let hit = match (sx < rc.left + 6, sx >= rc.right - 6, sy < rc.top + 6, sy >= rc.bottom - 6) {
+                (true, _, true, _) => HTTOPLEFT,
+                (_, true, true, _) => HTTOPRIGHT,
+                (true, _, _, true) => HTBOTTOMLEFT,
+                (_, true, _, true) => HTBOTTOMRIGHT,
+                (true, _, _, _) => HTLEFT,
+                (_, true, _, _) => HTRIGHT,
+                (_, _, true, _) => HTTOP,
+                (_, _, _, true) => HTBOTTOM,
+                _ => HTCLIENT,
+            };
+            return LRESULT(hit as isize);
+        }
+        LRESULT(HTCLIENT as isize)
+    }
+}
+
+pub unsafe fn handle_frameless_erasebkgnd(hwnd: HWND, wparam: WPARAM, theme: &str) -> LRESULT {
+    unsafe {
+        let dc = HDC(wparam.0 as *mut c_void);
+        let mut rc = RECT::default();
+        let _ = GetClientRect(hwnd, &mut rc);
+        let brush = create_theme_bg_brush(theme);
+        let _ = FillRect(dc, &rc, brush);
+        let _ = DeleteObject(brush.into());
+        LRESULT(1)
+    }
+}
+
+pub unsafe fn handle_frameless_getminmaxinfo(lparam: LPARAM) -> LRESULT {
+    unsafe {
+        let mmi = &mut *(lparam.0 as *mut MINMAXINFO);
+        mmi.ptMinTrackSize.x = 760;
+        mmi.ptMinTrackSize.y = 520;
+        LRESULT(0)
+    }
+}
+

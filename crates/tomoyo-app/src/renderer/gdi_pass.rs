@@ -1,6 +1,6 @@
 //! ClearType GDI typography, shell icon blit, preview pane, action menu, and footer pass.
 
-use super::filter_bar::paint_filter_bar_gdi;
+use super::filter_sidebar::paint_sidebar_gdi;
 use super::gdi::{
     dip_rect, draw_multiline_gdi, draw_text_gdi, draw_text_highlighted_gdi, DibSurface, FontPack,
 };
@@ -45,20 +45,7 @@ pub(super) fn paint_gdi_pass(
         }
 
         if state.filter_bar_visible {
-            paint_filter_bar_gdi(
-                dc,
-                fonts,
-                pal,
-                lay.list_w_dip,
-                lay.header_h,
-                scale,
-                state.filter_tabs,
-                state.active_filter,
-                state.hovered_filter,
-                state.hovered_overflow,
-                state.filter_counts,
-                state.filter_bar_wrap,
-            );
+            paint_sidebar_gdi(dc, fonts, lay, state, scale);
         }
 
         for slot in 0..lay.visible_count {
@@ -78,10 +65,10 @@ pub(super) fn paint_gdi_pass(
             };
             if !drew_rgba_icon {
                 let label = fallback_badge_label(item);
-                draw_text_gdi(dc, fonts.badge, Rgb(0xFF, 0xFF, 0xFF), label, dip_rect(21.0, icon_top, 53.0, icon_top + 32.0, scale), DT_CENTER);
+                draw_text_gdi(dc, fonts.badge, Rgb(0xFF, 0xFF, 0xFF), label, dip_rect(lay.list_x0 + 21.0, icon_top, lay.list_x0 + 53.0, icon_top + 32.0, scale), DT_CENTER);
             }
 
-            let mut text_right = lay.list_w_dip - 20.0;
+            let mut text_right = lay.list_x1 - 20.0;
             let compact_row = lay.has_preview && lay.list_w_dip < 520.0;
             if let Some((_, done)) = state.launching_row.filter(|(li, _)| *li == idx) {
                 let lbl = if done {
@@ -114,14 +101,14 @@ pub(super) fn paint_gdi_pass(
                 pal.accent,
                 &item.title,
                 &hl_spans,
-                dip_rect(62.0, y0 + 5.0, text_right, y0 + lay.row_h * 0.52, scale),
+                dip_rect(lay.list_x0 + 62.0, y0 + 5.0, text_right, y0 + lay.row_h * 0.52, scale),
             );
-            draw_text_gdi(dc, fonts.subtitle, pal.text_secondary, &item.subtitle, dip_rect(62.0, y0 + lay.row_h * 0.50, text_right, y0 + lay.row_h - 5.0, scale), DT_LEFT);
+            draw_text_gdi(dc, fonts.subtitle, pal.text_secondary, &item.subtitle, dip_rect(lay.list_x0 + 62.0, y0 + lay.row_h * 0.50, text_right, y0 + lay.row_h - 5.0, scale), DT_LEFT);
         }
 
         if lay.has_preview
             && let Some(prev) = state.preview {
-                let (px0, px1) = (lay.list_w_dip + 14.0, lay.w_dip - 14.0);
+                let (px0, px1) = (lay.list_x1 + 14.0, lay.w_dip - 14.0);
                 draw_text_gdi(dc, fonts.title, pal.text_primary, &prev.title, dip_rect(px0, lay.header_h + 10.0, px1, lay.header_h + 32.0, scale), DT_LEFT);
                 draw_text_gdi(dc, fonts.footer, pal.text_secondary, &prev.meta_line, dip_rect(px0, lay.header_h + 32.0, px1, lay.header_h + 50.0, scale), DT_LEFT);
                 let mut badge_shift = 0.0f32;
@@ -151,7 +138,7 @@ pub(super) fn paint_gdi_pass(
         if state.action_menu_open
             && let Some(sel) = state.items.get(state.selected) {
                 let n = sel.actions.len().min(6);
-                let (mx1, my1) = (lay.list_w_dip - 14.0, lay.fy0 - 10.0);
+                let (mx1, my1) = (lay.list_x1 - 14.0, lay.fy0 - 10.0);
                 let (mx0, my0) = (mx1 - 240.0, (my1 - (n as f32 * 30.0 + 16.0)).max(lay.list_top + 4.0));
                 for (ai, act) in sel.actions.iter().take(n).enumerate() {
                     let ay0 = my0 + 8.0 + (ai as f32) * 30.0;

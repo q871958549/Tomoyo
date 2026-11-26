@@ -4,7 +4,7 @@ use crate::actions::{
     clipboard_source_app_name, execute_action, is_clipboard_confidential, kill_process_by_pid,
     paste_into_previous_window_async, read_clipboard_files, read_clipboard_image_png,
     read_clipboard_text, send_ctrl_c_cleanly, set_clipboard_text, shell_open,
-    spawn_settings_window,
+    spawn_settings_window_at,
 };
 use crate::linux::{
     tomoyo_linux_tray_set_menu, tomoyo_linux_tray_set_title, tomoyo_linux_ui_quit,
@@ -49,7 +49,10 @@ impl AppCore {
             InternalCommandKind::QuitApp => { self.shutdown_clean(); unsafe { tomoyo_linux_ui_quit(); } }
             InternalCommandKind::RefreshQuery => self.dispatch_query(),
             InternalCommandKind::OpenConfigFile => { let _ = shell_open(&TomoyoConfig::config_path().to_string_lossy(), None, None); self.hide_launcher(); }
-            InternalCommandKind::OpenSettingsWindow => self.open_settings_center(),
+            InternalCommandKind::OpenSettingsWindow => self.open_settings_center_at(None),
+            InternalCommandKind::OpenSettingsRoute { route } => {
+                self.open_settings_center_at(Some(&route));
+            }
             InternalCommandKind::ResetWindowGeometry => { self.custom_pos = None; self.resize_to_fit(); }
             InternalCommandKind::SetTheme { theme } => self.apply_theme(&theme, true),
             InternalCommandKind::SetLanguage { lang } => self.apply_language(&lang, true),
@@ -76,7 +79,11 @@ impl AppCore {
     }
 
     pub(super) fn open_settings_center(&mut self) {
-        if let Err(e) = spawn_settings_window(std::process::id() as isize, &self.theme_name) {
+        self.open_settings_center_at(None);
+    }
+
+    pub(super) fn open_settings_center_at(&mut self, route: Option<&str>) {
+        if let Err(e) = spawn_settings_window_at(std::process::id() as isize, &self.theme_name, route) {
             self.show_toast(&format!("设置中心启动失败: {e}"));
         } else { self.hide_launcher(); }
     }

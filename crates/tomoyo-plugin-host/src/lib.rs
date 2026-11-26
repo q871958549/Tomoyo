@@ -11,6 +11,7 @@ pub mod job;
 pub mod permissions;
 pub mod process;
 mod runtime;
+mod search_meta;
 pub mod v2_support;
 pub mod v3_support;
 mod v3_text;

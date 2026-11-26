@@ -3,8 +3,8 @@
 use super::AppShell;
 use crate::drag::start_file_drag;
 use crate::renderer::{
-    compute_scrollbar_metrics, FilterHit, ScrollbarHit, ScrollbarMetrics, FOOTER_HEIGHT_DIP,
-    HEADER_HEIGHT_DIP,
+    compute_scrollbar_metrics, compute_sidebar_layout, ScrollbarHit, ScrollbarMetrics, SidebarHit,
+    FOOTER_HEIGHT_DIP, HEADER_HEIGHT_DIP,
 };
 use std::time::Instant;
 use tomoyo_protocol::IconSpec;
@@ -25,20 +25,15 @@ pub(super) fn unpack_xy(lparam: LPARAM) -> (i32, i32) {
 }
 
 fn current_scrollbar_metrics(app: &AppShell) -> Option<ScrollbarMetrics> {
-    let mut rc = RECT::default();
-    unsafe {
-        let _ = GetClientRect(app.hwnd, &mut rc);
-    }
-    let scale = app.dpi_scale.max(1.0);
-    let h_dip = (rc.bottom - rc.top) as f32 / scale;
-    let list_w_dip = app.current_list_width_dip();
-    let list_top = HEADER_HEIGHT_DIP as f32 + app.filter_bar_height_dip() as f32 + 4.0;
+    let (_, h_dip) = app.current_client_dip();
+    let (_, list_x1) = app.current_list_bounds_dip();
+    let list_top = HEADER_HEIGHT_DIP as f32 + 4.0;
     let fy0 = h_dip - FOOTER_HEIGHT_DIP as f32;
     let row_h = app.typography.row_height_dip() as f32;
     let max_by_h = ((fy0 - list_top).max(0.0) / row_h).floor() as usize;
     let visible_cap = app.geom.max_visible_rows.max(1).min(max_by_h.max(1));
     compute_scrollbar_metrics(
-        list_w_dip,
+        list_x1,
         list_top,
         fy0,
         app.results.len(),
@@ -116,7 +111,9 @@ pub(super) fn handle_set_cursor(
             unsafe { SetCursor(Some(cur)); }
             return LRESULT(1);
         }
-        if (app.hit_test_update_badge(pt.x, pt.y) || app.hit_test_logo_icon(pt.x, pt.y))
+        if (app.hit_test_update_badge(pt.x, pt.y)
+            || app.hit_test_logo_icon(pt.x, pt.y)
+            || matches!(app.hit_test_sidebar(pt.x, pt.y), Some(SidebarHit::Tab(_) | SidebarHit::AddTag)))
             && let Ok(cur) = unsafe { LoadCursorW(None, IDC_HAND) }
         {
             unsafe { SetCursor(Some(cur)); }
@@ -131,6 +128,8 @@ pub(super) fn handle_rbutton_up(app: &mut AppShell, lparam: LPARAM) -> LRESULT {
     let y_dip = y as f32 / app.dpi_scale.max(1.0);
     if y_dip < HEADER_HEIGHT_DIP as f32 {
         app.show_logo_context_menu();
+    } else if let Some(hit) = app.hit_test_sidebar(x, y) {
+        app.show_sidebar_context_menu(hit);
     } else if let Some(idx) = app.hit_test_row(x, y) {
         app.selected = idx;
         app.refresh_selected_preview();
@@ -182,13 +181,14 @@ pub(super) fn handle_mouse_down(hwnd: HWND, app: &mut AppShell, lparam: LPARAM) 
         unsafe { SetCapture(hwnd); }
         return LRESULT(0);
     }
-    if let Some(hit) = app.hit_test_filter_target(x, y) {
+    if let Some(hit) = app.hit_test_sidebar(x, y) {
         match hit {
-            FilterHit::Tab(f) => {
+            SidebarHit::Tab(f) => {
                 app.set_active_filter(f);
                 unsafe { let _ = SetFocus(Some(app.edit_hwnd)); }
             }
-            FilterHit::Overflow => app.show_filter_overflow_menu(),
+            SidebarHit::AddTag => app.open_custom_filter_dialog(None),
+            SidebarHit::Empty => {}
         }
         return LRESULT(0);
     }
@@ -254,12 +254,10 @@ pub(super) fn handle_mouse_move(
         return LRESULT(0);
     }
     if app.inter.dragging_divider {
-        let mut rc = RECT::default();
-        unsafe { let _ = GetClientRect(hwnd, &mut rc); }
-        let w_dip = (rc.right - rc.left) as f32 / scale;
-        let clamped = (w_dip - x as f32 / scale)
-            .round()
-            .clamp(220.0, (w_dip - 360.0).clamp(220.0, 620.0)) as i32;
+        let (w_dip, _) = app.current_client_dip();
+        let (lx0, _) = app.list_bounds_dip(w_dip);
+        let max_pw = ((w_dip - lx0) - 320.0).clamp(220.0, 620.0);
+        let clamped = (w_dip - x as f32 / scale).round().clamp(220.0, max_pw) as i32;
         if clamped != app.geom.preview_width_dip {
             app.geom.preview_width_dip = clamped;
             app.invalidate();
@@ -284,26 +282,19 @@ pub(super) fn handle_mouse_move(
     let sb_hover = current_scrollbar_metrics(app)
         .and_then(|sb| sb.hit_test(x as f32 / scale, y as f32 / scale));
     let new_logo_hover = app.hit_test_logo_icon(x, y);
-    let filter_hit = app.hit_test_filter_target(x, y);
-    let new_filter_hover = match filter_hit {
-        Some(FilterHit::Tab(f)) => Some(f),
-        _ => None,
-    };
-    let new_overflow_hover = matches!(filter_hit, Some(FilterHit::Overflow));
-    let new_hover = if filter_hit.is_some() || sb_hover.is_some() {
-        None
-    } else {
-        app.hit_test_row(x, y)
-    };
+    let sb_side = app.hit_test_sidebar(x, y);
+    let new_filter_hover = match sb_side { Some(SidebarHit::Tab(f)) => Some(f), _ => None };
+    let new_add_hover = matches!(sb_side, Some(SidebarHit::AddTag));
+    let new_hover = if sb_side.is_some() || sb_hover.is_some() { None } else { app.hit_test_row(x, y) };
     if new_hover != app.inter.hovered
         || new_filter_hover != app.inter.hovered_filter
-        || new_overflow_hover != app.inter.hovered_overflow
+        || new_add_hover != app.inter.hovered_add_tag
         || new_logo_hover != app.inter.hovered_logo
         || sb_hover != app.inter.scrollbar_hover
     {
         app.inter.hovered = new_hover;
         app.inter.hovered_filter = new_filter_hover;
-        app.inter.hovered_overflow = new_overflow_hover;
+        app.inter.hovered_add_tag = new_add_hover;
         app.inter.hovered_logo = new_logo_hover;
         app.inter.scrollbar_hover = sb_hover;
         app.invalidate();
@@ -316,6 +307,7 @@ pub(super) fn handle_mouse_leave(app: &mut AppShell) -> LRESULT {
     app.inter.pressed_logo = false;
     let changed = app.inter.hovered.take().is_some()
         | app.inter.hovered_filter.take().is_some()
+        | std::mem::replace(&mut app.inter.hovered_add_tag, false)
         | std::mem::replace(&mut app.inter.hovered_overflow, false)
         | std::mem::replace(&mut app.inter.hovered_logo, false)
         | (app.inter.dragging_scrollbar.is_none() && app.inter.scrollbar_hover.take().is_some());
@@ -396,7 +388,27 @@ pub(super) fn handle_lbutton_dblclk(app: &mut AppShell, lparam: LPARAM) -> LRESU
 
 pub(super) fn handle_mouse_wheel(app: &mut AppShell, wparam: WPARAM) -> LRESULT {
     let delta = ((wparam.0 >> 16) & 0xFFFF) as i16;
-    if app.results.is_empty() || delta == 0 {
+    if delta == 0 {
+        return LRESULT(0);
+    }
+    let mut pt = POINT::default();
+    unsafe {
+        let _ = GetCursorPos(&mut pt);
+        let _ = ScreenToClient(app.hwnd, &mut pt);
+    }
+    if app.hit_test_sidebar(pt.x, pt.y).is_some() {
+        let (_, h_dip) = app.current_client_dip();
+        let tabs = app.visible_filter_tabs();
+        let sl = compute_sidebar_layout(HEADER_HEIGHT_DIP as f32, h_dip - FOOTER_HEIGHT_DIP as f32, &tabs, app.inter.sidebar_scroll);
+        let step = if delta < 0 { 28.0 } else { -28.0 };
+        let next = (app.inter.sidebar_scroll + step).clamp(0.0, sl.max_scroll);
+        if (next - app.inter.sidebar_scroll).abs() > 0.1 {
+            app.inter.sidebar_scroll = next;
+            app.invalidate();
+        }
+        return LRESULT(0);
+    }
+    if app.results.is_empty() {
         return LRESULT(0);
     }
     if let Some(sb) = current_scrollbar_metrics(app) {

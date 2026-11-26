@@ -5,6 +5,7 @@ mod clipboard_ctrl;
 mod commands;
 mod context_card;
 mod events;
+mod filter_dialog;
 mod flow_exec;
 pub(crate) mod hotkey_avoid;
 pub(crate) mod hotkey_override;
@@ -17,6 +18,7 @@ mod layout;
 mod menus;
 mod plugin_hotkeys;
 mod selftest;
+mod sidebar_menu;
 mod super_panel_ctrl;
 mod translate_ctrl;
 mod updater_ctrl;
@@ -145,6 +147,8 @@ pub(super) struct InteractionState {
     pub hovered: Option<usize>,
     pub hovered_filter: Option<SearchFilter>,
     pub hovered_overflow: bool,
+    pub hovered_add_tag: bool,
+    pub sidebar_scroll: f32,
     pub hovered_logo: bool,
     pub pressed_logo: bool,
     pub settings_pending: bool,
@@ -237,6 +241,7 @@ impl AppShell {
         self.inter.hovered = None;
         self.inter.hovered_filter = None;
         self.inter.hovered_overflow = false;
+        self.inter.hovered_add_tag = false;
         self.inter.hovered_logo = false;
         self.inter.pressed_logo = false;
         self.inter.dragging_scrollbar = None;
@@ -246,10 +251,7 @@ impl AppShell {
         self.inter.fade_alpha = None;
         selftest::restore_launcher_opacity(self.hwnd);
         self.inter.filter_counts = None;
-        unsafe {
-            let _ = KillTimer(Some(self.hwnd), TIMER_SETTINGS_HIDE);
-            let _ = KillTimer(Some(self.hwnd), TIMER_FADE_HIDE);
-        }
+        unsafe { let _ = KillTimer(Some(self.hwnd), TIMER_SETTINGS_HIDE); let _ = KillTimer(Some(self.hwnd), TIMER_FADE_HIDE); }
     }
 
     pub fn show_launcher_with_query(&mut self, initial_query: Option<&str>) {
@@ -377,10 +379,7 @@ impl AppShell {
 
     pub fn show_toast(&mut self, msg: &str) {
         self.toast = Some(msg.to_string());
-        unsafe {
-            let _ = KillTimer(Some(self.hwnd), TIMER_CLEAR_TOAST);
-            let _ = SetTimer(Some(self.hwnd), TIMER_CLEAR_TOAST, 3000, None);
-        }
+        unsafe { let _ = KillTimer(Some(self.hwnd), TIMER_CLEAR_TOAST); let _ = SetTimer(Some(self.hwnd), TIMER_CLEAR_TOAST, 3000, None); }
         self.invalidate();
     }
     pub(super) fn invalidate(&self) { unsafe { let _ = InvalidateRect(Some(self.hwnd), None, false); } }

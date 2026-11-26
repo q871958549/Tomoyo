@@ -200,6 +200,63 @@ pub(crate) fn attach_plugin_file_actions(
     }
 }
 
+pub(crate) fn is_settings_intent_token(tok: &str) -> bool {
+    matches!(
+        tok.trim().to_ascii_lowercase().as_str(),
+        "设置" | "配置" | "首选项" | "管理" | "setting" | "settings" | "config" | "cfg" | "pref" | "prefs" | "option" | "options"
+    )
+}
+
+pub(crate) fn append_keyword_plugin_settings_entries(
+    results: &mut Vec<ResultItem>,
+    bridge: &dyn crate::ExternalPluginBridge,
+    kw_lower: &str,
+) {
+    for p in bridge.search_entries() {
+        if !p.enabled || !p.keywords.iter().any(|k| k.eq_ignore_ascii_case(kw_lower)) {
+            continue;
+        }
+        let mut actions = Vec::new();
+        if let Some(open_ui) = &p.ui_open_action {
+            actions.push(ActionSpec {
+                id: "plugin_open_ui".into(),
+                label: "打开插件窗口".into(),
+                shortcut: None,
+                kind: open_ui.clone(),
+            });
+        }
+        actions.push(ActionSpec {
+            id: "plugin_settings".into(),
+            label: "打开插件设置".into(),
+            shortcut: Some(if actions.is_empty() { "Enter" } else { "Ctrl+Enter" }.into()),
+            kind: ActionKind::InternalCommand {
+                command: tomoyo_protocol::InternalCommandKind::OpenSettingsRoute {
+                    route: format!("plugins:{}", p.id),
+                },
+            },
+        });
+        let icon = match p.icon_path.as_deref() {
+            Some(path) if !path.trim().is_empty() && std::path::Path::new(path).exists() => {
+                IconSpec::ImageFile(path.to_string())
+            }
+            _ => IconSpec::Monogram(p.name.chars().take(2).collect::<String>().to_uppercase()),
+        };
+        results.push(ResultItem {
+            id: format!("plugin-entry:{}", p.id),
+            provider_id: "builtin.system".into(),
+            title: format!("{} · {}", p.name, "插件设置 / 入口"),
+            subtitle: format!("Ctrl+Enter 直达「{}」设置抽屉 · {}", p.name, p.id),
+            category: ResultCategory::Plugin,
+            score: 140,
+            icon,
+            badge: Some("插件".into()),
+            copy_text: Some(p.id.clone()),
+            actions,
+            preview: None,
+        });
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

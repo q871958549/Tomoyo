@@ -16,12 +16,22 @@ unsafe extern "C" {
     fn kill(pid: i32, sig: i32) -> i32;
 }
 
-pub fn spawn_settings_window(parent_pid: isize, theme_name: &str) -> Result<bool, String> {
+pub fn spawn_settings_window_at(
+    parent_pid: isize,
+    theme_name: &str,
+    route: Option<&str>,
+) -> Result<bool, String> {
+    let mut args = vec!["--settings", "--title", "Tomoyo 设置中心"];
+    let clean = route.map(str::trim).filter(|s| !s.is_empty());
+    if let Some(r) = clean {
+        args.push("--query");
+        args.push(r);
+    }
     spawn_ephemeral_singleton(
         "settings",
         parent_pid,
         theme_name,
-        &["--settings", "--title", "Tomoyo 设置中心"],
+        &args,
         960,
         670,
     )

@@ -1,4 +1,7 @@
-use crate::engine_rank::{attach_plugin_file_actions, build_zero_result_fallbacks, rank_and_dedup};
+use crate::engine_rank::{
+    append_keyword_plugin_settings_entries, attach_plugin_file_actions, build_zero_result_fallbacks,
+    is_settings_intent_token, rank_and_dedup,
+};
 use crate::{record_hibernation_cycle, trim_working_set, FrecencyStore, TomoyoConfig};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
@@ -45,6 +48,19 @@ pub struct PluginSummary {
     pub max_memory_mb: u32,
 }
 
+/// Lightweight searchable metadata for an installed plugin (used by global search & quick settings).
+#[derive(Debug, Clone)]
+pub struct PluginSearchEntry {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub runtime_badge: String,
+    pub keywords: Vec<String>,
+    pub enabled: bool,
+    pub icon_path: Option<String>,
+    pub ui_open_action: Option<tomoyo_protocol::ActionKind>,
+}
+
 /// Bridge trait allowing `tomoyo-plugin-host` to plug into `QueryRouter` without circular crates.
 pub trait ExternalPluginBridge: Send + Sync {
     fn matches_keyword(&self, keyword: &str) -> bool;
@@ -53,6 +69,10 @@ pub trait ExternalPluginBridge: Send + Sync {
     fn reload(&self);
     fn reap_idle(&self);
     fn summary_lines(&self) -> Vec<PluginSummary>;
+    /// Zero-I/O metadata list of all installed plugins for launcher search & quick settings jump.
+    fn search_entries(&self) -> Vec<PluginSearchEntry> {
+        Vec::new()
+    }
     /// Protocol v3: zero-I/O extension-aware file actions contributed by enabled plugins.
     fn file_actions_for(&self, _full_path: &str, _ext_lower: &str) -> Vec<tomoyo_protocol::ActionSpec> {
         Vec::new()
@@ -257,9 +277,15 @@ impl QueryRouter {
             }
 
             if let Some(bridge) = &self.plugin_bridge
-                && bridge.matches_keyword(&first_lower) {
+                && bridge.matches_keyword(&first_lower)
+            {
+                let settings_only = has_space_after && is_settings_intent_token(rest.trim());
+                if !settings_only {
                     let p_ctx = ctx.clone().with_keyword(&first_lower, rest);
-                    let results = bridge.query_keyword(&first_lower, &p_ctx);
+                    let mut results = bridge.query_keyword(&first_lower, &p_ctx);
+                    if !has_space_after && rest.trim().is_empty() {
+                        append_keyword_plugin_settings_entries(&mut results, bridge.as_ref(), &first_lower);
+                    }
                     return FastQueryBatch {
                         items: self.rank_and_cap_for_query(trimmed, results, limit),
                         effective_ctx: p_ctx,
@@ -267,6 +293,7 @@ impl QueryRouter {
                         run_slow_ipc: false,
                     };
                 }
+            }
         }
 
         self.run_filtered_fast(ctx, generation, limit)

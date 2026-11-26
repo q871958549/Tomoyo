@@ -299,6 +299,7 @@ pub enum InternalCommandKind {
     RefreshQuery,
     OpenConfigFile,
     OpenSettingsWindow,
+    OpenSettingsRoute { route: String },
     ResetWindowGeometry,
     SetTheme { theme: String },
     SetLanguage { lang: String },
