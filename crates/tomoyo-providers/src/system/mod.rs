@@ -2,6 +2,7 @@
 
 mod command_hub;
 mod diagnostics;
+mod font_presets;
 mod plugins_search;
 mod super_match;
 mod updates;

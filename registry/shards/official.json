@@ -25,7 +25,7 @@
         "clipboard"
       ],
       "source": "plugins/builtin-ocr",
-      "sha256": "2f6994ee7833d357001a51ec46a8c9b334b08fe6c441e7ff940fabd1ab882510",
+      "sha256": "2110febc3cb7230a4771b0d082184ae6c5f87382e4a4aa5fa179e75f86d01c72",
       "platforms": {},
       "min_tomoyo_version": null,
       "homepage": null,
@@ -105,7 +105,7 @@
         "filesystem_write"
       ],
       "source": "plugins/official-clipboard",
-      "sha256": "cdbd6b5174ae748266f4cb3328d13deab88dae434d5c0064eba6666170978811",
+      "sha256": "8e2bc4355a283960b63ef5daac4919124b96d6f0f18d74361666f889e0fe0e8b",
       "platforms": {},
       "min_tomoyo_version": null,
       "homepage": "https://github.com/q871958549/Tomoyo",
@@ -217,7 +217,7 @@
         "filesystem_write"
       ],
       "source": "plugins/official-notes",
-      "sha256": "efac35a0f0bbeb40bd8411430a83e6bf345085f9940e5cbbc9518f43f512a079",
+      "sha256": "b65e023a51d5c5aac02aa0dd6575f90aa060f4ef7a25e96bab8651f44c11e092",
       "platforms": {},
       "min_tomoyo_version": null,
       "homepage": null,
@@ -253,7 +253,7 @@
         "selection_read"
       ],
       "source": "plugins/official-translate",
-      "sha256": "eb35349b69dd930a676d4cdeae93b40c2c17cce53e28d463eb9619feef369dd4",
+      "sha256": "67c170a8b69ea9ff747a81b62403e0519a81cef4c91765adce03ccc3dc09186b",
       "platforms": {},
       "min_tomoyo_version": null,
       "homepage": "https://github.com/q871958549/Tomoyo",

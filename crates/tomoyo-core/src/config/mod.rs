@@ -16,7 +16,8 @@ pub use sections::{
 };
 use sections::{default_plugin_registries, default_true};
 pub use typography::{
-    quantize_font_weight, sanitize_typography, TypographyConfig,
+    format_css_font_stack, primary_gdi_face, quantize_font_weight, sanitize_typography, FontPreset,
+    TypographyConfig, BUILTIN_FONT_PRESETS,
 };
 pub use crate::translate::TranslateConfig;
 pub use hotkey::{

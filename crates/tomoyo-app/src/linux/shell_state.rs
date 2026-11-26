@@ -253,32 +253,29 @@ impl AppCore {
     }
 
     pub(super) fn apply_entry_theme_and_placeholder(&self) {
-        if self.ui.is_null() {
-            return;
-        }
-        let t = self.theme.text_primary;
-        let b = self.theme.bg;
+        if self.ui.is_null() { return; }
+        let (t, b) = (self.theme.text_primary, self.theme.bg);
         let rgb = ((t.0 as u32) << 16) | ((t.1 as u32) << 8) | (t.2 as u32);
         let bgrgb = ((b.0 as u32) << 16) | ((b.1 as u32) << 8) | (b.2 as u32);
-        let fam_css = if self.typography.font_family.trim().is_empty() {
-            "sans-serif".to_string()
-        } else {
-            let clean: String = self.typography.font_family.trim().chars()
-                .filter(|&c| !c.is_control() && !matches!(c, '"' | '\\' | ';' | '{' | '}'))
-                .collect();
-            if clean.is_empty() { "sans-serif".into() } else { format!("\"{clean}\", sans-serif") }
-        };
+        let fam_css = tomoyo_core::format_css_font_stack(&self.typography.font_family, "sans-serif");
         let font_px = (self.typography.title_size as i32).clamp(15, 18);
-        if let Ok(cf) = CString::new(fam_css) {
-            unsafe { tomoyo_linux_ui_set_theme(self.ui, rgb, bgrgb, cf.as_ptr(), font_px); }
-        }
+        if let Ok(cf) = CString::new(fam_css) { unsafe { tomoyo_linux_ui_set_theme(self.ui, rgb, bgrgb, cf.as_ptr(), font_px); } }
         let ph = self.lang.pick(
             "搜索应用、文件 (f )、计算、网页 (g/bd )、工作流 (flow )…",
             "Search apps, files (f ), calc, web (g ), flows (flow )…",
         );
-        if let Ok(cs) = CString::new(ph) {
-            unsafe { tomoyo_linux_ui_set_placeholder(self.ui, cs.as_ptr()); }
-        }
+        if let Ok(cs) = CString::new(ph) { unsafe { tomoyo_linux_ui_set_placeholder(self.ui, cs.as_ptr()); } }
+    }
+
+    pub(super) fn apply_font_family(&mut self, family: &str, label: &str) {
+        self.typography.font_family = family.to_string();
+        tomoyo_core::sanitize_typography(&mut self.typography);
+        self.apply_entry_theme_and_placeholder();
+        if let Ok(mut cfg) = self.config.write() { cfg.typography = self.typography.clone(); let _ = cfg.save(); }
+        let msg = match self.lang { Lang::Zh => format!("已切换字体：{label}"), Lang::En => format!("Font switched: {label}") };
+        self.show_toast(&msg);
+        self.dispatch_query();
+        self.invalidate();
     }
 
     pub(super) fn apply_theme(&mut self, name: &str, persist: bool) {

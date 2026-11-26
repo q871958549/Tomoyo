@@ -16,7 +16,7 @@
       "category": "ai",
       "source": "registry/shards/official.json",
       "count": 7,
-      "sha256": "49cb7da16424ef4c07df7164d971d360538bc693c37360bc454b0085ed736021"
+      "sha256": "4d37a032cab9d788236a610460a3a5ba8398b0d85cc9aefef06cb15810341475"
     }
   ],
   "plugins": []

@@ -40,11 +40,12 @@ pub fn build_diagnostics_items(
         .sum::<u64>() as f64
         / (1024.0 * 1024.0);
 
-    let (cur_theme, cur_hotkey, lang, update_repo) = config
+    let (cur_theme, cur_font, cur_hotkey, lang, update_repo) = config
         .read()
         .map(|c| {
             (
                 c.theme.clone(),
+                c.typography.font_family.clone(),
                 c.hotkey.clone(),
                 c.lang(),
                 c.update.repo.clone(),
@@ -53,6 +54,7 @@ pub fn build_diagnostics_items(
         .unwrap_or_else(|_| {
             (
                 "dark".into(),
+                String::new(),
                 "Alt+Space".into(),
                 Lang::Zh,
                 "q871958549/Tomoyo".into(),
@@ -260,6 +262,8 @@ pub fn build_diagnostics_items(
             });
         }
     }
+
+    super::font_presets::append_font_items(&mut items, provider_id, cmd, &cur_font, lang);
 
     if cmd == ":update" || cmd == ":" || ":update".starts_with(cmd) {
         items.push(build_update_item(provider_id, updater, &update_repo, lang));

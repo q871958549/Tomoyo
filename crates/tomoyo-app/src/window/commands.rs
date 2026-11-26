@@ -232,6 +232,15 @@ impl AppShell {
                 self.apply_language(&lang, true);
                 self.show_toast(self.lang.pick("已切换界面语言", "Display language updated"));
             }
+            InternalCommandKind::SetFontFamily { family, label } => {
+                self.typography.font_family = family;
+                tomoyo_core::sanitize_typography(&mut self.typography);
+                if let Ok(mut cfg) = self.config.write() { cfg.typography = self.typography.clone(); let _ = cfg.save(); }
+                self.refresh_edit_font();
+                self.show_toast(&match self.lang { Lang::Zh => format!("已切换字体：{label}"), Lang::En => format!("Font switched: {label}") });
+                self.dispatch_query();
+                self.invalidate();
+            }
             InternalCommandKind::CheckForUpdates => self.trigger_update_check_async(),
             InternalCommandKind::InstallUpdate => self.trigger_update_install_async(),
             InternalCommandKind::ClearAttachedContext => {

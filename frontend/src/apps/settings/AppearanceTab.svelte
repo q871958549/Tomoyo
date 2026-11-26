@@ -24,15 +24,24 @@
   ];
 
   const DEF: TypographyConfig = { font_family: '', title_weight: 500, subtitle_weight: 400, title_size: 16 };
+  const FONT_PRESETS = $derived([
+    { id: 'native', label: t('系统原生', 'Native OS'), family: '' },
+    { id: 'modern', label: t('极简现代 · Geist + 鸿蒙黑体', 'Modern · Geist + HarmonyOS'), family: 'Geist, HarmonyOS Sans SC' },
+    { id: 'geek', label: t('极客清晰 · IBM Plex + 更纱黑体', 'Geek · IBM Plex + Sarasa UI'), family: 'IBM Plex Sans, Sarasa UI SC' },
+    { id: 'tech', label: t('干练科技 · Jakarta + MiSans', 'Tech · Jakarta + MiSans'), family: 'Plus Jakarta Sans, MiSans' },
+    { id: 'wenkai', label: t('温润文楷 · 霞鹜文楷', 'WenKai · LXGW Screen'), family: 'LXGW WenKai Screen' },
+  ]);
   let typo = $derived<TypographyConfig>({ ...DEF, ...(cfg.typography || {}) });
   let previewFont = $derived(
     typo.font_family
-      ? `"${typo.font_family.replace(/"/g, '')}","Noto Sans CJK SC","Microsoft YaHei UI",sans-serif`
+      ? `${typo.font_family.split(',').map((s) => `"${s.trim().replace(/"/g, '')}"`).filter((s) => s !== '""').join(', ')}, "Noto Sans CJK SC", "Microsoft YaHei UI", sans-serif`
       : 'var(--font-ui)'
   );
+  let activePreset = $derived(FONT_PRESETS.find((p) => p.family === typo.font_family));
   let fontOpts = $derived([
     { value: '', label: t('跟随系统原生 UI 字体（推荐）', 'System Native UI Stack (Recommended)') },
-    ...systemFonts.map((f) => ({ value: f, label: f })),
+    ...(activePreset && activePreset.family ? [{ value: activePreset.family, label: activePreset.label }] : []),
+    ...systemFonts.filter((f) => f !== activePreset?.family).map((f) => ({ value: f, label: f })),
   ]);
 
   function setTypo(patch: Partial<TypographyConfig>) {
@@ -105,6 +114,17 @@
     </div>
   </div>
 
+  <div class="t-row col-row">
+    <div>
+      <div class="t-label">{t('一键字体方案', 'Quick Font Presets')}</div>
+      <div class="t-desc">{t('西文与中文黄金混排，点击即时预览并应用到搜索框与列表', 'Curated Latin + CJK stacks applied live')}</div>
+    </div>
+    <div class="chip-grid">
+      {#each FONT_PRESETS as p}
+        <button type="button" class="t-chip {typo.font_family === p.family ? 'is-on' : ''}" onclick={() => setTypo({ font_family: p.family })}>{p.label}</button>
+      {/each}
+    </div>
+  </div>
   <div class="t-row">
     <div>
       <div class="t-label">{t('字体选择', 'Font Family')}</div>

@@ -56,6 +56,7 @@ impl AppCore {
             InternalCommandKind::ResetWindowGeometry => self.reset_window_geometry(),
             InternalCommandKind::SetTheme { theme } => self.apply_theme(&theme, true),
             InternalCommandKind::SetLanguage { lang } => self.apply_language(&lang, true),
+            InternalCommandKind::SetFontFamily { family, label } => self.apply_font_family(&family, &label),
             InternalCommandKind::CheckForUpdates => self.trigger_update_check_async(),
             InternalCommandKind::InstallUpdate => self.trigger_update_install_async(),
             InternalCommandKind::ClearAttachedContext => { self.attached = None; self.dispatch_query(); }

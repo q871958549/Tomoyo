@@ -11,7 +11,7 @@ table { border-collapse: collapse; }
 :root {
   color-scheme: light;
   --font-ui: "Inter", "Segoe UI Variable Text", "Segoe UI", "PingFang SC", "HarmonyOS Sans SC", "MiSans", "Noto Sans CJK SC", "Microsoft YaHei UI", system-ui, -apple-system, sans-serif;
-  --font-mono: "JetBrainsMono Nerd Font", "JetBrains Mono", "Cascadia Mono", Consolas, "Noto Sans Mono CJK SC", monospace;
+  --font-mono: "Maple Mono NF CN", "JetBrainsMono Nerd Font", "Sarasa Term SC", "JetBrains Mono", "Cascadia Mono", Consolas, "Noto Sans Mono CJK SC", monospace;
   --canvas: #f7f8fa;
   --sidebar: #fbfcfd;
   --surface: #ffffff;

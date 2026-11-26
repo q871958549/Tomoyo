@@ -303,6 +303,7 @@ pub enum InternalCommandKind {
     ResetWindowGeometry,
     SetTheme { theme: String },
     SetLanguage { lang: String },
+    SetFontFamily { family: String, label: String },
     CheckForUpdates,
     InstallUpdate,
     ClearAttachedContext,

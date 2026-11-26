@@ -121,8 +121,9 @@ pub fn resolve_face_and_weight<'a>(
     regular_face: &'a str,
     medium_face: &'a str,
 ) -> (&'a str, i32) {
-    if !custom_family.is_empty() || regular_face == medium_face {
-        let face = if custom_family.is_empty() { regular_face } else { custom_family };
+    let custom_primary = tomoyo_core::primary_gdi_face(custom_family);
+    if !custom_primary.is_empty() || regular_face == medium_face {
+        let face = if custom_primary.is_empty() { regular_face } else { custom_primary };
         return (face, requested_weight as i32);
     }
     match requested_weight {
