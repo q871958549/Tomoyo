@@ -82,6 +82,7 @@ pub(super) fn paint_gdi_pass(
             }
 
             let mut text_right = lay.list_w_dip - 20.0;
+            let compact_row = lay.has_preview && lay.list_w_dip < 520.0;
             if let Some((_, done)) = state.launching_row.filter(|(li, _)| *li == idx) {
                 let lbl = if done {
                     state.lang.pick("✓ 已启动", "✓ Opened")
@@ -94,12 +95,12 @@ pub(super) fn paint_gdi_pass(
             } else if is_sel {
                 draw_text_gdi(dc, fonts.badge, pal.chip_active_text, "Enter", dip_rect(text_right - 44.0, key_top, text_right, key_top + 20.0, scale), DT_CENTER);
                 text_right -= 50.0;
-            } else if slot < 8 {
+            } else if !compact_row && slot < 8 {
                 let sc = format!("Alt+{}", slot + 1);
                 draw_text_gdi(dc, fonts.footer, pal.text_muted, &sc, dip_rect(text_right - 42.0, key_top, text_right, key_top + 20.0, scale), DT_CENTER);
                 text_right -= 48.0;
             }
-            if let Some(badge) = &item.badge {
+            if (!compact_row || is_sel) && let Some(badge) = &item.badge {
                 let bw = (badge.chars().count() as f32 * 6.8 + 18.0).clamp(44.0, 120.0);
                 let bx0 = text_right - bw;
                 draw_text_gdi(dc, fonts.badge, pal.text_secondary, badge, dip_rect(bx0, badge_top, text_right, badge_top + 21.0, scale), DT_CENTER);

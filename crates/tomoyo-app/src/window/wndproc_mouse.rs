@@ -4,7 +4,7 @@ use super::AppShell;
 use crate::drag::start_file_drag;
 use crate::renderer::{
     compute_scrollbar_metrics, FilterHit, ScrollbarHit, ScrollbarMetrics, FOOTER_HEIGHT_DIP,
-    HEADER_HEIGHT_DIP, MIN_WINDOW_WIDTH_DIP,
+    HEADER_HEIGHT_DIP,
 };
 use std::time::Instant;
 use tomoyo_protocol::IconSpec;
@@ -259,10 +259,9 @@ pub(super) fn handle_mouse_move(
         let w_dip = (rc.right - rc.left) as f32 / scale;
         let clamped = (w_dip - x as f32 / scale)
             .round()
-            .clamp(220.0, (w_dip - 380.0).clamp(220.0, 620.0)) as i32;
+            .clamp(220.0, (w_dip - 360.0).clamp(220.0, 620.0)) as i32;
         if clamped != app.geom.preview_width_dip {
             app.geom.preview_width_dip = clamped;
-            app.geom.list_width_dip = (w_dip as i32 - clamped).clamp(MIN_WINDOW_WIDTH_DIP, 1400);
             app.invalidate();
         }
         return LRESULT(0);

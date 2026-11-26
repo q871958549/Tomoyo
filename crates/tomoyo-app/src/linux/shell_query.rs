@@ -123,17 +123,23 @@ impl AppCore {
     }
 
     pub(super) fn desired_width_dip(&self) -> i32 {
-        let base = self.list_width_dip.clamp(MIN_WINDOW_WIDTH_DIP, 1400);
-        if self.is_preview_visible() { (base + self.preview_width_dip).min(MAX_WINDOW_WIDTH_DIP) } else { base }
+        self.list_width_dip.clamp(MIN_WINDOW_WIDTH_DIP, MAX_WINDOW_WIDTH_DIP)
     }
 
     pub(super) fn filter_bar_height_dip(&self) -> i32 {
         if !self.is_filter_bar_visible() {
             return 0;
         }
+        let total_w = self.desired_width_dip() as f32;
+        let list_w = if self.is_preview_visible() && total_w >= 680.0 {
+            let pw = (self.preview_width_dip as f32).clamp(220.0, (total_w * 0.48).max(220.0));
+            (total_w - pw).max(360.0)
+        } else {
+            total_w
+        };
         let tabs = self.visible_filter_tabs();
         compute_filter_bar_layout(
-            self.list_width_dip as f32,
+            list_w,
             HEADER_HEIGHT_DIP as f32,
             &tabs,
             self.active_filter,

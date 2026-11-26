@@ -230,20 +230,23 @@ impl AppShell {
     }
 
     pub(super) fn desired_width_dip(&self) -> i32 {
-        if self.is_preview_visible() {
-            (self.geom.list_width_dip + self.geom.preview_width_dip).min(MAX_WINDOW_WIDTH_DIP)
-        } else {
-            self.geom.list_width_dip
-        }
+        self.geom.list_width_dip.clamp(MIN_WINDOW_WIDTH_DIP, MAX_WINDOW_WIDTH_DIP)
     }
 
     pub(super) fn filter_bar_height_dip(&self) -> i32 {
         if !self.is_filter_bar_visible() {
             return 0;
         }
+        let total_w = self.desired_width_dip() as f32;
+        let list_w = if self.is_preview_visible() && total_w >= 680.0 {
+            let pw = (self.geom.preview_width_dip as f32).clamp(220.0, (total_w * 0.48).max(220.0));
+            (total_w - pw).max(360.0)
+        } else {
+            total_w
+        };
         let tabs = self.visible_filter_tabs();
         compute_filter_bar_layout(
-            self.geom.list_width_dip as f32,
+            list_w,
             HEADER_HEIGHT_DIP as f32,
             &tabs,
             self.active_filter,
@@ -283,7 +286,7 @@ impl AppShell {
         let w_dip = (rc.right - rc.left) as f32 / scale;
         if self.is_preview_visible() && w_dip >= 680.0 {
             let pw = (self.geom.preview_width_dip as f32).clamp(220.0, (w_dip * 0.48).max(220.0));
-            (w_dip - pw).max(380.0)
+            (w_dip - pw).max(360.0)
         } else {
             w_dip
         }
@@ -330,7 +333,7 @@ impl AppShell {
             return false;
         }
         let pw = (self.geom.preview_width_dip as f32).clamp(220.0, (w_dip * 0.48).max(220.0));
-        let div_x_dip = (w_dip - pw).max(380.0);
+        let div_x_dip = (w_dip - pw).max(360.0);
         let dx = x_px as f32 / scale - div_x_dip;
         (-3.5..=5.0).contains(&dx)
     }
@@ -427,11 +430,7 @@ impl AppShell {
             let scale = self.dpi_scale.max(1.0);
             let w_dip = (new_w as f32 / scale).round() as i32;
             let h_dip = (new_h as f32 / scale).round() as i32;
-            self.geom.list_width_dip = if self.is_preview_visible() {
-                (w_dip - self.geom.preview_width_dip).clamp(MIN_WINDOW_WIDTH_DIP, 1400)
-            } else {
-                w_dip.clamp(MIN_WINDOW_WIDTH_DIP, 1400)
-            };
+            self.geom.list_width_dip = w_dip.clamp(MIN_WINDOW_WIDTH_DIP, 1400);
             if !self.results.is_empty() {
                 let avail_h = (h_dip - HEADER_HEIGHT_DIP - self.filter_bar_height_dip() - FOOTER_HEIGHT_DIP - 8).max(0);
                 self.geom.max_visible_rows = (avail_h / self.typography.row_height_dip()).clamp(4, 18) as usize;

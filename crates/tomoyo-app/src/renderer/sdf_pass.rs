@@ -193,6 +193,7 @@ fn paint_sdf_pass_inner(
             canvas.fill_rounded_rect(21.0, icon_top, 53.0, icon_top + 32.0, 7.0, category_rgb(item.category));
         }
         let mut text_right = lay.list_w_dip - 20.0;
+        let compact_row = lay.has_preview && lay.list_w_dip < 520.0;
         let row_launch = state.launching_row.filter(|(li, _)| *li == idx);
         if let Some((_, done)) = row_launch {
             let pill_col = if done { Rgb(0x10, 0xB9, 0x81) } else { pal.accent };
@@ -203,12 +204,12 @@ fn paint_sdf_pass_inner(
             canvas.fill_rounded_rect(text_right - 44.0, key_top, text_right, key_top + 20.0, 5.0, pal.chip_active_bg);
             canvas.stroke_rounded_rect(text_right - 44.0, key_top, text_right, key_top + 20.0, 5.0, pal.chip_active_border);
             text_right -= 50.0;
-        } else if slot < 8 {
+        } else if !compact_row && slot < 8 {
             canvas.fill_rounded_rect(text_right - 42.0, key_top, text_right, key_top + 20.0, 5.0, pal.pill_bg);
             canvas.stroke_rounded_rect(text_right - 42.0, key_top, text_right, key_top + 20.0, 5.0, pal.divider);
             text_right -= 48.0;
         }
-        if let Some(badge) = &item.badge {
+        if (!compact_row || is_sel) && let Some(badge) = &item.badge {
             let bw = (badge.chars().count() as f32 * 6.8 + 18.0).clamp(44.0, 120.0);
             canvas.fill_rounded_rect(text_right - bw, badge_top, text_right, badge_top + 21.0, 6.0, pal.chip_bg);
             canvas.stroke_rounded_rect(text_right - bw, badge_top, text_right, badge_top + 21.0, 6.0, pal.chip_border);

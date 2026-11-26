@@ -99,7 +99,10 @@ pub(crate) fn build_context_card(
                                     kind: ActionKind::CopyText { text: url.clone(), paste_immediately: false },
                                 },
                             ],
-                            preview: Some(PreviewSpec::Text { title: "Clipboard URL".into(), body: url }),
+                            preview: (url.chars().count() > 54).then(|| PreviewSpec::Text {
+                                title: "Clipboard URL".into(),
+                                body: url,
+                            }),
                         });
                     }
                 }
@@ -223,7 +226,7 @@ pub(crate) fn build_context_card(
                         badge: Some("CLIP".into()),
                         copy_text: Some(trimmed.to_string()),
                         actions,
-                        preview: Some(PreviewSpec::Text {
+                        preview: (trimmed.contains('\n') || trimmed.chars().count() > 42).then(|| PreviewSpec::Text {
                             title: lang.pick("剪贴板文本上下文", "Clipboard Context").into(),
                             body: trimmed.chars().take(2000).collect(),
                         }),
@@ -312,5 +315,13 @@ mod tests {
         let img_card = build_context_card(None, true, now, &cfg, Lang::Zh).unwrap();
         assert_eq!(img_card.id, "ctx:clip:image");
         assert_eq!(img_card.actions.len(), 2);
+
+        let short_txt = ClipboardSnapshot { text: "TranslateMessage(&msg)".into(), captured_at_unix: now - 5 };
+        let short_card = build_context_card(Some(&short_txt), false, now, &cfg, Lang::Zh).unwrap();
+        assert!(short_card.preview.is_none());
+
+        let long_txt = ClipboardSnapshot { text: "Line 1\nLine 2 longer multi-line snippet".into(), captured_at_unix: now - 5 };
+        let long_card = build_context_card(Some(&long_txt), false, now, &cfg, Lang::Zh).unwrap();
+        assert!(long_card.preview.is_some());
     }
 }

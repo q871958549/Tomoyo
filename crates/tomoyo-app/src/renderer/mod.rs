@@ -41,7 +41,7 @@ use tomoyo_protocol::{ResultItem, SearchFilter, VisibleFilterTab};
 use windows::Win32::Graphics::Gdi::HDC;
 
 #[cfg_attr(not(windows), allow(dead_code))]
-pub const DEFAULT_WINDOW_WIDTH_DIP: i32 = 720;
+pub const DEFAULT_WINDOW_WIDTH_DIP: i32 = 780;
 #[cfg_attr(not(windows), allow(dead_code))]
 pub const DEFAULT_PREVIEW_WIDTH_DIP: i32 = 310;
 pub const HEADER_HEIGHT_DIP: i32 = 62;
@@ -205,7 +205,7 @@ pub(crate) fn compute_frame_layout(width: i32, height: i32, scale: f32, state: &
     let row_h = state.typography.row_height_dip() as f32;
     let has_preview = state.preview.is_some() && !state.items.is_empty() && w_dip >= 680.0;
     let preview_w = (state.preview_width_dip as f32).clamp(220.0, (w_dip * 0.48).max(220.0));
-    let list_w_dip = if has_preview { (w_dip - preview_w).max(380.0) } else { w_dip };
+    let list_w_dip = if has_preview { (w_dip - preview_w).max(360.0) } else { w_dip };
     let filter_h = if state.filter_bar_visible {
         compute_filter_bar_layout(
             list_w_dip,
