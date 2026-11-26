@@ -15,6 +15,7 @@ const targets = [
   { entry: 'settings', outFile: path.join(distDir, 'settings.html'), label: 'settings.html' },
   { entry: 'translator', outFile: path.join(repoRoot, 'plugins', 'official-translate', 'ui', 'index.html'), label: 'official-translate/ui/index.html' },
   { entry: 'clipboard', outFile: path.join(repoRoot, 'plugins', 'official-clipboard', 'ui', 'index.html'), label: 'official-clipboard/ui/index.html' },
+  { entry: 'notes', outFile: path.join(repoRoot, 'plugins', 'official-notes', 'ui', 'index.html'), label: 'official-notes/ui/index.html' },
   { entry: 'ocr', outFile: path.join(repoRoot, 'plugins', 'builtin-ocr', 'ui', 'index.html'), label: 'builtin-ocr/ui/index.html' },
 ];
 

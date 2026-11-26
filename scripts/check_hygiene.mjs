@@ -105,6 +105,7 @@ const bundleBudgets = {
   "frontend/dist/settings.html": 300 * 1024,
   "plugins/official-translate/ui/index.html": 150 * 1024,
   "plugins/official-clipboard/ui/index.html": 150 * 1024,
+  "plugins/official-notes/ui/index.html": 150 * 1024,
   "plugins/builtin-ocr/ui/index.html": 150 * 1024,
 };
 const bundleSummary = [];

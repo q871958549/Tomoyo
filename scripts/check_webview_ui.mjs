@@ -11,6 +11,7 @@ const BUNDLES = [
   'frontend/dist/settings.html',
   'plugins/official-translate/ui/index.html',
   'plugins/official-clipboard/ui/index.html',
+  'plugins/official-notes/ui/index.html',
   'plugins/builtin-ocr/ui/index.html',
 ];
 
@@ -248,4 +249,57 @@ await runCompiledHtml(
   }
 );
 
-console.log(`[OK] All 4 compiled Svelte 5 WebView bundles booted in happy-dom (6 core tabs + in-plugin settings drawers + Flows + Hotkey Doctor verified, live hotkey conflict rendered, ${settingsPosted.length} IPC commands, 0 JS errors).`);
+await runCompiledHtml(
+  'plugins/official-notes/ui/index.html',
+  null,
+  null,
+  (win) => {
+    if (!win.document.body.textContent.includes('本地备忘录工作台')) {
+      throw new Error('plugins/official-notes/ui/index.html: failed to mount header');
+    }
+    if (!win.document.body.textContent.includes('架构路线图')) {
+      throw new Error('plugins/official-notes/ui/index.html: failed to hydrate via window.tomoyo.callPlugin');
+    }
+    if (!win.document.querySelector('[data-wikilink="部署清单"]')) {
+      throw new Error('plugins/official-notes/ui/index.html: failed to render [[WikiLink]] chip');
+    }
+  },
+  (win) => {
+    win.tomoyo = {
+      theme: 'dark',
+      initialQuery: 'arch.md',
+      callPlugin: async (method) => {
+        if (method !== 'list') throw new Error(`unexpected notes RPC method: ${method}`);
+        return {
+          notes_dir: 'C:\\Tomoyo\\notes',
+          default_tag: '#inbox',
+          total: 1,
+          pinned_count: 1,
+          todo_notes_count: 1,
+          archived_count: 0,
+          tags: [{ tag: '#work', count: 1 }],
+          notes: [{
+            file_name: 'arch.md',
+            path: 'C:\\Tomoyo\\notes\\arch.md',
+            title: '架构路线图',
+            snippet: '实现独立备忘录工作台',
+            body: '# 架构路线图\n\n- [ ] 实现独立工作台\n关联 [[部署清单]] #work',
+            tags: ['#work'],
+            pinned: true,
+            archived: false,
+            created_secs: 1700000000,
+            modified_secs: 1700000100,
+            source: 'workbench',
+            todo_open: 1,
+            todo_done: 0,
+            wikilinks: ['部署清单'],
+            backlinks: [{ file_name: 'daily.md', title: '今日速记' }],
+          }],
+        };
+      },
+      onEnter: () => {},
+    };
+  }
+);
+
+console.log(`[OK] All 5 compiled Svelte 5 WebView bundles booted in happy-dom (6 core tabs + in-plugin settings drawers + Flows + Hotkey Doctor verified, live hotkey conflict rendered, ${settingsPosted.length} IPC commands, 0 JS errors).`);

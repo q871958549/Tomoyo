@@ -1,17 +1,25 @@
 id = "dev.tomoyo.notes"
 name = "本地快速备忘录 (Quick Notes)"
-version = "2.6.0"
-description = "轻量即时备忘录插件（与专业 Markdown 编辑器解耦）：支持 note/memo 秒级检索、#标签过滤、剪贴板一键记录与交付 Quiet.md 精编（0 常驻内存）"
+version = "3.2.0"
+description = "Protocol v3 混合架构本地优先备忘录：开放 .md + YAML Frontmatter 存储，支持 note/memo/bw 秒级检索、@pin/@todo/#标签过滤、[[双向链接]]、每日速记与独立工作台（0 常驻内存）"
 author = "Tomoyo Contributors"
 license = "MIT"
 icon = "icon.png"
 category = "docs"
-display_mode = "inline"
+display_mode = "window"
+tags = ["notes", "markdown", "memo", "todo", "wiki", "local-first"]
+permissions = ["filesystem_read", "filesystem_write"]
 
 [runtime]
 kind = "stdio_jsonrpc"
 command = "tomoyo-plugin-notes"
 args = []
+
+[ui]
+entry = "ui/index.html"
+width = 1080
+height = 680
+utools_compat = false
 
 [triggers]
 keywords = ["note", "memo", "bw"]
@@ -26,6 +34,11 @@ id = "quick_note"
 label = "快速呼出本地备忘录"
 default_hotkey = ""
 trigger_query = "note "
+
+[[tray_actions]]
+id = "open_workbench"
+label = "本地备忘录工作台"
+open_ui = true
 
 [[text_actions]]
 id = "save_selection_note"
