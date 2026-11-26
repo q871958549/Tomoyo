@@ -1,8 +1,56 @@
 #include "shell_internal.h"
 #include <cairo.h>
+#ifdef GDK_WINDOWING_WAYLAND
+#include <gdk/gdkwayland.h>
+#endif
 #include <pango/pangocairo.h>
 #include <stdlib.h>
 #include <string.h>
+
+static int is_wayland_display(void) {
+#ifdef GDK_WINDOWING_WAYLAND
+    GdkDisplay *gd = gdk_display_get_default();
+    return (gd && GDK_IS_WAYLAND_DISPLAY(gd)) ? 1 : 0;
+#else
+    return 0;
+#endif
+}
+
+static void apply_cursor(tomoyo_app_t *a, int kind) {
+    if (!a || !a->window || a->cur_cursor == kind) return;
+    a->cur_cursor = kind;
+    GdkWindow *gw = gtk_widget_get_window(a->window);
+    if (!gw) return;
+    if (kind == 0) { gdk_window_set_cursor(gw, NULL); return; }
+    static const char *names[] = {
+        NULL, "nw-resize", "ne-resize", "sw-resize", "se-resize",
+        "w-resize", "e-resize", "n-resize", "s-resize", "col-resize"
+    };
+    const char *nm = (kind >= 1 && kind <= 9) ? names[kind] : NULL;
+    GdkDisplay *dpy = gdk_window_get_display(gw);
+    GdkCursor *c = (nm && dpy) ? gdk_cursor_new_from_name(dpy, nm) : NULL;
+    if (!c && kind == 9 && dpy) c = gdk_cursor_new_from_name(dpy, "ew-resize");
+    gdk_window_set_cursor(gw, c);
+    if (c) g_object_unref(c);
+}
+
+static int hit_resize_edge(tomoyo_app_t *a, double x, double y, GdkWindowEdge *edge_out, int *cur_out) {
+    if (!a || !a->darea) return 0;
+    int w = gtk_widget_get_allocated_width(a->darea), h = gtk_widget_get_allocated_height(a->darea);
+    if (w <= 0 || h <= 0) return 0;
+    const double grip = 6.0;
+    int l = x < grip, r = x >= w - grip, t = y < grip, b = y >= h - grip;
+    if (!l && !r && !t && !b) return 0;
+    if (l && t) { *edge_out = GDK_WINDOW_EDGE_NORTH_WEST; *cur_out = 1; }
+    else if (r && t) { *edge_out = GDK_WINDOW_EDGE_NORTH_EAST; *cur_out = 2; }
+    else if (l && b) { *edge_out = GDK_WINDOW_EDGE_SOUTH_WEST; *cur_out = 3; }
+    else if (r && b) { *edge_out = GDK_WINDOW_EDGE_SOUTH_EAST; *cur_out = 4; }
+    else if (l) { *edge_out = GDK_WINDOW_EDGE_WEST; *cur_out = 5; }
+    else if (r) { *edge_out = GDK_WINDOW_EDGE_EAST; *cur_out = 6; }
+    else if (t) { *edge_out = GDK_WINDOW_EDGE_NORTH; *cur_out = 7; }
+    else { *edge_out = GDK_WINDOW_EDGE_SOUTH; *cur_out = 8; }
+    return 1;
+}
 
 static gboolean cb_entry_btn_press(GtkWidget *w, GdkEventButton *ev, gpointer ud) {
     tomoyo_app_t *a = (tomoyo_app_t *)ud;
@@ -56,6 +104,16 @@ static gboolean cb_btn_press(GtkWidget *w, GdkEventButton *ev, gpointer ud) {
     a->last_rx = (gint)ev->x_root;
     a->last_ry = (gint)ev->y_root;
     a->last_time = ev->time;
+    if (ev->button == 1 && ev->type == GDK_BUTTON_PRESS) {
+        GdkWindowEdge edge = GDK_WINDOW_EDGE_EAST;
+        int cur = 0;
+        if (hit_resize_edge(a, ev->x, ev->y, &edge, &cur)) {
+            a->in_user_resize = 1;
+            a->user_resize_until = g_get_monotonic_time() + 300000;
+            gtk_window_begin_resize_drag(GTK_WINDOW(a->window), edge, (gint)ev->button, (gint)ev->x_root, (gint)ev->y_root, ev->time);
+            return TRUE;
+        }
+    }
     int kind = (ev->type == GDK_2BUTTON_PRESS && ev->button == 1) ? 2 : (ev->button == 3 ? 3 : 1);
     a->on_mouse(a->ctx, kind, (int)ev->x, (int)ev->y, 0);
     return TRUE;
@@ -64,6 +122,7 @@ static gboolean cb_btn_press(GtkWidget *w, GdkEventButton *ev, gpointer ud) {
 static gboolean cb_btn_release(GtkWidget *w, GdkEventButton *ev, gpointer ud) {
     (void)w;
     tomoyo_app_t *a = (tomoyo_app_t *)ud;
+    a->in_user_resize = 0;
     if (a && a->on_mouse && ev->button == 1) a->on_mouse(a->ctx, 4, (int)ev->x, (int)ev->y, 0);
     return FALSE;
 }
@@ -71,7 +130,45 @@ static gboolean cb_btn_release(GtkWidget *w, GdkEventButton *ev, gpointer ud) {
 static gboolean cb_motion(GtkWidget *w, GdkEventMotion *ev, gpointer ud) {
     (void)w;
     tomoyo_app_t *a = (tomoyo_app_t *)ud;
-    if (a && a->on_mouse) a->on_mouse(a->ctx, 5, (int)ev->x, (int)ev->y, 0);
+    if (!a) return FALSE;
+    a->in_user_resize = 0;
+    GdkWindowEdge edge = GDK_WINDOW_EDGE_EAST;
+    int cur = 0;
+    if (hit_resize_edge(a, ev->x, ev->y, &edge, &cur)) {
+        apply_cursor(a, cur);
+        return FALSE;
+    }
+    if (a->on_mouse) a->on_mouse(a->ctx, 5, (int)ev->x, (int)ev->y, 0);
+    return FALSE;
+}
+
+static gboolean cb_leave(GtkWidget *w, GdkEventCrossing *ev, gpointer ud) {
+    (void)w; (void)ev;
+    tomoyo_app_t *a = (tomoyo_app_t *)ud;
+    if (a) apply_cursor(a, 0);
+    return FALSE;
+}
+
+static gboolean cb_configure(GtkWidget *w, GdkEventConfigure *ev, gpointer ud) {
+    tomoyo_app_t *a = (tomoyo_app_t *)ud;
+    if (!a || !gtk_widget_get_visible(w) || ev->width <= 0 || ev->height <= 0) return FALSE;
+    gint64 now = g_get_monotonic_time();
+    int size_changed = (ev->width != a->last_w || ev->height != a->last_h);
+    int is_prog_size = (ev->width == a->prog_w && ev->height == a->prog_h);
+    int user_sz = size_changed && (!is_prog_size || a->in_user_resize || now < a->user_resize_until);
+    int wl = is_wayland_display();
+    int px = ev->x, py = ev->y;
+    if (!wl) gtk_window_get_position(GTK_WINDOW(w), &px, &py);
+    int pos_changed = (!wl && a->ever_shown && now >= a->show_until && (px != a->last_x || py != a->last_y));
+    a->last_w = ev->width; a->last_h = ev->height;
+    a->last_x = px; a->last_y = py;
+    if (user_sz) {
+        a->prog_w = ev->width; a->prog_h = ev->height;
+        a->user_resize_until = now + 250000;
+    }
+    if ((user_sz || pos_changed) && a->on_configure) {
+        a->on_configure(a->ctx, px, py, ev->width, ev->height, (user_sz ? 1 : 0) | (pos_changed ? 2 : 0));
+    }
     return FALSE;
 }
 
@@ -112,8 +209,8 @@ static void cb_clip_owner(GtkClipboard *cb, GdkEvent *ev, gpointer ud) {
 
 tomoyo_app_t *tomoyo_linux_ui_create(
     void *ctx, tomoyo_draw_cb on_draw, tomoyo_key_cb on_key, tomoyo_mouse_cb on_mouse,
-    tomoyo_void_cb on_text_changed, tomoyo_void_cb on_paste, tomoyo_void_cb on_focus_out,
-    tomoyo_void_cb on_clip_change, tomoyo_cmd_cb on_tray_cmd
+    tomoyo_configure_cb on_configure, tomoyo_void_cb on_text_changed, tomoyo_void_cb on_paste,
+    tomoyo_void_cb on_focus_out, tomoyo_void_cb on_clip_change, tomoyo_cmd_cb on_tray_cmd
 ) {
     g_set_prgname("tomoyo");
     g_set_application_name("Tomoyo");
@@ -123,7 +220,7 @@ tomoyo_app_t *tomoyo_linux_ui_create(
     tomoyo_app_t *a = (tomoyo_app_t *)calloc(1, sizeof(tomoyo_app_t));
     if (!a) return NULL;
     a->ctx = ctx; a->on_draw = on_draw; a->on_key = on_key; a->on_mouse = on_mouse;
-    a->on_text_changed = on_text_changed; a->on_paste = on_paste;
+    a->on_configure = on_configure; a->on_text_changed = on_text_changed; a->on_paste = on_paste;
     a->on_focus_out = on_focus_out; a->on_clip_change = on_clip_change; a->on_tray_cmd = on_tray_cmd;
 
     a->window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
@@ -139,21 +236,25 @@ tomoyo_app_t *tomoyo_linux_ui_create(
     gtk_widget_set_no_show_all(zero_hb, TRUE);
     gtk_window_set_titlebar(GTK_WINDOW(a->window), zero_hb);
     gtk_window_set_decorated(GTK_WINDOW(a->window), FALSE);
-    gtk_window_set_resizable(GTK_WINDOW(a->window), FALSE);
+    gtk_window_set_resizable(GTK_WINDOW(a->window), TRUE);
+    GdkGeometry geom = {0};
+    geom.min_width = 520; geom.min_height = 92;
+    geom.max_width = 1600; geom.max_height = 1080;
+    gtk_window_set_geometry_hints(GTK_WINDOW(a->window), NULL, &geom, GDK_HINT_MIN_SIZE | GDK_HINT_MAX_SIZE);
     gtk_window_set_skip_taskbar_hint(GTK_WINDOW(a->window), TRUE);
     gtk_window_set_skip_pager_hint(GTK_WINDOW(a->window), TRUE);
     gtk_window_set_keep_above(GTK_WINDOW(a->window), TRUE);
-    gtk_window_set_default_size(GTK_WINDOW(a->window), 720, 62);
+    gtk_window_set_default_size(GTK_WINDOW(a->window), 840, 92);
 
     a->overlay = gtk_overlay_new();
     a->darea = gtk_drawing_area_new();
-    gtk_widget_add_events(a->darea, GDK_BUTTON_PRESS_MASK | GDK_BUTTON_RELEASE_MASK | GDK_POINTER_MOTION_MASK | GDK_SCROLL_MASK | GDK_SMOOTH_SCROLL_MASK);
+    gtk_widget_add_events(a->darea, GDK_BUTTON_PRESS_MASK | GDK_BUTTON_RELEASE_MASK | GDK_POINTER_MOTION_MASK | GDK_LEAVE_NOTIFY_MASK | GDK_SCROLL_MASK | GDK_SMOOTH_SCROLL_MASK);
     a->fixed = gtk_fixed_new();
     a->entry = gtk_entry_new();
     gtk_widget_set_name(a->entry, "tomoyo-input");
     gtk_entry_set_has_frame(GTK_ENTRY(a->entry), FALSE);
     gtk_fixed_put(GTK_FIXED(a->fixed), a->entry, 62, 14);
-    gtk_widget_set_size_request(a->entry, 480, 34);
+    gtk_widget_set_size_request(a->entry, 140, 34);
 
     gtk_container_add(GTK_CONTAINER(a->overlay), a->darea);
     gtk_overlay_add_overlay(GTK_OVERLAY(a->overlay), a->fixed);
@@ -168,7 +269,9 @@ tomoyo_app_t *tomoyo_linux_ui_create(
     g_signal_connect(a->darea, "button-press-event", G_CALLBACK(cb_btn_press), a);
     g_signal_connect(a->darea, "button-release-event", G_CALLBACK(cb_btn_release), a);
     g_signal_connect(a->darea, "motion-notify-event", G_CALLBACK(cb_motion), a);
+    g_signal_connect(a->darea, "leave-notify-event", G_CALLBACK(cb_leave), a);
     g_signal_connect(a->darea, "scroll-event", G_CALLBACK(cb_scroll), a);
+    g_signal_connect(a->window, "configure-event", G_CALLBACK(cb_configure), a);
     g_signal_connect(a->entry, "key-press-event", G_CALLBACK(cb_key), a);
     g_signal_connect(a->entry, "button-press-event", G_CALLBACK(cb_entry_btn_press), a);
     g_signal_connect(a->entry, "popup-menu", G_CALLBACK(cb_entry_popup_menu), a);
@@ -224,20 +327,32 @@ void tomoyo_linux_ui_set_placeholder(tomoyo_app_t *a, const char *txt) {
     if (a) gtk_entry_set_placeholder_text(GTK_ENTRY(a->entry), txt ? txt : "");
 }
 
+void tomoyo_linux_ui_set_cursor(tomoyo_app_t *a, int kind) { apply_cursor(a, kind); }
+
+int tomoyo_linux_ui_is_wayland(void) { return is_wayland_display(); }
+
+void tomoyo_linux_ui_get_size(tomoyo_app_t *a, int *ow, int *oh) {
+    if (a && a->window) gtk_window_get_size(GTK_WINDOW(a->window), ow, oh);
+    else { if (ow) *ow = 0; if (oh) *oh = 0; }
+}
+
 void tomoyo_linux_ui_show(tomoyo_app_t *a, int x, int y, int w, int h) {
     if (!a) return;
-    if (w != a->last_w || h != a->last_h) {
-        gtk_window_resize(GTK_WINDOW(a->window), w, h);
-        a->last_w = w; a->last_h = h;
-    }
-    gtk_window_move(GTK_WINDOW(a->window), x, y);
+    a->prog_x = x; a->prog_y = y; a->prog_w = w; a->prog_h = h;
+    a->last_w = w; a->last_h = h; a->last_x = x; a->last_y = y;
+    a->ever_shown = 1;
+    a->show_until = g_get_monotonic_time() + 180000;
+    gtk_window_resize(GTK_WINDOW(a->window), w, h);
+    if (!is_wayland_display()) gtk_window_move(GTK_WINDOW(a->window), x, y);
     gtk_widget_show_all(a->window);
     gtk_window_present(GTK_WINDOW(a->window));
     gtk_widget_grab_focus(a->entry);
 }
 
 void tomoyo_linux_ui_resize(tomoyo_app_t *a, int w, int h) {
-    if (!a || (w == a->last_w && h == a->last_h)) return;
+    if (!a || a->in_user_resize || g_get_monotonic_time() < a->user_resize_until) return;
+    if (w == a->last_w && h == a->last_h) return;
+    a->prog_w = w; a->prog_h = h;
     a->last_w = w; a->last_h = h;
     gtk_window_resize(GTK_WINDOW(a->window), w, h);
 }

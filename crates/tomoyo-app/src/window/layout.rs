@@ -26,6 +26,7 @@ impl AppShell {
         self.geom.list_width_dip = DEFAULT_WINDOW_WIDTH_DIP;
         self.geom.max_visible_rows = 8;
         self.geom.preview_width_dip = DEFAULT_PREVIEW_WIDTH_DIP;
+        self.geom.custom_height_dip = None;
         self.geom.custom_pos = None;
         if let Ok(mut cfg) = self.config.write() {
             cfg.window = Default::default();
@@ -50,6 +51,7 @@ impl AppShell {
             cfg.window.width_dip = self.geom.list_width_dip;
             cfg.window.max_visible_rows = self.geom.max_visible_rows;
             cfg.window.preview_width_dip = self.geom.preview_width_dip;
+            cfg.window.custom_height_dip = self.geom.custom_height_dip;
             cfg.window.custom_x = Some(rect.left);
             cfg.window.custom_y = Some(rect.top);
             let _ = cfg.save();
@@ -234,6 +236,9 @@ impl AppShell {
     }
 
     pub(super) fn desired_height_dip(&self) -> i32 {
+        if let Some(h) = self.geom.custom_height_dip {
+            return h.clamp(HEADER_HEIGHT_DIP + FOOTER_HEIGHT_DIP, 1080);
+        }
         if self.is_filter_bar_visible() {
             return HEADER_HEIGHT_DIP
                 + 8
@@ -404,9 +409,12 @@ impl AppShell {
             let scale = self.dpi_scale.max(1.0);
             let w_dip = (new_w as f32 / scale).round() as i32;
             let h_dip = (new_h as f32 / scale).round() as i32;
-            self.geom.list_width_dip = w_dip.clamp(MIN_WINDOW_WIDTH_DIP, 1400);
-            if !self.results.is_empty() {
-                let avail_h = (h_dip - HEADER_HEIGHT_DIP - self.filter_bar_height_dip() - FOOTER_HEIGHT_DIP - 8).max(0);
+            let prev_h = self.desired_height_dip();
+            self.geom.list_width_dip = w_dip.clamp(MIN_WINDOW_WIDTH_DIP, MAX_WINDOW_WIDTH_DIP);
+            if h_dip != prev_h {
+                let min_h = HEADER_HEIGHT_DIP + FOOTER_HEIGHT_DIP;
+                self.geom.custom_height_dip = Some(h_dip.clamp(min_h, 1080));
+                let avail_h = (h_dip - min_h - 8).max(0);
                 self.geom.max_visible_rows = (avail_h / self.typography.row_height_dip()).clamp(4, 18) as usize;
             }
         }

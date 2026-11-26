@@ -77,6 +77,8 @@ pub struct WindowConfig {
     #[serde(default = "default_preview_width")]
     pub preview_width_dip: i32,
     #[serde(default)]
+    pub custom_height_dip: Option<i32>,
+    #[serde(default)]
     pub custom_x: Option<i32>,
     #[serde(default)]
     pub custom_y: Option<i32>,
@@ -92,6 +94,7 @@ impl Default for WindowConfig {
             width_dip: default_win_width(),
             max_visible_rows: default_max_rows(),
             preview_width_dip: default_preview_width(),
+            custom_height_dip: None,
             custom_x: None,
             custom_y: None,
         }

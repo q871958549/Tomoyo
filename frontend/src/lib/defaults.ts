@@ -54,7 +54,7 @@ export function makeDefaultConfig(): TomoyoConfig {
       title_size: 16,
     },
     disabled_plugins: [],
-    window: { width_dip: 840, max_visible_rows: 8, preview_width_dip: 310, custom_x: null, custom_y: null },
+    window: { width_dip: 840, max_visible_rows: 8, preview_width_dip: 310, custom_height_dip: null, custom_x: null, custom_y: null },
     apps: { extra_dirs: [], auto_detect_desktop_organizers: true, extra_scan_depth: 4 },
     everything: { max_global_results: 6, max_dedicated_results: 30, extra_filter: '' },
     clipboard: {

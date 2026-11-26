@@ -53,7 +53,7 @@ impl AppCore {
             InternalCommandKind::OpenSettingsRoute { route } => {
                 self.open_settings_center_at(Some(&route));
             }
-            InternalCommandKind::ResetWindowGeometry => { self.custom_pos = None; self.resize_to_fit(); }
+            InternalCommandKind::ResetWindowGeometry => self.reset_window_geometry(),
             InternalCommandKind::SetTheme { theme } => self.apply_theme(&theme, true),
             InternalCommandKind::SetLanguage { lang } => self.apply_language(&lang, true),
             InternalCommandKind::CheckForUpdates => self.trigger_update_check_async(),
@@ -420,9 +420,7 @@ impl AppCore {
         self.lang = fresh.lang();
         self.preview_enabled = fresh.auto_preview;
         self.show_filter_bar = fresh.show_filter_bar;
-        self.list_width_dip = fresh.window.width_dip.clamp(520, 1600);
-        self.max_visible_rows = fresh.window.max_visible_rows.clamp(4, 18);
-        self.preview_width_dip = fresh.window.preview_width_dip.clamp(220, 620);
+        self.sync_window_geom_from_config(&fresh);
         self.apply_theme(&fresh.theme, false);
         let cfg_clone = fresh.clone();
         if let Ok(mut w) = self.config.write() { *w = fresh; }
@@ -435,6 +433,6 @@ impl AppCore {
             unsafe { tomoyo_linux_tray_set_title(self.ui, t.as_ptr()); }
         }
         self.rebuild_tray_menu();
-        if self.is_visible() { self.dispatch_query(); }
+        if self.is_visible() { self.resize_to_fit(); self.dispatch_query(); }
     }
 }

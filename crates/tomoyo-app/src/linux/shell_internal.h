@@ -8,6 +8,7 @@
 typedef void (*tomoyo_draw_cb)(void *ctx, void *cr, int width, int height);
 typedef int (*tomoyo_key_cb)(void *ctx, uint32_t keyval, uint32_t state);
 typedef void (*tomoyo_mouse_cb)(void *ctx, int kind, int x, int y, int delta);
+typedef void (*tomoyo_configure_cb)(void *ctx, int x, int y, int w, int h, int flags);
 typedef void (*tomoyo_void_cb)(void *ctx);
 typedef void (*tomoyo_cmd_cb)(void *ctx, uint32_t cmd_id);
 
@@ -37,10 +38,13 @@ typedef struct {
     int menu_picked;
     int popup_from_kb;
     int last_w, last_h, last_ex, last_ey, last_ew, last_eh;
+    int last_x, last_y, prog_x, prog_y, prog_w, prog_h, ever_shown, in_user_resize, cur_cursor;
+    gint64 user_resize_until, show_until;
     void *ctx;
     tomoyo_draw_cb on_draw;
     tomoyo_key_cb on_key;
     tomoyo_mouse_cb on_mouse;
+    tomoyo_configure_cb on_configure;
     tomoyo_void_cb on_text_changed;
     tomoyo_void_cb on_paste;
     tomoyo_void_cb on_focus_out;

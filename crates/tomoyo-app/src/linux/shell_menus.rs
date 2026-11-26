@@ -267,7 +267,7 @@ impl AppCore {
                 self.resize_to_fit();
                 self.invalidate();
             }
-            CMD_RESET_WIN => { self.custom_pos = None; self.resize_to_fit(); self.invalidate(); }
+            CMD_RESET_WIN => self.reset_window_geometry(),
             CMD_STATS => self.set_query_text(":stats"),
             CMD_RELOAD => { self.router.reload_all(); self.dispatch_query(); self.show_toast("已热重载全部插件与索引"); }
             CMD_GC => { let _ = self.run_hibernate(); self.show_toast("已完成内存休眠整理"); }

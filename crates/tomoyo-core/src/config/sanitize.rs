@@ -129,9 +129,10 @@ pub fn sanitize_config(cfg: &mut TomoyoConfig) -> Vec<String> {
         notes.push(format!("休眠延迟已约束至 {hib} s"));
     }
 
-    cfg.window.width_dip = cfg.window.width_dip.clamp(520, 1280);
-    cfg.window.max_visible_rows = cfg.window.max_visible_rows.clamp(4, 16);
-    cfg.window.preview_width_dip = cfg.window.preview_width_dip.clamp(220, 560);
+    cfg.window.width_dip = cfg.window.width_dip.clamp(520, 1600);
+    cfg.window.max_visible_rows = cfg.window.max_visible_rows.clamp(4, 18);
+    cfg.window.preview_width_dip = cfg.window.preview_width_dip.clamp(220, 620);
+    cfg.window.custom_height_dip = cfg.window.custom_height_dip.map(|v| v.clamp(92, 1080));
     cfg.window.custom_x = cfg.window.custom_x.map(|v| v.clamp(-16_384, 16_384));
     cfg.window.custom_y = cfg.window.custom_y.map(|v| v.clamp(-16_384, 16_384));
 
@@ -329,6 +330,7 @@ mod tests {
             "Bitwarden.EXE".into(),
         ];
         cfg.window.width_dip = 99_999;
+        cfg.window.custom_height_dip = Some(5);
         cfg.capture.hotkey = "Alt+T".into();
         cfg.capture.pin_opacity = 5;
         cfg.capture.save_dir = r"\\evil\share".into();
@@ -363,7 +365,8 @@ mod tests {
         assert!(validate_scan_dir("/").is_err());
         assert!(validate_scan_dir("/usr/bin").is_err());
         assert_eq!(validate_scan_dir("/home/timmy/Tools/").as_deref(), Ok("/home/timmy/Tools"));
-        assert_eq!(cfg.window.width_dip, 1280);
+        assert_eq!(cfg.window.width_dip, 1600);
+        assert_eq!(cfg.window.custom_height_dip, Some(92));
         assert_eq!(cfg.capture.hotkey, "Alt+S");
         assert_eq!(cfg.capture.pin_opacity, 30);
         assert!(cfg.capture.save_dir.is_empty());

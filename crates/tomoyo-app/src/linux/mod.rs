@@ -10,6 +10,7 @@ mod shell_menus;
 mod shell_query;
 mod shell_state;
 mod sidebar_ctrl;
+mod window_geom;
 
 pub use ipc::{wake_existing_instance, SingletonGuard};
 
@@ -43,12 +44,24 @@ unsafe extern "C" {
         on_draw: unsafe extern "C" fn(*mut c_void, *mut c_void, c_int, c_int),
         on_key: unsafe extern "C" fn(*mut c_void, u32, u32) -> c_int,
         on_mouse: unsafe extern "C" fn(*mut c_void, c_int, c_int, c_int, c_int),
+        on_configure: unsafe extern "C" fn(*mut c_void, c_int, c_int, c_int, c_int, c_int),
         on_text_changed: unsafe extern "C" fn(*mut c_void),
         on_paste: unsafe extern "C" fn(*mut c_void),
         on_focus_out: unsafe extern "C" fn(*mut c_void),
         on_clip_change: unsafe extern "C" fn(*mut c_void),
         on_tray_cmd: unsafe extern "C" fn(*mut c_void, u32),
     ) -> *mut c_void;
+    pub fn tomoyo_linux_ui_set_cursor(a: *mut c_void, kind: c_int);
+    pub fn tomoyo_linux_ui_is_wayland() -> c_int;
+    pub fn tomoyo_kwin_pos_start(
+        has_pos: c_int,
+        init_x: c_int,
+        init_y: c_int,
+        cb: unsafe extern "C" fn(*mut c_void, c_int, c_int, c_int, c_int),
+        ctx: *mut c_void,
+    ) -> *mut c_void;
+    pub fn tomoyo_kwin_pos_update_target(handle: *mut c_void, has_pos: c_int, x: c_int, y: c_int);
+    pub fn tomoyo_kwin_pos_stop(handle: *mut c_void);
     pub fn tomoyo_linux_ui_set_theme(a: *mut c_void, text_rgb: u32, bg_rgb: u32, font_px: c_int);
     pub fn tomoyo_linux_ui_begin_drag(a: *mut c_void);
     pub fn tomoyo_wl_clip_start(on_change: unsafe extern "C" fn());

@@ -122,6 +122,7 @@ export interface TomoyoConfig {
     width_dip: number;
     max_visible_rows: number;
     preview_width_dip: number;
+    custom_height_dip?: number | null;
     custom_x: number | null;
     custom_y: number | null;
   };

@@ -4,7 +4,9 @@ use super::bootstrap::{apply_cue_banner, apply_dwm_attributes};
 use super::input::{register_all_hotkeys, unregister_all_hotkeys};
 use super::{mi_collect, AppShell, TIMER_HIBERNATE};
 use crate::actions::spawn_settings_window_at;
-use crate::renderer::{compute_filter_counts, ThemePalette, MIN_WINDOW_WIDTH_DIP};
+use crate::renderer::{
+    compute_filter_counts, ThemePalette, MAX_WINDOW_WIDTH_DIP, MIN_WINDOW_WIDTH_DIP,
+};
 use tomoyo_core::{Lang, TomoyoConfig};
 use tomoyo_protocol::{AttachedContext, SearchFilter};
 use windows::Win32::Foundation::{COLORREF, HWND};
@@ -205,9 +207,10 @@ impl AppShell {
         self.filter_bar_wrap = fresh.filter_bar_layout != "single";
         let typo_changed = self.typography != fresh.typography;
         self.typography = fresh.typography.clone();
-        self.geom.list_width_dip = fresh.window.width_dip.clamp(MIN_WINDOW_WIDTH_DIP, 1400);
+        self.geom.list_width_dip = fresh.window.width_dip.clamp(MIN_WINDOW_WIDTH_DIP, MAX_WINDOW_WIDTH_DIP);
         self.geom.max_visible_rows = fresh.window.max_visible_rows.clamp(4, 18);
         self.geom.preview_width_dip = fresh.window.preview_width_dip.clamp(220, 620);
+        self.geom.custom_height_dip = fresh.window.custom_height_dip.map(|v| v.clamp(92, 1080));
         self.geom.custom_pos = fresh.window.custom_x.zip(fresh.window.custom_y);
         let (apps_changed, plugins_changed, hotkeys_changed, avoidance_changed) = self
             .config

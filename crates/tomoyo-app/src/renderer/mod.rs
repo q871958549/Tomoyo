@@ -221,7 +221,7 @@ pub(crate) fn compute_frame_layout(width: i32, height: i32, scale: f32, state: &
     let list_x1 = list_x0 + list_w_dip;
     let list_top = header_h + filter_h + 4.0;
     let max_rows_by_h = ((h_dip - list_top - footer_h).max(0.0) / row_h).floor() as usize;
-    let visible_cap = state.max_visible_rows.max(1).min(max_rows_by_h.max(1));
+    let visible_cap = if max_rows_by_h == 0 { 0 } else { state.max_visible_rows.max(1).min(max_rows_by_h) };
     let visible_count = state.items.len().min(visible_cap);
     FrameLayout {
         w_dip,

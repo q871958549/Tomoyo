@@ -86,6 +86,9 @@ impl AppCore {
     }
 
     pub(super) fn desired_height_dip(&self) -> i32 {
+        if let Some(h) = self.custom_height_dip {
+            return h.clamp(HEADER_HEIGHT_DIP + FOOTER_HEIGHT_DIP, 1080);
+        }
         if self.is_filter_bar_visible() {
             return HEADER_HEIGHT_DIP
                 + 8

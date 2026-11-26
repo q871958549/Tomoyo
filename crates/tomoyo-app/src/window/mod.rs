@@ -140,6 +140,7 @@ pub(super) struct WindowGeometry {
     pub list_width_dip: i32,
     pub max_visible_rows: usize,
     pub preview_width_dip: i32,
+    pub custom_height_dip: Option<i32>,
     pub custom_pos: Option<(i32, i32)>,
 }
 

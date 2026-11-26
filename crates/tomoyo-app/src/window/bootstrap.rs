@@ -10,7 +10,8 @@ use super::{
 use crate::actions::read_clipboard_text;
 use crate::preview_loader::AsyncPreviewLoader;
 use crate::renderer::{
-    FluentRenderer, ThemePalette, FOOTER_HEIGHT_DIP, HEADER_HEIGHT_DIP, MIN_WINDOW_WIDTH_DIP,
+    FluentRenderer, ThemePalette, FOOTER_HEIGHT_DIP, HEADER_HEIGHT_DIP, MAX_WINDOW_WIDTH_DIP,
+    MIN_WINDOW_WIDTH_DIP,
 };
 use crate::tray::TrayIcon;
 use std::ffi::c_void;
@@ -62,9 +63,10 @@ impl AppShell {
         let initial_lang = cfg_snap.lang();
         let theme = ThemePalette::from_name(&cfg_snap.theme);
         let geom = WindowGeometry {
-            list_width_dip: cfg_snap.window.width_dip.clamp(MIN_WINDOW_WIDTH_DIP, 1400),
+            list_width_dip: cfg_snap.window.width_dip.clamp(MIN_WINDOW_WIDTH_DIP, MAX_WINDOW_WIDTH_DIP),
             max_visible_rows: cfg_snap.window.max_visible_rows.clamp(4, 18),
             preview_width_dip: cfg_snap.window.preview_width_dip.clamp(220, 620),
+            custom_height_dip: cfg_snap.window.custom_height_dip.map(|v| v.clamp(92, 1080)),
             custom_pos: cfg_snap.window.custom_x.zip(cfg_snap.window.custom_y),
         };
 

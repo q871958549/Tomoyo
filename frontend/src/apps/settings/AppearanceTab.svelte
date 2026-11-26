@@ -120,19 +120,19 @@
 <div class="t-card" style="margin-top:14px">
   <div class="t-row">
     <div><div class="t-label">{tr(lang, 'lbl_width')}</div><div class="t-desc">{tr(lang, 'desc_width')}</div></div>
-    <Slider value={cfg.window.width_dip} min={520} max={1200} step={20} format={(v) => `${v} px`} oninput={(v) => { cfg.window.width_dip = v; onSave(120); }} />
+    <Slider value={cfg.window.width_dip} min={520} max={1600} step={20} format={(v) => `${v} px`} oninput={(v) => { cfg.window.width_dip = v; onSave(120); }} />
   </div>
   <div class="t-row">
     <div><div class="t-label">{tr(lang, 'lbl_rows')}</div><div class="t-desc">{tr(lang, 'desc_rows')}</div></div>
-    <Slider value={cfg.window.max_visible_rows} min={4} max={16} step={1} format={(v) => (lang === 'en' ? `${v}` : `${v} 行`)} oninput={(v) => { cfg.window.max_visible_rows = v; onSave(120); }} />
+    <Slider value={cfg.window.max_visible_rows} min={4} max={18} step={1} format={(v) => (lang === 'en' ? `${v}` : `${v} 行`)} oninput={(v) => { cfg.window.max_visible_rows = v; cfg.window.custom_height_dip = null; onSave(120); }} />
   </div>
   <div class="t-row">
     <div><div class="t-label">{tr(lang, 'lbl_preview_w')}</div><div class="t-desc">{tr(lang, 'desc_preview_w')}</div></div>
-    <Slider value={cfg.window.preview_width_dip} min={220} max={560} step={10} format={(v) => `${v} px`} oninput={(v) => { cfg.window.preview_width_dip = v; onSave(120); }} />
+    <Slider value={cfg.window.preview_width_dip} min={220} max={620} step={10} format={(v) => `${v} px`} oninput={(v) => { cfg.window.preview_width_dip = v; onSave(120); }} />
   </div>
   <div class="t-row">
     <div><div class="t-label">{tr(lang, 'lbl_pos')}</div><div class="t-desc">{cfg.window.custom_x !== null ? posText : tr(lang, 'pos_auto')}</div></div>
-    <Button size="sm" disabled={cfg.window.custom_x === null} onclick={() => { cfg.window.custom_x = null; cfg.window.custom_y = null; onSave(0); }}>{tr(lang, 'btn_reset_pos')}</Button>
+    <Button size="sm" disabled={cfg.window.custom_x === null && (cfg.window.custom_height_dip ?? null) === null} onclick={() => { cfg.window.custom_x = null; cfg.window.custom_y = null; cfg.window.custom_height_dip = null; onSave(0); }}>{tr(lang, 'btn_reset_pos')}</Button>
   </div>
 </div>
 

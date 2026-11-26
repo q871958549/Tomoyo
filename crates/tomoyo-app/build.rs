@@ -26,6 +26,7 @@ fn compile_linux_shell(out_dir: &Path) {
     println!("cargo:rerun-if-changed=src/linux/tag_dialog.c");
     println!("cargo:rerun-if-changed=src/linux/pango_draw.c");
     println!("cargo:rerun-if-changed=src/linux/kga_x11.c");
+    println!("cargo:rerun-if-changed=src/linux/kwin_pos.c");
     println!("cargo:rerun-if-changed=src/linux/wl_clip.c");
     let pkgs = [
         "gtk+-3.0",
@@ -70,6 +71,7 @@ fn compile_linux_shell(out_dir: &Path) {
         ("src/linux/tag_dialog.c", "linux_app_tagdlg.o"),
         ("src/linux/pango_draw.c", "linux_app_pango.o"),
         ("src/linux/kga_x11.c", "linux_app_kga.o"),
+        ("src/linux/kwin_pos.c", "linux_app_kwinpos.o"),
         ("src/linux/wl_clip.c", "linux_app_wlclip.o"),
     ] {
         let obj = out_dir.join(name);

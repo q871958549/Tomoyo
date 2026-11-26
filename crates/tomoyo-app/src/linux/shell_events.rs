@@ -3,6 +3,7 @@
 use crate::actions::{clipboard_has_rich_attachment, read_clipboard_files, read_clipboard_image_png};
 use crate::linux::{
     tomoyo_linux_ui_begin_drag, tomoyo_linux_ui_get_entry_text, tomoyo_linux_ui_quit,
+    tomoyo_linux_ui_set_cursor,
 };
 use crate::linux::ipc::schedule_on_ui;
 use crate::linux::shell_state::{with_current_core, AppCore};
@@ -52,11 +53,42 @@ pub unsafe extern "C" fn on_paste_cb(ctx: *mut c_void) {
     }
 }
 
+pub unsafe extern "C" fn on_configure_cb(
+    ctx: *mut c_void,
+    x: c_int,
+    y: c_int,
+    w: c_int,
+    h: c_int,
+    flags: c_int,
+) {
+    if let Some(cell) = borrow_core(ctx) {
+        if let Ok(mut st) = cell.try_borrow_mut() {
+            st.handle_window_configure(x, y, w, h, flags);
+        } else {
+            schedule_on_ui(move || with_current_core(|st| st.handle_window_configure(x, y, w, h, flags)));
+        }
+    }
+}
+
+pub unsafe extern "C" fn on_kwin_pos_cb(
+    _ctx: *mut c_void,
+    x: c_int,
+    y: c_int,
+    w: c_int,
+    h: c_int,
+) {
+    schedule_on_ui(move || {
+        with_current_core(|st| st.handle_kwin_pos_report(x, y, w, h));
+    });
+}
+
 pub unsafe extern "C" fn on_focus_out_cb(ctx: *mut c_void) {
     if let Some(cell) = borrow_core(ctx)
         && let Ok(mut st) = cell.try_borrow_mut()
         && !st.menu_open
         && !st.sidebar.modal_open
+        && !st.dragging_divider
+        && !st.last_geom_change_at.is_some_and(|t| t.elapsed() < Duration::from_millis(250))
         && !st.menu_closed_at.is_some_and(|t| t.elapsed() < Duration::from_millis(220))
         && st.shown_at.elapsed() > Duration::from_millis(180)
     {
@@ -187,8 +219,11 @@ pub unsafe extern "C" fn on_mouse_cb(ctx: *mut c_void, kind: c_int, x: c_int, y:
     let list_top = header_h + 4.0;
     let (lx0, lx1) = st.list_bounds_dip(st.desired_width_dip() as f32);
     let row_h = st.typography.row_height_dip() as f32;
+    let vis_cap = st.visible_row_capacity();
     let row_from_y = ((lx0..lx1).contains(&xd) && yd >= list_top && yd < fy0)
-        .then(|| st.scroll_offset + ((yd - list_top) / row_h) as usize)
+        .then(|| ((yd - list_top) / row_h) as usize)
+        .filter(|&slot| slot < vis_cap)
+        .map(|slot| st.scroll_offset + slot)
         .filter(|&i| i < st.results.len());
     let sidebar_hit = if st.is_filter_bar_visible() && xd < SIDEBAR_WIDTH_DIP && yd >= header_h && yd < fy0 {
         let tabs = st.visible_filter_tabs();
@@ -199,19 +234,35 @@ pub unsafe extern "C" fn on_mouse_cb(ctx: *mut c_void, kind: c_int, x: c_int, y:
 
     match kind {
         4 => {
-            st.dragging_divider = false;
+            if std::mem::replace(&mut st.dragging_divider, false) {
+                st.persist_window_geometry();
+            }
             let _ = st.finish_sidebar_tab_drag();
         }
         6 => {
             if st.is_filter_bar_visible() && xd < SIDEBAR_WIDTH_DIP && yd >= header_h && yd < fy0 {
                 st.scroll_sidebar(delta);
             } else {
-                let max_off = st.results.len().saturating_sub(st.max_visible_rows);
+                let max_off = st.results.len().saturating_sub(vis_cap);
                 st.scroll_offset = if delta > 0 { st.scroll_offset.saturating_sub(1) } else { (st.scroll_offset + 1).min(max_off) };
                 st.invalidate();
             }
         }
         5 => {
+            if st.dragging_divider {
+                let w_dip = st.desired_width_dip() as f32;
+                let (dx0, _) = st.list_bounds_dip(w_dip);
+                let max_pw = ((w_dip - dx0) - 320.0).clamp(220.0, 620.0);
+                let clamped = (w_dip - xd).round().clamp(220.0, max_pw) as i32;
+                if clamped != st.preview_width_dip {
+                    st.preview_width_dip = clamped;
+                    st.invalidate();
+                }
+                return;
+            }
+            if !st.ui.is_null() {
+                unsafe { tomoyo_linux_ui_set_cursor(st.ui, if st.is_over_preview_divider(xd, yd) { 9 } else { 0 }); }
+            }
             if st.update_sidebar_tab_drag(yd) {
                 return;
             }
@@ -222,6 +273,10 @@ pub unsafe extern "C" fn on_mouse_cb(ctx: *mut c_void, kind: c_int, x: c_int, y:
             st.invalidate();
         }
         1 | 2 => {
+            if kind == 1 && st.is_over_preview_divider(xd, yd) {
+                st.dragging_divider = true;
+                return;
+            }
             if yd < header_h && xd < 56.0 {
                 st.show_launcher_context_menu(false);
                 return;
@@ -267,9 +322,10 @@ pub unsafe extern "C" fn on_mouse_cb(ctx: *mut c_void, kind: c_int, x: c_int, y:
 
 impl AppCore {
     fn ensure_selected_visible(&mut self) {
+        let cap = self.visible_row_capacity();
         if self.selected < self.scroll_offset { self.scroll_offset = self.selected; }
-        else if self.selected >= self.scroll_offset + self.max_visible_rows {
-            self.scroll_offset = self.selected + 1 - self.max_visible_rows;
+        else if self.selected >= self.scroll_offset + cap {
+            self.scroll_offset = self.selected + 1 - cap;
         }
     }
 }

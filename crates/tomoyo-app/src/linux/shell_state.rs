@@ -8,10 +8,9 @@ use crate::linux::{
     ensure_tray_icon_png, mi_collect, tomoyo_linux_add_timeout, tomoyo_linux_remove_source,
     tomoyo_linux_tray_setup, tomoyo_linux_ui_create, tomoyo_linux_ui_destroy,
     tomoyo_linux_ui_get_entry_text, tomoyo_linux_ui_hide, tomoyo_linux_ui_is_visible,
-    tomoyo_linux_ui_queue_draw, tomoyo_linux_ui_resize, tomoyo_linux_ui_screen_info,
-    tomoyo_linux_ui_set_entry_bounds, tomoyo_linux_ui_set_entry_text,
-    tomoyo_linux_ui_set_placeholder, tomoyo_linux_ui_set_theme, tomoyo_linux_ui_show,
-    tomoyo_wl_clip_start, tomoyo_wl_clip_stop,
+    tomoyo_linux_ui_queue_draw, tomoyo_linux_ui_resize, tomoyo_linux_ui_set_entry_bounds,
+    tomoyo_linux_ui_set_entry_text, tomoyo_linux_ui_set_placeholder, tomoyo_linux_ui_set_theme,
+    tomoyo_linux_ui_show, tomoyo_wl_clip_start, tomoyo_wl_clip_stop,
 };
 use crate::linux::shell_events;
 use crate::linux::sidebar_ctrl::SidebarState;
@@ -78,6 +77,11 @@ pub struct AppCore {
     pub(super) preview_width_dip: i32,
     pub(super) list_width_dip: i32,
     pub(super) max_visible_rows: usize,
+    pub(super) custom_height_dip: Option<i32>,
+    pub(super) last_applied_height_dip: i32,
+    pub(super) last_geom_change_at: Option<Instant>,
+    pub(super) geom_save_source: u32,
+    pub(super) kwin_pos: *mut c_void,
     pub(super) dpi_scale: f32,
     pub(super) custom_pos: Option<(i32, i32)>,
     pub(super) dragging_divider: bool,
@@ -151,6 +155,11 @@ impl AppCore {
             preview_width_dip: cfg.window.preview_width_dip.clamp(220, 620),
             list_width_dip: cfg.window.width_dip.clamp(MIN_WINDOW_WIDTH_DIP, MAX_WINDOW_WIDTH_DIP),
             max_visible_rows: cfg.window.max_visible_rows.clamp(4, 18),
+            custom_height_dip: cfg.window.custom_height_dip.map(|v| v.clamp(92, 1080)),
+            last_applied_height_dip: 0,
+            last_geom_change_at: None,
+            geom_save_source: 0,
+            kwin_pos: std::ptr::null_mut(),
             dpi_scale: 1.0,
             custom_pos: cfg.window.custom_x.zip(cfg.window.custom_y),
             dragging_divider: false,
@@ -186,6 +195,7 @@ impl AppCore {
                     shell_events::on_draw_cb,
                     shell_events::on_key_cb,
                     shell_events::on_mouse_cb,
+                    shell_events::on_configure_cb,
                     shell_events::on_text_changed_cb,
                     shell_events::on_paste_cb,
                     shell_events::on_focus_out_cb,
@@ -199,6 +209,7 @@ impl AppCore {
             {
                 let mut c = core.borrow_mut();
                 c.ui = ui;
+                c.init_kwin_pos_bridge(core_ptr);
                 c.apply_entry_theme_and_placeholder();
                 c.hotkeys.register_all(&cfg, &plugin_host);
                 c.hotkeys.set_handler(|act| {
@@ -295,11 +306,7 @@ impl AppCore {
         self.dispatch_query();
         self.shown_at = Instant::now();
         if !self.ui.is_null() {
-            let (mut sx, mut sy, mut sw, mut sh, mut _sc) = (0, 0, 1920, 1080, 1);
-            unsafe { tomoyo_linux_ui_screen_info(self.ui, &mut sx, &mut sy, &mut sw, &mut sh, &mut _sc); }
-            let w = self.desired_width_dip();
-            let h = self.desired_height_dip();
-            let (x, y) = self.custom_pos.unwrap_or((sx + (sw - w) / 2, sy + (sh / 5).max(80)));
+            let (x, y, w, h) = self.compute_show_geometry();
             unsafe { tomoyo_linux_ui_show(self.ui, x, y, w, h); }
             self.layout_entry(w);
             self.invalidate();
@@ -311,6 +318,7 @@ impl AppCore {
     }
 
     pub(super) fn hide_launcher(&mut self) {
+        self.flush_geometry_on_hide();
         self.action_menu_open = false;
         self.menu_open = false;
         self.menu_closed_at = None;
@@ -338,10 +346,11 @@ impl AppCore {
         unsafe { tomoyo_linux_ui_set_entry_bounds(self.ui, 62, 14, ew, 34); }
     }
 
-    pub(super) fn resize_to_fit(&self) {
+    pub(super) fn resize_to_fit(&mut self) {
         if !self.is_visible() { return; }
         let w = self.desired_width_dip();
         let h = self.desired_height_dip();
+        self.last_applied_height_dip = h;
         unsafe { tomoyo_linux_ui_resize(self.ui, w, h); }
         self.layout_entry(w);
     }
@@ -406,6 +415,7 @@ impl AppCore {
         if self.shutting_down { return; }
         self.shutting_down = true;
         self.cancel_hibernate_timer();
+        self.stop_window_geom();
         self.alive.store(false, Ordering::Release);
         self.hotkeys.unregister_all();
         self.plugin_host.shutdown_all();
