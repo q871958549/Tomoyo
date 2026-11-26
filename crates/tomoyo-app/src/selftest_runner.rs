@@ -21,7 +21,28 @@ pub(crate) fn log_mem(stage: &str) {
     );
 }
 
+#[cfg(windows)]
+fn disable_third_party_ime_for_selftest() {
+    use windows::core::{s, w};
+    use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
+    unsafe {
+        if let Ok(hmod) = LoadLibraryW(w!("imm32.dll")) {
+            for sym in [s!("ImmDisableIME"), s!("ImmDisableTextFrameService")] {
+                if let Some(proc_fn) = GetProcAddress(hmod, sym) {
+                    let disable_fn: unsafe extern "system" fn(u32) -> i32 =
+                        std::mem::transmute(proc_fn);
+                    let _ = disable_fn(u32::MAX);
+                }
+            }
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn disable_third_party_ime_for_selftest() {}
+
 pub(crate) fn run_self_test(fonts: &PrivateFonts, strict_budget: bool) {
+    disable_third_party_ime_for_selftest();
     println!("=== Tomoyo v{CURRENT_VERSION} Full-Stack Anti-Leak & Ecosystem Self-Test ===");
     println!(
         "Font engine: Regular=`{}` · Medium=`{}` (Alibaba PuHuiTi loaded={})",
@@ -93,6 +114,8 @@ pub(crate) fn run_self_test(fonts: &PrivateFonts, strict_budget: bool) {
     shell.wait_background_idle_for_test();
     let _ = shell.run_hibernate();
     shell.wait_background_idle_for_test();
+    #[cfg(windows)]
+    shell.compact_os_heaps();
     assert!(shell.is_renderer_hibernated(), "renderer should release surfaces on hibernate");
 
     let soak_queries = ["jsq", "f Cargo.toml", "2^16", ":stats", "g rust", "cb", "@pdf"];
@@ -106,6 +129,8 @@ pub(crate) fn run_self_test(fonts: &PrivateFonts, strict_budget: bool) {
         shell.wait_background_idle_for_test();
         let _ = shell.run_hibernate();
         shell.wait_background_idle_for_test();
+        #[cfg(windows)]
+        shell.compact_os_heaps();
     }
 
     let after = current_process_stats();

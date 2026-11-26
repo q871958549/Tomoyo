@@ -33,7 +33,6 @@ const DRAG_CANCEL_PX: i32 = 8;
 const MIDDLE_CLICK_MAX_MS: u32 = 420;
 const HOLD_MAX_AGE_MS: u32 = 2500;
 const DISMISS_GRACE_MS: u32 = 80;
-const LLMHF_INJECTED_BIT: u32 = 0x0000_0001;
 
 static TARGET_HWND: AtomicIsize = AtomicIsize::new(0);
 static HOOK_HANDLE: AtomicIsize = AtomicIsize::new(0);
@@ -253,7 +252,7 @@ fn arm_button(btn: u8, info: &MSLLHOOKSTRUCT, post_arm_timer: bool) {
 unsafe extern "system" fn mouse_ll_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     if code >= 0 && lparam.0 != 0 {
         let info = unsafe { &*(lparam.0 as *const MSLLHOOKSTRUCT) };
-        if (info.flags & LLMHF_INJECTED_BIT) == 0 && info.dwExtraInfo != REPLAY_EXTRA_INFO {
+        if info.dwExtraInfo != REPLAY_EXTRA_INFO {
             let msg = wparam.0 as u32;
             let mode = TRIGGER_MODE.load(Ordering::Relaxed);
 

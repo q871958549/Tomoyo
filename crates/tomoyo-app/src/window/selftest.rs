@@ -101,6 +101,19 @@ impl AppShell {
         }
     }
 
+    pub fn compact_os_heaps(&self) {
+        unsafe {
+            windows::Win32::System::Com::CoFreeUnusedLibrariesEx(0, None);
+            mi_collect(true);
+            if let Ok(heap) = windows::Win32::System::Memory::GetProcessHeap() {
+                let _ = windows::Win32::System::Memory::HeapCompact(
+                    heap,
+                    windows::Win32::System::Memory::HEAP_FLAGS(0),
+                );
+            }
+        }
+    }
+
     pub fn run_hibernate(&mut self) -> u64 {
         unsafe { let _ = KillTimer(Some(self.hwnd), TIMER_HIBERNATE); }
         self.preview_loader.purge_worker();
@@ -110,10 +123,7 @@ impl AppShell {
         self.cached_preview_id = None;
         self.cached_preview = None;
         let cycles = self.router.hibernate_trim();
-        unsafe {
-            windows::Win32::System::Com::CoFreeUnusedLibraries();
-            mi_collect(true);
-        }
+        self.compact_os_heaps();
         cycles
     }
 

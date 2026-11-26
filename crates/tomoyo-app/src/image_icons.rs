@@ -83,7 +83,10 @@ impl ImageIconCache {
                                 }
                             }
                         }
-                        ImageIconJob::Purge => unsafe { mi_collect(true) },
+                        ImageIconJob::Purge => unsafe {
+                            windows::Win32::System::Com::CoFreeUnusedLibrariesEx(0, None);
+                            mi_collect(true);
+                        }
                     }
                     w_flight.fetch_sub(1, Ordering::Release);
                 }

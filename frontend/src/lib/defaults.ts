@@ -39,7 +39,7 @@ export function makeDefaultConfig(): TomoyoConfig {
     hotkey: 'Alt+Space',
     override_conflict_hotkeys: true,
     suspend_hotkeys_in_fullscreen: true,
-    hotkey_excluded_apps: ['raylink.exe', 'mstsc.exe', 'parsec.exe', 'moonlight.exe', 'todesk.exe', 'sunloginclient.exe', 'anydesk.exe'],
+    hotkey_excluded_apps: ['rustdesk.exe', 'raylink.exe', 'mstsc.exe', 'parsec.exe', 'moonlight.exe', 'todesk.exe', 'sunloginclient.exe', 'anydesk.exe'],
     theme: 'light',
     hibernate_delay_secs: 15,
     auto_preview: true,

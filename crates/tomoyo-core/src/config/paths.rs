@@ -127,6 +127,7 @@ pub fn default_hotkey_excluded_apps() -> Vec<String> {
     #[cfg(not(target_os = "linux"))]
     {
         vec![
+            "rustdesk.exe".into(),
             "raylink.exe".into(),
             "mstsc.exe".into(),
             "parsec.exe".into(),

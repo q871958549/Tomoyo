@@ -13,7 +13,9 @@ use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU64, AtomicUsize, Orderin
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Arc;
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
-use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED};
+use windows::Win32::System::Com::{
+    CoFreeUnusedLibrariesEx, CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED,
+};
 use windows::Win32::UI::WindowsAndMessaging::{PostMessageW, WM_APP};
 
 pub const WM_APP_ICON_READY: u32 = WM_APP + 5;
@@ -82,6 +84,7 @@ impl IconCache {
                             }
                         }
                         IconJob::Purge => unsafe {
+                            CoFreeUnusedLibrariesEx(0, None);
                             mi_collect(true);
                         },
                     }

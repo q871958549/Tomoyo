@@ -5,8 +5,9 @@
 //! remote-desktop client (e.g. `raylink.exe`, `mstsc.exe`, `parsec.exe`) owns the foreground.
 
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{OnceLock, RwLock};
+use std::time::{SystemTime, UNIX_EPOCH};
 use windows::core::PWSTR;
 use windows::Win32::Foundation::{CloseHandle, HWND, RECT};
 use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST};
@@ -14,7 +15,8 @@ use windows::Win32::System::Threading::{
     OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
 };
 use windows::Win32::UI::Shell::{
-    SHQueryUserNotificationState, QUNS_BUSY, QUNS_PRESENTATION_MODE, QUNS_RUNNING_D3D_FULL_SCREEN,
+    SHQueryUserNotificationState, QUERY_USER_NOTIFICATION_STATE, QUNS_PRESENTATION_MODE,
+    QUNS_RUNNING_D3D_FULL_SCREEN,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     GetForegroundWindow, GetWindowLongW, GetWindowRect, GetWindowThreadProcessId, IsWindowVisible,
@@ -23,6 +25,26 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 static SUSPEND_FULLSCREEN: AtomicBool = AtomicBool::new(true);
 static EXCLUDED_APPS: OnceLock<RwLock<Vec<String>>> = OnceLock::new();
+static LAST_YIELD_LOG_MS: AtomicU64 = AtomicU64::new(0);
+
+#[inline]
+fn is_fullscreen_quns_state(state: QUERY_USER_NOTIFICATION_STATE) -> bool {
+    state == QUNS_RUNNING_D3D_FULL_SCREEN || state == QUNS_PRESENTATION_MODE
+}
+
+fn log_hotkey_yield(exe_lower: &str, reason: &str) {
+    let now_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as u64);
+    let prev = LAST_YIELD_LOG_MS.load(Ordering::Relaxed);
+    if now_ms.saturating_sub(prev) >= 3000
+        && LAST_YIELD_LOG_MS
+            .compare_exchange(prev, now_ms, Ordering::AcqRel, Ordering::Relaxed)
+            .is_ok()
+    {
+        tracing::info!(exe = %exe_lower, reason = reason, "Yielded global hotkey to foreground window");
+    }
+}
 
 fn excluded_store() -> &'static RwLock<Vec<String>> {
     EXCLUDED_APPS.get_or_init(|| RwLock::new(tomoyo_core::default_hotkey_excluded_apps()))
@@ -56,7 +78,7 @@ pub(crate) fn should_avoid_hotkey(self_hwnd: HWND) -> bool {
         if !exe_lower.is_empty()
             && let Ok(guard) = excluded_store().try_read()
                 && guard.iter().any(|ex| ex == &exe_lower) {
-                    tracing::debug!(exe = %exe_lower, "Yielding hotkey to excluded foreground app");
+                    log_hotkey_yield(&exe_lower, "excluded_app");
                     return true;
                 }
 
@@ -69,8 +91,8 @@ pub(crate) fn should_avoid_hotkey(self_hwnd: HWND) -> bool {
         }
 
         if let Ok(state) = SHQueryUserNotificationState()
-            && (state == QUNS_RUNNING_D3D_FULL_SCREEN || state == QUNS_BUSY || state == QUNS_PRESENTATION_MODE) {
-                tracing::debug!(exe = %exe_lower, ?state, "Yielding hotkey to fullscreen app");
+            && is_fullscreen_quns_state(state) {
+                log_hotkey_yield(&exe_lower, "fullscreen_quns");
                 return true;
             }
 
@@ -84,7 +106,7 @@ pub(crate) fn should_avoid_hotkey(self_hwnd: HWND) -> bool {
                 if GetMonitorInfoW(hmon, &mut mi).as_bool() {
                     let mr = mi.rcMonitor;
                     if wr.left <= mr.left && wr.top <= mr.top && wr.right >= mr.right && wr.bottom >= mr.bottom {
-                        tracing::debug!(exe = %exe_lower, "Yielding hotkey to borderless fullscreen window");
+                        log_hotkey_yield(&exe_lower, "borderless_fullscreen");
                         return true;
                     }
                 }
@@ -109,5 +131,19 @@ pub(crate) fn query_process_basename_lower(pid: u32) -> Option<String> {
             .file_name()
             .and_then(|s| s.to_str())
             .map(|s| s.to_ascii_lowercase())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use windows::Win32::UI::Shell::{QUNS_ACCEPTS_NOTIFICATIONS, QUNS_BUSY};
+
+    #[test]
+    fn quns_busy_does_not_suppress_hotkeys() {
+        assert!(is_fullscreen_quns_state(QUNS_RUNNING_D3D_FULL_SCREEN));
+        assert!(is_fullscreen_quns_state(QUNS_PRESENTATION_MODE));
+        assert!(!is_fullscreen_quns_state(QUNS_BUSY));
+        assert!(!is_fullscreen_quns_state(QUNS_ACCEPTS_NOTIFICATIONS));
     }
 }

@@ -32,7 +32,8 @@ pub enum ProcessError {
 pub struct LivePluginProcess {
     child: Child,
     stdin: ChildStdin,
-    responses: Receiver<JsonRpcResponse>,
+    raw_lines: Receiver<String>,
+    recycle_tx: mpsc::SyncSender<String>,
     stderr_tail: Arc<Mutex<VecDeque<String>>>,
     _job: Option<JobGuard>,
     next_id: u64,
@@ -115,8 +116,9 @@ impl LivePluginProcess {
             let pid_label = plugin_id.to_string();
             let _ = std::thread::Builder::new()
                 .name(format!("tomoyo-err-{pid}"))
+                .stack_size(128 * 1024)
                 .spawn(move || {
-                    let mut reader = BufReader::new(stderr);
+                    let mut reader = BufReader::with_capacity(2048, stderr);
                     let mut line = String::new();
                     loop {
                         line.clear();
@@ -146,25 +148,34 @@ impl LivePluginProcess {
         }
 
         // Bounded channel prevents memory spikes if a misbehaving plugin spams stdout.
-        let (tx, rx) = mpsc::sync_channel::<JsonRpcResponse>(8);
+        let (tx, rx) = mpsc::sync_channel::<String>(8);
+        let (recycle_tx, recycle_rx) = mpsc::sync_channel::<String>(4);
         std::thread::Builder::new()
             .name(format!("tomoyo-plug-{pid}"))
+            .stack_size(256 * 1024)
             .spawn(move || {
-                let mut reader = BufReader::new(stdout);
+                let mut reader = BufReader::with_capacity(4096, stdout);
                 let mut line = String::new();
                 loop {
+                    while let Ok(mut recycled) = recycle_rx.try_recv() {
+                        if line.capacity() < recycled.capacity() && recycled.capacity() <= 8192 {
+                            recycled.clear();
+                            line = recycled;
+                        }
+                    }
                     line.clear();
+                    if line.capacity() > 8192 {
+                        line = String::new();
+                    }
                     match reader.read_line(&mut line) {
                         Ok(0) | Err(_) => break,
                         Ok(_) => {
-                            let trimmed = line.trim();
-                            if trimmed.is_empty() {
+                            if line.trim().is_empty() {
                                 continue;
                             }
-                            if let Ok(resp) = serde_json::from_str::<JsonRpcResponse>(trimmed)
-                                && tx.send(resp).is_err() {
-                                    break;
-                                }
+                            if tx.send(std::mem::take(&mut line)).is_err() {
+                                break;
+                            }
                         }
                     }
                 }
@@ -174,7 +185,8 @@ impl LivePluginProcess {
         let mut proc = Self {
             child,
             stdin,
-            responses: rx,
+            raw_lines: rx,
+            recycle_tx,
             stderr_tail,
             _job: job,
             next_id: 1,
@@ -257,8 +269,13 @@ impl LivePluginProcess {
                 return Err(ProcessError::Timeout(timeout.as_millis() as u64));
             }
             let remain = deadline - now;
-            match self.responses.recv_timeout(remain) {
-                Ok(resp) => {
+            match self.raw_lines.recv_timeout(remain) {
+                Ok(raw_line) => {
+                    let parsed = serde_json::from_str::<JsonRpcResponse>(raw_line.trim());
+                    let _ = self.recycle_tx.try_send(raw_line);
+                    let Ok(resp) = parsed else {
+                        continue;
+                    };
                     if resp.id != id {
                         continue;
                     }

@@ -16,11 +16,12 @@ use windows::Win32::Graphics::Gdi::{
     CreateCompatibleDC, DeleteDC, DeleteObject, GetDIBits, GetObjectW, BITMAP, BITMAPINFO,
     BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS, HBITMAP,
 };
+use windows::Win32::Storage::FileSystem::FILE_ATTRIBUTE_NORMAL;
 use windows::Win32::UI::Controls::IImageList;
 use windows::Win32::UI::Shell::{
     IShellItemImageFactory, SHCreateItemFromParsingName, SHGetFileInfoW, SHGetImageList,
-    SHFILEINFOW, SHGFI_ICON, SHGFI_LARGEICON, SHGFI_SYSICONINDEX, SHIL_EXTRALARGE,
-    SIIGBF_BIGGERSIZEOK, SIIGBF_ICONONLY,
+    SHFILEINFOW, SHGFI_ICON, SHGFI_LARGEICON, SHGFI_SYSICONINDEX, SHGFI_USEFILEATTRIBUTES,
+    SHIL_EXTRALARGE, SIIGBF_BIGGERSIZEOK, SIIGBF_ICONONLY,
 };
 use windows::Win32::UI::WindowsAndMessaging::{DestroyIcon, GetIconInfo, HICON, ICONINFO};
 
@@ -48,13 +49,28 @@ impl Drop for OwnedHIcon {
     }
 }
 
+#[inline]
+fn should_use_image_factory(path: &str) -> bool {
+    path.starts_with("shell:")
+        || std::path::Path::new(path).extension().and_then(|s| s.to_str()).is_some_and(|e| {
+            ["exe", "lnk", "ico", "cur", "url", "appref-ms", "msc", "cpl"]
+                .iter()
+                .any(|k| e.eq_ignore_ascii_case(k))
+        })
+}
+
 /// Extracts a razor-sharp straight-alpha RGBA icon resampled to exact `target_px x target_px`.
 pub fn extract_shell_icon_rgba(path: &str, target_px: u32) -> Option<DecodedRgba> {
     let dst = target_px.clamp(16, 128);
     let req = (dst * 2).clamp(64, 128) as i32;
-    let raw = extract_via_image_factory(path, req)
-        .or_else(|| extract_via_shell_image_list(path))
-        .or_else(|| extract_via_shgetfileinfo(path))?;
+    let raw = if should_use_image_factory(path) {
+        extract_via_image_factory(path, req)
+            .or_else(|| extract_via_shell_image_list(path, false))
+            .or_else(|| extract_via_shgetfileinfo(path))?
+    } else {
+        extract_via_shell_image_list(path, true)
+            .or_else(|| extract_via_shgetfileinfo(path))?
+    };
 
     let (sw, sh, rgba) = unpad_corner_anchored(raw.0, raw.1, raw.2);
     if sw == dst && sh == dst {
@@ -91,20 +107,21 @@ fn extract_via_image_factory(path: &str, req_px: i32) -> Option<DecodedRgba> {
     }
 }
 
-fn extract_via_shell_image_list(path: &str) -> Option<DecodedRgba> {
+fn extract_via_shell_image_list(path: &str, use_attr_fastpath: bool) -> Option<DecodedRgba> {
     if path.starts_with("shell:") {
         return None;
     }
+    let p = std::path::Path::new(path);
+    let attr_fast = use_attr_fastpath && p.extension().is_some() && !p.is_dir();
+    let (attrs, flags) = if attr_fast {
+        (FILE_ATTRIBUTE_NORMAL, SHGFI_SYSICONINDEX | SHGFI_USEFILEATTRIBUTES)
+    } else {
+        (Default::default(), SHGFI_SYSICONINDEX)
+    };
     let wide: Vec<u16> = path.encode_utf16().chain(std::iter::once(0)).collect();
     unsafe {
         let mut shfi = SHFILEINFOW::default();
-        let res = SHGetFileInfoW(
-            PCWSTR(wide.as_ptr()),
-            Default::default(),
-            Some(&mut shfi),
-            std::mem::size_of::<SHFILEINFOW>() as u32,
-            SHGFI_SYSICONINDEX,
-        );
+        let res = SHGetFileInfoW(PCWSTR(wide.as_ptr()), attrs, Some(&mut shfi), std::mem::size_of::<SHFILEINFOW>() as u32, flags);
         if res == 0 {
             return None;
         }

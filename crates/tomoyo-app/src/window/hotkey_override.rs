@@ -17,14 +17,15 @@ use windows::Win32::UI::WindowsAndMessaging::{
     AllowSetForegroundWindow, BringWindowToTop, CallNextHookEx, GetForegroundWindow,
     GetWindowThreadProcessId, PostMessageW, SetForegroundWindow, SetWindowPos, SetWindowsHookExW,
     UnhookWindowsHookEx, ASFW_ANY, HHOOK, HWND_TOPMOST, KBDLLHOOKSTRUCT, KBDLLHOOKSTRUCT_FLAGS,
-    LLKHF_ALTDOWN, LLKHF_INJECTED, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, WH_KEYBOARD_LL,
-    WM_HOTKEY, WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP,
+    LLKHF_ALTDOWN, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, WH_KEYBOARD_LL, WM_HOTKEY, WM_KEYDOWN,
+    WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP,
 };
 
 const MAX_OVERRIDE_SLOTS: usize = 12;
 /// Microsoft PowerToys / AutoHotkey `#MenuMaskKey` unassigned VK (`0xE8`) that cancels
 /// bare-`Alt` (`SC_KEYMENU`) and bare-`Win` Start Menu activation when swallowing a chord.
 const VK_MENU_MASK: u16 = 0xE8;
+const OVERRIDE_EXTRA_INFO: usize = 0x544D_594B; // "TMYK"
 
 static TARGET_HWND: AtomicIsize = AtomicIsize::new(0);
 static HOOK_HANDLE: AtomicIsize = AtomicIsize::new(0);
@@ -93,6 +94,7 @@ fn inject_menu_mask_key() {
             ki: KEYBDINPUT {
                 wVk: VIRTUAL_KEY(VK_MENU_MASK),
                 dwFlags: if up { KEYEVENTF_KEYUP } else { KEYBD_EVENT_FLAGS(0) },
+                dwExtraInfo: OVERRIDE_EXTRA_INFO,
                 ..Default::default()
             },
         },
@@ -139,6 +141,7 @@ pub(crate) fn force_foreground_window(hwnd: HWND) {
                 ki: KEYBDINPUT {
                     wVk: VIRTUAL_KEY(VK_MENU_MASK),
                     dwFlags: KEYEVENTF_KEYUP,
+                    dwExtraInfo: OVERRIDE_EXTRA_INFO,
                     ..Default::default()
                 },
             },
@@ -189,7 +192,7 @@ unsafe extern "system" fn override_ll_proc(code: i32, wparam: WPARAM, lparam: LP
         return unsafe { CallNextHookEx(Some(HHOOK::default()), code, wparam, lparam) };
     }
     let kb = unsafe { &*(lparam.0 as *const KBDLLHOOKSTRUCT) };
-    if (kb.flags.0 & LLKHF_INJECTED.0) != 0 {
+    if kb.dwExtraInfo == OVERRIDE_EXTRA_INFO {
         return unsafe { CallNextHookEx(Some(HHOOK::default()), code, wparam, lparam) };
     }
 
