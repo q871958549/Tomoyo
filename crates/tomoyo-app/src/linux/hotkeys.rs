@@ -41,6 +41,7 @@ pub struct HotkeyManager {
     slots: Arc<Mutex<Vec<(String, HotkeyAction)>>>,
     on_fire: FireHandler,
     paused: bool,
+    owns_kga_slots: bool,
     pub active_label: String,
     pub conflict_msg: Option<String>,
 }
@@ -84,6 +85,21 @@ impl HotkeyManager {
             slots,
             on_fire,
             paused: false,
+            owns_kga_slots: false,
+            active_label: "Alt+Space".into(),
+            conflict_msg: None,
+        }
+    }
+
+    /// Creates an inert manager for headless `--self-test` / non-tray shells without touching D-Bus.
+    pub fn new_inactive() -> Self {
+        Self {
+            kga: std::ptr::null_mut(),
+            registered_ids: Vec::new(),
+            slots: Arc::new(Mutex::new(Vec::new())),
+            on_fire: Arc::new(Mutex::new(None)),
+            paused: false,
+            owns_kga_slots: false,
             active_label: "Alt+Space".into(),
             conflict_msg: None,
         }
@@ -132,7 +148,7 @@ impl HotkeyManager {
     }
 
     pub fn unregister_all(&mut self) {
-        if !self.kga.is_null() {
+        if !self.kga.is_null() && self.owns_kga_slots {
             for id in self.registered_ids.drain(..) {
                 if let Ok(cs) = CString::new(id) {
                     unsafe { tomoyo_kga_unregister(self.kga, cs.as_ptr()); }
@@ -142,20 +158,36 @@ impl HotkeyManager {
         } else {
             self.registered_ids.clear();
         }
+        self.owns_kga_slots = false;
         if let Ok(mut s) = self.slots.lock() {
             s.clear();
         }
     }
 
     pub fn register_all(&mut self, cfg: &TomoyoConfig, plugin_host: &PluginHost) {
-        self.unregister_all();
         if self.paused {
+            self.unregister_all();
             self.active_label = cfg.lang().pick("快捷键已停用", "Hotkeys Paused").into();
             self.conflict_msg = None;
             return;
         }
         if !self.kga.is_null() {
-            unsafe { tomoyo_kga_unblock_global(self.kga); }
+            for id in self.registered_ids.drain(..) {
+                if let Ok(cs) = CString::new(id) {
+                    unsafe { tomoyo_kga_unregister(self.kga, cs.as_ptr()); }
+                }
+            }
+            // Clear stale slots left by any previous instance before claiming KGlobalAccel ownership.
+            unsafe {
+                tomoyo_kga_purge_all(self.kga);
+                tomoyo_kga_unblock_global(self.kga);
+            }
+            self.owns_kga_slots = true;
+        } else {
+            self.registered_ids.clear();
+        }
+        if let Ok(mut s) = self.slots.lock() {
+            s.clear();
         }
         let mut health = HotkeyHealthReport {
             updated_at_unix: std::time::SystemTime::now()
@@ -328,4 +360,19 @@ fn spec_to_qt_key(spec: &str) -> Option<i32> {
         _ => return None,
     };
     Some(qt | key)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::HotkeyManager;
+
+    #[test]
+    fn inactive_hotkey_manager_never_claims_kga_or_purges_on_drop() {
+        let mut mgr = HotkeyManager::new_inactive();
+        assert!(mgr.kga.is_null());
+        assert!(!mgr.owns_kga_slots);
+        mgr.unregister_all();
+        assert!(!mgr.owns_kga_slots);
+        drop(mgr);
+    }
 }

@@ -128,7 +128,7 @@ impl AppCore {
             updater,
             renderer: LinuxRenderer::new(font_regular),
             preview_loader: AsyncPreviewLoader::new(),
-            hotkeys: HotkeyManager::new(),
+            hotkeys: if install_tray { HotkeyManager::new() } else { HotkeyManager::new_inactive() },
             lang: cfg.lang(),
             theme_name: cfg.theme.clone(),
             theme,
