@@ -56,6 +56,8 @@ jobs:
           cp -f plugins/example-wasm/target/wasm32-unknown-unknown/release/tomoyo_plugin_wasm_demo.wasm plugins/example-wasm/plugin.wasm
           cargo build --manifest-path plugins/official-devtools-wasm/Cargo.toml --target wasm32-unknown-unknown --release
           cp -f plugins/official-devtools-wasm/target/wasm32-unknown-unknown/release/tomoyo_plugin_devtools.wasm plugins/official-devtools-wasm/plugin.wasm
+          cargo build --manifest-path plugins/official-regex-wasm/Cargo.toml --target wasm32-unknown-unknown --release
+          cp -f plugins/official-regex-wasm/target/wasm32-unknown-unknown/release/tomoyo_plugin_regex.wasm plugins/official-regex-wasm/plugin.wasm
 
       - name: Test, build & verify Linux release binaries
         run: |
@@ -102,7 +104,7 @@ jobs:
             install -Dm755 scripts/install-local.sh scripts/uninstall-local.sh "$target_dir/scripts/"
           done
 
-          for p in example-hello example-python example-wasm example-webview-json builtin-ocr official-notes official-md-editor official-translate official-capture official-clipboard official-devtools-wasm; do
+          for p in example-hello example-python example-wasm example-webview-json builtin-ocr official-notes official-md-editor official-translate official-capture official-clipboard official-devtools-wasm official-regex-wasm; do
             mkdir -p "$stage/plugins/$p"
             cp -a "plugins/$p/." "$stage/plugins/$p/"
             rm -rf "$stage/plugins/$p/target" "$stage/plugins/$p/__pycache__"
@@ -202,6 +204,8 @@ jobs:
           Copy-Item plugins/example-wasm/target/wasm32-unknown-unknown/release/tomoyo_plugin_wasm_demo.wasm plugins/example-wasm/plugin.wasm -Force
           cargo build --manifest-path plugins/official-devtools-wasm/Cargo.toml --target wasm32-unknown-unknown --release
           Copy-Item plugins/official-devtools-wasm/target/wasm32-unknown-unknown/release/tomoyo_plugin_devtools.wasm plugins/official-devtools-wasm/plugin.wasm -Force
+          cargo build --manifest-path plugins/official-regex-wasm/Cargo.toml --target wasm32-unknown-unknown --release
+          Copy-Item plugins/official-regex-wasm/target/wasm32-unknown-unknown/release/tomoyo_plugin_regex.wasm plugins/official-regex-wasm/plugin.wasm -Force
 
       - name: Test & build release binaries
         run: |
@@ -264,7 +268,7 @@ jobs:
               }
             }
 
-            foreach ($p in @("example-hello", "example-python", "example-wasm", "example-webview-json", "builtin-ocr", "official-notes", "official-md-editor", "official-translate", "official-capture", "official-clipboard", "official-devtools-wasm")) {
+            foreach ($p in @("example-hello", "example-python", "example-wasm", "example-webview-json", "builtin-ocr", "official-notes", "official-md-editor", "official-translate", "official-capture", "official-clipboard", "official-devtools-wasm", "official-regex-wasm")) {
               New-Item -ItemType Directory -Force -Path "$stage/plugins/$p" | Out-Null
               Get-ChildItem "plugins/$p" -Exclude "target","__pycache__" | Copy-Item -Destination "$stage/plugins/$p" -Recurse -Force
             }

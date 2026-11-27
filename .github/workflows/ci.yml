@@ -59,6 +59,9 @@ jobs:
           cargo build --manifest-path plugins/official-devtools-wasm/Cargo.toml --target wasm32-unknown-unknown --release
           cp -f plugins/official-devtools-wasm/target/wasm32-unknown-unknown/release/tomoyo_plugin_devtools.wasm plugins/official-devtools-wasm/plugin.wasm
           cargo test --manifest-path plugins/official-devtools-wasm/Cargo.toml
+          cargo build --manifest-path plugins/official-regex-wasm/Cargo.toml --target wasm32-unknown-unknown --release
+          cp -f plugins/official-regex-wasm/target/wasm32-unknown-unknown/release/tomoyo_plugin_regex.wasm plugins/official-regex-wasm/plugin.wasm
+          cargo test --manifest-path plugins/official-regex-wasm/Cargo.toml
 
       - name: Run Clippy lint gate (zero warnings)
         env:
@@ -93,6 +96,7 @@ jobs:
           ./target/release/tomoyo-cli dev plugins/official-capture --query "" --once
           ./target/release/tomoyo-cli dev plugins/official-clipboard --query ":manage" --once
           ./target/release/tomoyo-cli dev plugins/official-devtools-wasm --query "cron 0 9 * * 1-5" --once
+          ./target/release/tomoyo-cli dev plugins/official-regex-wasm --query "/(\\w+)@([\\w.]+)/ alice@example.com" --once
 
   windows-test:
     runs-on: windows-latest
@@ -137,6 +141,9 @@ jobs:
           cargo build --manifest-path plugins/official-devtools-wasm/Cargo.toml --target wasm32-unknown-unknown --release
           Copy-Item plugins/official-devtools-wasm/target/wasm32-unknown-unknown/release/tomoyo_plugin_devtools.wasm plugins/official-devtools-wasm/plugin.wasm -Force
           cargo test --manifest-path plugins/official-devtools-wasm/Cargo.toml
+          cargo build --manifest-path plugins/official-regex-wasm/Cargo.toml --target wasm32-unknown-unknown --release
+          Copy-Item plugins/official-regex-wasm/target/wasm32-unknown-unknown/release/tomoyo_plugin_regex.wasm plugins/official-regex-wasm/plugin.wasm -Force
+          cargo test --manifest-path plugins/official-regex-wasm/Cargo.toml
 
       - name: Run Clippy lint gate (zero warnings)
         env:

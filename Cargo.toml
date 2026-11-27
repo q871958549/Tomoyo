@@ -26,6 +26,7 @@ members = [
 exclude = [
     "plugins/example-wasm",
     "plugins/official-devtools-wasm",
+    "plugins/official-regex-wasm",
 ]
 
 [workspace.package]

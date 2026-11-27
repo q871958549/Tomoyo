@@ -61,7 +61,7 @@ if [ "$PURGE" -eq 1 ]; then
   rm -rf "$DATA_DIR"
 else
   rm -rf "$DATA_DIR/fonts" "$DATA_DIR/plugin-icons" "$DATA_DIR/assets" "$DATA_DIR/registry" "$DATA_DIR/uninstall.sh"
-  for p in example-hello example-python example-wasm example-webview-json builtin-ocr official-notes official-md-editor official-translate official-capture official-clipboard official-devtools-wasm; do
+  for p in example-hello example-python example-wasm example-webview-json builtin-ocr official-notes official-md-editor official-translate official-capture official-clipboard official-devtools-wasm official-regex-wasm; do
     rm -rf "$DATA_DIR/plugins/$p"
   done
 fi

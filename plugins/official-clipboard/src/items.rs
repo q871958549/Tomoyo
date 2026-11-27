@@ -267,9 +267,12 @@ fn common_manage_actions(key: &str, pinned: bool) -> Vec<ActionSpec> {
     ]
 }
 
-pub fn build_clip_commands(cmd: &str, capturing: bool) -> Vec<ResultItem> {
+pub fn build_clip_commands(cmd: &str, capturing: bool, active_secrets: usize) -> Vec<ResultItem> {
     let low = cmd.to_ascii_lowercase();
     let mut out = Vec::new();
+    if ":purge".starts_with(&low) || low == ":" {
+        out.push(crate::secrets_guard::build_purge_command_item(active_secrets));
+    }
     if ":manage".starts_with(&low) || ":m".starts_with(&low) || low == ":" {
         out.push(ResultItem {
             id: "cb:cmd:manage".into(),

@@ -8,6 +8,7 @@ mod db_io;
 mod filter;
 mod items;
 mod paste_stack;
+mod secrets_guard;
 mod store;
 
 use base64::Engine;
@@ -35,16 +36,17 @@ struct CachedStore {
 
 struct ClipboardPlugin {
     cache: Mutex<Option<CachedStore>>,
+    secrets: Mutex<secrets_guard::EphemeralSecretStore>,
     db_override: Option<PathBuf>,
 }
 
 impl ClipboardPlugin {
     fn new() -> Self {
-        Self { cache: Mutex::new(None), db_override: None }
+        Self { cache: Mutex::new(None), secrets: Mutex::new(Default::default()), db_override: None }
     }
 
     fn with_db_path(path: PathBuf) -> Self {
-        Self { cache: Mutex::new(None), db_override: Some(path) }
+        Self { cache: Mutex::new(None), secrets: Mutex::new(Default::default()), db_override: Some(path) }
     }
 
     fn with_store<R>(&self, cfg: &ClipRuntimeConfig, f: impl FnOnce(&ClipboardStore) -> R) -> R {
@@ -84,19 +86,20 @@ impl TomoyoPlugin for ClipboardPlugin {
         if trimmed.eq_ignore_ascii_case(":stack") || trimmed.eq_ignore_ascii_case("stack") {
             return paste_stack::build_stack_items(&paste_stack::PasteStack::default_path());
         }
+        let now = chrono::Local::now().timestamp();
         if trimmed.starts_with(':') {
-            return build_clip_commands(trimmed, cfg.is_effectively_capturing());
+            let n_sec = self.secrets.lock().map(|mut g| g.active_len(now)).unwrap_or(0);
+            return build_clip_commands(trimmed, cfg.is_effectively_capturing(), n_sec);
         }
         let parsed = ParsedClipQuery::parse(trimmed);
+        let mut out = self.secrets.lock().map(|mut g| g.active_items(&parsed, now)).unwrap_or_default();
         let entries = self.with_store(&cfg, |s| s.query_filtered(&parsed, ctx.limit.min(30)));
-        if entries.is_empty() {
+        out.extend(entries.into_iter().enumerate().map(|(idx, e)| build_clipboard_item(idx, e)));
+        if out.is_empty() {
             return vec![empty_clipboard_item(trimmed)];
         }
-        entries
-            .into_iter()
-            .enumerate()
-            .map(|(idx, e)| build_clipboard_item(idx, e))
-            .collect()
+        out.truncate(ctx.limit.min(30));
+        out
     }
 
     fn execute(&self, req: &ExecuteRequest) -> ExecuteResponse {
@@ -108,6 +111,9 @@ impl TomoyoPlugin for ClipboardPlugin {
             }) {
                 return resp;
             }
+        }
+        if let Some(resp) = self.secrets.lock().ok().and_then(|mut g| g.handle_action(&req.action_id, &req.payload, chrono::Local::now().timestamp())) {
+            return resp;
         }
         match req.action_id.as_str() {
             "open_workbench" => {
@@ -221,6 +227,12 @@ impl TomoyoPlugin for ClipboardPlugin {
                 } else if let Some(txt) = ev.data.get("text").and_then(Value::as_str)
                     && !txt.trim().is_empty()
                 {
+                    if cfg.auto_clear_secrets && let Some(label) = secrets_guard::detect_sensitive_secret(txt) {
+                        if let Ok(mut g) = self.secrets.lock() {
+                            g.push(txt.to_string(), label, src, cfg.secret_ttl_secs, chrono::Local::now().timestamp());
+                        }
+                        return ExecuteResponse::default();
+                    }
                     self.with_store(&cfg, |s| s.push_text_with_source(txt.to_string(), src));
                 }
             }

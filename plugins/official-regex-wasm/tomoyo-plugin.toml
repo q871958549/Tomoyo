@@ -1,0 +1,30 @@
+id = "dev.tomoyo.regex"
+name = "正则表达式实验室 Regex Lab (WASM 沙箱)"
+version = "3.4.0"
+description = "官方零权限纯 WebAssembly 正则表达式实验室：实时捕获组高亮、防 ReDoS 有界回溯、常用预设与超级面板一键测试（16 MB 沙箱 · 0 常驻进程）"
+author = "Tomoyo Contributors"
+license = "MIT OR Apache-2.0"
+homepage = "https://github.com/q871958549/Tomoyo"
+icon = "icon.png"
+category = "dev"
+display_mode = "inline"
+tags = ["wasm", "regex", "devtools", "match", "groups"]
+permissions = []
+
+[runtime]
+kind = "wasm"
+module = "plugin.wasm"
+max_fuel = 8000000
+
+[triggers]
+keywords = ["re", "regex"]
+
+[resources]
+max_memory_mb = 16
+idle_timeout_secs = 30
+query_timeout_ms = 1000
+
+[[text_actions]]
+id = "test_regex"
+label = "正则实时测试 (WASM)"
+match_kinds = ["text", "code", "json", "url"]

@@ -60,6 +60,10 @@ build() {
       --target wasm32-unknown-unknown --release
     cp plugins/official-devtools-wasm/target/wasm32-unknown-unknown/release/tomoyo_plugin_devtools.wasm \
       plugins/official-devtools-wasm/plugin.wasm
+    cargo build --manifest-path plugins/official-regex-wasm/Cargo.toml \
+      --target wasm32-unknown-unknown --release
+    cp plugins/official-regex-wasm/target/wasm32-unknown-unknown/release/tomoyo_plugin_regex.wasm \
+      plugins/official-regex-wasm/plugin.wasm
   fi
   cargo build --frozen --release --workspace
 }
@@ -109,7 +113,7 @@ package() {
     install -Dm644 registry/shards/*.json "$pkgdir/usr/share/tomoyo/registry/shards/"
   fi
 
-  for p in example-hello example-python example-wasm example-webview-json builtin-ocr official-notes official-md-editor official-translate official-capture official-clipboard official-devtools-wasm; do
+  for p in example-hello example-python example-wasm example-webview-json builtin-ocr official-notes official-md-editor official-translate official-capture official-clipboard official-devtools-wasm official-regex-wasm; do
     mkdir -p "$pkgdir/usr/share/tomoyo/plugins/$p"
     cp -a "plugins/$p/." "$pkgdir/usr/share/tomoyo/plugins/$p/"
     rm -rf "$pkgdir/usr/share/tomoyo/plugins/$p/target" \

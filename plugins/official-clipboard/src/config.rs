@@ -11,6 +11,8 @@ pub struct ClipRuntimeConfig {
     pub persist_sqlite: bool,
     pub max_persisted_items: usize,
     pub excluded_apps: Vec<String>,
+    pub auto_clear_secrets: bool,
+    pub secret_ttl_secs: u64,
 }
 
 impl ClipRuntimeConfig {
@@ -42,12 +44,23 @@ impl ClipRuntimeConfig {
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default();
+        let auto_clear_secrets = settings
+            .get("auto_clear_secrets")
+            .and_then(Value::as_bool)
+            .unwrap_or(true);
+        let secret_ttl_secs = settings
+            .get("secret_ttl_secs")
+            .and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
+            .unwrap_or(60)
+            .clamp(15, 600);
         Self {
             capture_enabled,
             capture_images,
             persist_sqlite,
             max_persisted_items,
             excluded_apps,
+            auto_clear_secrets,
+            secret_ttl_secs,
         }
     }
 

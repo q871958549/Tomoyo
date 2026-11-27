@@ -100,3 +100,25 @@ section = "隐私安全屏蔽"
 type = "text"
 placeholder = "keepass.exe, keepassxc.exe, bitwarden.exe, 1password.exe"
 default = ""
+
+[[settings]]
+key = "auto_clear_secrets"
+label = "自动识别并限时脱敏清理敏感凭据"
+description = "检测到 API Key / GitHub Token / JWT / PEM 私钥时不写入 SQLite 持久化库，仅在内存限时保留并到期自动销毁"
+section = "隐私安全屏蔽"
+type = "bool"
+default = true
+
+[[settings]]
+key = "secret_ttl_secs"
+label = "敏感文本内存保留时长"
+description = "超过设定秒数后自动从内存销毁（也可输入 cb :purge 立即清空）"
+section = "隐私安全屏蔽"
+type = "select"
+default = "60"
+options = [
+  { value = "30", label = "30 秒（推荐）" },
+  { value = "60", label = "60 秒" },
+  { value = "120", label = "2 分钟" },
+  { value = "300", label = "5 分钟" },
+]

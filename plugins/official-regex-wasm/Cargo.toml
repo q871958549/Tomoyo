@@ -1,0 +1,19 @@
+[package]
+name = "tomoyo-plugin-regex"
+version = "3.4.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "Official zero-permission Tomoyo WebAssembly Regex Lab plugin (`re` / `regex`): live capture-group matching, ReDoS step guard & presets"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+tomoyo-wasm-sdk = { path = "../../crates/tomoyo-wasm-sdk" }
+serde_json = "1.0"
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = "symbols"
+panic = "abort"

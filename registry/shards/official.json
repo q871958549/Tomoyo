@@ -105,7 +105,7 @@
         "filesystem_write"
       ],
       "source": "plugins/official-clipboard",
-      "sha256": "8e2bc4355a283960b63ef5daac4919124b96d6f0f18d74361666f889e0fe0e8b",
+      "sha256": "f179253eed4a3a90f61b3014297a6c015c52be6a45564bac604c3e00d750e597",
       "platforms": {},
       "min_tomoyo_version": null,
       "homepage": "https://github.com/q871958549/Tomoyo",
@@ -221,6 +221,37 @@
       "platforms": {},
       "min_tomoyo_version": null,
       "homepage": null,
+      "updated_at": "",
+      "downloads": 0
+    },
+    {
+      "id": "dev.tomoyo.regex",
+      "name": "正则表达式实验室 Regex Lab (WASM 沙箱)",
+      "version": "3.4.0",
+      "description": "官方零权限纯 WebAssembly 正则表达式实验室：实时捕获组高亮、防 ReDoS 有界回溯、常用预设与超级面板一键测试（16 MB 沙箱 · 0 常驻进程）",
+      "author": "Tomoyo Contributors",
+      "license": "MIT OR Apache-2.0",
+      "runtime_kind": "wasm",
+      "category": "dev",
+      "icon": "icon.png",
+      "display_mode": "inline",
+      "tags": [
+        "wasm",
+        "regex",
+        "devtools",
+        "match",
+        "groups"
+      ],
+      "keywords": [
+        "re",
+        "regex"
+      ],
+      "permissions": [],
+      "source": "plugins/official-regex-wasm",
+      "sha256": "99c510440bf1f73a996029f74368fac3a87ce6c864ea41364cb5c32bf4451cf0",
+      "platforms": {},
+      "min_tomoyo_version": null,
+      "homepage": "https://github.com/q871958549/Tomoyo",
       "updated_at": "",
       "downloads": 0
     },

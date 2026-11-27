@@ -8,6 +8,7 @@
 //! - `tomoyo-cli registry list|check [--index <path-or-https-url>]`
 //! - `tomoyo-cli install <plugin-id> [--index <path-or-https-url>] [--dest <plugins-dir>]`
 
+mod assets_cli;
 mod dev;
 mod doctor;
 mod hash;
@@ -42,6 +43,8 @@ fn main() {
         "install" => cmd_install(&args[1..]),
         "doctor" => doctor::cmd_doctor(&args[1..]),
         "secrets" => secrets_vault::cmd_secrets(&args[1..]),
+        "snippets" => assets_cli::cmd_snippets(&args[1..]),
+        "flows" => assets_cli::cmd_flows(&args[1..]),
         other => {
             eprintln!("Unknown command `{other}`.\n");
             print_usage();
@@ -68,7 +71,9 @@ fn print_usage() {
          \t tomoyo-cli registry list|check|build-shards [--index <path-or-https-url>]\n\
          \t tomoyo-cli install <plugin-id> [--index <path-or-https-url>] [--dest <dir>]\n\
          \t tomoyo-cli doctor\n\
-         \t tomoyo-cli secrets list|export --out <file>|import --in <file>\n",
+         \t tomoyo-cli secrets list|export --out <file>|import --in <file>\n\
+         \t tomoyo-cli snippets list|add <kw> --title <t> --template <tpl>|remove <kw>|test <kw>\n\
+         \t tomoyo-cli flows list|dry-run <id-or-kw> [--input <txt>] [--clip <txt>]\n",
         env!("CARGO_PKG_VERSION")
     );
 }
