@@ -12,7 +12,9 @@ mod sdf_pass;
 mod theme;
 
 pub use canvas::Canvas;
-pub use filter_bar::{compute_filter_counts, item_matches_filter, FilterCounts};
+pub use filter_bar::{compute_filter_counts, FilterCounts};
+#[cfg(not(windows))]
+pub use filter_bar::item_matches_filter;
 pub use filter_sidebar::{
     compute_drag_drop_slot, compute_sidebar_layout, hit_test_sidebar, should_show_filter_sidebar,
     SidebarDragVisual, SidebarHit, SIDEBAR_WIDTH_DIP,

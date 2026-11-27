@@ -219,10 +219,6 @@ impl AppShell {
         self.geom.list_width_dip.clamp(MIN_WINDOW_WIDTH_DIP, MAX_WINDOW_WIDTH_DIP)
     }
 
-    pub(super) fn filter_bar_height_dip(&self) -> i32 {
-        0
-    }
-
     pub(super) fn list_bounds_dip(&self, w_dip: f32) -> (f32, f32) {
         let lx0 = if self.is_filter_bar_visible() { SIDEBAR_WIDTH_DIP } else { 0.0 };
         let avail_w = (w_dip - lx0).max(320.0);
