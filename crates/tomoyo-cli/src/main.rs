@@ -14,6 +14,7 @@ mod hash;
 mod pack;
 mod registry;
 mod scaffold;
+mod secrets_vault;
 mod utools;
 mod verify;
 
@@ -40,6 +41,7 @@ fn main() {
         "registry" => cmd_registry(&args[1..]),
         "install" => cmd_install(&args[1..]),
         "doctor" => doctor::cmd_doctor(&args[1..]),
+        "secrets" => secrets_vault::cmd_secrets(&args[1..]),
         other => {
             eprintln!("Unknown command `{other}`.\n");
             print_usage();
@@ -65,7 +67,8 @@ fn print_usage() {
          \t tomoyo-cli import-utools <utools-plugin-dir>\n\
          \t tomoyo-cli registry list|check|build-shards [--index <path-or-https-url>]\n\
          \t tomoyo-cli install <plugin-id> [--index <path-or-https-url>] [--dest <dir>]\n\
-         \t tomoyo-cli doctor\n",
+         \t tomoyo-cli doctor\n\
+         \t tomoyo-cli secrets list|export --out <file>|import --in <file>\n",
         env!("CARGO_PKG_VERSION")
     );
 }

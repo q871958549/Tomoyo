@@ -107,6 +107,19 @@ pub fn has_secret(key: &str) -> bool {
     has_secret_at(&secrets_file_path(), key)
 }
 
+/// Lists all valid secret keys currently stored in the OS vault (`DPAPI` / `libsecret` / `secrets.json`).
+pub fn list_stored_secret_keys(extra_keys: &[String]) -> Vec<String> {
+    let mut keys: Vec<String> = load_map(&secrets_file_path()).into_keys().collect();
+    for &k in LEGACY_SECRET_KEYS {
+        keys.push(k.to_string());
+    }
+    keys.extend(extra_keys.iter().cloned());
+    keys.retain(|k| is_valid_secret_key(k) && has_secret(k));
+    keys.sort();
+    keys.dedup();
+    keys
+}
+
 pub fn delete_secret(key: &str) -> Result<(), String> {
     #[cfg(target_os = "linux")]
     if is_valid_secret_key(key) {

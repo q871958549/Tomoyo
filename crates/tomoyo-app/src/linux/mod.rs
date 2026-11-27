@@ -11,6 +11,7 @@ mod shell_menus;
 mod shell_query;
 mod shell_state;
 mod sidebar_ctrl;
+mod super_panel_linux;
 mod window_geom;
 
 pub use ipc::{wake_existing_instance, SingletonGuard};
@@ -67,6 +68,20 @@ unsafe extern "C" {
     pub fn tomoyo_linux_ui_begin_drag(a: *mut c_void);
     pub fn tomoyo_wl_clip_start(on_change: unsafe extern "C" fn());
     pub fn tomoyo_wl_clip_stop();
+    pub fn tomoyo_linux_super_panel_show(
+        header: *const c_char,
+        labels: *const *const c_char,
+        n: usize,
+        bg_rgb: u32,
+        fg_rgb: u32,
+        muted_rgb: u32,
+        border_rgb: u32,
+        accent_rgb: u32,
+        font_css: *const c_char,
+        on_pick: unsafe extern "C" fn(*mut c_void, c_int),
+        ctx: *mut c_void,
+    );
+    pub fn tomoyo_linux_super_panel_close();
     pub fn tomoyo_linux_ui_set_entry_bounds(a: *mut c_void, x: c_int, y: c_int, w: c_int, h: c_int);
     pub fn tomoyo_linux_ui_set_entry_text(a: *mut c_void, txt: *const c_char);
     pub fn tomoyo_linux_ui_get_entry_text(a: *mut c_void) -> *const c_char;

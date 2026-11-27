@@ -217,6 +217,7 @@ impl AppCore {
                 c.hotkeys.set_handler(|act| {
                     with_current_core(|st| match act {
                         HotkeyAction::ToggleMain => st.toggle_launcher(),
+                        HotkeyAction::SuperPanel => st.open_super_panel(),
                         HotkeyAction::Plugin(hk) => st.handle_plugin_hotkey(hk),
                         HotkeyAction::Flow(id) => st.execute_workflow(&id, ""),
                     });
@@ -426,6 +427,7 @@ impl AppCore {
         self.stop_window_geom();
         self.alive.store(false, Ordering::Release);
         self.hotkeys.unregister_all();
+        unsafe { crate::linux::tomoyo_linux_super_panel_close(); }
         self.plugin_host.shutdown_all();
         self.preview_loader.cancel_all();
         if self.wl_clip_active {

@@ -52,8 +52,8 @@ pub use preview::*;
 pub use sync::*;
 pub use telemetry::*;
 pub use translate::{
-    delete_secret, get_secret, has_secret, is_valid_secret_key, load_plugin_secrets,
-    plugin_secret_key, set_secret,
+    delete_secret, get_secret, has_secret, is_valid_secret_key, list_stored_secret_keys,
+    load_plugin_secrets, plugin_secret_key, set_secret,
 };
 pub use updater::*;
 

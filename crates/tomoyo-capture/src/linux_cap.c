@@ -409,3 +409,28 @@ char *tomoyo_cap_prompt_text(const char *title) {
     gtk_widget_destroy(d);
     return out;
 }
+
+int tomoyo_cap_active_monitor_info(int *ox, int *oy, int *ow, int *oh, int *oscale) {
+    if (!ensure_gtk()) return 0;
+    GdkDisplay *d = gdk_display_get_default();
+    GdkMonitor *mon = NULL;
+    GdkSeat *seat = d ? gdk_display_get_default_seat(d) : NULL;
+    GdkDevice *ptr = seat ? gdk_seat_get_pointer(seat) : NULL;
+    if (d && ptr) {
+        int px = 0, py = 0;
+        gdk_device_get_position(ptr, NULL, &px, &py);
+        mon = gdk_display_get_monitor_at_point(d, px, py);
+    }
+    if (!mon && d) mon = gdk_display_get_primary_monitor(d);
+    if (!mon && d) mon = gdk_display_get_monitor(d, 0);
+    if (!mon) return 0;
+    GdkRectangle wa = { 0, 0, 1920, 1080 };
+    gdk_monitor_get_workarea(mon, &wa);
+    int sf = gdk_monitor_get_scale_factor(mon);
+    if (ox) *ox = wa.x;
+    if (oy) *oy = wa.y;
+    if (ow) *ow = wa.width;
+    if (oh) *oh = wa.height;
+    if (oscale) *oscale = (sf >= 1 && sf <= 3) ? sf : 1;
+    return 1;
+}

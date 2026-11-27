@@ -1,19 +1,19 @@
 //! Native GTK3 search-box & logo cascading context menu + focus-safe popup lifecycle.
 
 use crate::actions::{
-    clipboard_has_rich_attachment, read_clipboard_files, read_clipboard_image_png, set_clipboard_text,
-    shell_open,
+    clipboard_has_rich_attachment, execute_action, read_clipboard_files, read_clipboard_image_png,
+    set_clipboard_text, shell_open,
 };
 use crate::linux::shell_state::{with_current_core, AppCore};
 use crate::linux::{
     tomoyo_linux_add_timeout, tomoyo_linux_entry_edit_cmd, tomoyo_linux_entry_has_selection,
-    tomoyo_linux_schedule_idle, tomoyo_linux_ui_focus_entry, tomoyo_linux_ui_is_active,
-    tomoyo_linux_ui_quit,
+    tomoyo_linux_schedule_idle, tomoyo_linux_tray_set_menu, tomoyo_linux_ui_focus_entry,
+    tomoyo_linux_ui_is_active, tomoyo_linux_ui_quit, LinuxTrayMenuItem,
 };
 use std::ffi::{c_char, c_int, c_void, CString};
 use std::time::Instant;
 use tomoyo_core::{Lang, TomoyoConfig};
-use tomoyo_protocol::{AttachedContext, SearchFilter};
+use tomoyo_protocol::{ActionKind, AttachedContext, SearchFilter};
 
 const CMD_MENU_CLOSED_AFTER_PICK: u32 = 0xFFFF_FFFE;
 const CMD_EDIT_PASTE: u32 = 10;
@@ -287,6 +287,70 @@ impl AppCore {
             }
             _ => {}
         }
+    }
+
+    pub(super) fn rebuild_tray_menu(&mut self) {
+        if self.ui.is_null() { return; }
+        self.tray_plugin_actions = self.plugin_host.active_tray_actions();
+        let l = self.lang;
+        let paused = self.hotkeys.is_paused();
+        let hk_label = if paused {
+            l.pick("恢复全局快捷键（已停用）", "Resume Global Hotkeys (Paused)")
+        } else {
+            l.pick("停用全局快捷键", "Pause Global Hotkeys")
+        };
+        let upd_label = match self.updater.available_release() {
+            Some(r) if r.download_url.is_some() => match l {
+                Lang::Zh => format!("立即自动更新 v{} 并重启", r.version),
+                Lang::En => format!("Auto-Update to v{} & Restart", r.version),
+            },
+            Some(r) => match l {
+                Lang::Zh => format!("发现新版本 v{} (:update)", r.version),
+                Lang::En => format!("New Version v{} (:update)", r.version),
+            },
+            None => l.pick("检查更新 (:update)", "Check for Updates").into(),
+        };
+        let mut raw: Vec<(String, u32, bool)> = vec![
+            (l.pick("显示 Tomoyo", "Show Tomoyo").into(), 1, false),
+            (l.pick("打开超级面板", "Open Super Panel").into(), 5, false),
+            (l.pick("设置中心...", "Settings...").into(), 2, false),
+            (hk_label.into(), 3, paused),
+        ];
+        if !self.tray_plugin_actions.is_empty() {
+            raw.push(("---".into(), 0, false));
+            for (idx, act) in self.tray_plugin_actions.iter().enumerate() {
+                raw.push((act.label.clone(), 100 + idx as u32, false));
+            }
+        }
+        raw.push(("---".into(), 0, false));
+        raw.push((upd_label, 4, false));
+        raw.push(("---".into(), 0, false));
+        raw.push((l.pick("退出 Tomoyo", "Exit Tomoyo").into(), 9, false));
+        let cstrs: Vec<CString> = raw.iter().map(|(s, _, _)| CString::new(s.as_str()).unwrap_or_default()).collect();
+        let items: Vec<LinuxTrayMenuItem> = cstrs.iter().zip(raw.iter()).map(|(cs, (_, cmd, chk))| LinuxTrayMenuItem {
+            label: cs.as_ptr(), cmd: *cmd, parent_idx: -1, checked: i32::from(*chk), disabled: i32::from(*cmd == 0),
+        }).collect();
+        unsafe { tomoyo_linux_tray_set_menu(self.ui, items.as_ptr(), items.len()); }
+    }
+
+    pub(super) fn execute_plugin_tray_action(&mut self, idx: usize) {
+        let Some(act) = self.tray_plugin_actions.get(idx).cloned() else { return; };
+        if !act.trigger_query.trim().is_empty() {
+            self.show_launcher_with_query(Some(&act.trigger_query));
+            return;
+        }
+        let kind = if let Some(ui_act) = act.ui_action {
+            ui_act
+        } else {
+            ActionKind::PluginExecute {
+                plugin_id: act.plugin_id.clone(),
+                action_id: act.action_id,
+                payload: serde_json::json!({ "source": "tray", "tray_action_id": act.id }),
+            }
+        };
+        let out = execute_action(&kind, &format!("tray:{}", act.id), &self.plugin_host, self.theme.is_dark);
+        if let Some(q) = out.fill_query { self.show_launcher_with_query(Some(&q)); }
+        if let Some(t) = out.toast { self.show_toast(&t); }
     }
 }
 

@@ -827,6 +827,7 @@ dependencies = [
 name = "tomoyo-cli"
 version = "3.2.0"
 dependencies = [
+ "base64",
  "crc32fast",
  "flate2",
  "serde",
@@ -835,6 +836,7 @@ dependencies = [
  "tomoyo-core",
  "tomoyo-plugin-host",
  "tomoyo-protocol",
+ "uuid",
 ]
 
 [[package]]

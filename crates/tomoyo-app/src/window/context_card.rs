@@ -1,7 +1,7 @@
 //! Windows empty-launcher contextual clipboard card wrapper delegating to `crate::context_card`.
 
 use super::AppShell;
-use crate::context_card::build_context_card;
+use crate::context_card::{build_context_card, build_onboarding_card};
 use tomoyo_protocol::SearchFilter;
 use windows::Win32::System::DataExchange::IsClipboardFormatAvailable;
 use windows::Win32::System::Ole::CF_DIB;
@@ -25,19 +25,23 @@ impl AppShell {
             .map(|d| d.as_secs() as i64)
             .unwrap_or(0);
         let has_dib = unsafe { IsClipboardFormatAvailable(CF_DIB.0 as u32).is_ok() };
-        let Some(card) = build_context_card(
+        let mut idx = 0usize;
+        if let Some(card) = build_context_card(
             self.last_clip_snapshot.as_ref(),
             has_dib,
             now_unix,
             &cfg,
             self.lang,
-        ) else {
-            return;
-        };
-        if self.results.iter().any(|r| r.id == card.id) {
-            return;
+        ) && !self.results.iter().any(|r| r.id == card.id)
+        {
+            self.results.insert(0, card);
+            idx = 1;
         }
-        self.results.insert(0, card);
+        if let Some(guide) = build_onboarding_card(&cfg, self.router.is_first_run_frecency(), self.lang)
+            && !self.results.iter().any(|r| r.id == guide.id)
+        {
+            self.results.insert(idx.min(self.results.len()), guide);
+        }
         if self.results.len() > 16 {
             self.results.truncate(16);
         }

@@ -307,6 +307,7 @@ pub enum InternalCommandKind {
     CheckForUpdates,
     InstallUpdate,
     ClearAttachedContext,
+    DismissOnboarding,
     CopyImageAsBase64 { path: String },
     KillProcess { pid: u32, name: String },
     ToggleAutostart,

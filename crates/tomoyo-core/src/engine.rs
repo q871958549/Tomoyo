@@ -128,6 +128,10 @@ impl QueryRouter {
         self.current_generation() != generation
     }
 
+    pub fn is_first_run_frecency(&self) -> bool {
+        self.frecency.read().is_ok_and(|f| f.is_empty())
+    }
+
     pub fn record_execution(&self, item_id: &str) {
         self.record_execution_for_query("", item_id);
     }

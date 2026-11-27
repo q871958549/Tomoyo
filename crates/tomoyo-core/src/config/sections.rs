@@ -187,6 +187,9 @@ pub struct SuperPanelConfig {
     /// Master switch for the zero-polling mouse Super Panel hook.
     #[serde(default = "default_true")]
     pub enabled: bool,
+    /// Global summon shortcut (used natively on Linux KGlobalAccel; `"Alt+Q"` by default).
+    #[serde(default = "default_super_hotkey")]
+    pub hotkey: String,
     /// Single-choice mouse trigger: `"right_hold"` (default), `"middle_hold"`, or `"middle_click"`.
     #[serde(default = "default_super_trigger_mode")]
     pub trigger_mode: String,
@@ -201,6 +204,7 @@ pub struct SuperPanelConfig {
     pub excluded_apps: Vec<String>,
 }
 
+fn default_super_hotkey() -> String { "Alt+Q".into() }
 fn default_super_trigger_mode() -> String { "right_hold".into() }
 fn default_super_hold_ms() -> u32 { 320 }
 
@@ -208,6 +212,7 @@ impl Default for SuperPanelConfig {
     fn default() -> Self {
         Self {
             enabled: true,
+            hotkey: default_super_hotkey(),
             trigger_mode: default_super_trigger_mode(),
             hold_ms: default_super_hold_ms(),
             auto_translate_selection: true,

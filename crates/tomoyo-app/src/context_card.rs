@@ -3,7 +3,8 @@
 use std::path::Path;
 use tomoyo_core::{Lang, TomoyoConfig, PLUGIN_CAPTURE, PLUGIN_NOTES, PLUGIN_OCR, PLUGIN_TRANSLATE};
 use tomoyo_protocol::{
-    ActionKind, ActionSpec, ClipboardSnapshot, IconSpec, PreviewSpec, ResultCategory, ResultItem,
+    ActionKind, ActionSpec, ClipboardSnapshot, IconSpec, InternalCommandKind, PreviewSpec,
+    ResultCategory, ResultItem,
 };
 
 const FRESH_CLIP_SECS: i64 = 90;
@@ -20,7 +21,7 @@ pub enum TextKind {
 }
 
 impl TextKind {
-    #[cfg_attr(not(windows), allow(dead_code))]
+    #[cfg_attr(not(any(windows, target_os = "linux")), allow(dead_code))]
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Plain => "text",
@@ -334,6 +335,40 @@ fn clip_label(raw: &str, max_chars: usize) -> String {
     }
 }
 
+pub(crate) fn build_onboarding_card(
+    cfg: &TomoyoConfig,
+    is_first_run: bool,
+    lang: Lang,
+) -> Option<ResultItem> {
+    if cfg.onboarding_dismissed || !is_first_run {
+        return None;
+    }
+    Some(ResultItem {
+        id: "ctx:onboarding".into(),
+        provider_id: "builtin.onboarding".into(),
+        title: lang.pick("欢迎使用 Tomoyo · 30 秒上手指南（可随时跳过）", "Welcome to Tomoyo · 30s Quick Guide").into(),
+        subtitle: lang.pick("① 回车搜文件 (f 今天) · ② Ctrl+Enter 打开 ? 指令中心 · ③ Tab 跳过引导", "1) Enter: f today  2) Ctrl+Enter: ? hub  3) Tab: Dismiss").into(),
+        category: ResultCategory::System,
+        score: 10_050,
+        icon: IconSpec::Monogram("✦".into()),
+        badge: Some("GUIDE".into()),
+        copy_text: None,
+        actions: vec![
+            ActionSpec { id: "try_file".into(), label: lang.pick("试用自然语言搜文件 (f 今天)", "Try Natural File Search").into(), shortcut: Some("Enter".into()), kind: ActionKind::FillQuery { query: "f 今天".into() } },
+            ActionSpec { id: "open_hub".into(), label: lang.pick("打开 ? 命令与快捷键中心", "Open ? Command Hub").into(), shortcut: Some("Ctrl+Enter".into()), kind: ActionKind::FillQuery { query: "?".into() } },
+            ActionSpec { id: "dismiss_guide".into(), label: lang.pick("不再显示新手引导", "Dismiss Guide").into(), shortcut: Some("Tab".into()), kind: ActionKind::InternalCommand { command: InternalCommandKind::DismissOnboarding } },
+        ],
+        preview: Some(PreviewSpec::KeyValue {
+            title: lang.pick("三步玩转个人计算中枢", "3 Steps to Master Tomoyo").into(),
+            entries: vec![
+                ("1. 搜应用/文件".into(), lang.pick("直接敲拼音/英文，或输入 `f 今天 pdf` / `f 大文件` 离线找文件", "Type app name or `f today pdf`").into()),
+                ("2. 零记忆命令".into(), lang.pick("输入 `?` 看全量速查，`:font` 换字体，`Ctrl+,` 进设置与插件市场", "Type `?` for commands, `Ctrl+,` for settings").into()),
+                ("3. 轻量可扩展".into(), lang.pick("翻译/截图/剪贴板按需运行，关闭即释放，主内核休眠低内存", "Plugins run on demand with zero idle bloat").into()),
+            ],
+        }),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -384,5 +419,14 @@ mod tests {
         );
         assert_eq!(normalize_url("www.example.com/a").as_deref(), Some("https://www.example.com/a"));
         assert!(normalize_url("javascript:alert(1)").is_none());
+    }
+
+    #[test]
+    fn onboarding_card_only_shows_on_first_run_before_dismiss() {
+        let mut cfg = TomoyoConfig::default();
+        assert!(build_onboarding_card(&cfg, true, Lang::Zh).is_some());
+        assert!(build_onboarding_card(&cfg, false, Lang::Zh).is_none());
+        cfg.onboarding_dismissed = true;
+        assert!(build_onboarding_card(&cfg, true, Lang::Zh).is_none());
     }
 }

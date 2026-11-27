@@ -329,7 +329,8 @@ fn run_windows_main() {
         && let Some(txt) = args.get(pos + 1).map(|s| s.trim()).filter(|s| !s.is_empty())
     {
         let cfg = tomoyo_core::TomoyoConfig::load_or_create();
-        if let Some(p) = render_text_or_color_pin_card(txt, &cfg.theme, 1.0) {
+        let scale = linux_pin::active_monitor_metrics().4;
+        if let Some(p) = render_text_or_color_pin_card(txt, &cfg.theme, scale) {
             run_pin_window_with_text(p.width, p.height, p.bgra, i32::MIN, i32::MIN, p.source_text);
         }
         return;

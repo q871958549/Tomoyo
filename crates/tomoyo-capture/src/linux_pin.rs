@@ -39,6 +39,42 @@ unsafe extern "C" {
     fn tomoyo_cap_win_resize_top(w: c_int, h: c_int);
     fn tomoyo_cap_win_redraw();
     fn tomoyo_cap_cairo_blit_bgra(cr: *mut c_void, bgra: *const u8, w: c_int, h: c_int, dw: c_int, dh: c_int);
+    fn tomoyo_cap_active_monitor_info(ox: *mut c_int, oy: *mut c_int, ow: *mut c_int, oh: *mut c_int, oscale: *mut c_int) -> c_int;
+}
+
+pub fn active_monitor_metrics() -> (i32, i32, i32, i32, f32) {
+    let (mut x, mut y, mut w, mut h, mut sf) = (0, 0, 1920, 1080, 1);
+    if unsafe { tomoyo_cap_active_monitor_info(&mut x, &mut y, &mut w, &mut h, &mut sf) != 0 } {
+        return (x, y, w.max(320), h.max(240), (sf as f32).clamp(1.0, 3.0));
+    }
+    (0, 0, 1920, 1080, 1.0)
+}
+
+pub(crate) fn compute_pin_logical_size(phys_w: u32, phys_h: u32, scale: f32, work_w: i32, work_h: i32) -> (i32, i32) {
+    let sc = scale.clamp(1.0, 3.0);
+    let mut lw = (phys_w as f32 / sc).round().max(48.0);
+    let mut lh = (phys_h as f32 / sc).round().max(32.0);
+    let max_w = (work_w as f32 * 0.85).max(320.0);
+    let max_h = (work_h as f32 * 0.85).max(240.0);
+    let fit = (max_w / lw).min(max_h / lh);
+    if fit < 1.0 {
+        lw = (lw * fit).round().max(48.0);
+        lh = (lh * fit).round().max(32.0);
+    }
+    (lw as i32, lh as i32)
+}
+
+pub(crate) fn clamp_pin_pos(sx: i32, sy: i32, size: (i32, i32), work: (i32, i32, i32, i32)) -> (i32, i32) {
+    if sx <= -30_000 || sy <= -30_000 {
+        return (sx, sy);
+    }
+    let ((lw, lh), (mx, my, mw, mh)) = (size, work);
+    let keep = 44.min(lw).min(lh);
+    let min_x = mx - lw + keep;
+    let max_x = (mx + mw - keep).max(min_x);
+    let min_y = my - lh + keep;
+    let max_y = (my + mh - keep).max(min_y);
+    (sx.clamp(min_x, max_x), sy.clamp(min_y, max_y))
 }
 
 pub struct PinPayload {
@@ -150,14 +186,14 @@ pub fn read_latest_clipboard_for_pin(theme: &str) -> Option<PinPayload> {
         }
         let joined = paths.iter().map(|p| p.to_string_lossy()).collect::<Vec<_>>().join("\n");
         if !joined.trim().is_empty() {
-            return render_text_or_color_pin_card(&joined, theme, 1.0);
+            return render_text_or_color_pin_card(&joined, theme, active_monitor_metrics().4);
         }
     }
     let txt_raw = unsafe { tomoyo_cap_clip_get_text() };
     if !txt_raw.is_null() {
         let s = unsafe { CStr::from_ptr(txt_raw) }.to_string_lossy().into_owned();
         unsafe { tomoyo_cap_free(txt_raw.cast()); }
-        return render_text_or_color_pin_card(&s, theme, 1.0);
+        return render_text_or_color_pin_card(&s, theme, active_monitor_metrics().4);
     }
     None
 }
@@ -165,6 +201,8 @@ pub fn read_latest_clipboard_for_pin(theme: &str) -> Option<PinPayload> {
 struct PinState {
     w: u32,
     h: u32,
+    base_w: i32,
+    base_h: i32,
     bgra: Vec<u8>,
     zoom: f32,
     save_dir: String,
@@ -197,7 +235,7 @@ unsafe extern "C" fn on_pin_key(ctx: *mut c_void, kv: u32, state: u32) -> c_int 
     } else if matches!(kv, 0x0072 | 0x0052) {
         st.zoom = 1.0;
         unsafe {
-            tomoyo_cap_win_resize_top(st.w as i32, st.h as i32);
+            tomoyo_cap_win_resize_top(st.base_w, st.base_h);
             tomoyo_cap_win_redraw();
         }
     }
@@ -211,8 +249,8 @@ unsafe extern "C" fn on_pin_mouse(ctx: *mut c_void, kind: c_int, _x: c_int, _y: 
         1 if btn == 2 || btn == 3 => 1,
         6 => {
             st.zoom = (st.zoom + if d > 0 { 0.1 } else { -0.1 }).clamp(0.25, 4.0);
-            let nw = ((st.w as f32 * st.zoom).round() as i32).max(40);
-            let nh = ((st.h as f32 * st.zoom).round() as i32).max(32);
+            let nw = ((st.base_w as f32 * st.zoom).round() as i32).max(40);
+            let nh = ((st.base_h as f32 * st.zoom).round() as i32).max(32);
             unsafe {
                 tomoyo_cap_win_resize_top(nw, nh);
                 tomoyo_cap_win_redraw();
@@ -230,14 +268,33 @@ pub fn run_pin_window(width: u32, height: u32, bgra: Vec<u8>, sx: i32, sy: i32) 
 pub fn run_pin_window_with_text(width: u32, height: u32, bgra: Vec<u8>, sx: i32, sy: i32, source_text: Option<String>) {
     let cfg = TomoyoConfig::load_or_create();
     let cap = cfg.capture.with_plugin_overrides(cfg.plugin_settings.get(tomoyo_core::PLUGIN_CAPTURE));
+    let (mx, my, mw, mh, mscale) = active_monitor_metrics();
+    let (lw, lh) = compute_pin_logical_size(width, height, mscale, mw, mh);
+    let (cx, cy) = clamp_pin_pos(sx, sy, (lw, lh), (mx, my, mw, mh));
     let mut state = Box::new(PinState {
         w: width,
         h: height,
+        base_w: lw,
+        base_h: lh,
         bgra,
         zoom: 1.0,
         save_dir: cap.save_dir,
         source_text,
     });
     let ptr = &mut *state as *mut PinState as *mut c_void;
-    unsafe { tomoyo_cap_win_run(width as i32, height as i32, 0, sx, sy, ptr, on_pin_draw, on_pin_key, on_pin_mouse); }
+    unsafe { tomoyo_cap_win_run(lw, lh, 0, cx, cy, ptr, on_pin_draw, on_pin_key, on_pin_mouse); }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scales_hidpi_pins_to_logical_dips_and_clamps_multimonitor_coords() {
+        assert_eq!(compute_pin_logical_size(800, 400, 2.0, 1920, 1080), (400, 200));
+        let (fw, fh) = compute_pin_logical_size(3840, 2160, 1.0, 1920, 1080);
+        assert!(fw <= 1632 && fh <= 918 && (fw as f32 / fh as f32 - 16.0 / 9.0).abs() < 0.05);
+        assert_eq!(clamp_pin_pos(-1920 + 50, -500, (300, 200), (-1920, 0, 1920, 1080)), (-1870, -156));
+        assert_eq!(clamp_pin_pos(i32::MIN, i32::MIN, (300, 200), (0, 0, 1920, 1080)), (i32::MIN, i32::MIN));
+    }
 }

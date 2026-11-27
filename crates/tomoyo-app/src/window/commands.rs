@@ -248,6 +248,14 @@ impl AppShell {
                 self.dispatch_query();
                 self.invalidate();
             }
+            InternalCommandKind::DismissOnboarding => {
+                if let Ok(mut cfg) = self.config.write() {
+                    cfg.onboarding_dismissed = true;
+                    let _ = cfg.save();
+                }
+                self.show_toast(self.lang.pick("✓ 已跳过新手引导（输入 ? 可随时查看速查）", "✓ Onboarding guide dismissed"));
+                self.dispatch_query();
+            }
             InternalCommandKind::CopyImageAsBase64 { path } => match copy_image_as_base64_uri(&path) {
                 Ok(chars) => {
                     self.show_toast(&match self.lang {

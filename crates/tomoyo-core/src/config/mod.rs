@@ -74,6 +74,9 @@ pub struct TomoyoConfig {
     /// Show right-side live preview pane automatically when an item supports preview.
     #[serde(default = "default_true")]
     pub auto_preview: bool,
+    /// User explicitly dismissed the first-run 30-second onboarding guide card.
+    #[serde(default)]
+    pub onboarding_dismissed: bool,
     /// Show quick category/file-type filter bar below the search input.
     #[serde(default = "default_true")]
     pub show_filter_bar: bool,
@@ -152,6 +155,7 @@ impl Default for TomoyoConfig {
             theme: default_theme(),
             hibernate_delay_secs: default_hibernate_secs(),
             auto_preview: true,
+            onboarding_dismissed: false,
             show_filter_bar: true,
             filter_bar_layout: typography::default_filter_layout(),
             hidden_builtin_filters: Vec::new(),

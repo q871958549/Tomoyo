@@ -29,6 +29,7 @@ unsafe extern "C" {
 #[derive(Clone)]
 pub enum HotkeyAction {
     ToggleMain,
+    SuperPanel,
     Plugin(ActivePluginHotkey),
     Flow(String),
 }
@@ -222,6 +223,10 @@ impl HotkeyManager {
         health.record = HotkeySlotStatus { disabled: true, ..Default::default() };
 
         let mut summary = vec![format!("main={}({})", self.active_label, if health.main.ok { "ok" } else { "fail" })];
+        if cfg.super_panel.enabled && !cfg.super_panel.hotkey.trim().is_empty() {
+            let st = self.try_slot("super_panel", "Tomoyo 超级面板", &cfg.super_panel.hotkey, ov, HotkeyAction::SuperPanel);
+            summary.push(format!("super_panel={}({})", cfg.super_panel.hotkey.trim(), if st.ok { "ok" } else { "fail" }));
+        }
         for (i, hk) in plugin_host.active_plugin_hotkeys(cfg).into_iter().take(16).enumerate() {
             let id = format!("plugin_{i}");
             let label = format!("{} ({})", hk.plugin_id, hk.hotkey_id);

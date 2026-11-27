@@ -285,6 +285,10 @@ pub fn sanitize_config(cfg: &mut TomoyoConfig) -> Vec<String> {
 
 fn sanitize_super_panel(sp: &mut super::SuperPanelConfig) {
     sp.hold_ms = sp.hold_ms.clamp(180, 800);
+    sp.hotkey = sp.hotkey.trim().to_string();
+    if !sp.hotkey.is_empty() && parse_hotkey(&sp.hotkey).is_none() {
+        sp.hotkey = "Alt+Q".into();
+    }
     let mode = sp.trigger_mode.trim().to_ascii_lowercase();
     sp.trigger_mode = match mode.as_str() {
         "right_hold" | "middle_hold" | "middle_click" => mode,

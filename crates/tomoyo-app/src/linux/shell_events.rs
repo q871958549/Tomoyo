@@ -114,6 +114,7 @@ pub unsafe extern "C" fn on_tray_cmd_cb(ctx: *mut c_void, cmd: u32) {
             2 => st.open_settings_center(),
             3 => st.toggle_hotkeys_paused(),
             4 => st.handle_tray_update_click(),
+            5 => st.open_super_panel(),
             9 => {
                 st.shutdown_clean();
                 unsafe { tomoyo_linux_ui_quit(); }
