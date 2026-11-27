@@ -1,6 +1,8 @@
 //! Cross-platform login autostart management with Windows Task Scheduler elevation support.
 
-use std::path::{Path, PathBuf};
+#[cfg(any(windows, test))]
+use std::path::Path;
+use std::path::PathBuf;
 
 /// Resolves the `tomoyo` / `tomoyo.exe` launcher path beside the current executable.
 fn resolve_tomoyo_exe() -> Result<PathBuf, String> {
@@ -252,11 +254,13 @@ mod win_impl {
     }
 }
 
+#[cfg(any(windows, test))]
 pub(crate) fn is_runasadmin_flag_value(raw: &str) -> bool {
     raw.split_ascii_whitespace()
         .any(|token| token.eq_ignore_ascii_case("RUNASADMIN"))
 }
 
+#[cfg(any(windows, test))]
 pub(crate) fn xml_escape(raw: &str) -> String {
     let mut out = String::with_capacity(raw.len() + 8);
     for ch in raw.chars() {
@@ -272,6 +276,7 @@ pub(crate) fn xml_escape(raw: &str) -> String {
     out
 }
 
+#[cfg(any(windows, test))]
 pub(crate) fn encode_utf16le_bom(text: &str) -> Vec<u8> {
     let mut bytes = Vec::with_capacity(2 + text.len() * 2);
     bytes.extend_from_slice(&[0xFF, 0xFE]);
@@ -281,6 +286,7 @@ pub(crate) fn encode_utf16le_bom(text: &str) -> Vec<u8> {
     bytes
 }
 
+#[cfg(any(windows, test))]
 pub(crate) fn build_autostart_task_xml(
     exe: &Path,
     working_dir: &Path,
