@@ -15,7 +15,10 @@ mod shell_win;
 mod shell_win;
 
 #[cfg(target_os = "linux")]
-pub use clipboard_win::{clipboard_has_image, is_clipboard_confidential, set_clipboard_file_uri};
+pub use clipboard_win::{
+    clipboard_has_image, is_clipboard_confidential, read_primary_selection_text,
+    set_clipboard_file_uri,
+};
 #[cfg(windows)]
 pub use clipboard_win::{
     decode_and_cache_dib_bytes, open_clipboard_owned, read_clipboard_files_or_text_once,

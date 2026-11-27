@@ -25,6 +25,7 @@ pub mod pkg_zip;
 pub mod plugin_assets;
 pub mod preview;
 mod preview_docs;
+mod preview_xlsx;
 pub mod sync;
 pub mod telemetry;
 pub mod translate;

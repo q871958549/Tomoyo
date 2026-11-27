@@ -132,11 +132,13 @@ static gboolean cb_motion(GtkWidget *w, GdkEventMotion *ev, gpointer ud) {
     tomoyo_app_t *a = (tomoyo_app_t *)ud;
     if (!a) return FALSE;
     a->in_user_resize = 0;
-    GdkWindowEdge edge = GDK_WINDOW_EDGE_EAST;
-    int cur = 0;
-    if (hit_resize_edge(a, ev->x, ev->y, &edge, &cur)) {
-        apply_cursor(a, cur);
-        return FALSE;
+    if ((ev->state & GDK_BUTTON1_MASK) == 0) {
+        GdkWindowEdge edge = GDK_WINDOW_EDGE_EAST;
+        int cur = 0;
+        if (hit_resize_edge(a, ev->x, ev->y, &edge, &cur)) {
+            apply_cursor(a, cur);
+            return FALSE;
+        }
     }
     if (a->on_mouse) a->on_mouse(a->ctx, 5, (int)ev->x, (int)ev->y, 0);
     return FALSE;
@@ -145,7 +147,10 @@ static gboolean cb_motion(GtkWidget *w, GdkEventMotion *ev, gpointer ud) {
 static gboolean cb_leave(GtkWidget *w, GdkEventCrossing *ev, gpointer ud) {
     (void)w; (void)ev;
     tomoyo_app_t *a = (tomoyo_app_t *)ud;
-    if (a) apply_cursor(a, 0);
+    if (a) {
+        apply_cursor(a, 0);
+        if (a->on_mouse) a->on_mouse(a->ctx, 8, -1, -1, 0);
+    }
     return FALSE;
 }
 

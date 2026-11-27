@@ -253,20 +253,28 @@ fn format_delimited_table_preview(raw: &str, is_tsv: bool) -> Option<(usize, usi
     let sep = if is_tsv { '\t' } else { ',' };
     let mut rows: Vec<Vec<String>> = Vec::new();
     for line in raw.lines().filter(|l| !l.trim().is_empty()).take(22) {
-        let mut cells = parse_delimited_row(line, sep, 8);
+        let cells = parse_delimited_row(line, sep, 8);
         if !cells.is_empty() {
-            for c in &mut cells {
-                *c = truncate_cell(c, 18);
-            }
             rows.push(cells);
         }
     }
+    format_aligned_table(&rows, 8)
+}
+
+pub(crate) fn format_aligned_table(
+    rows: &[Vec<String>],
+    max_cols: usize,
+) -> Option<(usize, usize, String)> {
     if rows.is_empty() {
         return None;
     }
-    let col_count = rows.iter().map(Vec::len).max().unwrap_or(0).clamp(1, 8);
+    let clean: Vec<Vec<String>> = rows
+        .iter()
+        .map(|r| r.iter().take(max_cols).map(|c| truncate_cell(c, 18)).collect())
+        .collect();
+    let col_count = clean.iter().map(Vec::len).max().unwrap_or(0).clamp(1, max_cols.max(1));
     let mut widths = vec![1usize; col_count];
-    for r in &rows {
+    for r in &clean {
         for (i, c) in r.iter().enumerate().take(col_count) {
             widths[i] = widths[i].max(c.chars().count());
         }
@@ -281,16 +289,16 @@ fn format_delimited_table_preview(raw: &str, is_tsv: bool) -> Option<(usize, usi
             .collect::<Vec<_>>()
             .join(" │ ")
     };
-    let mut out_lines = Vec::with_capacity(rows.len() + 2);
-    out_lines.push(fmt_row(&rows[0]));
-    if rows.len() > 1 {
+    let mut out_lines = Vec::with_capacity(clean.len() + 1);
+    out_lines.push(fmt_row(&clean[0]));
+    if clean.len() > 1 {
         let sep_line = widths.iter().map(|&w| "─".repeat(w)).collect::<Vec<_>>().join("─┼─");
         out_lines.push(sep_line);
-        for r in &rows[1..] {
+        for r in &clean[1..] {
             out_lines.push(fmt_row(r));
         }
     }
-    Some((col_count, rows.len(), out_lines.join("\n")))
+    Some((col_count, clean.len(), out_lines.join("\n")))
 }
 
 fn parse_delimited_row(line: &str, sep: char, max_cols: usize) -> Vec<String> {

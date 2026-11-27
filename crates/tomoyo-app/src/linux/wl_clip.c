@@ -97,6 +97,10 @@ typedef struct {
     char cur_mimes[16][96];
     int cur_cnt;
 
+    struct wl_proxy *prim_off;
+    char prim_mimes[8][96];
+    int prim_cnt;
+
     struct wl_proxy *our_src;
     uint8_t *our_data;
     size_t our_len;
@@ -197,11 +201,17 @@ static void on_dev_selection(void *ud, void *dev, void *id) {
 static void on_dev_finished(void *ud, void *dev) { (void)ud; (void)dev; g_wl.ready = 0; }
 static void on_dev_primary(void *ud, void *dev, void *id) {
     (void)ud; (void)dev;
+    pthread_mutex_lock(&g_wl.mu);
+    if (g_wl.prim_off) { wl_proxy_destroy(g_wl.prim_off); g_wl.prim_off = NULL; }
+    g_wl.prim_cnt = 0;
     if (id && id == g_wl.pending_off) {
-        wl_proxy_destroy(g_wl.pending_off);
+        g_wl.prim_off = g_wl.pending_off;
+        g_wl.prim_cnt = g_wl.pending_cnt < 8 ? g_wl.pending_cnt : 8;
+        memcpy(g_wl.prim_mimes, g_wl.pending_mimes, (size_t)g_wl.prim_cnt * 96);
         g_wl.pending_off = NULL;
         g_wl.pending_cnt = 0;
     }
+    pthread_mutex_unlock(&g_wl.mu);
 }
 static void (*dev_cbs[])(void) = {
     (void (*)(void))on_dev_data_offer, (void (*)(void))on_dev_selection,
@@ -246,12 +256,13 @@ static void process_pending_cmd(void) {
             wl_proxy_marshal(g_wl.dev, 0, g_wl.our_src);
             wl_display_flush(g_wl.dpy);
         }
-    } else if (kind == 2) {
+    } else if (kind == 2 || kind == 3) {
         g_wl.cmd_fd = -1;
-        if (g_wl.cur_off) {
+        struct wl_proxy *off = (kind == 3) ? g_wl.prim_off : g_wl.cur_off;
+        if (off) {
             int fds[2];
             if (pipe(fds) == 0) {
-                wl_proxy_marshal(g_wl.cur_off, 0, g_wl.cmd_m1, fds[1]);
+                wl_proxy_marshal(off, 0, g_wl.cmd_m1, fds[1]);
                 wl_display_flush(g_wl.dpy);
                 close(fds[1]);
                 g_wl.cmd_fd = fds[0];
@@ -327,6 +338,7 @@ void tomoyo_wl_clip_stop(void) {
     g_wl.started = 0;
     if (g_wl.our_src) { wl_proxy_destroy(g_wl.our_src); g_wl.our_src = NULL; }
     if (g_wl.cur_off) { wl_proxy_destroy(g_wl.cur_off); g_wl.cur_off = NULL; }
+    if (g_wl.prim_off) { wl_proxy_destroy(g_wl.prim_off); g_wl.prim_off = NULL; }
     if (g_wl.pending_off) { wl_proxy_destroy(g_wl.pending_off); g_wl.pending_off = NULL; }
     if (g_wl.dev) { wl_proxy_marshal(g_wl.dev, 1); wl_proxy_destroy(g_wl.dev); g_wl.dev = NULL; }
     if (g_wl.mgr) { wl_proxy_marshal(g_wl.mgr, 2); wl_proxy_destroy(g_wl.mgr); g_wl.mgr = NULL; }
@@ -340,7 +352,6 @@ void tomoyo_wl_clip_stop(void) {
 }
 
 int tomoyo_wl_clip_active(void) { return g_wl.ready; }
-
 int tomoyo_wl_clip_has_mime(const char *mime) {
     if (!g_wl.ready || !mime) return 0;
     pthread_mutex_lock(&g_wl.mu);
@@ -351,7 +362,6 @@ int tomoyo_wl_clip_has_mime(const char *mime) {
     pthread_mutex_unlock(&g_wl.mu);
     return found;
 }
-
 int tomoyo_wl_clip_set(const char *m1, const char *m2, const uint8_t *data, size_t len) {
     if (!g_wl.ready || !m1 || !data) return 0;
     pthread_mutex_lock(&g_wl.mu);
@@ -362,6 +372,39 @@ int tomoyo_wl_clip_set(const char *m1, const char *m2, const uint8_t *data, size
     while (!g_wl.cmd_done && g_wl.ready) pthread_cond_wait(&g_wl.cv, &g_wl.mu);
     pthread_mutex_unlock(&g_wl.mu);
     return 1;
+}
+
+static uint8_t *read_fd_bounded(int fd, size_t max_bytes, size_t *out_len) {
+    if (fd < 0) return NULL;
+    size_t cap = 4096, len = 0;
+    uint8_t *buf = (uint8_t *)malloc(cap + 1);
+    if (!buf) { close(fd); return NULL; }
+    struct pollfd pfd = { .fd = fd, .events = POLLIN };
+    while (len < max_bytes && poll(&pfd, 1, 250) > 0) {
+        if (len + 4096 > cap) {
+            cap *= 2;
+            uint8_t *nb = (uint8_t *)realloc(buf, cap + 1);
+            if (!nb) break;
+            buf = nb;
+        }
+        ssize_t n = read(fd, buf + len, cap - len);
+        if (n < 0 && errno == EINTR) continue;
+        if (n <= 0) break;
+        len += (size_t)n;
+    }
+    close(fd); buf[len] = '\0';
+    if (out_len) *out_len = len;
+    return buf;
+}
+
+static uint8_t *wl_issue_read(int kind, const char *mime, size_t max_bytes, size_t *out_len) {
+    snprintf(g_wl.cmd_m1, 96, "%s", mime);
+    g_wl.cmd_fd = -1; g_wl.cmd_done = 0; g_wl.cmd_kind = kind;
+    wake_wl();
+    while (!g_wl.cmd_done && g_wl.ready) pthread_cond_wait(&g_wl.cv, &g_wl.mu);
+    int fd = g_wl.cmd_fd;
+    pthread_mutex_unlock(&g_wl.mu);
+    return read_fd_bounded(fd, max_bytes, out_len);
 }
 
 uint8_t *tomoyo_wl_clip_read(const char *mime, size_t *out_len) {
@@ -375,41 +418,25 @@ uint8_t *tomoyo_wl_clip_read(const char *mime, size_t *out_len) {
         }
         if (match) {
             uint8_t *copy = (uint8_t *)malloc(g_wl.our_len + 1);
-            if (copy) {
-                memcpy(copy, g_wl.our_data, g_wl.our_len);
-                copy[g_wl.our_len] = '\0';
-                if (out_len) *out_len = g_wl.our_len;
-            }
+            if (copy) { memcpy(copy, g_wl.our_data, g_wl.our_len); copy[g_wl.our_len] = '\0'; if (out_len) *out_len = g_wl.our_len; }
             pthread_mutex_unlock(&g_wl.mu);
             return copy;
         }
     }
-    snprintf(g_wl.cmd_m1, 96, "%s", mime);
-    g_wl.cmd_fd = -1; g_wl.cmd_done = 0; g_wl.cmd_kind = 2;
-    wake_wl();
-    while (!g_wl.cmd_done && g_wl.ready) pthread_cond_wait(&g_wl.cv, &g_wl.mu);
-    int fd = g_wl.cmd_fd;
-    pthread_mutex_unlock(&g_wl.mu);
-    if (fd < 0) return NULL;
-    size_t cap = 4096, len = 0;
-    uint8_t *buf = (uint8_t *)malloc(cap + 1);
-    if (!buf) { close(fd); return NULL; }
-    struct pollfd pfd = { .fd = fd, .events = POLLIN };
-    while (len < 32u * 1024u * 1024u) {
-        if (poll(&pfd, 1, 250) <= 0) break;
-        if (len + 4096 > cap) {
-            cap *= 2;
-            uint8_t *nb = (uint8_t *)realloc(buf, cap + 1);
-            if (!nb) break;
-            buf = nb;
+    return wl_issue_read(2, mime, 32u * 1024u * 1024u, out_len);
+}
+
+uint8_t *tomoyo_wl_clip_read_primary(size_t *out_len) {
+    if (out_len) *out_len = 0;
+    if (!g_wl.ready) return NULL;
+    static const char *mimes[] = { "text/plain;charset=utf-8", "UTF8_STRING", "text/plain" };
+    pthread_mutex_lock(&g_wl.mu);
+    const char *picked = NULL;
+    for (int m = 0; m < 3 && !picked; m++) {
+        for (int i = 0; i < g_wl.prim_cnt; i++) {
+            if (strcmp(g_wl.prim_mimes[i], mimes[m]) == 0) { picked = mimes[m]; break; }
         }
-        ssize_t n = read(fd, buf + len, cap - len);
-        if (n < 0 && errno == EINTR) continue;
-        if (n <= 0) break;
-        len += (size_t)n;
     }
-    close(fd);
-    buf[len] = '\0';
-    if (out_len) *out_len = len;
-    return buf;
+    if (!picked || !g_wl.prim_off) { pthread_mutex_unlock(&g_wl.mu); return NULL; }
+    return wl_issue_read(3, picked, 256u * 1024u, out_len);
 }

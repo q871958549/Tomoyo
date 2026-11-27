@@ -322,7 +322,7 @@ impl AppCore {
             hovered: self.hovered,
             launching_row: self.launching_row,
             scroll_offset: self.scroll_offset,
-            scrollbar_visual: crate::renderer::ScrollbarVisual::Idle,
+            scrollbar_visual: self.scrollbar_visual(),
             max_visible_rows: self.max_visible_rows,
             preview_width_dip: self.preview_width_dip,
             action_menu_open: self.action_menu_open,

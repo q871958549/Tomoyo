@@ -14,8 +14,8 @@ const MAX_XML_ENTRY_BYTES: u64 = 96 * 1024;
 const MAX_TAIL_READ: u64 = 65_558;
 
 #[derive(Debug, Clone)]
-struct ZipCdEntry {
-    name: String,
+pub(crate) struct ZipCdEntry {
+    pub(crate) name: String,
     method: u16,
     comp_size: u32,
     uncomp_size: u32,
@@ -34,7 +34,9 @@ pub(crate) fn try_preview_document(
     match ext {
         "zip" => preview_zip(path, title, size_str, modified),
         "docx" if size <= MAX_OFFICE_FILE_BYTES => preview_docx(path, title, size_str, modified),
-        "xlsx" if size <= MAX_OFFICE_FILE_BYTES => preview_xlsx(path, title, size_str, modified),
+        "xlsx" if size <= MAX_OFFICE_FILE_BYTES => {
+            crate::preview_xlsx::preview_xlsx(path, title, size_str, modified)
+        }
         "pptx" if size <= MAX_OFFICE_FILE_BYTES => preview_pptx(path, title, size_str, modified),
         "pdf" => preview_pdf(path, title, size_str, modified),
         _ => None,
@@ -48,7 +50,7 @@ fn read_le32(b: &[u8], off: usize) -> Option<u32> {
     Some(u32::from_le_bytes(b.get(off..off + 4)?.try_into().ok()?))
 }
 
-fn read_zip_central_directory(f: &mut File) -> Option<Vec<ZipCdEntry>> {
+pub(crate) fn read_zip_central_directory(f: &mut File) -> Option<Vec<ZipCdEntry>> {
     let len = f.metadata().ok()?.len();
     if len < 22 { return None; }
     let tail_len = len.min(MAX_TAIL_READ);
@@ -90,7 +92,7 @@ fn read_zip_central_directory(f: &mut File) -> Option<Vec<ZipCdEntry>> {
     Some(entries)
 }
 
-fn extract_zip_entry_text(f: &mut File, entry: &ZipCdEntry) -> Option<String> {
+pub(crate) fn extract_zip_entry_text(f: &mut File, entry: &ZipCdEntry) -> Option<String> {
     if entry.comp_size as u64 > 2 * 1024 * 1024 { return None; }
     f.seek(SeekFrom::Start(entry.local_offset as u64)).ok()?;
     let mut hdr = [0u8; 30];
@@ -153,44 +155,6 @@ fn preview_docx(path: &Path, title: &str, size_str: &str, modified: &str) -> Opt
         title: title.to_string(),
         meta_line: format!("DOCX · {size_str} · {modified}"),
         body: if body.is_empty() { "（Word 文档无纯文本段落，按回车打开查看）".into() } else { body },
-        is_monospace: false,
-        image_rgba: None,
-        badges: Vec::new(),
-    })
-}
-
-fn preview_xlsx(path: &Path, title: &str, size_str: &str, modified: &str) -> Option<ResolvedPreview> {
-    let mut f = File::open(path).ok()?;
-    let entries = read_zip_central_directory(&mut f)?;
-    let mut sheets = Vec::new();
-    if let Some(wb) = entries.iter().find(|e| e.name.eq_ignore_ascii_case("xl/workbook.xml"))
-        && let Some(xml) = extract_zip_entry_text(&mut f, wb) {
-            for part in xml.split("<sheet ").skip(1).take(12) {
-                if let Some(i) = part.find("name=\"") {
-                    let rest = &part[i + 6..];
-                    if let Some(end) = rest.find('"') {
-                        sheets.push(decode_xml_entities(&rest[..end]));
-                    }
-                }
-            }
-        }
-    let mut lines = Vec::new();
-    if !sheets.is_empty() {
-        lines.push(format!("工作表 ({})：{}", sheets.len(), sheets.join(" / ")));
-        lines.push(String::new());
-    }
-    if let Some(ss) = entries.iter().find(|e| e.name.eq_ignore_ascii_case("xl/sharedStrings.xml"))
-        && let Some(xml) = extract_zip_entry_text(&mut f, ss) {
-            let cells = extract_xml_tag_texts(&xml, "t", 22);
-            if !cells.is_empty() {
-                lines.push("文本摘要：".into());
-                for c in cells { lines.push(format!("· {c}")); }
-            }
-        }
-    Some(ResolvedPreview {
-        title: title.to_string(),
-        meta_line: format!("XLSX · {} 表 · {size_str} · {modified}", sheets.len().max(1)),
-        body: if lines.is_empty() { "（Excel 表格，按回车打开查看）".into() } else { lines.join("\n") },
         is_monospace: false,
         image_rgba: None,
         badges: Vec::new(),
@@ -327,7 +291,7 @@ fn extract_xml_paragraphs(xml: &str, para_close: &str, max_lines: usize, max_cha
     out_lines.join("\n")
 }
 
-fn extract_xml_tag_texts(xml: &str, tag: &str, max_items: usize) -> Vec<String> {
+pub(crate) fn extract_xml_tag_texts(xml: &str, tag: &str, max_items: usize) -> Vec<String> {
     let open = format!("<{tag}");
     let close = format!("</{tag}>");
     let mut out = Vec::new();
@@ -343,7 +307,7 @@ fn extract_xml_tag_texts(xml: &str, tag: &str, max_items: usize) -> Vec<String> 
     out
 }
 
-fn decode_xml_entities(s: &str) -> String {
+pub(crate) fn decode_xml_entities(s: &str) -> String {
     s.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&apos;", "'")
 }
 

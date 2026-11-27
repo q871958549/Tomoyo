@@ -85,6 +85,7 @@ pub struct AppCore {
     pub(super) dpi_scale: f32,
     pub(super) custom_pos: Option<(i32, i32)>,
     pub(super) dragging_divider: bool,
+    pub(super) scrollbar: crate::linux::scrollbar_ctrl::ScrollbarState,
     pub(super) action_menu_open: bool,
     pub(super) selected_action: usize,
     pub(super) menu_open: bool,
@@ -163,6 +164,7 @@ impl AppCore {
             dpi_scale: 1.0,
             custom_pos: cfg.window.custom_x.zip(cfg.window.custom_y),
             dragging_divider: false,
+            scrollbar: Default::default(),
             action_menu_open: false,
             selected_action: 0,
             menu_open: false,
@@ -329,6 +331,7 @@ impl AppCore {
         self.menu_closed_at = None;
         self.menu_refocus = false;
         self.dragging_divider = false;
+        self.scrollbar = Default::default();
         self.hovered = None;
         self.hovered_filter = None;
         self.hovered_logo = false;

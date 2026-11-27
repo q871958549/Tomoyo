@@ -7,6 +7,7 @@ use std::ffi::{c_char, c_int, CStr, CString};
 unsafe extern "C" {
     fn tomoyo_linux_clipboard_set_text(text: *const c_char) -> c_int;
     fn tomoyo_linux_clipboard_get_text() -> *mut c_char;
+    fn tomoyo_linux_clipboard_get_primary_text() -> *mut c_char;
     fn tomoyo_linux_clipboard_has_rich() -> c_int;
     fn tomoyo_linux_clipboard_is_confidential() -> c_int;
     fn tomoyo_linux_clipboard_get_uris() -> *mut c_char;
@@ -47,6 +48,13 @@ pub fn read_clipboard_text() -> Option<String> {
         return s;
     }
     tomoyo_core::linux_sys::dbus_klipper_get().filter(|s| !s.trim().is_empty())
+}
+
+pub fn read_primary_selection_text() -> Option<String> {
+    take_c_string(unsafe { tomoyo_linux_clipboard_get_primary_text() }).and_then(|s| {
+        let trimmed: String = s.trim().chars().take(4000).collect();
+        (!trimmed.is_empty()).then_some(trimmed)
+    })
 }
 
 pub fn clipboard_has_rich_attachment() -> bool {

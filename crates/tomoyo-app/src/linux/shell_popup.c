@@ -174,3 +174,23 @@ void tomoyo_linux_ui_set_theme(
         text_rgb & 0xffffff);
     gtk_css_provider_load_from_data(a->css, css, -1, NULL);
 }
+
+extern int tomoyo_wl_clip_active(void);
+extern uint8_t *tomoyo_wl_clip_read_primary(size_t *out_len);
+
+char *tomoyo_linux_clipboard_get_primary_text(void) {
+    if (tomoyo_wl_clip_active()) {
+        size_t len = 0;
+        uint8_t *raw = tomoyo_wl_clip_read_primary(&len);
+        if (raw && len > 0) return (char *)raw;
+        free(raw);
+        return NULL;
+    }
+    GtkClipboard *cb = gtk_clipboard_get(GDK_SELECTION_PRIMARY);
+    if (!cb) return NULL;
+    gchar *txt = gtk_clipboard_wait_for_text(cb);
+    if (!txt) return NULL;
+    char *copy = strdup(txt);
+    g_free(txt);
+    return copy;
+}

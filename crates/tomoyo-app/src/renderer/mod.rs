@@ -20,7 +20,7 @@ pub use filter_sidebar::{
     SidebarDragVisual, SidebarHit, SIDEBAR_WIDTH_DIP,
 };
 pub use scrollbar::ScrollbarVisual;
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 pub use scrollbar::{compute_scrollbar_metrics, ScrollbarHit, ScrollbarMetrics};
 #[cfg(windows)]
 pub use gdi::{

@@ -88,6 +88,7 @@ pub unsafe extern "C" fn on_focus_out_cb(ctx: *mut c_void) {
         && !st.menu_open
         && !st.sidebar.modal_open
         && !st.dragging_divider
+        && st.scrollbar.dragging.is_none()
         && !st.last_geom_change_at.is_some_and(|t| t.elapsed() < Duration::from_millis(250))
         && !st.menu_closed_at.is_some_and(|t| t.elapsed() < Duration::from_millis(220))
         && st.shown_at.elapsed() > Duration::from_millis(180)
@@ -234,6 +235,9 @@ pub unsafe extern "C" fn on_mouse_cb(ctx: *mut c_void, kind: c_int, x: c_int, y:
 
     match kind {
         4 => {
+            if st.handle_scrollbar_release(xd, yd) {
+                return;
+            }
             if std::mem::replace(&mut st.dragging_divider, false) {
                 st.persist_window_geometry();
             }
@@ -242,13 +246,39 @@ pub unsafe extern "C" fn on_mouse_cb(ctx: *mut c_void, kind: c_int, x: c_int, y:
         6 => {
             if st.is_filter_bar_visible() && xd < SIDEBAR_WIDTH_DIP && yd >= header_h && yd < fy0 {
                 st.scroll_sidebar(delta);
-            } else {
-                let max_off = st.results.len().saturating_sub(vis_cap);
-                st.scroll_offset = if delta > 0 { st.scroll_offset.saturating_sub(1) } else { (st.scroll_offset + 1).min(max_off) };
-                st.invalidate();
+            } else if !st.results.is_empty() {
+                if let Some(sb) = st.current_scrollbar_metrics() {
+                    let step = 2usize;
+                    let next = if delta > 0 {
+                        st.scroll_offset.saturating_sub(step)
+                    } else {
+                        (st.scroll_offset + step).min(sb.max_scroll)
+                    };
+                    if next != st.scroll_offset {
+                        st.scroll_offset = next;
+                        st.hovered = ((lx0..lx1).contains(&xd) && yd >= list_top && yd < fy0)
+                            .then(|| ((yd - list_top) / row_h) as usize)
+                            .filter(|&slot| slot < vis_cap)
+                            .map(|slot| st.scroll_offset + slot)
+                            .filter(|&i| i < st.results.len());
+                        st.invalidate();
+                    }
+                } else {
+                    if delta < 0 && st.selected + 1 < st.results.len() {
+                        st.selected += 1;
+                    } else if delta > 0 && st.selected > 0 {
+                        st.selected -= 1;
+                    }
+                    st.ensure_selected_visible();
+                    st.refresh_selected_preview();
+                    st.invalidate();
+                }
             }
         }
         5 => {
+            if st.handle_scrollbar_motion(xd, yd) {
+                return;
+            }
             if st.dragging_divider {
                 let w_dip = st.desired_width_dip() as f32;
                 let (dx0, _) = st.list_bounds_dip(w_dip);
@@ -260,19 +290,39 @@ pub unsafe extern "C" fn on_mouse_cb(ctx: *mut c_void, kind: c_int, x: c_int, y:
                 }
                 return;
             }
-            if !st.ui.is_null() {
-                unsafe { tomoyo_linux_ui_set_cursor(st.ui, if st.is_over_preview_divider(xd, yd) { 9 } else { 0 }); }
-            }
             if st.update_sidebar_tab_drag(yd) {
                 return;
             }
-            st.hovered_logo = (10.0..=54.0).contains(&xd) && (9.0..=53.0).contains(&yd);
-            st.hovered = row_from_y;
-            st.hovered_filter = match sidebar_hit { Some(SidebarHit::Tab(f)) => Some(f), _ => None };
-            st.sidebar.hovered_add_tag = matches!(sidebar_hit, Some(SidebarHit::AddTag));
-            st.invalidate();
+            let sb_hover = st.current_scrollbar_metrics().and_then(|sb| sb.hit_test(xd, yd));
+            if !st.ui.is_null() {
+                let cur = if sb_hover.is_none() && st.is_over_preview_divider(xd, yd) { 9 } else { 0 };
+                unsafe { tomoyo_linux_ui_set_cursor(st.ui, cur); }
+            }
+            let new_logo_hover = (10.0..=54.0).contains(&xd) && (9.0..=53.0).contains(&yd);
+            let new_hovered = if sb_hover.is_some() { None } else { row_from_y };
+            let new_filter_hover = match sidebar_hit { Some(SidebarHit::Tab(f)) => Some(f), _ => None };
+            let new_add_hover = matches!(sidebar_hit, Some(SidebarHit::AddTag));
+            if new_logo_hover != st.hovered_logo
+                || new_hovered != st.hovered
+                || new_filter_hover != st.hovered_filter
+                || new_add_hover != st.sidebar.hovered_add_tag
+                || sb_hover != st.scrollbar.hover
+            {
+                st.hovered_logo = new_logo_hover;
+                st.hovered = new_hovered;
+                st.hovered_filter = new_filter_hover;
+                st.sidebar.hovered_add_tag = new_add_hover;
+                st.scrollbar.hover = sb_hover;
+                st.invalidate();
+            }
         }
         1 | 2 => {
+            if st.current_scrollbar_metrics().and_then(|sb| sb.hit_test(xd, yd)).is_some() {
+                if kind == 1 {
+                    let _ = st.handle_scrollbar_press(xd, yd);
+                }
+                return;
+            }
             if kind == 1 && st.is_over_preview_divider(xd, yd) {
                 st.dragging_divider = true;
                 return;
@@ -316,6 +366,7 @@ pub unsafe extern "C" fn on_mouse_cb(ctx: *mut c_void, kind: c_int, x: c_int, y:
             }
         }
         7 => st.show_launcher_context_menu(true),
+        8 => st.handle_mouse_leave(),
         _ => {}
     }
 }

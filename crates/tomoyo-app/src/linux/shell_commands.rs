@@ -1,10 +1,10 @@
 //! Linux action execution, internal commands, clipboard sync, workflows & IPC hot-reload.
 
 use crate::actions::{
-    clipboard_source_app_name, execute_action, is_clipboard_confidential, kill_process_by_pid,
-    paste_into_previous_window_async, read_clipboard_files, read_clipboard_image_png,
-    read_clipboard_text, send_ctrl_c_cleanly, set_clipboard_text, shell_open,
-    spawn_settings_window_at,
+    clipboard_has_rich_attachment, clipboard_source_app_name, execute_action, is_clipboard_confidential,
+    kill_process_by_pid, paste_into_previous_window_async, read_clipboard_files, read_clipboard_image_png,
+    read_clipboard_text, read_primary_selection_text, send_ctrl_c_cleanly, set_clipboard_text,
+    shell_open, spawn_settings_window_at,
 };
 use crate::linux::{
     tomoyo_linux_tray_set_menu, tomoyo_linux_tray_set_title, tomoyo_linux_ui_quit,
@@ -93,6 +93,7 @@ impl AppCore {
         if self.suppress_clipboard.load(Ordering::Acquire) || is_clipboard_confidential() {
             return;
         }
+        if clipboard_has_rich_attachment() { self.last_clip_snapshot = None; }
         let sub_text = self.plugin_host.has_event_subscriber(PluginEventKind::ClipboardText);
         let sub_img = self.plugin_host.has_event_subscriber(PluginEventKind::ClipboardImage);
         let src = if sub_text || sub_img { clipboard_source_app_name() } else { String::new() };
@@ -165,16 +166,23 @@ impl AppCore {
             let sup = Arc::clone(&self.suppress_clipboard);
             let host = Arc::clone(&self.plugin_host);
             let _ = std::thread::Builder::new().name("tomoyo-sel-plug".into()).spawn(move || {
-                sup.store(true, Ordering::Release);
-                let prev = read_clipboard_text();
-                send_ctrl_c_cleanly();
-                std::thread::sleep(Duration::from_millis(120));
-                let cap = read_clipboard_text().unwrap_or_default();
-                if let Some(old) = prev.as_deref().filter(|o| *o != cap) { let _ = set_clipboard_text(old); }
-                sup.store(false, Ordering::Release);
+                let selected = read_primary_selection_text().unwrap_or_else(|| {
+                    let app = clipboard_source_app_name();
+                    if ["konsole", "alacritty", "kitty", "wezterm", "foot", "ghostty", "gnome-terminal", "xterm", "tilix", "terminator"].iter().any(|t| app.contains(t)) {
+                        return String::new();
+                    }
+                    sup.store(true, Ordering::Release);
+                    let prev = read_clipboard_text();
+                    send_ctrl_c_cleanly();
+                    std::thread::sleep(Duration::from_millis(120));
+                    let cap = read_clipboard_text().unwrap_or_default();
+                    if let Some(old) = prev.as_deref().filter(|o| *o != cap) { let _ = set_clipboard_text(old); }
+                    sup.store(false, Ordering::Release);
+                    cap.trim().to_string()
+                });
                 let payload = PluginEventPayload::new(
                     PluginEventKind::HotkeyTriggered,
-                    serde_json::json!({ "hotkey_id": hk.hotkey_id, "spec": hk.spec, "selected_text": cap.trim() }),
+                    serde_json::json!({ "hotkey_id": hk.hotkey_id, "spec": hk.spec, "selected_text": selected }),
                 );
                 if let Some(r) = host.dispatch_event(Some(&hk.plugin_id), &payload).into_iter().next() {
                     let pid = hk.plugin_id.clone();

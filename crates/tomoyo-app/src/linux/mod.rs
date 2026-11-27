@@ -4,6 +4,7 @@ mod hotkeys;
 mod ipc;
 mod render_pango;
 mod render_sidebar;
+mod scrollbar_ctrl;
 mod shell_commands;
 mod shell_events;
 mod shell_menus;
