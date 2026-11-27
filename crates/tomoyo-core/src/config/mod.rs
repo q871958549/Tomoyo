@@ -1,5 +1,6 @@
-//! Hot-reloadable `config.toml`, hotkey parser, and Windows login autostart management.
+//! Hot-reloadable `config.toml`, hotkey parser, and cross-platform login autostart management.
 
+mod autostart;
 mod capture;
 mod hotkey;
 mod local_override;
@@ -9,6 +10,9 @@ mod sanitize;
 mod sections;
 mod typography;
 
+pub use autostart::{
+    heal_windows_autostart_if_blocked, is_autostart_enabled, set_autostart_enabled,
+};
 pub use capture::{sanitize_capture_config, CaptureConfig, CaptureToolHotkeys};
 pub use sections::{
     default_ev_favorites, AppsConfig, ClipboardConfig, EverythingConfig, EverythingFavorite,
@@ -21,9 +25,8 @@ pub use typography::{
 };
 pub use crate::translate::TranslateConfig;
 pub use hotkey::{
-    format_hotkey, is_autostart_enabled, is_standalone_allowed_vk, load_hotkey_health, parse_hotkey,
-    save_hotkey_health, set_autostart_enabled, vk_to_key_name, HotkeyHealthReport, HotkeySlotStatus,
-    ParsedHotkey,
+    format_hotkey, is_standalone_allowed_vk, load_hotkey_health, parse_hotkey,
+    save_hotkey_health, vk_to_key_name, HotkeyHealthReport, HotkeySlotStatus, ParsedHotkey,
 };
 pub use local_override::LocalConfigOverride;
 pub use modules::{

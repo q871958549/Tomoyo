@@ -13,6 +13,7 @@ Remove-Item -Path $deskLnk -Force -ErrorAction SilentlyContinue
 Remove-Item -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Tomoyo" -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{8F4E29A1-6C74-4D3B-9B2A-7E3F50D81C20}_is1" -Recurse -Force -ErrorAction SilentlyContinue
 Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "Tomoyo" -ErrorAction SilentlyContinue
+Unregister-ScheduledTask -TaskName "TomoyoAutostart" -Confirm:$false -ErrorAction SilentlyContinue
 
 if (Test-Path $InstallDir) {
     Remove-Item -Path $InstallDir -Recurse -Force -ErrorAction SilentlyContinue

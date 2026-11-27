@@ -128,8 +128,41 @@ Set-ItemProperty -Path $uninstKey -Name "EstimatedSize" -Value $installSizeKb -T
 Set-ItemProperty -Path $uninstKey -Name "NoModify" -Value 1 -Type DWord
 Set-ItemProperty -Path $uninstKey -Name "NoRepair" -Value 1 -Type DWord
 
-if ($EnableAutostart) {
-    Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "Tomoyo" -Value "`"$exePath`" --silent"
+$runRegPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
+$approvedRunPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\StartupApproved\Run"
+$hasLegacyRun = $null -ne (Get-ItemProperty -Path $runRegPath -Name "Tomoyo" -ErrorAction SilentlyContinue)
+$hasAutostartTask = $null -ne (Get-ScheduledTask -TaskName "TomoyoAutostart" -ErrorAction SilentlyContinue)
+$approvedItem = Get-ItemProperty -Path $approvedRunPath -Name "Tomoyo" -ErrorAction SilentlyContinue
+$runDisabledByUser = ($null -ne $approvedItem) -and ($approvedItem.Tomoyo.Length -ge 1) -and (($approvedItem.Tomoyo[0] -band 1) -ne 0)
+
+if ($EnableAutostart -or $hasAutostartTask -or ($hasLegacyRun -and -not $runDisabledByUser)) {
+    $autostartMode = "TaskScheduler"
+    try {
+        $userId = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+        $trigger = New-ScheduledTaskTrigger -AtLogOn -User $userId
+        $action = New-ScheduledTaskAction -Execute $exePath -Argument "--silent" -WorkingDirectory $InstallDir
+        $principal = New-ScheduledTaskPrincipal -UserId $userId -LogonType Interactive -RunLevel Highest
+        $settings = New-ScheduledTaskSettingsSet `
+            -AllowStartIfOnBatteries `
+            -DontStopIfGoingOnBatteries `
+            -StartWhenAvailable `
+            -MultipleInstances IgnoreNew `
+            -ExecutionTimeLimit ([TimeSpan]::Zero)
+        $settings.Priority = 5
+        Register-ScheduledTask `
+            -TaskName "TomoyoAutostart" `
+            -Trigger $trigger `
+            -Action $action `
+            -Principal $principal `
+            -Settings $settings `
+            -Description "Tomoyo desktop launcher autostart (--silent)" `
+            -Force | Out-Null
+        Remove-ItemProperty -Path $runRegPath -Name "Tomoyo" -ErrorAction SilentlyContinue
+    } catch {
+        $autostartMode = "RegistryRunFallback"
+        Set-ItemProperty -Path $runRegPath -Name "Tomoyo" -Value "`"$exePath`" --silent"
+    }
+    Write-Host "[OK] Autostart configured via $autostartMode." -ForegroundColor Green
 }
 
 Write-Host "[OK] Installed Tomoyo v$version ($installSizeKb KB) to $InstallDir" -ForegroundColor Green

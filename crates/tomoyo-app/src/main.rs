@@ -238,6 +238,7 @@ fn main() {
     };
 
     tracing::info!("Starting Tomoyo v{CURRENT_VERSION} (args={args:?})");
+    tomoyo_core::heal_windows_autostart_if_blocked();
     let (config, router, plugin_host, _apps, updater) = build_engine();
 
     let mut shell = match AppShell::create(
