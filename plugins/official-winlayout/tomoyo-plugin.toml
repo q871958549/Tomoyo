@@ -1,0 +1,71 @@
+id = "dev.tomoyo.winlayout"
+name = "窗口布局与当前窗口上下文 (WinLayout)"
+version = "3.4.0"
+description = "跨平台窗口分屏网格与前台活动窗口上下文动作：支持左/右/上/下半屏、四象限、三分屏、居中专注、置顶切换与 KWin 6 Wayland / Win32 原生驱动（0 常驻内存）"
+author = "Tomoyo Contributors"
+license = "MIT"
+icon = "icon.png"
+category = "system"
+display_mode = "inline"
+tags = ["window", "tiling", "layout", "kwin", "wayland", "context"]
+permissions = ["shell_exec"]
+
+[runtime]
+kind = "stdio_jsonrpc"
+command = "tomoyo-plugin-winlayout"
+args = []
+
+[triggers]
+keywords = ["win", "wl", "layout"]
+
+[resources]
+max_memory_mb = 32
+idle_timeout_secs = 30
+query_timeout_ms = 1200
+
+[[hotkeys]]
+id = "snap_left"
+label = "当前窗口贴靠左半屏"
+default_hotkey = ""
+trigger_query = "win left"
+
+[[hotkeys]]
+id = "snap_right"
+label = "当前窗口贴靠右半屏"
+default_hotkey = ""
+trigger_query = "win right"
+
+[[hotkeys]]
+id = "snap_center"
+label = "当前窗口居中专注"
+default_hotkey = ""
+trigger_query = "win center"
+
+[[hotkeys]]
+id = "snap_max"
+label = "当前窗口最大化切换"
+default_hotkey = ""
+trigger_query = "win max"
+
+[[settings]]
+key = "gap_px"
+label = "窗口分屏留白边距 (px)"
+description = "分屏布局时窗口边缘预留像素间距（0 表示紧贴工作区边缘）"
+type = "number"
+min = 0
+max = 32
+step = 4
+default = 0
+
+[[settings]]
+key = "center_ratio"
+label = "居中专注窗口占比 (%)"
+description = "执行“居中专注”布局时窗口占当前屏幕工作区的宽高比例"
+type = "select"
+options = [
+  { value = "65", label = "紧凑 65%（适合终端/文档）" },
+  { value = "72", label = "均衡 72%（推荐）" },
+  { value = "80", label = "宽松 80%（适合编辑器）" },
+  { value = "88", label = "大屏 88%（近全屏专注）" },
+]
+default = "72"

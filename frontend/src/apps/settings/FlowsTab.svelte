@@ -2,23 +2,20 @@
   import { FileCode, Keyboard, Plus, Trash2, Workflow } from '@lucide/svelte';
   import { postHost } from '../../lib/ipc';
   import { tr, type Lang } from '../../lib/i18n';
-  import type { SelectOption, WorkflowDef, WorkflowStep } from '../../lib/types';
+  import type { SelectOption, SnippetEntry, WorkflowDef, WorkflowStep } from '../../lib/types';
   import Button from '../../lib/ui/Button.svelte';
   import HotkeyRecorder from '../../lib/ui/HotkeyRecorder.svelte';
   import Input from '../../lib/ui/Input.svelte';
   import Select from '../../lib/ui/Select.svelte';
   import Switch from '../../lib/ui/Switch.svelte';
 
-  interface Props {
-    lang: Lang;
-    flows: WorkflowDef[];
-    flowsPath: string;
-    onSaveFlows: (next: WorkflowDef[]) => void;
-  }
+  interface DryRunState { flow_id?: string; trace?: Array<{ index: number; kind: string; output: string }>; effects?: string[]; }
+  interface Props { lang: Lang; sub?: string; flows: WorkflowDef[]; flowsPath: string; snippets?: SnippetEntry[]; snippetsPath?: string; dryRes?: DryRunState | null; onSaveFlows: (next: WorkflowDef[]) => void; onSaveSnippets?: (next: SnippetEntry[]) => void; }
 
-  let { lang, flows, flowsPath, onSaveFlows }: Props = $props();
+  let { lang, sub = 'flows', flows, flowsPath, snippets = [], snippetsPath = '', dryRes = null, onSaveFlows, onSaveSnippets }: Props = $props();
   let isEn = $derived(lang === 'en');
-  let hkEditId = $state<string | null>(null);
+  let hkEditId = $state<string | null>(null), dryId = $state<string | null>(null), drySample = $state('  Tomoyo\n   Shell  '), editingId = $state<string | null>(null);
+  let sKw = $state(''), sTitle = $state(''), sTags = $state(''), sTpl = $state(''), sEdit = $state<string | null>(null);
 
   const FLOW_HK_PRESETS: SelectOption[] = [
     { value: 'Alt+Shift+V', label: 'Alt+Shift+V' },
@@ -98,32 +95,82 @@
     draftSteps = draftSteps.map((s, i) => (i === idx ? { ...s, ...patch } : s));
   }
 
+  function moveDraftStep(idx: number, delta: number) {
+    const to = idx + delta;
+    if (to < 0 || to >= draftSteps.length) return;
+    const copy = [...draftSteps];
+    const [picked] = copy.splice(idx, 1);
+    copy.splice(to, 0, picked!);
+    draftSteps = copy;
+  }
+
   function removeDraftStep(idx: number) {
     if (draftSteps.length <= 1) return;
     draftSteps = draftSteps.filter((_, i) => i !== idx);
+  }
+
+  function editFlow(f: WorkflowDef) {
+    editingId = f.id;
+    draftName = f.name; draftKeyword = f.keyword; draftDesc = f.description;
+    draftSteps = f.steps.length ? f.steps.map((s) => ({ kind: s.kind, value: s.value || '' })) : [{ kind: 'read_clipboard', value: '' }];
+  }
+
+  function runDry(f: WorkflowDef) {
+    postHost({ cmd: 'dry_run_flow', flow: $state.snapshot(f), sample_clip: drySample });
   }
 
   function createFlow() {
     const name = draftName.trim();
     if (!name || draftSteps.length === 0) return;
     const baseKw = (draftKeyword.trim() || name).toLowerCase().replace(/[^a-z0-9_-]/g, '');
-    const id = `custom_${baseKw || 'flow'}_${Date.now().toString(36).slice(-4)}`;
+    const id = editingId || `custom_${baseKw || 'flow'}_${Date.now().toString(36).slice(-4)}`;
+    const prev = flows.find((f) => f.id === editingId);
     const nextFlow: WorkflowDef = {
-      id,
-      name,
-      keyword: draftKeyword.trim().toLowerCase(),
-      hotkey: '',
-      description: draftDesc.trim(),
-      enabled: true,
+      id, name, keyword: draftKeyword.trim().toLowerCase(), hotkey: prev?.hotkey || '',
+      description: draftDesc.trim(), enabled: prev ? prev.enabled : true,
       steps: draftSteps.map((s) => ({ kind: s.kind, value: (s.value || '').trim() })),
     };
-    onSaveFlows([...flows, nextFlow]);
-    draftName = '';
-    draftKeyword = '';
-    draftDesc = '';
+    onSaveFlows(editingId ? flows.map((f) => (f.id === editingId ? nextFlow : f)) : [...flows, nextFlow]);
+    editingId = null; draftName = ''; draftKeyword = ''; draftDesc = '';
+  }
+  function saveSnippet() {
+    const k = sKw.trim(), t = sTpl.trim();
+    if (!k || !t || !onSaveSnippets) return;
+    const row: SnippetEntry = { keyword: k, title: sTitle.trim() || k, tags: sTags.split(',').map((x) => x.trim()).filter(Boolean), template: t };
+    onSaveSnippets(sEdit ? snippets.map((s) => (s.keyword === sEdit ? row : s)) : [...snippets.filter((s) => s.keyword.toLowerCase() !== k.toLowerCase()), row]);
+    sEdit = null; sKw = ''; sTitle = ''; sTags = ''; sTpl = '';
   }
 </script>
 
+{#if sub === 'snippets'}
+  <div class="tab-head-bar">
+    <div><h2>{isEn ? 'Snippets (snip)' : '快捷短语与模板 (snip)'}</h2><p class="tab-lead">{isEn ? 'Portable snippets.toml with {{date}} / {{uuid}} / {{clipboard}}.' : '纯文本 snippets.toml 存储，支持 {{date}} / {{uuid}} / {{clipboard}} 变量。'}</p></div>
+    {#if snippetsPath}<button type="button" class="t-chip" onclick={() => postHost({ cmd: 'open_path', path: snippetsPath })}>snippets.toml</button>{/if}
+  </div>
+  <div class="t-card flow-list">
+    {#if snippets.length === 0}<div class="empty-msg">{isEn ? 'No snippets yet.' : '暂无短语，可在下方录入。'}</div>
+    {:else}{#each snippets as s}
+      <div class="flow-item"><div class="flow-row">
+        <div class="flow-main"><div class="flow-top"><span class="t-pill">{s.keyword}</span><span class="t-label">{s.title}</span>{#each s.tags || [] as tg}<span class="t-pill">#{tg}</span>{/each}</div><div class="t-desc mono">{s.template}</div></div>
+        <div class="flow-ops"><button type="button" class="hk-pill" onclick={() => { sEdit = s.keyword; sKw = s.keyword; sTitle = s.title; sTags = (s.tags || []).join(', '); sTpl = s.template; }}>{isEn ? 'Edit' : '编辑'}</button><button type="button" class="hk-pill" onclick={() => onSaveSnippets?.(snippets.filter((x) => x.keyword !== s.keyword))}>×</button></div>
+      </div></div>
+    {/each}{/if}
+  </div>
+  <div class="t-card creator" style="margin-top:14px">
+    <div class="creator-title">{sEdit ? (isEn ? `Edit: ${sEdit}` : `编辑：${sEdit}`) : (isEn ? 'Add Snippet' : '快速录入短语')}</div>
+    <div class="creator-grid">
+      <input class="t-chip" style="text-align:left;cursor:text" value={sKw} oninput={(e) => (sKw = (e.currentTarget as HTMLInputElement).value)} placeholder={isEn ? 'Keyword (sig)' : '触发词 (sig)'} />
+      <input class="t-chip" style="text-align:left;cursor:text" value={sTitle} oninput={(e) => (sTitle = (e.currentTarget as HTMLInputElement).value)} placeholder={isEn ? 'Title' : '标题'} />
+    </div>
+    <input class="t-chip" style="text-align:left;cursor:text" value={sTags} oninput={(e) => (sTags = (e.currentTarget as HTMLInputElement).value)} placeholder={isEn ? 'Tags (mail,work)' : '标签 (逗号分隔)'} />
+    <input class="t-chip mono" style="text-align:left;cursor:text" value={sTpl} oninput={(e) => (sTpl = (e.currentTarget as HTMLInputElement).value)} placeholder={isEn ? 'Template body' : '模板 ({{date}} / {{clipboard}})'} />
+    <div class="chip-grid">{#each ['{{date}}', '{{datetime}}', '{{unix}}', '{{uuid}}', '{{clipboard}}'] as v}<button type="button" class="hk-pill" onclick={() => (sTpl = sTpl ? `${sTpl} ${v}` : v)}>+{v}</button>{/each}</div>
+    <div class="creator-foot">
+      {#if sEdit}<button type="button" class="hk-pill" onclick={() => { sEdit = null; sKw = ''; sTitle = ''; sTags = ''; sTpl = ''; }}>{isEn ? 'Cancel' : '取消'}</button>{:else}<span></span>{/if}
+      <button type="button" class="hk-pill is-bound" disabled={!sKw.trim() || !sTpl.trim()} onclick={saveSnippet}>{sEdit ? (isEn ? 'Update' : '保存') : (isEn ? 'Add' : '录入并重载')}</button>
+    </div>
+  </div>
+{:else}
 <div class="tab-head">
   <div class="head-bar">
     <div>
@@ -171,12 +218,28 @@
             </div>
           </div>
           <div class="flow-ops">
+            <button type="button" class="hk-pill" onclick={() => { dryId = dryId === f.id ? null : f.id; if (dryId === f.id) runDry(f); }}>{isEn ? 'Dry' : '试跑'}</button>
+            <button type="button" class="hk-pill" onclick={() => editFlow(f)}>{isEn ? 'Edit' : '编辑'}</button>
             <Switch checked={f.enabled} ariaLabel={f.name} onchange={(v) => toggleEnabled(i, v)} />
             <Button variant="ghost" size="sm" onclick={() => removeFlow(i)}>
               <Trash2 size={13} />
             </Button>
           </div>
         </div>
+        {#if dryId === f.id}
+          <div class="hk-drawer" style="flex-direction:column;align-items:stretch;gap:6px">
+            <div style="display:flex;align-items:center;gap:8px">
+              <input class="t-chip" style="flex:1;text-align:left;cursor:text" value={drySample} oninput={(e) => (drySample = (e.currentTarget as HTMLInputElement).value)} placeholder={isEn ? 'Sample clipboard…' : '测试输入/剪贴板…'} />
+              <button type="button" class="hk-pill is-bound" onclick={() => runDry(f)}>{isEn ? 'Run' : '执行'}</button>
+            </div>
+            {#if dryRes && dryRes.flow_id === f.id}
+              <div class="t-desc mono">
+                {#each dryRes.trace || [] as t}<div>[{t.index}] {t.kind} → {t.output}</div>{/each}
+                {#if (dryRes.effects || []).length > 0}<div>{isEn ? 'Skipped:' : '预期副作用:'} {(dryRes.effects || []).join(' · ')}</div>{/if}
+              </div>
+            {/if}
+          </div>
+        {/if}
         {#if editingHk}
           <div class="hk-drawer" data-flow-hk-drawer={f.id}>
             <div class="t-desc">{isEn ? 'Triggers this workflow directly without opening launcher (auto-avoids fullscreen apps).' : '按下即直接静默触发该工作流（自动继承全屏/远程桌面避让与冲突接管）。'}</div>
@@ -226,6 +289,8 @@
           </div>
         {/if}
         {#if draftSteps.length > 1}
+          <button type="button" class="hk-pill" disabled={idx === 0} onclick={() => moveDraftStep(idx, -1)}>↑</button>
+          <button type="button" class="hk-pill" disabled={idx === draftSteps.length - 1} onclick={() => moveDraftStep(idx, 1)}>↓</button>
           <Button variant="ghost" size="sm" onclick={() => removeDraftStep(idx)}>
             <Trash2 size={12} />
           </Button>
@@ -245,6 +310,7 @@
     </Button>
   </div>
 </div>
+{/if}
 
 <style>
   .head-bar { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }

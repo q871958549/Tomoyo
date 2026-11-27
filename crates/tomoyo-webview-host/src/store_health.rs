@@ -107,9 +107,46 @@ pub fn run_plugin_health_check_json(sources: &[String]) -> String {
     .to_string()
 }
 
+pub fn check_plugin_updates_silent_json(sources: &[String]) -> String {
+    let eff: Vec<String> = if sources.is_empty() {
+        vec!["registry/index.json".into()]
+    } else {
+        sources.to_vec()
+    };
+    let catalog = crate::store_index::load_or_fetch_catalog(&eff, false, false);
+    let mut by_id = std::collections::HashMap::new();
+    for e in catalog.entries {
+        by_id.insert(e.id.to_ascii_lowercase(), e);
+    }
+    let host = PluginHost::new(default_plugin_dirs());
+    let installed = host.list_plugins();
+    host.shutdown_all();
+
+    let mut updates = Vec::new();
+    for p in installed {
+        if let Some(cat) = by_id.get(&p.id.to_ascii_lowercase())
+            && is_newer_semver(&cat.version, &p.version)
+            && let Some((src, sha)) = cat.resolve_for_platform(tomoyo_protocol::current_platform_key())
+        {
+            updates.push(serde_json::json!({
+                "id": p.id,
+                "latest_version": cat.version,
+                "update_source": src,
+                "update_sha256": sha,
+            }));
+        }
+    }
+    serde_json::json!({
+        "event": "plugin_updates_status",
+        "count": updates.len(),
+        "updates": updates,
+    })
+    .to_string()
+}
+
 #[cfg(test)]
 mod tests {
-    use super::run_plugin_health_check_json;
+    use super::{check_plugin_updates_silent_json, run_plugin_health_check_json};
 
     #[test]
     fn emits_structured_health_report_for_local_mirror() {
@@ -118,5 +155,10 @@ mod tests {
         assert_eq!(v["event"], "plugin_health_report");
         assert!(v["summary"]["mirrors_total"].as_u64() == Some(1));
         assert!(v["plugins"].is_array());
+
+        let silent = check_plugin_updates_silent_json(&["registry/index.json".into()]);
+        let sv: serde_json::Value = serde_json::from_str(&silent).unwrap();
+        assert_eq!(sv["event"], "plugin_updates_status");
+        assert!(sv["updates"].is_array());
     }
 }

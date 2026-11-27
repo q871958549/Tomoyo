@@ -11,11 +11,12 @@
     lang: Lang;
     activeTab: SettingsTabId;
     conflictCount: number;
+    pluginUpdateCount?: number;
     onSelectTab: (tab: SettingsTabId) => void;
     onApplyHit: (hit: SettingSearchEntry) => void;
   }
 
-  let { lang, activeTab, conflictCount, onSelectTab, onApplyHit }: Props = $props();
+  let { lang, activeTab, conflictCount, pluginUpdateCount = 0, onSelectTab, onApplyHit }: Props = $props();
   let quickQuery = $state('');
   let searchHits = $derived(searchSettingsEntries(quickQuery));
 
@@ -64,6 +65,8 @@
         <span>{tr(lang, item.key)}</span>
         {#if item.id === 'hotkeys' && conflictCount > 0}
           <span class="nav-badge">{conflictCount}</span>
+        {:else if item.id === 'plugins' && pluginUpdateCount > 0}
+          <span class="nav-badge upd-pill">{pluginUpdateCount}</span>
         {/if}
       </button>
     {/each}
@@ -89,5 +92,6 @@
   .nav-item.is-active::before { content: ""; position: absolute; left: 0; top: 7px; bottom: 7px; width: 3px; border-radius: 999px; background: var(--accent); }
   .nav-ico { display: inline-flex; opacity: 0.85; flex-shrink: 0; }
   .nav-badge { margin-left: auto; min-width: 17px; height: 17px; padding: 0 5px; border-radius: 999px; background: var(--danger); color: #fff; font-size: 10.5px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; }
+  .nav-badge.upd-pill { background: var(--accent); }
   .side-foot { margin-top: auto; padding: 10px 8px 0; border-top: 1px solid var(--border); font-size: 11px; color: var(--muted); line-height: 1.5; }
 </style>

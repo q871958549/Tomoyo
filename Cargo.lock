@@ -949,6 +949,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "tomoyo-plugin-winlayout"
+version = "3.2.0"
+dependencies = [
+ "serde_json",
+ "tomoyo-sdk",
+]
+
+[[package]]
 name = "tomoyo-protocol"
 version = "3.2.0"
 dependencies = [
@@ -1022,11 +1030,13 @@ dependencies = [
 name = "tomoyo-webview-host"
 version = "3.2.0"
 dependencies = [
+ "chrono",
  "flate2",
  "mimalloc",
  "serde",
  "serde_json",
  "sha2",
+ "toml 0.8.23",
  "tomoyo-core",
  "tomoyo-plugin-host",
  "tomoyo-protocol",

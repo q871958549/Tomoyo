@@ -71,6 +71,7 @@ jobs:
           ./target/release/tomoyo-plugin-translate --self-test
           ./target/release/tomoyo-plugin-capture --self-test
           ./target/release/tomoyo-plugin-clipboard --self-test
+          ./target/release/tomoyo-plugin-winlayout --self-test
 
       - name: Stage Linux Suite, Core & standalone plugin bundles + SHA-256
         run: |
@@ -82,7 +83,7 @@ jobs:
           mkdir -p "$stage/assets/fonts" "$stage/assets/plugin-icons" "$stage/registry" "$stage/packaging/linux" "$stage/scripts" dist/plugins
           mkdir -p "$core_stage/assets/fonts" "$core_stage/assets/plugin-icons" "$core_stage/registry" "$core_stage/packaging/linux" "$core_stage/scripts"
 
-          for bin in tomoyo tomoyo-webview-host tomoyo-capture tomoyo-cli tomoyo-plugin-hello tomoyo-plugin-ocr tomoyo-plugin-notes tomoyo-plugin-md-editor tomoyo-plugin-translate tomoyo-plugin-capture tomoyo-plugin-clipboard; do
+          for bin in tomoyo tomoyo-webview-host tomoyo-capture tomoyo-cli tomoyo-plugin-hello tomoyo-plugin-ocr tomoyo-plugin-notes tomoyo-plugin-md-editor tomoyo-plugin-translate tomoyo-plugin-capture tomoyo-plugin-clipboard tomoyo-plugin-winlayout; do
             install -Dm755 "target/release/$bin" "$stage/$bin"
           done
           for bin in tomoyo tomoyo-webview-host tomoyo-cli; do
@@ -104,7 +105,7 @@ jobs:
             install -Dm755 scripts/install-local.sh scripts/uninstall-local.sh "$target_dir/scripts/"
           done
 
-          for p in example-hello example-python example-wasm example-webview-json builtin-ocr official-notes official-md-editor official-translate official-capture official-clipboard official-devtools-wasm official-regex-wasm; do
+          for p in example-hello example-python example-wasm example-webview-json builtin-ocr official-notes official-md-editor official-translate official-capture official-clipboard official-devtools-wasm official-regex-wasm official-winlayout; do
             mkdir -p "$stage/plugins/$p"
             cp -a "plugins/$p/." "$stage/plugins/$p/"
             rm -rf "$stage/plugins/$p/target" "$stage/plugins/$p/__pycache__"
@@ -128,6 +129,7 @@ jobs:
           pack_plugin translate official-translate tomoyo-plugin-translate
           pack_plugin capture official-capture tomoyo-plugin-capture tomoyo-capture
           pack_plugin clipboard official-clipboard tomoyo-plugin-clipboard
+          pack_plugin winlayout official-winlayout tomoyo-plugin-winlayout
 
           tgz="dist/Tomoyo-${tag}-linux-x86_64.tar.gz"
           core_tgz="dist/Tomoyo-${tag}-linux-x86_64-core.tar.gz"
@@ -226,7 +228,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path $stage, "$stage/assets/fonts", "$stage/assets/plugin-icons", "$stage/registry" | Out-Null
           New-Item -ItemType Directory -Force -Path $coreStage, "$coreStage/assets/fonts", "$coreStage/assets/plugin-icons", "$coreStage/registry" | Out-Null
 
-          foreach ($bin in @("tomoyo.exe", "tomoyo-webview-host.exe", "tomoyo-capture.exe", "tomoyo-cli.exe", "tomoyo-plugin-hello.exe", "tomoyo-plugin-ocr.exe", "tomoyo-plugin-notes.exe", "tomoyo-plugin-md-editor.exe", "tomoyo-plugin-translate.exe", "tomoyo-plugin-capture.exe", "tomoyo-plugin-clipboard.exe")) {
+          foreach ($bin in @("tomoyo.exe", "tomoyo-webview-host.exe", "tomoyo-capture.exe", "tomoyo-cli.exe", "tomoyo-plugin-hello.exe", "tomoyo-plugin-ocr.exe", "tomoyo-plugin-notes.exe", "tomoyo-plugin-md-editor.exe", "tomoyo-plugin-translate.exe", "tomoyo-plugin-capture.exe", "tomoyo-plugin-clipboard.exe", "tomoyo-plugin-winlayout.exe")) {
             Copy-Item "target/release/$bin" "$stage/"
           }
 
@@ -268,7 +270,7 @@ jobs:
               }
             }
 
-            foreach ($p in @("example-hello", "example-python", "example-wasm", "example-webview-json", "builtin-ocr", "official-notes", "official-md-editor", "official-translate", "official-capture", "official-clipboard", "official-devtools-wasm", "official-regex-wasm")) {
+            foreach ($p in @("example-hello", "example-python", "example-wasm", "example-webview-json", "builtin-ocr", "official-notes", "official-md-editor", "official-translate", "official-capture", "official-clipboard", "official-devtools-wasm", "official-regex-wasm", "official-winlayout")) {
               New-Item -ItemType Directory -Force -Path "$stage/plugins/$p" | Out-Null
               Get-ChildItem "plugins/$p" -Exclude "target","__pycache__" | Copy-Item -Destination "$stage/plugins/$p" -Recurse -Force
             }
@@ -280,7 +282,8 @@ jobs:
               @{ Slug = "md-editor"; Dir = "official-md-editor"; Bins = @("tomoyo-plugin-md-editor.exe") },
               @{ Slug = "translate"; Dir = "official-translate"; Bins = @("tomoyo-plugin-translate.exe") },
               @{ Slug = "capture"; Dir = "official-capture"; Bins = @("tomoyo-plugin-capture.exe", "tomoyo-capture.exe") },
-              @{ Slug = "clipboard"; Dir = "official-clipboard"; Bins = @("tomoyo-plugin-clipboard.exe") }
+              @{ Slug = "clipboard"; Dir = "official-clipboard"; Bins = @("tomoyo-plugin-clipboard.exe") },
+              @{ Slug = "winlayout"; Dir = "official-winlayout"; Bins = @("tomoyo-plugin-winlayout.exe") }
             )
             $pluginZips = @()
             foreach ($spec in $pluginSpecs) {
@@ -392,7 +395,7 @@ jobs:
           $tag = if ($env:GITHUB_REF_NAME -and $env:GITHUB_REF_NAME.StartsWith("v")) { $env:GITHUB_REF_NAME } else { "v3.0.0" }
           $stage = "dist/stage-arm64"
           New-Item -ItemType Directory -Force -Path $stage, "$stage/assets/fonts", "$stage/assets/plugin-icons", "$stage/registry" | Out-Null
-          foreach ($bin in @("tomoyo.exe", "tomoyo-webview-host.exe", "tomoyo-capture.exe", "tomoyo-cli.exe", "tomoyo-plugin-hello.exe", "tomoyo-plugin-ocr.exe", "tomoyo-plugin-notes.exe", "tomoyo-plugin-md-editor.exe", "tomoyo-plugin-translate.exe", "tomoyo-plugin-capture.exe", "tomoyo-plugin-clipboard.exe")) {
+          foreach ($bin in @("tomoyo.exe", "tomoyo-webview-host.exe", "tomoyo-capture.exe", "tomoyo-cli.exe", "tomoyo-plugin-hello.exe", "tomoyo-plugin-ocr.exe", "tomoyo-plugin-notes.exe", "tomoyo-plugin-md-editor.exe", "tomoyo-plugin-translate.exe", "tomoyo-plugin-capture.exe", "tomoyo-plugin-clipboard.exe", "tomoyo-plugin-winlayout.exe")) {
             Copy-Item "target/release/$bin" "$stage/"
           }
           Copy-Item LICENSE-MIT, LICENSE-APACHE, README.md "$stage/"
@@ -404,7 +407,7 @@ jobs:
             New-Item -ItemType Directory -Force -Path "$stage/registry/shards" | Out-Null
             Copy-Item registry/shards/*.json "$stage/registry/shards/" -Force
           }
-          foreach ($p in @("example-hello", "example-python", "example-wasm", "example-webview-json", "builtin-ocr", "official-notes", "official-md-editor", "official-translate", "official-capture", "official-clipboard")) {
+          foreach ($p in @("example-hello", "example-python", "example-wasm", "example-webview-json", "builtin-ocr", "official-notes", "official-md-editor", "official-translate", "official-capture", "official-clipboard", "official-devtools-wasm", "official-regex-wasm", "official-winlayout")) {
             New-Item -ItemType Directory -Force -Path "$stage/plugins/$p" | Out-Null
             Get-ChildItem "plugins/$p" -Exclude "target","__pycache__" | Copy-Item -Destination "$stage/plugins/$p" -Recurse -Force
           }

@@ -316,6 +316,12 @@ pub fn dispatch_async_workers(act: HostAction, ch: &Arc<HostChannel>) {
             c.push(crate::store_health::run_plugin_health_check_json(&sources));
         });
     }
+    if let Some(sources) = act.async_check_plugin_updates {
+        let c = Arc::clone(ch);
+        let _ = std::thread::Builder::new().name("tomoyo-plugin-upd".into()).spawn(move || {
+            c.push(crate::store_health::check_plugin_updates_silent_json(&sources));
+        });
+    }
     if act.async_refresh_hotkey_health {
         spawn_hotkey_health_worker(Arc::clone(ch));
     }

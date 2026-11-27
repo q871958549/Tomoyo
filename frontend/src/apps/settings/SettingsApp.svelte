@@ -7,7 +7,7 @@
   import type { SettingSearchEntry } from '../../lib/settingsSearch';
   import type {
     CustomFilterTab, HotkeyAuditReport, HotkeyHealthReport, LiveProbeResult,
-    ReleaseInfo, TomoyoConfig, UpdateStatus, WorkflowDef,
+    ReleaseInfo, SnippetEntry, TomoyoConfig, UpdateStatus, WorkflowDef,
   } from '../../lib/types';
   import Button from '../../lib/ui/Button.svelte';
   import Segmented from '../../lib/ui/Segmented.svelte';
@@ -32,11 +32,15 @@
   let configPath = $state(init.config_path || '');
   let plugins = $state(init.plugins);
   let flows = $state<WorkflowDef[]>(init.flows || []);
+  let snippets = $state<SnippetEntry[]>(init.snippets || []);
+  let dryRes = $state<Record<string, unknown> | null>(null);
+  let pluginUpdateCount = $derived(plugins.filter((p) => p.update_available).length);
   let secretsStatus = $state(init.secrets_status);
   let hotkeyHealth = $state<HotkeyHealthReport>(init.hotkey_health || {});
   let activeTab = $state<SettingsTabId>('core');
   let subCore = $state('general');
   let subSearch = $state('indexing');
+  let subFlows = $state('flows');
   let subPlugins = $state('installed');
   let subSystem = $state('updates');
   let expandedPlugin = $state<string | null>(null);
@@ -74,13 +78,10 @@
   let lang = $derived<Lang>(cfg.language === 'en' ? 'en' : 'zh');
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
 
-  let conflictSlots = $derived.by(() => {
-    const entries = [
-      { label: lang === 'en' ? 'Launcher' : '主启动器', st: hotkeyHealth.main, on: true },
-    ];
-    return entries.filter((e) => e.on && e.st && !e.st.disabled && !e.st.ok && e.st.spec);
-  });
-
+  let conflictSlots = $derived.by(() =>
+    [{ label: lang === 'en' ? 'Launcher' : '主启动器', st: hotkeyHealth.main, on: true }]
+      .filter((e) => e.on && e.st && !e.st.disabled && !e.st.ok && e.st.spec)
+  );
   function jumpToHotkeyConflict() { switchTab('hotkeys'); }
   function onToggleOverride(v: boolean) { cfg.override_conflict_hotkeys = v; scheduleSave(0); setTimeout(runHotkeyAudit, 260); }
   function onUpdateFilters(hidden: string[], custom: CustomFilterTab[], layout?: string) {
@@ -88,22 +89,14 @@
     if (layout) cfg.filter_bar_layout = layout;
     scheduleSave(0);
   }
-  function onUpdateAvoidance(fullscreen: boolean, excluded: string[]) {
-    cfg.suspend_hotkeys_in_fullscreen = fullscreen; cfg.hotkey_excluded_apps = excluded; scheduleSave(0);
-  }
-  function onUpdatePluginConfig(
-    hotkeys: Record<string, string>,
-    settings: Record<string, Record<string, string | number | boolean>>,
-    displayModes?: Record<string, string>
-  ) {
+  function onUpdateAvoidance(fullscreen: boolean, excluded: string[]) { cfg.suspend_hotkeys_in_fullscreen = fullscreen; cfg.hotkey_excluded_apps = excluded; scheduleSave(0); }
+  function onUpdatePluginConfig(hotkeys: Record<string, string>, settings: Record<string, Record<string, string | number | boolean>>, displayModes?: Record<string, string>) {
     cfg.plugin_hotkeys = hotkeys; cfg.plugin_settings = settings;
     if (displayModes !== undefined) { cfg.plugin_display_modes = displayModes; scheduleSave(0); }
     else scheduleSave(120);
   }
-  function onSaveFlows(next: WorkflowDef[]) {
-    flows = next;
-    postHost({ cmd: 'save_flows', flows: $state.snapshot(next) });
-  }
+  function onSaveFlows(next: WorkflowDef[]) { flows = next; postHost({ cmd: 'save_flows', flows: $state.snapshot(next) }); }
+  function onSaveSnippets(next: SnippetEntry[]) { snippets = next; postHost({ cmd: 'save_snippets', snippets: $state.snapshot(next) }); }
   function onTogglePlugin(id: string, enabled: boolean) {
     const low = id.toLowerCase();
     const next = (cfg.disabled_plugins || []).filter((x) => x.toLowerCase() !== low);
@@ -142,6 +135,7 @@
     if (hit.sub) {
       if (hit.tab === 'core') subCore = hit.sub;
       else if (hit.tab === 'search') subSearch = hit.sub;
+      else if (hit.tab === 'flows') subFlows = hit.sub;
       else if (hit.tab === 'plugins') subPlugins = hit.sub;
       else if (hit.tab === 'system') subSystem = hit.sub;
     }
@@ -160,6 +154,7 @@
       switchTab('system');
     } else if (tab === 'hotkeys' || tab === 'flows' || tab === 'search' || tab === 'core') {
       if (tab === 'search') subSearch = target === 'web' ? 'web' : 'indexing';
+      if (tab === 'flows') subFlows = target === 'snippets' ? 'snippets' : 'flows';
       switchTab(tab);
     }
   }
@@ -212,6 +207,7 @@
     document.documentElement.lang = lang === 'en' ? 'en' : 'zh-CN';
     setToast(tr(lang, 'toast_ready'));
     postHost({ cmd: 'check_hotkey_health' });
+    postHost({ cmd: 'check_plugin_updates', sources: cfg.plugin_registries?.length ? cfg.plugin_registries : ['registry/index.json'] });
     if (init.initial_route) applyInitialRoute(init.initial_route);
     const g = window as unknown as Record<string, unknown>;
     g.__TOMOYO_NAVIGATE_ROUTE__ = applyInitialRoute;
@@ -303,6 +299,14 @@
       } else if (ev === 'flows_saved') {
         if (data.ok && Array.isArray(data.flows)) flows = data.flows as WorkflowDef[];
         setToast(`${data.ok ? '✓ ' : '✗ '}${data.message || ''}`, !data.ok);
+      } else if (ev === 'snippets_saved') {
+        if (data.ok && Array.isArray(data.snippets)) snippets = data.snippets as SnippetEntry[];
+        setToast(`${data.ok ? '✓ ' : '✗ '}${data.message || ''}`, !data.ok);
+      } else if (ev === 'flow_dry_run_result' && data.ok) {
+        dryRes = data;
+      } else if (ev === 'plugin_updates_status' && Array.isArray(data.updates)) {
+        const upds = new Map((data.updates as Array<{ id: string; latest_version: string; update_source: string; update_sha256: string }>).map((u) => [u.id.toLowerCase(), u]));
+        plugins = plugins.map((p) => { const u = upds.get(p.id.toLowerCase()); return u ? { ...p, update_available: true, latest_version: u.latest_version, update_source: u.update_source, update_sha256: u.update_sha256 } : p; });
       } else if (ev === 'sync_dir_updated') {
         if (data.cancelled) return;
         if (data.ok) {
@@ -357,7 +361,7 @@
     <SettingsTitlebar {lang} />
   {/if}
   <div class="shell">
-  <SettingsSidebar {lang} {activeTab} conflictCount={conflictSlots.length} onSelectTab={switchTab} onApplyHit={applySearchHit} />
+  <SettingsSidebar {lang} {activeTab} conflictCount={conflictSlots.length} {pluginUpdateCount} onSelectTab={switchTab} onApplyHit={applySearchHit} />
 
   <main class="main">
     <div class="scroll">
@@ -383,7 +387,8 @@
         {:else if activeTab === 'hotkeys'}
           <HotkeysTab {cfg} {lang} runningApps={init.running_apps} health={hotkeyHealth} audit={hotkeyAudit} auditing={auditingHotkeys} {probingSpec} {probeResult} onRunAudit={runHotkeyAudit} onProbe={probeHotkeyOwner} onApplyFreeKey={applyFreeKey} {onToggleOverride} {onUpdateAvoidance} />
         {:else if activeTab === 'flows'}
-          <FlowsTab {lang} {flows} flowsPath={init.flows_path || ''} {onSaveFlows} />
+          <div class="subbar"><Segmented value={subFlows} options={[{ value: 'flows', label: lang === 'en' ? 'Action Flows' : '工作流管道' }, { value: 'snippets', label: lang === 'en' ? 'Snippets (snip)' : '短语模板库' }]} onchange={(v) => (subFlows = v)} /></div>
+          <FlowsTab {lang} sub={subFlows} {flows} flowsPath={init.flows_path || ''} {snippets} snippetsPath={init.snippets_path || ''} {dryRes} {onSaveFlows} {onSaveSnippets} />
         {:else if activeTab === 'plugins'}
           <div class="subbar">
             <Segmented value={subPlugins} options={[{ value: 'installed', label: lang === 'en' ? 'Modules & Plugins' : '已安装与插件设置' }, { value: 'store', label: tr(lang, 'nav_store') }]} onchange={(v) => { subPlugins = v; if (v === 'store' && !storeLoaded) { storeLoaded = true; fetchStore(); } }} />

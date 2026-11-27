@@ -28,8 +28,9 @@
 
 ```text
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│  v3.4.0 · [Wave 1 已落地 ✅ · Stage 2 持续推进] 纯WASM正则实验室 · 敏感剪贴  │
-│           板脱敏定时销毁 · snippets/flows 干跑 CLI                           │
+│  v3.4.0 · [已完成 ✅ · Wave 1 + Wave 2 全量交付] 纯 WASM 正则实验室 · 敏感剪贴│
+│           板脱敏定时销毁 · snippets/flows 干跑与可视化 · WinLayout 窗口上下文  │
+│           插件商店后台 ETag 304 静默更新徽标提示                            │
 ├──────────────────────────────────────────────────────────────────────────────┤
 │  v3.3.0 · [已完成 ✅ · M1 + M2 全量交付] 原生字体栈与Preset · KWin6.8位置记忆│
 │           Linux超级面板 Alt+Q · 可拖动滚动条 · PRIMARY取词 · 30s新手引导    │
@@ -496,12 +497,15 @@
    - **[已完成 ✅ · Milestone 2] Linux 主端拉齐、首装引导与跨机安全迁移**：
      - **Linux 原生体验全面拉齐 ✅**：OS 原生 UI 字体栈 + Linux Cairo RGB 次像素抗锯齿 + Fontconfig 枚举 + `:font`/设置页一键Preset（移除 16.3 MB 内置 TTF）；GTK3 搜索框 2px 主题色光标与 `fcitx5` preedit 兼容占位符；8 向鼠标缩放 + KWin 6.8 Wayland 位置记忆；可拖动 Fluent 滚动条；Wayland/X11 `PRIMARY` 零剪贴板优先取词；**Linux 原生零 WebView 超级面板（`Alt+Q` / 托盘 / IPC）**；
      - **首装体验、文档预览与跨机安全迁移 ✅**：首次启动 30 秒可跳过三步引导卡（`DismissOnboarding`）；`.xlsx` 纯 Rust zip+xml 首表对齐表格预览；Linux 混合 DPI 多屏贴图逻辑尺寸与坐标工作区加固；`tomoyo-cli secrets list|export|import` 跨机 PBKDF2-HMAC-SHA256 + Encrypt-then-MAC 加密凭据迁移。
-2. **Stage 2 (`v3.4.0`) · 个人长期数字资产层（Snippets / Flows 2.0 / Context）**：
-   - **已落地 ✅（Wave 1）**：
+2. **Stage 2 (`v3.4.0`) · 个人长期数字资产层（Snippets / Flows 2.0 / WinLayout · 已完成 ✅）**：
+   - **Wave 1 ✅**：
      - **官方零权限纯 WASM 正则表达式实验室（`dev.tomoyo.regex` · `re` / `regex`）**：零网络/零磁盘沙箱（16 MB 硬顶），支持 `/<pat>/<flags>` 与预设 `:email/:ipv4/:semver/:uuid/:date/:hex` 实时捕获组高亮、`RichCard` 展板、超级面板一键测试及 `40,000` 步 ReDoS 防护；
      - **敏感剪贴板自动识别脱敏与限时自动销毁（`dev.tomoyo.clipboard`）**：毫秒识别 PEM 私钥、GitHub/OpenAI/Stripe/AWS/Slack Token、JWT、`Bearer` 与凭据键值，**绝不写入 `clipboard.db`**，仅在内存按 `secret_ttl_secs`（默认 60s）脱敏倒计时保留并支持 `cb :purge` 立即抹除；
      - **纯文本个人资产与工作流单步干跑 CLI**：`tomoyo-cli snippets list|add|remove|test`（直接管理便携 `snippets.toml`）与 `tomoyo-cli flows list|dry-run`（逐步骤输出中间状态与零副作用演练）；
-   - **后续推进 ⏳**：可读纯文本 `snippets.toml` 快速录入弹窗、可视化 Flows 2.0 图形编排、前台活动应用上下文感知动作、`dev.tomoyo.winlayout` 与插件商店后台 `ETag` 304 静默更新提示。
+   - **Wave 2 ✅**：
+     - **官方跨平台窗口布局与前台窗口上下文插件（`dev.tomoyo.winlayout` · `win`/`wl`/`layout`）**：独立按需 STDIO 进程，支持左/右/上/下半屏、四象限、三分屏/主从 2/3、居中专注与窗口置顶切换，覆盖 KDE KWin 6 Wayland（`Object.assign` 几何重绘）与 Win32 FFI 多屏工作区，并附带前台活动窗口上下文卡；
+     - **设置中心 Snippets 可视化管理与 Flows 2.0 交互升级（`tomoyo-webview-host`）**：`flows` 视图内置「短语模板库（`snippets.toml`）」录入/编辑/删除与动态变量一键填充，工作流支持在位编辑、步骤 `↑`/`↓` 排序及无副作用实时逐步干跑追踪（`flow_dry_run_result`）；
+     - **插件商店后台 `ETag 304` 静默更新徽标提示（`store_health.rs` + `SettingsSidebar`）**：启动设置中心时后台非阻塞比对分片目录 SemVer 与磁盘 ETag 缓存，仅在侧栏插件导航与卡片标红升级徽标，零打扰零冗余流量。
 3. **Stage 3 (`v3.5.0`) · 本地优先的克制 AI 与 MCP 桥接（严守休眠零常驻）**：
    - **按需隔离进程 MCP Client / Agent Action Bridge**：通过独立按需子进程连接本地 Ollama、用户自备 OpenAI 兼容端点或本地 MCP 工具，将桌面上下文（划词 / 截图 / 剪贴板 / 文件）路由给合适引擎并将结果直接写回或粘贴，主内核严守零 AI 依赖与 `< 25 MB` 休眠红线；
    - **高频场景深度整合**：划词/剪贴板一键总结、报错堆栈诊断、翻译润色与「用人话生成复杂筛选/正则」，以及可选本地备忘录/高频文档增量语义检索插件（不侵入核心 Everything 毫秒索引）。

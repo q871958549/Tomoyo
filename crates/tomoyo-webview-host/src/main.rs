@@ -8,6 +8,7 @@
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
+mod assets_ops;
 mod backup;
 mod bridge;
 mod bridge_ops;
@@ -267,6 +268,8 @@ pub fn build_settings_init_script_for(initial_route: &str) -> String {
         "plugins": plugins,
         "flows": tomoyo_core::load_or_init_flows(),
         "flows_path": tomoyo_core::flows_file_path().to_string_lossy(),
+        "snippets": assets_ops::load_snippets_list(),
+        "snippets_path": assets_ops::snippets_file_path().to_string_lossy(),
         "config_path": TomoyoConfig::config_path().to_string_lossy(),
         "sync_dir": tomoyo_core::configured_sync_dir().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default(),
         "plugins_dir": plugins_dir.to_string_lossy(),
@@ -354,7 +357,7 @@ fn main() {
             Some("light")
         );
         let catalog = fetch_store_catalog_json(&["registry/index.json".into()]);
-        assert!(catalog.contains("dev.tomoyo.example-wasm") && catalog.contains("dev.tomoyo.devtools"));
+        assert!(catalog.contains("dev.tomoyo.example-wasm") && catalog.contains("dev.tomoyo.devtools") && catalog.contains("dev.tomoyo.regex") && catalog.contains("dev.tomoyo.winlayout"));
         #[cfg(windows)]
         {
             let hinst = unsafe { windows::Win32::System::LibraryLoader::GetModuleHandleW(None).unwrap() };

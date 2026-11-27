@@ -249,6 +249,12 @@ pub fn dispatch_async_workers(
             push_evt(&t, hwnd_raw, notify_msg, crate::store_health::run_plugin_health_check_json(&sources));
         });
     }
+    if let Some(sources) = act.async_check_plugin_updates {
+        let t = tx.clone();
+        let _ = std::thread::Builder::new().name("tomoyo-plugin-upd".into()).spawn(move || {
+            push_evt(&t, hwnd_raw, notify_msg, crate::store_health::check_plugin_updates_silent_json(&sources));
+        });
+    }
     if act.async_refresh_hotkey_health {
         spawn_hotkey_health_worker(tx.clone(), hwnd_raw, notify_msg);
     }

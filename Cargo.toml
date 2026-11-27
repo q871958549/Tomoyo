@@ -22,6 +22,7 @@ members = [
     "plugins/official-md-editor",
     "plugins/official-notes",
     "plugins/official-translate",
+    "plugins/official-winlayout",
 ]
 exclude = [
     "plugins/example-wasm",

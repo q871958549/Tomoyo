@@ -20,6 +20,8 @@ pub enum HostMessage {
     DbRemove { id: String },
     SaveSettings { config: Box<tomoyo_core::TomoyoConfig>, autostart: bool },
     SaveFlows { flows: Vec<tomoyo_core::WorkflowDef> },
+    SaveSnippets { snippets: Vec<crate::assets_ops::SnippetRow> },
+    DryRunFlow { flow: tomoyo_core::WorkflowDef, #[serde(default)] sample_clip: String },
     PickFolder,
     PickSyncDir,
     PickPluginPath { plugin_id: String, key: String, #[serde(default)] kind: String },
@@ -33,6 +35,7 @@ pub enum HostMessage {
     FetchStore { sources: Vec<String>, #[serde(default)] query: String, #[serde(default)] category: String, #[serde(default)] runtime: String, #[serde(default)] sort: String, #[serde(default)] page: usize, #[serde(default)] page_size: usize, #[serde(default)] force_refresh: bool },
     FetchPluginDetail { plugin_id: String, #[serde(default)] sources: Vec<String> },
     CheckPluginHealth { #[serde(default)] sources: Vec<String> },
+    CheckPluginUpdates { #[serde(default)] sources: Vec<String> },
     InstallPlugin { plugin_id: String, source: String, sha256: String },
     UninstallPlugin { plugin_id: String },
     SetPluginPermission { plugin_id: String, permission: String, allowed: bool },
@@ -82,6 +85,7 @@ pub struct HostAction {
     pub async_fetch_store: Option<crate::store_index::StoreQuery>,
     pub async_fetch_plugin_detail: Option<(String, Vec<String>)>,
     pub async_check_plugin_health: Option<Vec<String>>,
+    pub async_check_plugin_updates: Option<Vec<String>>,
     pub async_refresh_hotkey_health: bool,
     /// `1` = start temporary exclusive WH_KEYBOARD_LL capture, `-1` = stop.
     pub hotkey_capture_cmd: i8,
@@ -141,6 +145,17 @@ pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isi
             }
             HostAction { reply_json: Some(reply), ..Default::default() }
         }
+        HostMessage::SaveSnippets { snippets } => {
+            let (reply, ok) = crate::assets_ops::save_snippets_reply(&snippets);
+            if ok && (notify_hwnd.is_some() || cfg!(target_os = "linux")) {
+                notify_parent_reload(notify_hwnd.unwrap_or(0), true);
+            }
+            HostAction { reply_json: Some(reply), ..Default::default() }
+        }
+        HostMessage::DryRunFlow { flow, sample_clip } => HostAction {
+            reply_json: Some(crate::assets_ops::dry_run_flow_reply(&flow, &sample_clip)),
+            ..Default::default()
+        },
         HostMessage::PickFolder => HostAction { pick_folder_mode: 1, ..Default::default() },
         HostMessage::PickSyncDir => HostAction { pick_folder_mode: 3, ..Default::default() },
         HostMessage::PickPluginPath { plugin_id, key, kind } => HostAction {
@@ -195,6 +210,10 @@ pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isi
         },
         HostMessage::CheckPluginHealth { sources } => HostAction {
             async_check_plugin_health: Some(sources),
+            ..Default::default()
+        },
+        HostMessage::CheckPluginUpdates { sources } => HostAction {
+            async_check_plugin_updates: Some(sources),
             ..Default::default()
         },
         HostMessage::InstallPlugin { plugin_id, source, sha256 } => {

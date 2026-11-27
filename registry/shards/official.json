@@ -25,7 +25,7 @@
         "clipboard"
       ],
       "source": "plugins/builtin-ocr",
-      "sha256": "2110febc3cb7230a4771b0d082184ae6c5f87382e4a4aa5fa179e75f86d01c72",
+      "sha256": "f0a729ea24a71f8cca1cd17174d871c2d58c4188f5af88601eca26f0b5e9c49d",
       "platforms": {},
       "min_tomoyo_version": null,
       "homepage": null,
@@ -105,7 +105,7 @@
         "filesystem_write"
       ],
       "source": "plugins/official-clipboard",
-      "sha256": "f179253eed4a3a90f61b3014297a6c015c52be6a45564bac604c3e00d750e597",
+      "sha256": "dce0367de4498809266f5b9626ee95b3bcfe3f3554350daf8f4e83fa74f650fd",
       "platforms": {},
       "min_tomoyo_version": null,
       "homepage": "https://github.com/q871958549/Tomoyo",
@@ -217,7 +217,7 @@
         "filesystem_write"
       ],
       "source": "plugins/official-notes",
-      "sha256": "b65e023a51d5c5aac02aa0dd6575f90aa060f4ef7a25e96bab8651f44c11e092",
+      "sha256": "c043ffb86584094ada514986736b02951c9436abce0646a3abbe4fe8d0191494",
       "platforms": {},
       "min_tomoyo_version": null,
       "homepage": null,
@@ -284,10 +284,45 @@
         "selection_read"
       ],
       "source": "plugins/official-translate",
-      "sha256": "67c170a8b69ea9ff747a81b62403e0519a81cef4c91765adce03ccc3dc09186b",
+      "sha256": "c27fc7850796c680cd8d1f2ab8721ca9f883ac7d47dbbd8d305f709515919a7c",
       "platforms": {},
       "min_tomoyo_version": null,
       "homepage": "https://github.com/q871958549/Tomoyo",
+      "updated_at": "",
+      "downloads": 0
+    },
+    {
+      "id": "dev.tomoyo.winlayout",
+      "name": "窗口布局与当前窗口上下文 (WinLayout)",
+      "version": "3.4.0",
+      "description": "跨平台窗口分屏网格与前台活动窗口上下文动作：支持左/右/上/下半屏、四象限、三分屏、居中专注、置顶切换与 KWin 6 Wayland / Win32 原生驱动（0 常驻内存）",
+      "author": "Tomoyo Contributors",
+      "license": "MIT",
+      "runtime_kind": "stdio_jsonrpc",
+      "category": "system",
+      "icon": "icon.png",
+      "display_mode": "inline",
+      "tags": [
+        "window",
+        "tiling",
+        "layout",
+        "kwin",
+        "wayland",
+        "context"
+      ],
+      "keywords": [
+        "win",
+        "wl",
+        "layout"
+      ],
+      "permissions": [
+        "shell_exec"
+      ],
+      "source": "plugins/official-winlayout",
+      "sha256": "5822c70088b7df5981d27bb4d74a7db6b132a353b3560b1e9140d489e2019365",
+      "platforms": {},
+      "min_tomoyo_version": null,
+      "homepage": null,
       "updated_at": "",
       "downloads": 0
     }

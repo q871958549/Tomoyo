@@ -267,6 +267,13 @@ export interface UpdateStatus {
   release?: ReleaseInfo;
 }
 
+export interface SnippetEntry {
+  keyword: string;
+  title: string;
+  tags: string[];
+  template: string;
+}
+
 export interface WorkflowStep {
   kind: string;
   value?: string;
@@ -290,6 +297,8 @@ export interface SettingsInitPayload {
   plugins: PluginEntry[];
   flows?: WorkflowDef[];
   flows_path?: string;
+  snippets?: SnippetEntry[];
+  snippets_path?: string;
   config_path: string;
   sync_dir?: string;
   plugins_dir: string;

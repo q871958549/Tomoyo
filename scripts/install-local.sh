@@ -84,7 +84,7 @@ mkdir -p "$BIN_DIR" "$DATA_DIR/fonts" "$DATA_DIR/plugin-icons" "$DATA_DIR/assets
 
 BINS=(tomoyo tomoyo-webview-host tomoyo-cli)
 if [ "$CORE_ONLY" -eq 0 ] && [ "$PROFILE" != "core" ]; then
-  BINS+=(tomoyo-capture tomoyo-plugin-ocr tomoyo-plugin-notes tomoyo-plugin-md-editor tomoyo-plugin-translate tomoyo-plugin-capture tomoyo-plugin-clipboard)
+  BINS+=(tomoyo-capture tomoyo-plugin-ocr tomoyo-plugin-notes tomoyo-plugin-md-editor tomoyo-plugin-translate tomoyo-plugin-capture tomoyo-plugin-clipboard tomoyo-plugin-winlayout)
 fi
 if [ "$WITH_EXAMPLES" -eq 1 ]; then
   BINS+=(tomoyo-plugin-hello)
@@ -111,7 +111,7 @@ install -Dm755 "$REPO_ROOT/scripts/uninstall-local.sh" "$DATA_DIR/uninstall.sh"
 
 PLUGINS_TO_INSTALL=()
 if [ "$CORE_ONLY" -eq 0 ] && [ "$PROFILE" != "core" ]; then
-  PLUGINS_TO_INSTALL+=(builtin-ocr official-notes official-md-editor official-translate official-capture official-clipboard official-devtools-wasm official-regex-wasm)
+  PLUGINS_TO_INSTALL+=(builtin-ocr official-notes official-md-editor official-translate official-capture official-clipboard official-devtools-wasm official-regex-wasm official-winlayout)
 fi
 if [ "$WITH_EXAMPLES" -eq 1 ]; then
   PLUGINS_TO_INSTALL+=(example-hello example-python example-wasm example-webview-json)

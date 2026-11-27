@@ -27,9 +27,9 @@
       id: 'productivity',
       zh: '高频效率套件',
       en: 'Productivity Pack',
-      descZh: '剪贴板工作台 + 原生截图录屏 + 多源划词翻译',
-      descEn: 'Clipboard workbench + native capture + multi-engine translator',
-      ids: ['dev.tomoyo.clipboard', 'dev.tomoyo.capture', 'dev.tomoyo.translate'],
+      descZh: '剪贴板工作台 + 原生截图录屏 + 多源划词翻译 + 窗口布局',
+      descEn: 'Clipboard workbench + native capture + translator + WinLayout',
+      ids: ['dev.tomoyo.clipboard', 'dev.tomoyo.capture', 'dev.tomoyo.translate', 'dev.tomoyo.winlayout'],
     },
     {
       id: 'writing-ocr',
@@ -43,8 +43,8 @@
       id: 'full-suite',
       zh: '官方全家桶',
       en: 'Full Official Suite',
-      descZh: '全部 6 款官方插件一键配齐，均支持随时单独卸载',
-      descEn: 'All 6 standalone official plugins, each independently removable',
+      descZh: '全部 9 款官方 STDIO 与纯 WASM 插件一键配齐，均可单独卸载',
+      descEn: 'All 9 standalone official STDIO & WASM plugins, each removable',
       ids: [
         'dev.tomoyo.clipboard',
         'dev.tomoyo.capture',
@@ -52,6 +52,9 @@
         'dev.tomoyo.ocr',
         'dev.tomoyo.notes',
         'dev.tomoyo.markdown-editor',
+        'dev.tomoyo.winlayout',
+        'dev.tomoyo.devtools',
+        'dev.tomoyo.regex',
       ],
     },
   ];
