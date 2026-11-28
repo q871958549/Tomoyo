@@ -89,3 +89,33 @@ pub fn data_dir() -> PathBuf {
     }
     PathBuf::from(".tomoyo")
 }
+
+/// Normalizes a plugin ID into a safe, bounded ASCII identifier shared by Win32 window
+/// classes, kernel single-instance mutexes, and pending-query handoff files.
+pub fn sanitize_plugin_instance_tag(raw: &str) -> String {
+    let tag: String = raw
+        .trim()
+        .to_ascii_lowercase()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+        .take(48)
+        .collect();
+    if tag.is_empty() {
+        "default".into()
+    } else {
+        tag
+    }
+}
+
+/// Returns the deterministic Win32 window class name for a standalone plugin WebView window.
+pub fn plugin_webview_window_class(plugin_id: &str) -> String {
+    format!("TomoyoPluginHost_{}", sanitize_plugin_instance_tag(plugin_id))
+}
+
+/// Returns the pending query handoff file path used when reactivating an existing plugin window.
+pub fn pending_plugin_query_path(plugin_id: &str) -> PathBuf {
+    logs_dir().join(format!(
+        "pending_plugin_query_{}.txt",
+        sanitize_plugin_instance_tag(plugin_id)
+    ))
+}

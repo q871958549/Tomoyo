@@ -7,8 +7,9 @@ use crate::inline_dock::{
     prepare_host_bootstrap, write_inline_hwnd_marker,
 };
 use crate::single_instance::{
-    acquire_or_activate_settings, EPHEMERAL_WINDOW_CLASS, SETTINGS_WINDOW_CLASS,
-    WM_APP_ACTIVATE_SETTINGS,
+    acquire_or_activate_plugin, acquire_or_activate_settings, handle_activate_plugin_msg,
+    handle_activate_settings_msg, reactivate_webview_with_query, EPHEMERAL_WINDOW_CLASS,
+    SETTINGS_WINDOW_CLASS, WM_APP_ACTIVATE_PLUGIN, WM_APP_ACTIVATE_SETTINGS,
 };
 use crate::win_msg::{dispatch_webview_message, pick_builtin_html};
 use crate::win_theme::{
@@ -39,16 +40,17 @@ use windows::Win32::UI::HiDpi::{
     SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    DefWindowProcW, DestroyWindow, DispatchMessageW, GetMessageW, GetWindowLongPtrW, IsIconic,
-    IsWindow, PostQuitMessage, SetForegroundWindow, SetTimer, SetWindowLongPtrW, SetWindowPos,
-    ShowWindow, TranslateMessage, GWLP_USERDATA, MSG, SWP_FRAMECHANGED, SWP_NOACTIVATE,
-    SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SW_RESTORE, SW_SHOW, WM_ACTIVATE, WM_CLOSE, WM_DESTROY,
-    WM_ERASEBKGND, WM_GETMINMAXINFO, WM_NCCALCSIZE, WM_NCHITTEST, WM_PAINT, WM_SIZE, WM_TIMER,
+    DefWindowProcW, DestroyWindow, DispatchMessageW, GetMessageW, GetWindowLongPtrW, IsWindow,
+    KillTimer, PostQuitMessage, SetTimer, SetWindowLongPtrW, SetWindowPos, ShowWindow,
+    TranslateMessage, GWLP_USERDATA, MSG, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+    SWP_NOZORDER, SW_SHOW, WM_ACTIVATE, WM_CLOSE, WM_DESTROY, WM_ERASEBKGND, WM_GETMINMAXINFO,
+    WM_NCCALCSIZE, WM_NCHITTEST, WM_PAINT, WM_SIZE, WM_TIMER,
 };
 
 pub(crate) const WM_APP_WEBVIEW_EVENT: u32 = 0x8000 + 31;
 pub(crate) const WM_APP_PICK_FOLDER: u32 = 0x8000 + 33;
 pub(crate) const TIMER_REVEAL_FALLBACK: usize = 901;
+pub(crate) const TIMER_REACTIVATE_FLUSH: usize = 902;
 
 pub(crate) struct HostWindowState {
     pub controller: Option<ICoreWebView2Controller>,
@@ -64,6 +66,7 @@ pub(crate) struct HostWindowState {
     pub is_topmost: bool,
     pub picking_folder: bool,
     pub pending_plugin_path: Option<(String, String, bool)>,
+    pub pending_reactivate_query: Option<String>,
     pub settings_mode: bool,
     pub window_revealed: bool,
     pub notify_hwnd: Option<isize>,
@@ -140,22 +143,16 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             LRESULT(0)
         }
         WM_APP_ACTIVATE_SETTINGS => {
+            let wv = (!ptr.is_null()).then(|| unsafe { (*ptr).webview.as_ref() }).flatten();
+            unsafe { handle_activate_settings_msg(hwnd, wv); }
+            LRESULT(0)
+        }
+        WM_APP_ACTIVATE_PLUGIN if !ptr.is_null() => {
+            let st = unsafe { &mut *ptr };
             unsafe {
-                if IsIconic(hwnd).as_bool() {
-                    let _ = ShowWindow(hwnd, SW_RESTORE);
-                }
-                let _ = ShowWindow(hwnd, SW_SHOW);
-                let _ = SetForegroundWindow(hwnd);
-                let p = tomoyo_core::logs_dir().join("pending_settings_route.txt");
-                if let Ok(raw) = std::fs::read_to_string(&p) {
-                    let _ = std::fs::remove_file(&p);
-                    let route = raw.trim();
-                    if !route.is_empty() && !ptr.is_null() && let Some(wv) = &(*ptr).webview {
-                        let r_json = serde_json::to_string(route).unwrap_or_else(|_| "\"\"".into());
-                        let js = format!("window.__TOMOYO_NAVIGATE_ROUTE__ && window.__TOMOYO_NAVIGATE_ROUTE__({r_json});");
-                        let jw = HSTRING::from(js);
-                        let _ = wv.ExecuteScript(PCWSTR(jw.as_ptr()), None);
-                    }
+                handle_activate_plugin_msg(hwnd, st.webview.as_ref(), &st.plugin_id, st.is_topmost, &mut st.pending_reactivate_query);
+                if st.webview.is_none() && st.pending_reactivate_query.is_some() {
+                    let _ = SetTimer(Some(hwnd), TIMER_REACTIVATE_FLUSH, 140, None);
                 }
             }
             LRESULT(0)
@@ -189,6 +186,14 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 if !st.window_revealed {
                     st.window_revealed = true;
                     unsafe { reveal_host_window_and_notify(hwnd, TIMER_REVEAL_FALLBACK, st.notify_hwnd); }
+                }
+            } else if wparam.0 == TIMER_REACTIVATE_FLUSH && !ptr.is_null() {
+                let st = unsafe { &mut *ptr };
+                if let Some(wv) = &st.webview {
+                    let _ = unsafe { KillTimer(Some(hwnd), TIMER_REACTIVATE_FLUSH) };
+                    if let Some(q) = st.pending_reactivate_query.take() {
+                        unsafe { reactivate_webview_with_query(wv, &q); }
+                    }
                 }
             }
             LRESULT(0)
@@ -225,6 +230,9 @@ pub fn run_windows_host(opts: LaunchArgs) {
     let _singleton_guard = if opts.settings_mode {
         let Some(g) = acquire_or_activate_settings() else { return };
         Some(g)
+    } else if !opts.self_test && !opts.plugin_id.trim().is_empty() {
+        let Some(g) = acquire_or_activate_plugin(&opts.plugin_id, &opts.query) else { return };
+        Some(g)
     } else {
         None
     };
@@ -234,8 +242,12 @@ pub fn run_windows_host(opts: LaunchArgs) {
         let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
     }
 
+    let plugin_cls_w = (!opts.settings_mode && !opts.plugin_id.trim().is_empty())
+        .then(|| HSTRING::from(tomoyo_core::plugin_webview_window_class(&opts.plugin_id)));
     let cls = if opts.settings_mode {
         SETTINGS_WINDOW_CLASS
+    } else if let Some(ref w) = plugin_cls_w {
+        PCWSTR(w.as_ptr())
     } else {
         EPHEMERAL_WINDOW_CLASS
     };
@@ -267,6 +279,7 @@ pub fn run_windows_host(opts: LaunchArgs) {
         is_topmost: false,
         picking_folder: false,
         pending_plugin_path: None,
+        pending_reactivate_query: None,
         settings_mode: opts.settings_mode,
         window_revealed: !opts.settings_mode,
         notify_hwnd: opts.notify_hwnd,
@@ -383,6 +396,9 @@ pub fn run_windows_host(opts: LaunchArgs) {
                                 let _ = webview.OpenDevToolsWindow();
                             }
                             (*state_ptr).webview = Some(webview);
+                            if (*state_ptr).pending_reactivate_query.is_some() {
+                                let _ = SetTimer(Some(hwnd), TIMER_REACTIVATE_FLUSH, 180, None);
+                            }
                         }
                         (*state_ptr).controller = Some(controller);
                     }

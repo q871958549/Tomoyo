@@ -55,23 +55,26 @@ pub fn spawn_settings_window_at(
 #[cfg(windows)]
 fn try_focus_existing_settings_window() -> bool {
     use windows::core::w;
-    try_focus_existing_window(w!("TomoyoSettingsCenterWindowClass"), 0x8000 + 32)
+    try_focus_existing_window_pid(w!("TomoyoSettingsCenterWindowClass"), 0x8000 + 32).is_some()
 }
 
 #[cfg(windows)]
-fn try_focus_existing_window(class_name: windows::core::PCWSTR, activate_msg: u32) -> bool {
+fn try_focus_existing_window_pid(
+    class_name: windows::core::PCWSTR,
+    activate_msg: u32,
+) -> Option<u32> {
     use windows::core::PCWSTR;
     use windows::Win32::UI::WindowsAndMessaging::{
-        AllowSetForegroundWindow, FindWindowW, GetWindowThreadProcessId, IsIconic, PostMessageW,
-        SetForegroundWindow, ShowWindow, SW_RESTORE, SW_SHOW,
+        AllowSetForegroundWindow, BringWindowToTop, FindWindowW, GetWindowThreadProcessId,
+        IsIconic, PostMessageW, SetForegroundWindow, ShowWindow, SW_RESTORE, SW_SHOW,
     };
 
     unsafe {
         let Ok(hwnd) = FindWindowW(class_name, PCWSTR::null()) else {
-            return false;
+            return None;
         };
         if hwnd.is_invalid() {
-            return false;
+            return None;
         }
         let mut pid = 0u32;
         let _ = GetWindowThreadProcessId(hwnd, Some(&mut pid));
@@ -82,9 +85,10 @@ fn try_focus_existing_window(class_name: windows::core::PCWSTR, activate_msg: u3
             let _ = ShowWindow(hwnd, SW_RESTORE);
         }
         let _ = ShowWindow(hwnd, SW_SHOW);
+        let _ = BringWindowToTop(hwnd);
         let _ = SetForegroundWindow(hwnd);
         let _ = PostMessageW(Some(hwnd), activate_msg, Default::default(), Default::default());
-        true
+        Some(pid.max(1))
     }
 }
 
@@ -103,6 +107,20 @@ pub fn spawn_ephemeral_webview_ex(
     inline_hwnd: Option<isize>,
     dock_rect: Option<(i32, i32, i32, i32)>,
 ) -> Result<u32, String> {
+    #[cfg(windows)]
+    if inline_hwnd.is_none() && dock_rect.is_none() && !plugin_id.trim().is_empty() {
+        use windows::core::{HSTRING, PCWSTR};
+        let pending_path = tomoyo_core::pending_plugin_query_path(plugin_id);
+        if let Some(parent) = pending_path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let _ = std::fs::write(&pending_path, initial_query.as_bytes());
+        let cls_w = HSTRING::from(tomoyo_core::plugin_webview_window_class(plugin_id));
+        if let Some(pid) = try_focus_existing_window_pid(PCWSTR(cls_w.as_ptr()), 0x8000 + 34) {
+            return Ok(pid);
+        }
+        let _ = std::fs::remove_file(&pending_path);
+    }
     let host_exe = locate_webview_host()?;
     let mut cmd = Command::new(&host_exe);
     cmd.args([
