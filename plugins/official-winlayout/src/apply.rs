@@ -178,6 +178,7 @@ fn probe_linux_active_window() -> Option<ActiveWindowInfo> {
 }
 
 #[cfg(windows)]
+#[allow(clippy::upper_case_acronyms)]
 mod win32 {
     #[repr(C)]
     #[derive(Clone, Copy)]
