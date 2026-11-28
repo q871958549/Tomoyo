@@ -29,7 +29,7 @@ pub(crate) struct LinuxFileHints {
     pub path_filters: Vec<String>,
 }
 
-struct CombinedQuery {
+pub(crate) struct CombinedQuery {
     terms: String,
     exts: Vec<String>,
     folders_only: bool,

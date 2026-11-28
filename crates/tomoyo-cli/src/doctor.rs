@@ -74,6 +74,37 @@ pub(crate) fn cmd_doctor(_args: &[String]) -> i32 {
         }
     }
 
+    #[cfg(target_os = "linux")]
+    probe_wayland_portal();
+
     println!("\nSummary: {} plugin(s), {} warning(s), {} failure(s).", plugins.len(), warnings, failures);
     if failures > 0 { 1 } else { 0 }
+}
+
+#[cfg(target_os = "linux")]
+fn probe_wayland_portal() {
+    let wayland = std::env::var_os("WAYLAND_DISPLAY").is_some()
+        || std::env::var("XDG_SESSION_TYPE").is_ok_and(|v| v.eq_ignore_ascii_case("wayland"));
+    if !wayland {
+        return;
+    }
+    println!("\n--- Wayland GlobalShortcuts Portal ---");
+    let out = std::process::Command::new("gdbus")
+        .args([
+            "call", "--session",
+            "--dest", "org.freedesktop.portal.Desktop",
+            "--object-path", "/org/freedesktop/portal/desktop",
+            "--method", "org.freedesktop.DBus.Properties.Get",
+            "org.freedesktop.portal.GlobalShortcuts", "version",
+        ])
+        .output();
+    match out {
+        Ok(o) if o.status.success() => {
+            let ver = String::from_utf8_lossy(&o.stdout).trim().to_string();
+            println!("  [OK]   org.freedesktop.portal.GlobalShortcuts ready ({ver})");
+        }
+        _ => {
+            println!("  [INFO] GlobalShortcuts portal inactive (Tomoyo falls back to KGlobalAccel / XWayland)");
+        }
+    }
 }

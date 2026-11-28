@@ -6,10 +6,14 @@
 mod client;
 mod history;
 mod http_curl;
+mod mcp_client;
+mod mcp_semantic;
 mod prompts;
+mod semantic;
 
 use client::{invoke_llm, AiConfig};
 use history::{history_path, load_history_from, push_history_to, AiHistoryEntry};
+use mcp_semantic::{build_semantic_items, execute_mcp_action, parse_semantic_dirs, query_mcp};
 use prompts::{extract_first_code_or_line, parse_ai_input, AiMode};
 use serde_json::{json, Value};
 use tomoyo_sdk::{
@@ -106,6 +110,8 @@ fn quick_mode_items(backend: &str) -> Vec<ResultItem> {
         ("ai:m:regex", "REGEX", "ai regex ", "自然语言生成正则 (`ai regex 匹配邮箱` → 可联动 `re`)", 9_370),
         ("ai:m:cmd", "CMD", "ai cmd ", "自然语言生成终端命令 (`ai cmd 查找并清理 7 天前日志`)", 9_360),
         ("ai:m:filter", "FILTER", "ai filter ", "自然语言生成文件筛选 (`ai filter 本周超过 10MB 的 PDF`)", 9_350),
+        ("ai:m:find", "KB", "ai find ", "离线 BM25+CJK 语义检索本地备忘录/短语/文档 (`ai find <问题>`)", 9_340),
+        ("ai:m:mcp", "MCP", "mcp ", "按需调用外部 STDIO MCP Server 工具 (`mcp :config` / `mcp :refresh`)", 9_330),
     ];
     presets
         .into_iter()
@@ -136,9 +142,32 @@ impl TomoyoPlugin for AiPlugin {
     }
 
     fn query(&self, ctx: &QueryContext) -> Vec<ResultItem> {
+        if ctx.keyword.as_deref().is_some_and(|k| k.eq_ignore_ascii_case("mcp")) {
+            return query_mcp(ctx.args.trim());
+        }
+        let semantic_dirs = parse_semantic_dirs(&ctx.plugin_settings);
+        let clip_text = ctx.clipboard.as_ref().map(|c| c.text.as_str());
+        let trimmed = ctx.args.trim();
+        let (head, tail) = trimmed.split_once(char::is_whitespace).unwrap_or((trimmed, ""));
+        if matches!(head.to_ascii_lowercase().as_str(), "find" | "mem" | "kb" | "搜笔记") {
+            let q = if tail.trim().is_empty() { clip_text.unwrap_or("") } else { tail.trim() };
+            let hits = build_semantic_items(q, &semantic_dirs, 10_500, 10);
+            if !hits.is_empty() || !q.trim().is_empty() {
+                return if hits.is_empty() {
+                    vec![ResultItem {
+                        id: "ai:sem:none".into(), provider_id: PID.into(),
+                        title: format!("本地知识库暂无匹配「{q}」的记录"),
+                        subtitle: "已扫描 notes/、snippets.toml 及配置的 semantic_dirs".into(),
+                        category: ResultCategory::Plugin, score: 9_800,
+                        icon: IconSpec::Monogram("KB".into()), badge: Some("LOCAL KB".into()),
+                        copy_text: None, actions: vec![], preview: None,
+                    }]
+                } else { hits };
+            }
+        }
+
         let cfg = AiConfig::from_maps(&ctx.plugin_settings, &ctx.plugin_secrets);
         let backend = cfg.backend_hint();
-        let clip_text = ctx.clipboard.as_ref().map(|c| c.text.as_str());
         let parsed = parse_ai_input(&ctx.args, clip_text);
         let history = load_history_from(&history_path());
         let mut out = Vec::new();
@@ -205,6 +234,7 @@ impl TomoyoPlugin for AiPlugin {
             {
                 out.push(history_item(h, 9_500 - i as i64, i));
             }
+            out.extend(build_semantic_items(&parsed.text, &semantic_dirs, 9_100, 3));
             return out;
         }
 
@@ -216,6 +246,9 @@ impl TomoyoPlugin for AiPlugin {
     }
 
     fn execute(&self, req: &ExecuteRequest) -> ExecuteResponse {
+        if let Some(mcp_resp) = execute_mcp_action(req) {
+            return mcp_resp;
+        }
         let mode = match req.action_id.as_str() {
             "ai_summarize" => AiMode::Summarize,
             "ai_diagnose" => AiMode::Diagnose,
@@ -269,6 +302,10 @@ impl TomoyoPlugin for AiPlugin {
 }
 
 fn main() {
+    if std::env::args().any(|a| a == "--mock-mcp-server") {
+        mcp_client::run_mock_mcp_server();
+        return;
+    }
     if std::env::args().any(|a| a == "--self-test") {
         let mut ctx = QueryContext::new("ai sum hello world", 1, 10);
         ctx.keyword = Some("ai".into());
@@ -276,8 +313,15 @@ fn main() {
         let hits = AiPlugin.query(&ctx);
         assert!(hits.iter().any(|r| r.id == "ai:exec"));
         let empty = AiPlugin.query(&QueryContext::new("ai", 2, 10).with_keyword("ai", ""));
-        assert!(empty.len() >= 6);
-        println!("[OK] tomoyo-plugin-ai v{} self-test passed", env!("CARGO_PKG_VERSION"));
+        assert!(empty.len() >= 8);
+        assert!(!semantic::tokenize("Wayland 窗口").is_empty());
+        let exe = std::env::current_exe().unwrap();
+        let srv = mcp_client::McpServerConfig {
+            name: "self".into(), command: exe.to_string_lossy().into_owned(),
+            args: vec!["--mock-mcp-server".into()], env: std::collections::BTreeMap::new(), enabled: true,
+        };
+        assert_eq!(mcp_client::call_server_tool(&srv, "echo_upper", json!({ "text": "ok" })).unwrap(), "OK");
+        println!("[OK] tomoyo-plugin-ai v{} self-test passed (LLM + BM25/CJK Semantic + STDIO MCP handshake)", env!("CARGO_PKG_VERSION"));
         return;
     }
     tomoyo_sdk::run(AiPlugin);

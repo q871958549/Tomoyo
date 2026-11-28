@@ -12,6 +12,7 @@ mod assets_cli;
 mod dev;
 mod doctor;
 mod hash;
+mod mcp_cli;
 mod pack;
 mod registry;
 mod scaffold;
@@ -45,6 +46,7 @@ fn main() {
         "secrets" => secrets_vault::cmd_secrets(&args[1..]),
         "snippets" => assets_cli::cmd_snippets(&args[1..]),
         "flows" => assets_cli::cmd_flows(&args[1..]),
+        "mcp" => mcp_cli::cmd_mcp(&args[1..]),
         other => {
             eprintln!("Unknown command `{other}`.\n");
             print_usage();
@@ -73,7 +75,8 @@ fn print_usage() {
          \t tomoyo-cli doctor\n\
          \t tomoyo-cli secrets list|export --out <file>|import --in <file>\n\
          \t tomoyo-cli snippets list|add <kw> --title <t> --template <tpl>|remove <kw>|test <kw>\n\
-         \t tomoyo-cli flows list|dry-run <id-or-kw> [--input <txt>] [--clip <txt>]\n",
+         \t tomoyo-cli flows list|dry-run <id-or-kw> [--input <txt>] [--clip <txt>]\n\
+         \t tomoyo-cli mcp list|add <name> --cmd <bin>|remove <name>|inspect <name>|call <name> <tool>\n",
         env!("CARGO_PKG_VERSION")
     );
 }

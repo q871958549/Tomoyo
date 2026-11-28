@@ -25,7 +25,7 @@
         "clipboard"
       ],
       "source": "plugins/builtin-ocr",
-      "sha256": "06fb1b0db8979c00a79cf089cf2d351df1aa7fb97bc777e95b9d41a20cc3bcb9",
+      "sha256": "540c20a5ecd0362d36884b224e69b858b5aaa2457ebcb9ae995787899bbdb632",
       "platforms": {},
       "min_tomoyo_version": null,
       "homepage": null,
@@ -45,23 +45,28 @@
       "display_mode": "inline",
       "tags": [
         "ai",
+        "mcp",
         "ollama",
         "openai",
         "llm",
+        "semantic",
         "regex",
         "debug",
         "summary"
       ],
       "keywords": [
         "ai",
-        "ask"
+        "ask",
+        "mcp"
       ],
       "permissions": [
         "network",
-        "clipboard"
+        "clipboard",
+        "shell_exec",
+        "filesystem_read"
       ],
       "source": "plugins/official-ai",
-      "sha256": "ff40d0af8dacc34aa6516d1c4289339db01ff12e40d4acb1de5165443b6af57a",
+      "sha256": "11f7a9cd5aa66ccc5ab9aed4a4d5f9578a2068de00a79ebf4a1bdd4c125ae864",
       "platforms": {},
       "min_tomoyo_version": null,
       "homepage": "https://github.com/q871958549/Tomoyo",
@@ -141,7 +146,7 @@
         "filesystem_write"
       ],
       "source": "plugins/official-clipboard",
-      "sha256": "bb67dfc1818acb2514177826b40da45fd527de54cba061bf2f7aede801cb6c7d",
+      "sha256": "6d77729ed42f34e7a2f4b2d5f2cefab53e2f052084a2916c28adf1bdd3e0edce",
       "platforms": {},
       "min_tomoyo_version": null,
       "homepage": "https://github.com/q871958549/Tomoyo",
@@ -320,7 +325,7 @@
         "selection_read"
       ],
       "source": "plugins/official-translate",
-      "sha256": "f23de92bf2df79cb441014a1755dfaaef1ece7dd4ddddf01378d4b35af73732b",
+      "sha256": "56f58ad7621483753f9db1ed29815e1868f09078b2ca87bb982ab44143e87571",
       "platforms": {},
       "min_tomoyo_version": null,
       "homepage": "https://github.com/q871958549/Tomoyo",

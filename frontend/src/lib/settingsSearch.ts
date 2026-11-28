@@ -24,6 +24,7 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchEntry[] = [
   { id: 'ocr', zh: '离线 OCR 插件（语言 / 热键 / 空格清洗）', en: 'Offline WinRT OCR Plugin Settings', kw: 'ocr 识字 离线 识别 语言', tab: 'plugins', sub: 'installed', pluginId: 'dev.tomoyo.ocr' },
   { id: 'notes', zh: '本地 Markdown 备忘录插件（目录与热键）', en: 'Local Markdown Notes Plugin Settings', kw: '备忘录 笔记 markdown note memo', tab: 'plugins', sub: 'installed', pluginId: 'dev.tomoyo.notes' },
   { id: 'winlayout', zh: '窗口分屏布局与上下文 (WinLayout)', en: 'Window Tiling Layouts & Context (WinLayout)', kw: '窗口 布局 分屏 居中 置顶 winlayout layout left right center', tab: 'plugins', sub: 'installed', pluginId: 'dev.tomoyo.winlayout' },
+  { id: 'ai', zh: '本地 AI 助手与 MCP 桥接 (Ollama / 语义检索)', en: 'Local AI & MCP Bridge (Ollama / Semantic)', kw: 'ai ask mcp ollama openai 语义 检索 sum fix regex', tab: 'plugins', sub: 'installed', pluginId: 'dev.tomoyo.ai' },
   { id: 'store', zh: '开源插件市场（校验下载外部插件）', en: 'Plugin Store & Registry Catalog', kw: '插件 商店 市场 清单 下载 store install', tab: 'plugins', sub: 'store' },
   { id: 'updates', zh: '检查更新与一键校验升级', en: 'Check Updates & One-Click Upgrade', kw: '更新 版本 升级 github sha256 update', tab: 'system', sub: 'updates' },
   { id: 'logs', zh: '诊断与日志（主进程 / WebView / 升级日志）', en: 'Diagnostics, Crash & Update Logs', kw: '日志 崩溃 升级 报错 诊断 log crash update.log', tab: 'system', sub: 'logs' },

@@ -173,8 +173,8 @@ mod tests {
         assert!(is_bundled_plugin_dir(&plugins_root.join("official-capture")));
         assert!(is_bundled_plugin_dir(&plugins_root.join("official-ai")));
         assert!(is_bundled_plugin_dir(&plugins_root.join("builtin-ocr")));
-        let verbatim = Path::new(r"\\?\C:\Windows\Temp\plugins").join("official-ai");
-        assert_eq!(normalize_cmp_path(&verbatim), r"c:\windows\temp\plugins\official-ai");
+        let verbatim = Path::new(r"\\?\C:\Windows\Temp\plugins\official-ai");
+        assert_eq!(normalize_cmp_path(verbatim), r"c:\windows\temp\plugins\official-ai");
         assert!(!is_bundled_plugin_dir(&plugins_root.join("com.thirdparty.evil")));
         assert!(!is_bundled_plugin_dir(&plugins_root.join("official-fake-thirdparty")));
     }

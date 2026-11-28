@@ -8,8 +8,8 @@ homepage = "https://github.com/q871958549/Tomoyo"
 icon = "icon.png"
 category = "ai"
 display_mode = "inline"
-tags = ["ai", "ollama", "openai", "llm", "regex", "debug", "summary"]
-permissions = ["network", "clipboard"]
+tags = ["ai", "mcp", "ollama", "openai", "llm", "semantic", "regex", "debug", "summary"]
+permissions = ["network", "clipboard", "shell_exec", "filesystem_read"]
 
 [runtime]
 kind = "stdio_jsonrpc"
@@ -17,12 +17,18 @@ command = "tomoyo-plugin-ai"
 args = []
 
 [triggers]
-keywords = ["ai", "ask"]
+keywords = ["ai", "ask", "mcp"]
 
 [resources]
 max_memory_mb = 64
 idle_timeout_secs = 30
 query_timeout_ms = 25000
+
+[[hotkeys]]
+id = "quick_mcp"
+label = "快速呼出 MCP 工具列表"
+default_hotkey = ""
+trigger_query = "mcp "
 
 [[text_actions]]
 id = "ai_summarize"
@@ -116,3 +122,12 @@ min = 5
 max = 60
 step = 5
 default = 20
+
+[[settings]]
+key = "semantic_dirs"
+label = "额外本地知识目录"
+description = "除自动检索备忘录 (notes) 与 snippets.toml 外，可填写逗号分隔的自定义文档目录"
+section = "本地知识语义检索"
+type = "text"
+placeholder = "例如 /home/user/docs,/home/user/wiki"
+default = ""

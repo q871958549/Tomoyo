@@ -28,8 +28,8 @@
 
 ```text
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│  v3.5.0 · [Wave 1 已完成 ✅ · 本地优先 AI 助手] dev.tomoyo.ai 按需子进程     │
-│  (Wave 1)  本地 Ollama / OpenAI 兼容加密凭据 · 划词总结/润色/报错诊断/正则是 │
+│  v3.5.0 · [已完成 ✅ · Wave 1 + Wave 2 全量交付] 本地 AI 助手 · 离线语义检索 │
+│           按需 STDIO MCP 客户端 (mcp.toml/json) · tomoyo-cli mcp & Portal探测│
 ├──────────────────────────────────────────────────────────────────────────────┤
 │  v3.4.2 · [已完成 ✅ · 工程基座与红线治理] Icon.svelte 架构瘦身 settings 287KB│
 │           --self-test TOMOYO_DATA_DIR 隔离 · WinLayout Hyprland/Sway 全预设  │
@@ -525,11 +525,14 @@
      - **`settings.html` 架构级图标瘦身（`296.6 KB` → `287.9 KB`）**：以轻量化 `Icon.svelte` + `iconNodes.ts` 替换设置中心及 UI 原语中 38 个 `@lucide/svelte` 独立组件导入（编译模块由 4,600+ 降至 173，保留 12+ KB 安全余量）；
      - **`--self-test --strict-budget` 确定性环境隔离**：`data_dir()` 支持 `TOMOYO_DATA_DIR` 覆盖，自检期间自动隔离至临时目录，避免本机存量配置/剪贴板历史干扰 `28.0 MB` Private Commit 红线核验；
      - **`WinLayout` Hyprland / Sway 全预设平铺对齐（`wayland_wm.rs`）**：拆解 `apply.rs` 并补齐 `hyprctl -j monitors` / `swaymsg -t get_outputs` 逻辑工作区解析与 15+ 平铺/居中/置顶预设批量下发。
-3. **Stage 3 (`v3.5.0`) · 本地优先的克制 AI 与 MCP 桥接（严守休眠零常驻）**：
+3. **Stage 3 (`v3.5.0`) · 本地优先的克制 AI 与 MCP 桥接（已完成 ✅ · 严守休眠零常驻）**：
    - **[Wave 1 已完成 ✅ · `dev.tomoyo.ai`] 官方按需本地优先 AI 助手（`plugins/official-ai`）**：
      - 独立 STDIO JSON-RPC 进程（`0 MB` 常驻开销，零 `tokio`/`reqwest` 重依赖，沿用 `curl --config -` Stdin 鉴权），无缝支持本机 **Ollama** 与用户自备 **OpenAI 兼容端点**（`openai_api_key` 经系统 DPAPI/密钥环加密存储）；
      - 集成 `ai` / `ask` 快捷指令及超级面板 `[[text_actions]]`（`ai sum` 要点提炼、`ai fix` 报错堆栈诊断、`ai polish` 润色改写、`ai regex` 自然语言生成正则并联动 `re`、`ai filter` 生成文件筛选并联动 `f`、`ai cmd` 生成终端命令、`ai commit` 生成提交信息），支持省略正文自动读取剪贴板与本地 `ai_history.json` 预览回顾；
-   - **Wave 2（后续规划）**：本地备忘录/高频文档增量语义检索、按需 MCP Client / Agent Action Bridge 及 `org.freedesktop.portal.GlobalShortcuts` Wayland 协议预研（主内核严守零 AI 依赖与 `< 25 MB` 休眠红线）。
+   - **[Wave 2 已完成 ✅] 本地语义检索、STDIO MCP Client 与 Wayland Portal 预研**：
+     - **离线 BM25 + CJK 二元组增量语义检索（`semantic.rs` · `ai find`）**：纯 Rust 扫描 `<sync_root>/notes`、`snippets.toml` 与自定义 `semantic_dirs`，以文件 `mtime` 增量缓存索引实现 `< 5 ms` 本地知识检索并在常规 `ai` 查询下自动混排相关文档；
+     - **按需 STDIO JSON-RPC 2.0 MCP 客户端与 CLI 工具链（`mcp_client.rs` · `mcp` / `tomoyo-cli mcp`）**：兼容 `mcp.toml` 与 Claude `mcp.json`，支持 `initialize` → `tools/list`（5 分钟缓存）→ `tools/call` 按需拉起与清理退出，并配套 `tomoyo-cli mcp list|add|remove|inspect|call` 运维命令与 `--mock-mcp-server` 端到端握手自检；
+     - **Wayland `GlobalShortcuts` Portal 预研与诊断探测（[`docs/WAYLAND_PORTAL_GLOBALSHORTCUTS.md`](WAYLAND_PORTAL_GLOBALSHORTCUTS.md) + `tomoyo-cli doctor`）**：完成 `org.freedesktop.portal.GlobalShortcuts` v1/v2 在 KDE Plasma / Hyprland / GNOME 下的交互与接入矩阵设计，并在 `tomoyo-cli doctor` 增加运行时 Portal 可用性诊断。
 4. **Stage 4 (`v4.0.0`) · 稳定协议冻结、可信分发与三平台肌肉记忆统一**：
    - **协议冻结与开发者生态独立**：冻结长期向后兼容的 Protocol v3 与 WASM ABI，将 `tomoyo-protocol` / `tomoyo-sdk` / `tomoyo-wasm-sdk` 发布至 `crates.io`；
    - **可信代码签名与官方包源**：对接开源代码签名（如 SignPath.io）打通已预置的 `signtool.exe` Release 自动签名消除 Windows SmartScreen 拦截，正式上架 **Winget**、**Scoop** 与 **Arch AUR**；
