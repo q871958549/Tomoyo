@@ -6,6 +6,7 @@
 mod config;
 mod db_io;
 mod filter;
+mod image_gc;
 mod items;
 mod paste_stack;
 mod secrets_guard;

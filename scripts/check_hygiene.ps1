@@ -11,6 +11,7 @@
 param(
     [int]$MaxLines = 450,
     [int]$WarnLines = 380,
+    [int]$MaxSoftWarnings = 91,
     [switch]$CheckBinaries
 )
 
@@ -18,8 +19,8 @@ $ErrorActionPreference = "Stop"
 $violations = 0
 $totalSteps = if ($CheckBinaries) { 7 } else { 6 }
 
-Write-Host "=== [1/$totalSteps] Checking source file line-count ceiling (warn > $WarnLines, hard fail > $MaxLines) ==="
-$files = Get-ChildItem -Path crates, plugins, scripts, frontend\src, frontend\scripts, frontend\tests -Recurse -Include *.rs,*.html,*.css,*.js,*.mjs,*.py,*.ts,*.svelte -ErrorAction SilentlyContinue |
+Write-Host "=== [1/$totalSteps] Checking source file line-count ceiling (warn > $WarnLines, hard fail > $MaxLines, ratchet <= $MaxSoftWarnings) ==="
+$files = Get-ChildItem -Path crates, plugins, scripts, frontend\src, frontend\scripts, frontend\tests -Recurse -Include *.rs,*.c,*.h,*.m,*.html,*.css,*.js,*.mjs,*.py,*.ts,*.svelte -ErrorAction SilentlyContinue |
     Where-Object { $_.FullName -notmatch '\\target\\' -and $_.FullName -notmatch '\\__pycache__\\' -and $_.FullName -notmatch '\\node_modules\\' -and $_.FullName -notmatch '\\dist\\' }
 
 $softWarnings = @()
@@ -36,10 +37,14 @@ foreach ($f in $files) {
 if ($violations -eq 0) {
     Write-Host "  [OK] All $($files.Count) source files are strictly <= $MaxLines lines!" -ForegroundColor Green
     if ($softWarnings.Count -gt 0) {
-        Write-Host "  [INFO] $($softWarnings.Count) file(s) exceed soft advisory watermark ($WarnLines lines) — consider splitting before growing:" -ForegroundColor Yellow
+        Write-Host "  [INFO] $($softWarnings.Count)/$MaxSoftWarnings file(s) exceed soft advisory watermark ($WarnLines lines) — consider splitting before growing:" -ForegroundColor Yellow
         $softWarnings | Sort-Object Lines -Descending | ForEach-Object {
             Write-Host "    - $($_.File) ($($_.Lines) lines)" -ForegroundColor DarkYellow
         }
+    }
+    if ($softWarnings.Count -gt $MaxSoftWarnings) {
+        Write-Host "  [FAIL] Soft-warning file count ($($softWarnings.Count)) exceeded ratchet ceiling ($MaxSoftWarnings) — split files instead of adding more >$WarnLines-line files" -ForegroundColor Red
+        $violations++
     }
 }
 

@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root"
+
+node scripts/check_hygiene.mjs
+node scripts/verify-release-readiness.mjs
+RUSTFLAGS="-D warnings" cargo clippy --workspace --all-targets -- -D warnings

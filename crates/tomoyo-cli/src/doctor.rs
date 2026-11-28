@@ -77,8 +77,54 @@ pub(crate) fn cmd_doctor(_args: &[String]) -> i32 {
     #[cfg(target_os = "linux")]
     probe_wayland_portal();
 
+    probe_local_governance(&mut warnings);
+
     println!("\nSummary: {} plugin(s), {} warning(s), {} failure(s).", plugins.len(), warnings, failures);
     if failures > 0 { 1 } else { 0 }
+}
+
+fn dir_bytes(dir: &Path) -> u64 {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return 0;
+    };
+    entries
+        .flatten()
+        .map(|ent| {
+            let p = ent.path();
+            if p.is_dir() {
+                dir_bytes(&p)
+            } else {
+                ent.metadata().map(|m| m.len()).unwrap_or(0)
+            }
+        })
+        .sum()
+}
+
+fn probe_local_governance(warnings: &mut usize) {
+    println!("\n--- Local Governance & Storage Hygiene ---");
+    let data = tomoyo_core::data_dir();
+    let img_mb = dir_bytes(&data.join("clipboard-images")) as f64 / (1024.0 * 1024.0);
+    let logs_kb = dir_bytes(&data.join("logs")) as f64 / 1024.0;
+    if img_mb > 64.0 {
+        *warnings += 1;
+        println!("  [WARN] clipboard-images: {img_mb:.2} MB (exceeds 64 MB budget)");
+    } else {
+        println!("  [OK]   clipboard-images: {img_mb:.2} MB (<= 64 MB budget) · logs: {logs_kb:.1} KB");
+    }
+    if Path::new(".githooks").is_dir() {
+        let out = std::process::Command::new("git")
+            .args(["config", "--get", "core.hooksPath"])
+            .output();
+        match out {
+            Ok(o) if o.status.success() && String::from_utf8_lossy(&o.stdout).trim() == ".githooks" => {
+                println!("  [OK]   Git anti-bloat hooks active (core.hooksPath=.githooks)");
+            }
+            _ => {
+                *warnings += 1;
+                println!("  [WARN] Git hooks inactive — run `node scripts/setup-governance.mjs --install-timer`");
+            }
+        }
+    }
 }
 
 #[cfg(target_os = "linux")]

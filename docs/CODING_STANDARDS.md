@@ -10,8 +10,8 @@
 ### 1.1 规模双水位（由 `scripts/check_hygiene.mjs` 与 `scripts/check_hygiene.ps1` 自动校验）
 | 维度 | 软提醒水位 (Advisory) | CI 硬红线 (Hard Fail) | 处理方式 |
 |---|---|---|---|
-| 单源码文件行数（`.rs` / `.c` / `.h` / `.svelte` / `.ts` / `.js` / `.mjs` / `.css` / `.py`） | `> 380 行` 输出黄字重构提示 | **`≤ 450 行`** | 超限按单一职责拆分为专责子模块（如 `mod.rs` + 专责子文件或子组件） |
-| 单个函数 / 方法体行数 | `≤ 45 行` | **`≤ 80 行`** | 提取命名清晰的辅助函数，避免深层分支嵌套 |
+| 单源码文件行数（`.rs` / `.c` / `.h` / `.m` / `.svelte` / `.ts` / `.js` / `.mjs` / `.css` / `.py`） | `> 380 行` 输出警告（棘轮总篇数 `≤ 91`） | **`≤ 450 行`** | 超限按单一职责拆分为专责子模块；新增文件优先保持 `≤ 380 行` 防止软水位蔓延 |
+| 单个函数 / 方法体行数 | `≤ 45 行` | **`≤ 80 行`**（由 [`clippy.toml`](../clippy.toml) 守门） | 提取命名清晰的辅助函数，避免深层分支嵌套 |
 | 单个 `struct` 字段数 | `≤ 12 个` | **`≤ 20 个`** | 将内聚状态聚合为子结构体（如 `WindowGeometry`、`InteractionState`） |
 | 单次 `unsafe` 块范围 | 最小化 | 仅包裹单组关联 FFI 调用 | Linux C shim 与 Win32 句柄统一封装 RAII `Drop`，C 层开启 `-Wall -Wextra -Werror` |
 
@@ -50,12 +50,13 @@ WebView 前端位于 `frontend/`，通过 Vite + `vite-plugin-singlefile` 编译
 由 `node scripts/check_hygiene.mjs --check-binaries`（Linux/macOS/Windows 通用）与 `scripts/check_hygiene.ps1 -CheckBinaries`（Windows）强制把关：
 | 产物 | 硬上限 | 说明 |
 |---|---|---|
-| `frontend/dist/settings.html` | **≤ 320 KB** | 12 标签设置中心单文件产物（构建期再 Gzip 压缩嵌入宿主） |
-| `frontend/dist/{translator,clipboard,ocr}.html` | **≤ 150 KB** | 三个按需工作台单文件产物 |
-| `tomoyo` / `tomoyo.exe` | **≤ 7.5 MB (Linux) / ≤ 6.5 MB (Win)** | 常驻主内核（含 SDF 字体光栅、SQLite、WASM 宿主） |
-| `tomoyo-webview-host` / `.exe` | **≤ 5.5 MB** | 按需 WebView 宿主（WebKitGTK 4.1 / WebView2 + 4 套前端单文件包） |
+| `frontend/dist/settings.html` | **≤ 300 KB** | 12 标签设置中心单文件产物（构建期再 Gzip 压缩嵌入宿主） |
+| `plugins/{official-translate,official-clipboard,official-notes,builtin-ocr}/ui/index.html` | **≤ 150 KB** | 按需 WebView 工作台单文件产物 |
+| `tomoyo` / `tomoyo.exe` | **≤ 6.2 MB (Linux) / ≤ 5.8 MB (Win)** | 常驻主内核（`lto = "fat"` 紧致编译，含 SDF 字体光栅、SQLite、WASM 宿主） |
+| `tomoyo-webview-host` / `.exe` | **≤ 4.2 MB** | 按需 WebView 宿主（WebKitGTK 4.1 / WebView2 + 前端单文件包） |
 | `tomoyo-capture` / `.exe` | **≤ 1.6 MB** | 原生多屏截图、标注、长截图与桌面贴图工具 |
-| `tomoyo-plugin-ocr` / `tomoyo-plugin-notes` | **≤ 0.8 MB** | 官方独立 STDIO 插件 |
+| `tomoyo-plugin-clipboard` / `.exe` | **≤ 2.5 MB** | 独立剪贴板历史守护插件（含内嵌 SQLite；图片目录总上限 `48 MB` + 孤儿文件自动回收） |
+| `tomoyo-plugin-{ocr,notes,md-editor,translate,capture,winlayout,ai}` / `.exe` | **≤ 0.8 MB** | 其余官方独立 STDIO 插件 |
 
 ### 2.3 运行时预算门禁（`--self-test --strict-budget`）
 | 指标 | Linux 上限 | Windows 上限 |
@@ -67,9 +68,16 @@ WebView 前端位于 `frontend/`，通过 Vite + `vite-plugin-singlefile` 编译
 
 ---
 
-## 三、提交前 7 步验证清单
+## 三、四层全自动防膨胀治理管线与提交前清单
 
-提交 PR 或打 Tag 发布前依次执行：
+仓库通过 **Git Hooks（`.githooks/`）+ 构建期卫生门禁 + 磁盘定时回收 + 运行时数据预算** 形成本地与 CI 同构的自动化闭环（一键激活：`node scripts/setup-governance.mjs --install-timer`）：
+1. **本地提交强拦截（[`.githooks/pre-commit`](../.githooks/pre-commit) / [`pre-push`](../.githooks/pre-push)）**：
+   - `pre-commit`：拦截 `> 2 MB` 的非白名单误提交大文件，并自动运行 `node scripts/check_hygiene.mjs`（含 `.rs/.c/.h/.m` 行数棘轮 `≤ 91` 软上限、零禁引入 crate/npm、前端产物限额及 WebView IPC 契约）；
+   - `pre-push`：自动运行 `node scripts/check_hygiene.mjs`、`node scripts/verify-release-readiness.mjs` 与 `RUSTFLAGS="-D warnings" cargo clippy --workspace --all-targets -- -D warnings`。
+2. **本地磁盘增量自洁（[`scripts/workspace-gc.mjs`](../scripts/workspace-gc.mjs)）**：支持 `--dry-run` / `--apply --max-age-days=7` / `--prune-debug-all` 安全清理陈旧 `target/debug` 指纹与增量缓存，配合 Linux `systemd --user` `tomoyo-workspace-gc.timer` 每周低优先级自动清扫。
+3. **运行时存储自限与健康检查**：`official-clipboard` 在启动与写入剪枝时强制执行 `clipboard-images` `48 MB` LRU 字节预算与孤儿 PNG 清扫；`tomoyo-cli doctor` 实时诊断本地存储占用与 Git Hooks 激活状态。
+
+手动完整验证（含 Release 与运行时自检）可依次执行：
 1. `cd frontend && npm run check && npm test && npm run build && cd ..` — Svelte 5 零错误/零警告类型检查、全量 Vitest 单测（含 IPC 契约测试）与 4 套单文件产物构建；
 2. `node scripts/check_hygiene.mjs`（Windows 可选 `pwsh -File scripts/check_hygiene.ps1`）— 行数双水位、禁用 Rust/npm 依赖、防 WARP、产物预算、Rust-TS IPC 契约与 `happy-dom` 运行时冒烟；
 3. `RUSTFLAGS="-D warnings" cargo clippy --workspace --all-targets -- -D warnings` — 全工作区 Clippy 零警告静态检查（Linux C shim 同受 `-Wall -Wextra -Werror` 约束）；

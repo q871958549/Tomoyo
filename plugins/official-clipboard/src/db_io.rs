@@ -102,6 +102,10 @@ pub(crate) fn open_clipboard_db(
         "CREATE INDEX IF NOT EXISTS idx_clip_pin_ts ON clipboard_history(pinned DESC, captured_at DESC);
          CREATE INDEX IF NOT EXISTS idx_clip_tag ON clipboard_history(tag);",
     );
+    let _ = crate::image_gc::enforce_image_byte_budget(&conn, crate::image_gc::MAX_DISK_IMAGE_BYTES);
+    if let Some(img_dir) = path.parent().map(|d| d.join("clipboard-images")) {
+        let _ = crate::image_gc::sweep_orphan_images(&conn, &img_dir, 60);
+    }
     load_recent_rows(&conn, MAX_RAM_ITEMS, initial);
     Some(conn)
 }
@@ -241,6 +245,7 @@ pub(crate) fn prune_sqlite_locked(conn: &Connection, max_persisted: usize) {
         )",
         params![max_persisted as i64],
     );
+    let _ = crate::image_gc::enforce_image_byte_budget(conn, crate::image_gc::MAX_DISK_IMAGE_BYTES);
 }
 
 pub(crate) fn query_sqlite_filtered(

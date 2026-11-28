@@ -41,6 +41,7 @@ jobs:
       - name: Enforce coding standards, anti-bloat & desktop file hygiene
         run: |
           node scripts/check_hygiene.mjs
+          node scripts/verify-release-readiness.mjs
           desktop-file-validate packaging/linux/tomoyo.desktop
 
       - name: Setup Rust toolchain (Linux + wasm32 + clippy)

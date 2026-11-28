@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root"
+
+# 1. Block accidental oversized blobs (> 2 MiB) outside explicit binary allowlist.
+max_bytes=2097152
+while IFS= read -r -d '' file; do
+  [ -f "$file" ] || continue
+  case "$file" in
+    *.wasm|*.png|*.ico) continue ;;
+  esac
+  sz="$(wc -c < "$file")"
+  if [ "$sz" -gt "$max_bytes" ]; then
+    echo "[pre-commit][FAIL] Staged file '$file' is ${sz} bytes (> 2 MiB limit)." >&2
+    exit 1
+  fi
+done < <(git diff --cached --name-only --diff-filter=ACMR -z)
+
+# 2. Enforce Tomoyo anti-bloat hygiene & soft-warning ratchet on every commit.
+node scripts/check_hygiene.mjs

@@ -10,6 +10,7 @@ const args = process.argv.slice(2);
 const checkBinaries = args.includes("--check-binaries");
 const maxLines = Number(args.find((a) => a.startsWith("--max-lines="))?.split("=")[1] ?? 450);
 const warnLines = Number(args.find((a) => a.startsWith("--warn-lines="))?.split("=")[1] ?? 380);
+const maxSoftWarnings = Number(args.find((a) => a.startsWith("--max-soft-warnings="))?.split("=")[1] ?? 91);
 const totalSteps = checkBinaries ? 7 : 6;
 let violations = 0;
 
@@ -31,8 +32,8 @@ function countLines(filePath) {
   return raw.endsWith("\n") ? lines.length - 1 : lines.length;
 }
 
-console.log(`=== [1/${totalSteps}] Checking source file line-count ceiling (warn > ${warnLines}, hard fail > ${maxLines}) ===`);
-const srcExts = new Set([".rs", ".c", ".h", ".html", ".css", ".js", ".mjs", ".py", ".ts", ".svelte"]);
+console.log(`=== [1/${totalSteps}] Checking source file line-count ceiling (warn > ${warnLines}, hard fail > ${maxLines}, ratchet <= ${maxSoftWarnings}) ===`);
+const srcExts = new Set([".rs", ".c", ".h", ".m", ".html", ".css", ".js", ".mjs", ".py", ".ts", ".svelte"]);
 const srcFiles = ["crates", "plugins", "scripts", "frontend/src", "frontend/scripts", "frontend/tests"]
   .flatMap((root) => walk(root, (f) => srcExts.has(path.extname(f))));
 
@@ -51,10 +52,14 @@ for (const file of srcFiles) {
 if (lineFails === 0) {
   console.log(`  [OK] All ${srcFiles.length} source files are strictly <= ${maxLines} lines!`);
   if (softWarnings.length > 0) {
-    console.log(`  [INFO] ${softWarnings.length} file(s) exceed soft advisory watermark (${warnLines} lines):`);
+    console.log(`  [INFO] ${softWarnings.length}/${maxSoftWarnings} file(s) exceed soft advisory watermark (${warnLines} lines):`);
     for (const w of softWarnings.sort((a, b) => b.lines - a.lines)) {
       console.log(`    - ${w.file} (${w.lines} lines)`);
     }
+  }
+  if (softWarnings.length > maxSoftWarnings) {
+    console.error(`  [FAIL] Soft-warning file count (${softWarnings.length}) exceeded ratchet ceiling (${maxSoftWarnings}) — split files instead of adding more >${warnLines}-line files`);
+    violations++;
   }
 }
 
