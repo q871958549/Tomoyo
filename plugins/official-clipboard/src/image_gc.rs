@@ -1,11 +1,62 @@
-//! Total disk byte-budget LRU eviction & orphan PNG sweeping for `clipboard-images/`.
+//! Total disk byte-budget LRU eviction & orphan PNG sweeping for `clipboard-images/`,
+//! plus clipboard WebView JSON entry serialization helpers.
 
+use crate::store::{ClipboardEntry, ClipboardPayload};
+use base64::Engine;
 use rusqlite::{params, Connection};
+use serde_json::{json, Value};
 use std::collections::HashSet;
 use std::path::Path;
 use std::time::{Duration, SystemTime};
 
 pub(crate) const MAX_DISK_IMAGE_BYTES: u64 = 48 * 1024 * 1024;
+const MAX_INLINE_IMAGE_BYTES: usize = 3 * 1024 * 1024;
+
+pub(crate) fn entry_to_json(e: ClipboardEntry) -> Value {
+    let subtype = e.subtype().as_str().to_string();
+    let (kind, text, image_url, image_path, width, height, files) = match e.payload {
+        ClipboardPayload::Text { text, .. } => ("text", text, None, None, 0, 0, Vec::new()),
+        ClipboardPayload::Image { path, width, height } => {
+            let url = encode_image_data_uri(Path::new(&path));
+            ("image", String::new(), url, Some(path), width, height, Vec::new())
+        }
+        ClipboardPayload::Files { paths } => ("files", paths.join("\n"), None, None, 0, 0, paths),
+    };
+    json!({
+        "key": e.key,
+        "kind": kind,
+        "subtype": subtype,
+        "preview": e.preview_line,
+        "text": text,
+        "image_url": image_url,
+        "image_path": image_path,
+        "width": width,
+        "height": height,
+        "files": files,
+        "ts": e.captured_at_unix,
+        "pinned": e.pinned,
+        "tag": e.tag,
+        "note": e.note,
+        "source_app": e.source_app,
+    })
+}
+
+fn encode_image_data_uri(path: &Path) -> Option<String> {
+    let meta = std::fs::metadata(path).ok()?;
+    if meta.len() == 0 || meta.len() as usize > MAX_INLINE_IMAGE_BYTES {
+        return None;
+    }
+    let bytes = std::fs::read(path).ok()?;
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("png").to_ascii_lowercase();
+    let mime = match ext.as_str() {
+        "jpg" | "jpeg" => "image/jpeg",
+        "webp" => "image/webp",
+        "gif" => "image/gif",
+        _ => "image/png",
+    };
+    let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
+    Some(format!("data:{mime};base64,{b64}"))
+}
 
 /// Enforces `max_bytes` across unpinned clipboard image files (evicts oldest unpinned first).
 pub(crate) fn enforce_image_byte_budget(conn: &Connection, max_bytes: u64) -> usize {

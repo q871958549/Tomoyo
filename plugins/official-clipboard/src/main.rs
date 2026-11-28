@@ -6,28 +6,29 @@
 mod config;
 mod db_io;
 mod filter;
+mod hints;
 mod image_gc;
 mod items;
 mod paste_stack;
 mod secrets_guard;
 mod store;
 
-use base64::Engine;
 use config::{toggle_runtime_paused, tomoyo_data_dir, ClipRuntimeConfig};
 use filter::ParsedClipQuery;
-use items::{build_clip_commands, build_clipboard_item, build_filter_hints, empty_clipboard_item};
+use hints::{build_filter_hints, empty_clipboard_item};
+use image_gc::entry_to_json;
+use items::{build_clip_commands, build_clipboard_item};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Mutex;
-use store::{ClipboardEntry, ClipboardPayload, ClipboardStore};
+use store::ClipboardStore;
 use tomoyo_sdk::{
     ExecuteRequest, ExecuteResponse, OpenWebViewRequest, PluginCallRequest, PluginEventKind,
     PluginEventPayload, PluginMeta, QueryContext, ResultItem, TomoyoPlugin,
 };
 
 pub const PLUGIN_ID: &str = "dev.tomoyo.clipboard";
-const MAX_INLINE_IMAGE_BYTES: usize = 3 * 1024 * 1024;
 
 struct CachedStore {
     persist: bool,
@@ -319,52 +320,6 @@ impl TomoyoPlugin for ClipboardPlugin {
     }
 }
 
-fn entry_to_json(e: ClipboardEntry) -> Value {
-    let subtype = e.subtype().as_str().to_string();
-    let (kind, text, image_url, image_path, width, height, files) = match e.payload {
-        ClipboardPayload::Text { text, .. } => ("text", text, None, None, 0, 0, Vec::new()),
-        ClipboardPayload::Image { path, width, height } => {
-            let url = encode_image_data_uri(Path::new(&path));
-            ("image", String::new(), url, Some(path), width, height, Vec::new())
-        }
-        ClipboardPayload::Files { paths } => ("files", paths.join("\n"), None, None, 0, 0, paths),
-    };
-    json!({
-        "key": e.key,
-        "kind": kind,
-        "subtype": subtype,
-        "preview": e.preview_line,
-        "text": text,
-        "image_url": image_url,
-        "image_path": image_path,
-        "width": width,
-        "height": height,
-        "files": files,
-        "ts": e.captured_at_unix,
-        "pinned": e.pinned,
-        "tag": e.tag,
-        "note": e.note,
-        "source_app": e.source_app,
-    })
-}
-
-fn encode_image_data_uri(path: &Path) -> Option<String> {
-    let meta = std::fs::metadata(path).ok()?;
-    if meta.len() == 0 || meta.len() as usize > MAX_INLINE_IMAGE_BYTES {
-        return None;
-    }
-    let bytes = std::fs::read(path).ok()?;
-    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("png").to_ascii_lowercase();
-    let mime = match ext.as_str() {
-        "jpg" | "jpeg" => "image/jpeg",
-        "webp" => "image/webp",
-        "gif" => "image/gif",
-        _ => "image/png",
-    };
-    let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
-    Some(format!("data:{mime};base64,{b64}"))
-}
-
 fn run_self_test() {
     let tmp = std::env::temp_dir().join(format!("tomoyo_clip_plug_st_{}.db", std::process::id()));
     let _ = std::fs::remove_file(&tmp);
@@ -404,44 +359,5 @@ fn main() {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn full_event_query_rpc_and_privacy_filter_lifecycle() {
-        let tmp = std::env::temp_dir().join(format!("tomoyo_clip_plug_ut_{}.db", std::process::id()));
-        let _ = std::fs::remove_file(&tmp);
-        let plug = ClipboardPlugin::with_db_path(tmp.clone());
-
-        let mut settings = BTreeMap::new();
-        settings.insert("excluded_apps".into(), json!("keepass.exe, bitwarden"));
-        let mut secret_ev = PluginEventPayload::new(
-            PluginEventKind::ClipboardText,
-            json!({ "text": "super-secret-password", "source_app": "keepass.exe" }),
-        );
-        secret_ev.plugin_settings = settings.clone();
-        let _ = plug.on_event(&secret_ev);
-
-        let mut ok_ev = PluginEventPayload::new(
-            PluginEventKind::ClipboardText,
-            json!({ "text": "https://github.com/q871958549/Tomoyo", "source_app": "code" }),
-        );
-        ok_ev.plugin_settings = settings;
-        let _ = plug.on_event(&ok_ev);
-
-        let list = plug
-            .call(&PluginCallRequest {
-                method: "list".into(),
-                params: json!({ "query": "" }),
-                plugin_settings: BTreeMap::new(),
-                plugin_secrets: BTreeMap::new(),
-            })
-            .unwrap();
-        assert_eq!(list["total"], 1);
-        assert_eq!(list["items"][0]["subtype"], "link");
-
-        let _ = std::fs::remove_file(&tmp);
-        let _ = std::fs::remove_file(tmp.with_extension("db-wal"));
-        let _ = std::fs::remove_file(tmp.with_extension("db-shm"));
-    }
-}
+#[path = "main_tests.rs"]
+mod tests;

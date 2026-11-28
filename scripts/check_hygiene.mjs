@@ -10,7 +10,7 @@ const args = process.argv.slice(2);
 const checkBinaries = args.includes("--check-binaries");
 const maxLines = Number(args.find((a) => a.startsWith("--max-lines="))?.split("=")[1] ?? 450);
 const warnLines = Number(args.find((a) => a.startsWith("--warn-lines="))?.split("=")[1] ?? 380);
-const maxSoftWarnings = Number(args.find((a) => a.startsWith("--max-soft-warnings="))?.split("=")[1] ?? 91);
+const maxSoftWarnings = Number(args.find((a) => a.startsWith("--max-soft-warnings="))?.split("=")[1] ?? 78);
 const totalSteps = checkBinaries ? 7 : 6;
 let violations = 0;
 

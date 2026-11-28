@@ -6,6 +6,7 @@ pub mod config;
 pub mod diagnostics;
 pub mod engine;
 mod engine_rank;
+mod engine_slow;
 pub mod file_manager;
 pub mod flows;
 pub mod flows_llm;

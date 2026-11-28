@@ -4,10 +4,13 @@
 //! via `Permission::SelectionRead`, dynamic system tray action, and bidirectional Hybrid RPC
 //! (`get_init`, `translate`, `save_word`, `delete_word`, `clear_history`) for `ui/index.html`.
 
+mod cli_mode;
 mod engines;
 mod http_curl;
 mod store;
 mod style_prompt;
+
+use cli_mode::run_quick_translate_cli;
 
 use engines::{resolve_target_lang, translate_parallel};
 use serde_json::{json, Value};
@@ -338,33 +341,6 @@ fn clip_str(s: &str, max_chars: usize) -> String {
     if s.chars().count() > max_chars { format!("{}…", single.trim()) } else { single.trim().into() }
 }
 
-fn run_quick_translate_cli() {
-    use std::collections::BTreeMap;
-    use std::io::Read;
-    let mut raw = String::new();
-    let _ = std::io::stdin().take(64 * 1024).read_to_string(&mut raw);
-    let Ok(val) = serde_json::from_str::<Value>(&raw) else {
-        println!("{}", json!({ "results": [] }));
-        return;
-    };
-    let text = val.get("text").and_then(Value::as_str).unwrap_or("");
-    let src = val.get("source_lang").and_then(Value::as_str).unwrap_or("auto");
-    let tgt = val.get("target_lang").and_then(Value::as_str).unwrap_or("");
-    let settings: BTreeMap<String, Value> = val
-        .get("plugin_settings")
-        .cloned()
-        .and_then(|v| serde_json::from_value(v).ok())
-        .unwrap_or_default();
-    let secrets: BTreeMap<String, String> = val
-        .get("plugin_secrets")
-        .cloned()
-        .and_then(|v| serde_json::from_value(v).ok())
-        .unwrap_or_default();
-    let cfg = resolve_runtime_config(&settings);
-    let (batch, _) = translate_parallel(&cfg, &secrets, text, src, tgt, "standard");
-    println!("{}", serde_json::to_string(&batch).unwrap_or_else(|_| "{}".into()));
-}
-
 fn main() {
     if std::env::args().any(|a| a == "--quick-translate") {
         run_quick_translate_cli();
@@ -387,20 +363,4 @@ fn main() {
         return;
     }
     tomoyo_sdk::run(TranslatePlugin);
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parses_prefix_and_handles_selection_hotkey_event() {
-        assert_eq!(parse_translate_args("ja hello"), (Some("ja".into()), "hello".into()));
-        let resp = TranslatePlugin.on_event(&PluginEventPayload::new(
-            PluginEventKind::HotkeyTriggered,
-            json!({ "hotkey_id": "selection_translate", "selected_text": "resilient" }),
-        ));
-        assert!(resp.hide_window);
-        assert!(resp.open_webview.is_some());
-    }
 }

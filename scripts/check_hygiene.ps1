@@ -11,7 +11,7 @@
 param(
     [int]$MaxLines = 450,
     [int]$WarnLines = 380,
-    [int]$MaxSoftWarnings = 91,
+    [int]$MaxSoftWarnings = 78,
     [switch]$CheckBinaries
 )
 

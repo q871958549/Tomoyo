@@ -135,7 +135,7 @@ for line in sys.stdin:
     );
     std::fs::write(dir.join("tomoyo-plugin.toml"), manifest)?;
     std::fs::write(dir.join("main.py"), main_py)?;
-    write_plugin_readme(dir, name, slug, "python")
+    crate::scaffold_readme::write_plugin_readme(dir, name, slug, "python")
 }
 
 pub fn scaffold_rust(dir: &Path, name: &str, slug: &str, sdk_dir: Option<&Path>) -> std::io::Result<()> {
@@ -215,7 +215,7 @@ fn main() {{
     std::fs::write(dir.join("tomoyo-plugin.toml"), manifest)?;
     std::fs::write(dir.join("Cargo.toml"), cargo)?;
     std::fs::write(dir.join("src/main.rs"), main_rs)?;
-    write_plugin_readme(dir, name, slug, "rust")
+    crate::scaffold_readme::write_plugin_readme(dir, name, slug, "rust")
 }
 
 pub fn scaffold_wasm(dir: &Path, name: &str, slug: &str, sdk_dir: Option<&Path>) -> std::io::Result<()> {
@@ -279,7 +279,7 @@ export_tomoyo_wasm_plugin!(MyWasmPlugin);
     std::fs::write(dir.join("tomoyo-plugin.toml"), manifest)?;
     std::fs::write(dir.join("Cargo.toml"), cargo)?;
     std::fs::write(dir.join("src/lib.rs"), lib_rs)?;
-    write_plugin_readme(dir, name, slug, "wasm")
+    crate::scaffold_readme::write_plugin_readme(dir, name, slug, "wasm")
 }
 
 pub fn scaffold_webview(dir: &Path, name: &str, slug: &str) -> std::io::Result<()> {
@@ -364,52 +364,9 @@ idle_timeout_secs = 10
     std::fs::write(dir.join("tomoyo-plugin.toml"), manifest)?;
     std::fs::write(dir.join("index.html"), html)?;
     std::fs::write(dir.join("tomoyo.d.ts"), TOMOYO_DTS)?;
-    write_plugin_readme(dir, name, slug, "webview")
-}
-
-fn write_plugin_readme(dir: &Path, name: &str, slug: &str, lang: &str) -> std::io::Result<()> {
-    let build_step = match lang {
-        "wasm" => "1. Build WASM: `cargo build --target wasm32-unknown-unknown --release && cp target/wasm32-unknown-unknown/release/*.wasm plugin.wasm`\n2. Dev test:  `tomoyo-cli dev . --build --once`\n",
-        "rust" => "1. Build binary: `cargo build --release` (place binary on PATH or set `[runtime].command`)\n2. Verify:       `tomoyo-cli verify .`\n",
-        _ => "1. Verify: `tomoyo-cli verify .`\n",
-    };
-    let doc = format!(
-        "# {name}\n\nTomoyo Launcher `{lang}` plugin (`dev.community.{slug}`).\n\n## Quickstart\n\n{build_step}3. Live watch: `tomoyo-cli dev . --query \"sample\"`\n4. Package ZIP: `tomoyo-cli pack .`\n"
-    );
-    std::fs::write(dir.join("README.md"), doc)
+    crate::scaffold_readme::write_plugin_readme(dir, name, slug, "webview")
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use tomoyo_protocol::PluginManifest;
-
-    #[test]
-    fn external_rust_and_wasm_scaffolds_use_git_fallback_and_valid_manifests() {
-        let base = std::env::temp_dir().join(format!("tomoyo_scaf_test_{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&base);
-        std::fs::create_dir_all(&base).unwrap();
-
-        let py_dir = base.join("py");
-        let rs_dir = base.join("rs");
-        let ws_dir = base.join("ws");
-        let wv_dir = base.join("wv");
-        for d in [&py_dir, &rs_dir, &ws_dir, &wv_dir] {
-            std::fs::create_dir_all(d).unwrap();
-        }
-        scaffold_python(&py_dir, "Py Demo", "py-demo").unwrap();
-        scaffold_rust(&rs_dir, "Rs Demo", "rs-demo", None).unwrap();
-        scaffold_wasm(&ws_dir, "Ws Demo", "ws-demo", None).unwrap();
-        scaffold_webview(&wv_dir, "Wv Demo", "wv-demo").unwrap();
-
-        for d in [&py_dir, &rs_dir, &ws_dir, &wv_dir] {
-            let raw = std::fs::read_to_string(d.join("tomoyo-plugin.toml")).unwrap();
-            PluginManifest::from_toml_str(&raw).unwrap();
-        }
-        let rs_cargo = std::fs::read_to_string(rs_dir.join("Cargo.toml")).unwrap();
-        assert!(rs_cargo.contains("https://github.com/q871958549/Tomoyo"));
-        assert!(wv_dir.join("tomoyo.d.ts").is_file());
-
-        let _ = std::fs::remove_dir_all(&base);
-    }
-}
+#[path = "scaffold_tests.rs"]
+mod tests;

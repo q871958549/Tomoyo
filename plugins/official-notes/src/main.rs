@@ -5,6 +5,7 @@
 
 mod frontmatter;
 mod items;
+mod ops;
 mod rpc;
 mod store;
 

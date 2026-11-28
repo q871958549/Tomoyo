@@ -28,6 +28,9 @@
 
 ```text
 ┌──────────────────────────────────────────────────────────────────────────────┐
+│  v4.1~v5.0 · [Stage 5 · Wave 1 ✅] 热点去债(棘轮≤78) · 跨机 Profile 档案同步 │
+│             后续：MCP/AI 短命工作台 · `proj`/`ssh` 隔离插件 · v4.0.0 GA 发版 │
+├──────────────────────────────────────────────────────────────────────────────┤
 │  v4.0.0 · [Wave 1 + Wave 2 就绪 ✅] GlobalShortcuts Portal 闭环 · 契约冻结   │
 │           macOS AppKit/Carbon 桥接 · Linux ARM64 Release & SDK 自动发布清单  │
 ├──────────────────────────────────────────────────────────────────────────────┤
@@ -546,7 +549,15 @@
      - **Wayland Portal `ListShortcuts` + `ShortcutsChanged` 实时回写**：异步接收合成器授权及热键修改事件，将实际触发键回写 `hotkey_status.json`，完善 Hyprland / GNOME 47+ 自愈体验；
      - **macOS 原生 Objective-C (`AppKit` / `Carbon`) 桥接（`macos_bridge.m` + `build.rs` + `bridge.rs`）**：实现无焦点浮动毛玻璃 `NSPanel` 创建/显隐与 Carbon `RegisterEventHotKey` 全局热键注册封装（macOS 编译器条件链接，不影响 Linux/Windows 零增量）；
      - **Linux ARM64 正式发布流、SDK 自动发布流与就绪审计（`release.yml` + `publish-sdk.yml` + `verify-release-readiness.mjs`）**：补齐 `ubuntu-24.04-arm` Release 归档、Scoop `arm64` 双架构清单、`crates.io` 三件套一键发布工作流与全清单干跑审计（代码签名密钥/商店提交与 tag 发版待用户确认后触发）；
-     - **全自动本地与运行时防膨胀治理闭环**：落地版本化 `.githooks/`（`pre-commit` 2 MB 误提交拦截 + 卫生门禁；`pre-push` 卫生/发版/Clippy 拦截）、[`clippy.toml`](../clippy.toml)、`check_hygiene` 软水位棘轮（`≤ 91`）+ `.m` 覆盖、[`workspace-gc.mjs`](../scripts/workspace-gc.mjs) + `systemd --user` 周度构建缓存回收、以及 `official-clipboard` `48 MB` 图片磁盘总上限与孤儿文件回收 + `tomoyo-cli doctor` 治理体检。
+     - **全自动本地与运行时防膨胀治理闭环**：落地版本化 `.githooks/`（`pre-commit` 2 MB 误提交拦截 + 卫生门禁；`pre-push` 卫生/发版/Clippy 拦截）、[`clippy.toml`](../clippy.toml)、`check_hygiene` 软水位棘轮（`≤ 78`）+ `.m` 覆盖、[`workspace-gc.mjs`](../scripts/workspace-gc.mjs) + `systemd --user` 周度构建缓存回收、以及 `official-clipboard` `48 MB` 图片磁盘总上限与孤儿文件回收 + `tomoyo-cli doctor` 治理体检。
+5. **Stage 5 (`v4.1.0` → `v5.0.0`) · 长寿化架构去债、AI 工作台、跨机档案与高频隔离生态**：
+   - **[Wave 1 已完成 ✅] 软水位热点拆债与声明式跨机环境档案（`tomoyo-cli profile`）**：
+     - 完成 `engine.rs`、`host.rs`、`registry.rs`、`official-clipboard`、`official-notes`、`official-translate` 等 13 个热点文件拆分治理，将软水位棘轮从 **`91` 压降至 `≤ 78`**；
+     - 新增 `tomoyo-cli profile export --out`、`profile diff --in` 与 `profile import --in [--dry-run]`（[`profile_cli.rs`](../crates/tomoyo-cli/src/profile_cli.rs)），实现配置、短语、工作流、`mcp.toml` 与已装插件清单的纯文本跨机一键迁移。
+   - **[Wave 2 规划中] 设置中心 MCP 可视化管理与 `official-ai` 按需审校工作台**：
+     - 设置中心可视化增删启停 `mcp.toml` 服务与 `tools/list` 实时探测；为 `dev.tomoyo.ai` 增加基于短命 `tomoyo-webview-host` 的代码 Diff/MCP 参数表单按需工作台，并支持代码仓库 `README`/`docs` 有界离线语义索引。
+   - **[Wave 3 规划中] 高频长寿隔离插件与 `v4.0.0` GA 正式收口**：
+     - 新增独立隔离的 `dev.tomoyo.projects`（本地 Git 仓库速跳）与 `dev.tomoyo.ssh`（`~/.ssh/config` 只读速连）插件，并在 Flows 3.0 加入情景工作空间布局联动；完成双端实机回归后推送 `v4.0.0` Tag 与 `crates.io`/Winget/Scoop/AUR 上架。
 
 ---
 

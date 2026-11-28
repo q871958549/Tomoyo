@@ -7,6 +7,7 @@
 
 pub mod discovery;
 pub mod host;
+mod host_bridge;
 pub mod job;
 pub mod permissions;
 pub mod process;
@@ -20,6 +21,7 @@ mod wasm_kv;
 
 pub use discovery::default_plugin_dirs;
 pub use host::{PluginHost, PluginRuntimeInfo};
+pub use host_bridge::discover_from;
 pub use job::JobGuard;
 pub use v2_support::ActivePluginHotkey;
 pub use v3_support::ActivePluginTrayAction;
