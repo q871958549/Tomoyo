@@ -1,0 +1,15 @@
+[package]
+name = "tomoyo-plugin-ai"
+version = "3.5.0"
+edition.workspace = true
+license.workspace = true
+description = "Official Tomoyo STDIO Plugin: Local-First AI Assistant (Ollama & OpenAI-Compatible)"
+
+[[bin]]
+name = "tomoyo-plugin-ai"
+path = "src/main.rs"
+
+[dependencies]
+tomoyo-sdk = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

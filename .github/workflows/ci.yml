@@ -89,6 +89,7 @@ jobs:
           ./target/release/tomoyo-plugin-capture --self-test
           ./target/release/tomoyo-plugin-clipboard --self-test
           ./target/release/tomoyo-plugin-winlayout --self-test
+          ./target/release/tomoyo-plugin-ai --self-test
           ./target/release/tomoyo-cli registry list
           ./target/release/tomoyo-cli registry check --manifest-only
           ./target/release/tomoyo-cli dev plugins/official-notes --query "hello" --once
@@ -99,6 +100,7 @@ jobs:
           ./target/release/tomoyo-cli dev plugins/official-devtools-wasm --query "cron 0 9 * * 1-5" --once
           ./target/release/tomoyo-cli dev plugins/official-regex-wasm --query "/(\\w+)@([\\w.]+)/ alice@example.com" --once
           ./target/release/tomoyo-cli dev plugins/official-winlayout --query "left" --once
+          ./target/release/tomoyo-cli dev plugins/official-ai --query "sum hello" --once
 
   windows-test:
     runs-on: windows-latest
@@ -208,6 +210,7 @@ jobs:
           .\target\release\tomoyo-plugin-capture.exe --self-test
           .\target\release\tomoyo-plugin-clipboard.exe --self-test
           .\target\release\tomoyo-plugin-winlayout.exe --self-test
+          .\target\release\tomoyo-plugin-ai.exe --self-test
           .\target\release\tomoyo-cli.exe registry list
           .\target\release\tomoyo-cli.exe registry check --manifest-only
           .\target\release\tomoyo-cli.exe dev plugins/official-notes --query "hello" --once
@@ -216,6 +219,7 @@ jobs:
           .\target\release\tomoyo-cli.exe dev plugins/official-capture --query "" --once
           .\target\release\tomoyo-cli.exe dev plugins/official-clipboard --query ":manage" --once
           .\target\release\tomoyo-cli.exe dev plugins/official-winlayout --query "left" --once
+          .\target\release\tomoyo-cli.exe dev plugins/official-ai --query "sum hello" --once
 
   macos-core-check:
     runs-on: macos-latest

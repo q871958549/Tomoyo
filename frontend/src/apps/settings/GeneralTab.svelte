@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Download, FolderSync, RotateCcw, Upload } from '@lucide/svelte';
+  import Icon from '../../lib/ui/Icon.svelte';
   import { postHost } from '../../lib/ipc';
   import type { HotkeySlotStatus, TomoyoConfig } from '../../lib/types';
   import { tr, type Lang } from '../../lib/i18n';
@@ -205,12 +205,12 @@
     </div>
     <div class="bak-acts">
       <Button variant="secondary" size="sm" class="btn-pick-sync" onclick={() => postHost({ cmd: 'pick_sync_dir' })}>
-        <FolderSync size={13} />
+        <Icon name="FolderSync" size={13} />
         {isEn ? 'Choose Folder…' : '选择目录…'}
       </Button>
       {#if syncDir}
         <Button variant="ghost" size="sm" onclick={() => postHost({ cmd: 'clear_sync_dir' })}>
-          <RotateCcw size={13} />
+          <Icon name="RotateCcw" size={13} />
           {isEn ? 'Local Default' : '恢复默认'}
         </Button>
       {/if}
@@ -227,11 +227,11 @@
     </div>
     <div class="bak-acts">
       <Button variant="secondary" size="sm" class="btn-export-backup" onclick={() => postHost({ cmd: 'export_config_backup' })}>
-        <Download size={13} />
+        <Icon name="Download" size={13} />
         {isEn ? 'Export' : '导出备份'}
       </Button>
       <Button variant="secondary" size="sm" onclick={() => fileInput?.click()}>
-        <Upload size={13} />
+        <Icon name="Upload" size={13} />
         {isEn ? 'Import' : '导入恢复'}
       </Button>
       <input bind:this={fileInput} type="file" accept=".json,application/json" style="display:none" onchange={onPickBackupFile} />

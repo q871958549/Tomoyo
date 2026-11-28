@@ -28,6 +28,12 @@
 
 ```text
 ┌──────────────────────────────────────────────────────────────────────────────┐
+│  v3.5.0 · [Wave 1 已完成 ✅ · 本地优先 AI 助手] dev.tomoyo.ai 按需子进程     │
+│  (Wave 1)  本地 Ollama / OpenAI 兼容加密凭据 · 划词总结/润色/报错诊断/正则是 │
+├──────────────────────────────────────────────────────────────────────────────┤
+│  v3.4.2 · [已完成 ✅ · 工程基座与红线治理] Icon.svelte 架构瘦身 settings 287KB│
+│           --self-test TOMOYO_DATA_DIR 隔离 · WinLayout Hyprland/Sway 全预设  │
+├──────────────────────────────────────────────────────────────────────────────┤
 │  v3.4.1 · [已完成 ✅ · Linux 深度打磨与工程减压] Wayland 超级面板贴光标弹出   │
 │           PRIMARY 防滞留截胡 · WinLayout Wayland 探测/Hyprland/Sway 支持     │
 │           plocate 毫秒优先检索 · settings.html 体积压缩减压                  │
@@ -515,10 +521,15 @@
      - **WinLayout Wayland 探测与平铺扩展**：补齐 Hyprland（`hyprctl -j activewindow`）/ Sway（`swaymsg -t get_tree`）/ KDE Wayland（`kdotool`）前景窗口探测，缓存 `qdbus6` 路径并用原子编号替代每次预卸脚本子进程；
      - **Linux 文件搜索 `plocate` 毫秒优先路由**：纯名称/扩展名查询优先走 `plocate` 倒排索引（空结果无缝回退 `fd`），仅日期/体积/目录条件走 `fd`；
      - **前端 `settings.html` 体积减压**：缩短 Svelte scoped CSS 哈希并收紧构建参数，将单文件包体积拉离 `300 KB` 硬限。
+   - **`v3.4.2` · 工程基座与红线治理 ✅**：
+     - **`settings.html` 架构级图标瘦身（`296.6 KB` → `287.9 KB`）**：以轻量化 `Icon.svelte` + `iconNodes.ts` 替换设置中心及 UI 原语中 38 个 `@lucide/svelte` 独立组件导入（编译模块由 4,600+ 降至 173，保留 12+ KB 安全余量）；
+     - **`--self-test --strict-budget` 确定性环境隔离**：`data_dir()` 支持 `TOMOYO_DATA_DIR` 覆盖，自检期间自动隔离至临时目录，避免本机存量配置/剪贴板历史干扰 `28.0 MB` Private Commit 红线核验；
+     - **`WinLayout` Hyprland / Sway 全预设平铺对齐（`wayland_wm.rs`）**：拆解 `apply.rs` 并补齐 `hyprctl -j monitors` / `swaymsg -t get_outputs` 逻辑工作区解析与 15+ 平铺/居中/置顶预设批量下发。
 3. **Stage 3 (`v3.5.0`) · 本地优先的克制 AI 与 MCP 桥接（严守休眠零常驻）**：
-   - **按需隔离进程 MCP Client / Agent Action Bridge**：通过独立按需子进程连接本地 Ollama、用户自备 OpenAI 兼容端点或本地 MCP 工具，将桌面上下文（划词 / 截图 / 剪贴板 / 文件）路由给合适引擎并将结果直接写回或粘贴，主内核严守零 AI 依赖与 `< 25 MB` 休眠红线；
-   - **高频场景深度整合**：划词/剪贴板一键总结、报错堆栈诊断、翻译润色与「用人话生成复杂筛选/正则」，以及可选本地备忘录/高频文档增量语义检索插件（不侵入核心 Everything 毫秒索引）；
-   - **标准 Wayland 协议解耦预研**：评估接入 `org.freedesktop.portal.GlobalShortcuts` 作为 GNOME/Hyprland 通用全局快捷键底座（KDE 继续走 `KGlobalAccel`），同步保持“薄 C 胶水 + 状态收敛 Rust”边界。
+   - **[Wave 1 已完成 ✅ · `dev.tomoyo.ai`] 官方按需本地优先 AI 助手（`plugins/official-ai`）**：
+     - 独立 STDIO JSON-RPC 进程（`0 MB` 常驻开销，零 `tokio`/`reqwest` 重依赖，沿用 `curl --config -` Stdin 鉴权），无缝支持本机 **Ollama** 与用户自备 **OpenAI 兼容端点**（`openai_api_key` 经系统 DPAPI/密钥环加密存储）；
+     - 集成 `ai` / `ask` 快捷指令及超级面板 `[[text_actions]]`（`ai sum` 要点提炼、`ai fix` 报错堆栈诊断、`ai polish` 润色改写、`ai regex` 自然语言生成正则并联动 `re`、`ai filter` 生成文件筛选并联动 `f`、`ai cmd` 生成终端命令、`ai commit` 生成提交信息），支持省略正文自动读取剪贴板与本地 `ai_history.json` 预览回顾；
+   - **Wave 2（后续规划）**：本地备忘录/高频文档增量语义检索、按需 MCP Client / Agent Action Bridge 及 `org.freedesktop.portal.GlobalShortcuts` Wayland 协议预研（主内核严守零 AI 依赖与 `< 25 MB` 休眠红线）。
 4. **Stage 4 (`v4.0.0`) · 稳定协议冻结、可信分发与三平台肌肉记忆统一**：
    - **协议冻结与开发者生态独立**：冻结长期向后兼容的 Protocol v3 与 WASM ABI，将 `tomoyo-protocol` / `tomoyo-sdk` / `tomoyo-wasm-sdk` 发布至 `crates.io`；
    - **可信代码签名与官方包源**：对接开源代码签名（如 SignPath.io）打通已预置的 `signtool.exe` Release 自动签名消除 Windows SmartScreen 拦截，正式上架 **Winget**、**Scoop** 与 **Arch AUR**；

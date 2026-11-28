@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { FolderOpen, RotateCcw } from '@lucide/svelte';
+  import Icon from './Icon.svelte';
   import Button from './Button.svelte';
 
   interface Props {
@@ -21,12 +21,12 @@
 
 <div class="t-path-picker">
   <div class="t-path-box" title={path || placeholder}>
-    <span class="t-path-ico"><FolderOpen size={14} /></span>
+    <span class="t-path-ico"><Icon name="FolderOpen" size={14} /></span>
     <span class="t-path-txt {path ? '' : 'is-ph'}">{path || placeholder}</span>
   </div>
   {#if path && onclear}
     <Button variant="icon" size="md" title="恢复默认" onclick={onclear}>
-      <RotateCcw size={14} />
+      <Icon name="RotateCcw" size={14} />
     </Button>
   {/if}
   <Button variant="secondary" size="md" onclick={onbrowse}>

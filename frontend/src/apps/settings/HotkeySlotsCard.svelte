@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { AlertTriangle, CheckCircle2, Crosshair, ShieldAlert, Zap } from '@lucide/svelte';
+  import Icon from '../../lib/ui/Icon.svelte';
   import { tr, type Lang } from '../../lib/i18n';
   import type {
     HotkeyAuditReport,
@@ -48,7 +48,7 @@
 
 <div class="t-card sec-card">
   <div class="sec-title">
-    <ShieldAlert size={14} />
+    <Icon name="ShieldAlert" size={14} />
     <span>{isEn ? 'Tomoyo Core Hotkeys · Direct Edit, Auto-Rescue & Free Replacements' : 'Tomoyo 核心热键管理 · 点击直接修改、自动接管与一键换空闲键'}</span>
   </div>
 
@@ -63,11 +63,11 @@
           <div class="slot-top">
             <span class="t-label">{s.label}</span>
             {#if isBad}
-              <span class="pill is-bad"><AlertTriangle size={11} /> {s.st?.reason || tr(lang, 'hk_conflict')}</span>
+              <span class="pill is-bad"><Icon name="AlertTriangle" size={11} /> {s.st?.reason || tr(lang, 'hk_conflict')}</span>
             {:else if isOv}
-              <span class="pill is-override"><Zap size={11} /> {isEn ? 'Auto-Rescued' : '已高优接管'}</span>
+              <span class="pill is-override"><Icon name="Zap" size={11} /> {isEn ? 'Auto-Rescued' : '已高优接管'}</span>
             {:else if s.spec && s.st?.ok}
-              <span class="pill is-ok"><CheckCircle2 size={11} /> {tr(lang, 'hk_ok')}</span>
+              <span class="pill is-ok"><Icon name="CheckCircle2" size={11} /> {tr(lang, 'hk_ok')}</span>
             {/if}
           </div>
           <div class="t-desc">
@@ -119,12 +119,12 @@
             <div class="slot-acts">
               {#if isBad}
                 <Button variant="primary" size="sm" class="btn-rescue-{s.id}" onclick={() => onToggleOverride(true)}>
-                  <Zap size={12} />
+                  <Icon name="Zap" size={12} />
                   {isEn ? 'Rescue Now' : '一键接管'}
                 </Button>
               {/if}
               <Button variant="secondary" size="sm" disabled={!!probingSpec} onclick={() => onProbe(s.spec)}>
-                <Crosshair size={13} />
+                <Icon name="Crosshair" size={13} />
                 {probingSpec === s.spec ? (isEn ? 'Probing…' : '基线探测中…') : (isEn ? 'Catch Owner' : '抓现行')}
               </Button>
             </div>
@@ -137,7 +137,7 @@
   <div class="slot-row override-row">
     <div class="slot-info">
       <div class="slot-top">
-        <Zap size={14} class="ov-ico" />
+        <Icon name="Zap" size={14} class="ov-ico" />
         <span class="t-label">{isEn ? 'Auto High-Priority Conflict Rescue' : '高优先级强行接管冲突热键'}</span>
       </div>
       <div class="t-desc">

@@ -41,7 +41,36 @@ fn disable_third_party_ime_for_selftest() {
 #[cfg(not(windows))]
 fn disable_third_party_ime_for_selftest() {}
 
+struct SelfTestDataGuard {
+    dir: Option<std::path::PathBuf>,
+}
+
+impl SelfTestDataGuard {
+    fn activate() -> Self {
+        if std::env::var_os("TOMOYO_DATA_DIR").is_some_and(|v| !v.is_empty()) {
+            return Self { dir: None };
+        }
+        let dir = std::env::temp_dir().join(format!("tomoyo_selftest_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::create_dir_all(&dir);
+        // SAFETY: Invoked once at the entry of single-threaded `run_self_test` before
+        // `build_engine()` spawns any background threads.
+        unsafe { std::env::set_var("TOMOYO_DATA_DIR", &dir) };
+        Self { dir: Some(dir) }
+    }
+}
+
+impl Drop for SelfTestDataGuard {
+    fn drop(&mut self) {
+        if let Some(dir) = self.dir.take() {
+            unsafe { std::env::remove_var("TOMOYO_DATA_DIR") };
+            let _ = std::fs::remove_dir_all(dir);
+        }
+    }
+}
+
 pub(crate) fn run_self_test(fonts: &PrivateFonts, strict_budget: bool) {
+    let _data_guard = SelfTestDataGuard::activate();
     disable_third_party_ime_for_selftest();
     println!("=== Tomoyo v{CURRENT_VERSION} Full-Stack Anti-Leak & Ecosystem Self-Test ===");
     println!(

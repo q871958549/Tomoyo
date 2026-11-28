@@ -1,6 +1,6 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import { ChevronLeft, ChevronRight, Download, ExternalLink, Info, RefreshCw, ShieldAlert, Trash2, X } from '@lucide/svelte';
+  import Icon from '../../lib/ui/Icon.svelte';
   import { localizePermission, localizeRuntime } from '../../lib/defaults';
   import { postHost } from '../../lib/ipc';
   import { tr, type Lang } from '../../lib/i18n';
@@ -113,7 +113,7 @@
     </p>
   </div>
   <Button variant="secondary" disabled={loading} onclick={() => emitQuery(meta.page, true)}>
-    <RefreshCw size={13} />
+    <Icon name="RefreshCw" size={13} />
     {tr(lang, 'btn_refresh_store')}
   </Button>
 </div>
@@ -179,7 +179,7 @@
           </div>
           <div class="t-desc">{detail.author || 'Community'} · {detail.license || 'MIT'} · <span class="mono">{detail.id}</span></div>
         </div>
-        <button type="button" class="icon-x" aria-label="Close" onclick={() => onCloseDetail?.()}><X size={14} /></button>
+        <button type="button" class="icon-x" aria-label="Close" onclick={() => onCloseDetail?.()}><Icon name="X" size={14} /></button>
       </div>
       <p class="detail-desc">{detail.description}</p>
       <div class="detail-grid">
@@ -193,7 +193,7 @@
         {:else}
           {#each detail.permissions || [] as perm}
             <span class="t-pill {isHighRisk(perm) ? 'perm-risk' : ''}">
-              {#if isHighRisk(perm)}<ShieldAlert size={11} />{/if}{localizePermission(perm, isEn)}
+              {#if isHighRisk(perm)}<Icon name="ShieldAlert" size={11} />{/if}{localizePermission(perm, isEn)}
             </span>
           {/each}
         {/if}
@@ -201,19 +201,19 @@
       <div class="detail-foot">
         {#if detail.homepage}
           <Button variant="secondary" size="sm" onclick={() => detail?.homepage && postHost({ cmd: 'open_external', url: detail.homepage })}>
-            <ExternalLink size={12} />{isEn ? 'Homepage' : '项目主页'}
+            <Icon name="ExternalLink" size={12} />{isEn ? 'Homepage' : '项目主页'}
           </Button>
         {/if}
         <div style="flex:1"></div>
         {#if detail.update_available}
           <Button variant="primary" size="sm" onclick={() => detail && installOrUpgrade(detail)}>
-            <Download size={13} />{isEn ? `Upgrade to v${detail.version}` : `升级至 v${detail.version}`}
+            <Icon name="Download" size={13} />{isEn ? `Upgrade to v${detail.version}` : `升级至 v${detail.version}`}
           </Button>
         {:else if !detail.installed && detail.platform_compatible === false}
           <span class="t-pill">{isEn ? 'Unsupported OS' : '暂不支持当前系统'}</span>
         {:else if !detail.installed}
           <Button variant="primary" size="sm" onclick={() => detail && installOrUpgrade(detail)}>
-            <Download size={13} />{isEn ? 'Install' : '安装'}
+            <Icon name="Download" size={13} />{isEn ? 'Install' : '安装'}
           </Button>
         {/if}
       </div>
@@ -263,15 +263,15 @@
         </div>
         <div class="store-act">
           <Button variant="secondary" size="sm" onclick={() => onInspectDetail?.(p.id)}>
-            <Info size={13} />{isEn ? 'Details' : '详情'}
+            <Icon name="Info" size={13} />{isEn ? 'Details' : '详情'}
           </Button>
           {#if p.update_available}
             <Button variant="primary" size="sm" onclick={() => installOrUpgrade(p)}>
-              <Download size={13} />{isEn ? 'Upgrade' : '升级'}
+              <Icon name="Download" size={13} />{isEn ? 'Upgrade' : '升级'}
             </Button>
           {:else if p.removable}
             <Button variant="danger" size="sm" onclick={() => postHost({ cmd: 'uninstall_plugin', plugin_id: p.id })}>
-              <Trash2 size={13} />{isEn ? 'Uninstall' : '卸载'}
+              <Icon name="Trash2" size={13} />{isEn ? 'Uninstall' : '卸载'}
             </Button>
           {:else if p.installed}
             <span class="t-pill">{isEn ? 'Installed' : '已安装'}</span>
@@ -279,7 +279,7 @@
             <span class="t-pill">{isEn ? 'Unsupported OS' : '暂不支持当前系统'}</span>
           {:else}
             <Button variant="primary" size="sm" onclick={() => installOrUpgrade(p)}>
-              <Download size={13} />{isEn ? 'Install' : '安装'}
+              <Icon name="Download" size={13} />{isEn ? 'Install' : '安装'}
             </Button>
           {/if}
         </div>
@@ -290,11 +290,11 @@
   {#if meta.totalPages > 1}
     <div class="pager">
       <Button variant="secondary" size="sm" disabled={loading || meta.page <= 1} onclick={() => emitQuery(meta.page - 1)}>
-        <ChevronLeft size={13} />{isEn ? 'Prev' : '上一页'}
+        <Icon name="ChevronLeft" size={13} />{isEn ? 'Prev' : '上一页'}
       </Button>
       <span class="t-desc">{isEn ? `Page ${meta.page} / ${meta.totalPages}` : `第 ${meta.page} / ${meta.totalPages} 页 · 每页 24 项`}</span>
       <Button variant="secondary" size="sm" disabled={loading || meta.page >= meta.totalPages} onclick={() => emitQuery(meta.page + 1)}>
-        {isEn ? 'Next' : '下一页'}<ChevronRight size={13} />
+        {isEn ? 'Next' : '下一页'}<Icon name="ChevronRight" size={13} />
       </Button>
     </div>
   {/if}

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Copy, FolderOpen, RefreshCw } from '@lucide/svelte';
+  import Icon from '../../lib/ui/Icon.svelte';
   import { postHost } from '../../lib/ipc';
   import { tr, type Lang } from '../../lib/i18n';
   import Button from '../../lib/ui/Button.svelte';
@@ -44,11 +44,11 @@
   </div>
   <div class="head-acts">
     <Button variant="secondary" onclick={() => postHost({ cmd: 'open_logs_dir' })}>
-      <FolderOpen size={14} />
+      <Icon name="FolderOpen" size={14} />
       {tr(lang, 'btn_open_logs')}
     </Button>
     <Button variant="primary" onclick={() => postHost({ cmd: 'copy_diagnostic_bundle' })}>
-      <Copy size={14} />
+      <Icon name="Copy" size={14} />
       {tr(lang, 'btn_copy_diag')}
     </Button>
   </div>
@@ -61,7 +61,7 @@
       <span class="chk-lbl">{tr(lang, 'log_err_only')}</span>
       <Switch checked={errorsOnly} onchange={onErrorsOnlyChange} />
       <Button variant="secondary" size="sm" onclick={onRefresh}>
-        <RefreshCw size={13} />
+        <Icon name="RefreshCw" size={13} />
         {tr(lang, 'btn_refresh_logs')}
       </Button>
       <Button variant="secondary" size="sm" onclick={() => postHost({ cmd: 'clear_diagnostic_logs', source, errors_only: errorsOnly })}>

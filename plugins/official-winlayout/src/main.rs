@@ -2,6 +2,7 @@
 
 mod apply;
 mod layouts;
+mod wayland_wm;
 
 use apply::{apply_preset, probe_active_window};
 use layouts::PRESETS;

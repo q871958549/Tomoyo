@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Trash2 } from '@lucide/svelte';
+  import Icon from '../../lib/ui/Icon.svelte';
   import { tr, type Lang } from '../../lib/i18n';
   import type { TomoyoConfig, WebSearchEngine } from '../../lib/types';
   import Button from '../../lib/ui/Button.svelte';
@@ -121,7 +121,7 @@
           oninput={onEdit}
         />
         <Button variant="danger" size="sm" onclick={() => removeRow(idx)}>
-          <Trash2 size={13} />
+          <Icon name="Trash2" size={13} />
           {tr(lang, 'del')}
         </Button>
       </div>

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { FolderOpen, Info, PowerOff, X } from '@lucide/svelte';
+  import Icon from '../../lib/ui/Icon.svelte';
   import { postHost } from '../../lib/ipc';
   import type { SuspectProcess } from '../../lib/types';
   import Button from '../../lib/ui/Button.svelte';
@@ -34,7 +34,7 @@
 <div class="sus-card" data-suspect-detail={suspect.process_name}>
   <div class="sus-head">
     <div class="sus-title">
-      <Info size={14} class="sus-ico" />
+      <Icon name="Info" size={14} class="sus-ico" />
       <strong>{suspect.process_name}</strong>
       <span class="sus-pid">PID {suspect.pid}</span>
       <kbd class="t-kbd">{spec}</kbd>
@@ -44,7 +44,7 @@
           : (isEn ? 'Default Key Reference' : '常见默认键参考')}
       </span>
     </div>
-    <button type="button" class="sus-close" onclick={onClose} aria-label="Close"><X size={13} /></button>
+    <button type="button" class="sus-close" onclick={onClose} aria-label="Close"><Icon name="X" size={13} /></button>
   </div>
 
   <p class="sus-rem">
@@ -60,13 +60,13 @@
   <div class="sus-acts">
     {#if suspect.exe_path}
       <Button variant="secondary" size="sm" onclick={() => postHost({ cmd: 'reveal_path', path: suspect.exe_path })}>
-        <FolderOpen size={13} />
+        <Icon name="FolderOpen" size={13} />
         {isEn ? 'Reveal Program' : '定位程序所在目录'}
       </Button>
     {/if}
     {#if suspect.can_terminate}
       <Button variant={confirmKill ? 'danger' : 'secondary'} size="sm" disabled={killing} onclick={onKillClick}>
-        <PowerOff size={13} />
+        <Icon name="PowerOff" size={13} />
         {#if killing}
           {isEn ? 'Terminating…' : '正在结束并重扫…'}
         {:else if confirmKill}

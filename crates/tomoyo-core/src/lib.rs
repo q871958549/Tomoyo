@@ -63,8 +63,14 @@ pub use updater::*;
 use std::path::PathBuf;
 
 /// Returns Tomoyo's local data directory (`%LOCALAPPDATA%\Tomoyo` on Windows,
-/// `$XDG_DATA_HOME/tomoyo` or `~/.local/share/tomoyo` on Linux/Unix).
+/// `$XDG_DATA_HOME/tomoyo` or `~/.local/share/tomoyo` on Linux/Unix), honoring
+/// `TOMOYO_DATA_DIR` when explicitly overridden (e.g., isolated `--self-test` runs).
 pub fn data_dir() -> PathBuf {
+    if let Ok(custom) = std::env::var("TOMOYO_DATA_DIR")
+        && !custom.trim().is_empty()
+    {
+        return PathBuf::from(custom.trim());
+    }
     if let Ok(local) = std::env::var("LOCALAPPDATA") {
         return PathBuf::from(local).join("Tomoyo");
     }

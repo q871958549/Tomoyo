@@ -213,6 +213,7 @@ if (checkBinaries) {
     [`target/release/tomoyo-plugin-capture${ext}`]: 0.8,
     [`target/release/tomoyo-plugin-clipboard${ext}`]: 2.5,
     [`target/release/tomoyo-plugin-winlayout${ext}`]: 0.8,
+    [`target/release/tomoyo-plugin-ai${ext}`]: 0.8,
   };
   let binViolations = 0;
   const binSummary = [];

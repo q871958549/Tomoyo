@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ChevronDown, ChevronUp, FileCode, FolderOpen, Layers, ShieldCheck, SlidersHorizontal } from '@lucide/svelte';
+  import Icon from '../../lib/ui/Icon.svelte';
   import { isPluginEnabled, localizePermission, localizeRuntime } from '../../lib/defaults';
   import { postHost } from '../../lib/ipc';
   import { tr, type Lang } from '../../lib/i18n';
@@ -120,7 +120,7 @@
       onchange={(v) => (filterCat = v)}
     />
     <Button variant="secondary" size="sm" disabled={checkingHealth} onclick={() => onCheckHealth?.()}>
-      <ShieldCheck size={13} />{checkingHealth ? (isEn ? 'Checking…' : '体检中…') : (isEn ? 'Health Check' : '一键体检')}
+      <Icon name="ShieldCheck" size={13} />{checkingHealth ? (isEn ? 'Checking…' : '体检中…') : (isEn ? 'Health Check' : '一键体检')}
     </Button>
   </div>
   {#if healthReport?.summary}
@@ -137,7 +137,7 @@
 
 <div class="t-card mod-card">
   <div class="sec-head">
-    <Layers size={14} class="sec-ico" />
+    <Icon name="Layers" size={14} class="sec-ico" />
     <span>{isEn ? `Installed Plugins (${filteredPlugins.length}) — Zero Built-In Bloat · Unified Protocol v3` : `已安装插件（${filteredPlugins.length}）— 官方与第三方平等运行 · 按需启停`}</span>
   </div>
 
@@ -181,9 +181,9 @@
             {/if}
             {#if configurable}
               <button type="button" class="cfg-pill {isOpen ? 'is-open' : ''}" data-config-plugin={p.id} onclick={() => onToggleExpand(isOpen ? null : p.id)}>
-                <SlidersHorizontal size={11} />
+                <Icon name="SlidersHorizontal" size={11} />
                 <span>{isEn ? 'Config' : '配置'}</span>
-                {#if isOpen}<ChevronUp size={11} />{:else}<ChevronDown size={11} />{/if}
+                {#if isOpen}<Icon name="ChevronUp" size={11} />{:else}<Icon name="ChevronDown" size={11} />{/if}
               </button>
             {/if}
             <Switch checked={enabled} ariaLabel={p.name} onchange={(v) => onTogglePlugin(p.id, v)} />
@@ -214,11 +214,11 @@
 <div class="t-card" style="margin-top:14px">
   <div class="t-row">
     <div style="min-width:0"><div class="t-label">{tr(lang, 'lbl_cfg_path')}</div><div class="path-sub">{configPath}</div></div>
-    <Button variant="secondary" onclick={() => configPath && postHost({ cmd: 'open_path', path: configPath })}><FileCode size={14} />{tr(lang, 'btn_open_cfg')}</Button>
+    <Button variant="secondary" onclick={() => configPath && postHost({ cmd: 'open_path', path: configPath })}><Icon name="FileCode" size={14} />{tr(lang, 'btn_open_cfg')}</Button>
   </div>
   <div class="t-row">
     <div style="min-width:0"><div class="t-label">{tr(lang, 'lbl_plug_dir')}</div><div class="path-sub">{pluginsDir}</div></div>
-    <Button variant="secondary" onclick={() => pluginsDir && postHost({ cmd: 'open_path', path: pluginsDir })}><FolderOpen size={14} />{tr(lang, 'btn_open_plug')}</Button>
+    <Button variant="secondary" onclick={() => pluginsDir && postHost({ cmd: 'open_path', path: pluginsDir })}><Icon name="FolderOpen" size={14} />{tr(lang, 'btn_open_plug')}</Button>
   </div>
 </div>
 

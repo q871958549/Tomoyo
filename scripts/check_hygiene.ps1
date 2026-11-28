@@ -210,6 +210,7 @@ if ($CheckBinaries) {
         "target\release\tomoyo-plugin-capture.exe"   = 0.8
         "target\release\tomoyo-plugin-clipboard.exe" = 2.5
         "target\release\tomoyo-plugin-winlayout.exe" = 0.8
+        "target\release\tomoyo-plugin-ai.exe"        = 0.8
     }
     $binViolations = 0
     $binSummary = @()

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Plus, Search, X } from '@lucide/svelte';
+  import Icon from './Icon.svelte';
 
   interface Props {
     selected: string[];
@@ -95,7 +95,7 @@
 
 <div bind:this={rootEl} class="t-combo-root">
   <div class="t-combo-input-box {errMsg ? 'is-err' : ''}">
-    <span class="t-combo-ico"><Search size={14} /></span>
+    <span class="t-combo-ico"><Icon name="Search" size={14} /></span>
     <input
       type="text"
       bind:value={query}
@@ -110,7 +110,7 @@
     />
     {#if query}
       <button type="button" class="t-combo-clr" tabindex="-1" onclick={() => { query = ''; errMsg = ''; }}>
-        <X size={13} />
+        <Icon name="X" size={13} />
       </button>
     {/if}
   </div>
@@ -127,7 +127,7 @@
           onmousedown={(e) => { e.preventDefault(); addItem(c.value); }}
         >
           {#if c.isCustom}
-            <Plus size={13} />
+            <Icon name="Plus" size={13} />
             <span>添加 {c.value}</span>
           {:else}
             <span>{c.value}</span>
@@ -149,7 +149,7 @@
         <span class="t-tag">
           <span>{item}</span>
           <button type="button" class="t-tag-x" title="移除" onclick={() => removeItem(idx)}>
-            <X size={11} />
+            <Icon name="X" size={11} />
           </button>
         </span>
       {/each}

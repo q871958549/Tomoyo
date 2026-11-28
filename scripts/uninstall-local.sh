@@ -47,7 +47,7 @@ pkill -x tomoyo-capture >/dev/null 2>&1 || true
 pkill -f '(^|/)tomoyo-(webview-host|plugin-[a-z0-9-]+)([[:space:]]|$)' >/dev/null 2>&1 || true
 sleep 0.3
 
-for b in tomoyo tomoyo-webview-host tomoyo-capture tomoyo-cli tomoyo-plugin-hello tomoyo-plugin-ocr tomoyo-plugin-notes tomoyo-plugin-md-editor tomoyo-plugin-translate tomoyo-plugin-capture tomoyo-plugin-clipboard tomoyo-plugin-winlayout; do
+for b in tomoyo tomoyo-webview-host tomoyo-capture tomoyo-cli tomoyo-plugin-hello tomoyo-plugin-ocr tomoyo-plugin-notes tomoyo-plugin-md-editor tomoyo-plugin-translate tomoyo-plugin-capture tomoyo-plugin-clipboard tomoyo-plugin-winlayout tomoyo-plugin-ai; do
   rm -f "$BIN_DIR/$b"
 done
 
@@ -61,7 +61,7 @@ if [ "$PURGE" -eq 1 ]; then
   rm -rf "$DATA_DIR"
 else
   rm -rf "$DATA_DIR/fonts" "$DATA_DIR/plugin-icons" "$DATA_DIR/assets" "$DATA_DIR/registry" "$DATA_DIR/uninstall.sh"
-  for p in example-hello example-python example-wasm example-webview-json builtin-ocr official-notes official-md-editor official-translate official-capture official-clipboard official-devtools-wasm official-regex-wasm official-winlayout; do
+  for p in example-hello example-python example-wasm example-webview-json builtin-ocr official-notes official-md-editor official-translate official-capture official-clipboard official-devtools-wasm official-regex-wasm official-winlayout official-ai; do
     rm -rf "$DATA_DIR/plugins/$p"
   done
 fi

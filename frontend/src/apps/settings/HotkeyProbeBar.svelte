@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import { Crosshair, Keyboard, Pencil, X } from '@lucide/svelte';
+  import Icon from '../../lib/ui/Icon.svelte';
   import { buildComboFromEvent } from '../../lib/hotkeys';
   import type { Lang } from '../../lib/i18n';
   import { postHost, subscribeHost } from '../../lib/ipc';
@@ -138,7 +138,7 @@
         <span class="probe-dot" aria-hidden="true"></span>
         <span class="probe-rec-txt">{hint}</span>
       {:else}
-        <span class="probe-ico" aria-hidden="true"><Keyboard size={14} /></span>
+        <span class="probe-ico" aria-hidden="true"><Icon name="Keyboard" size={14} /></span>
         {#if parts.length > 0}
           <span class="probe-keys">
             {#each parts as p, idx}
@@ -159,7 +159,7 @@
       <div class="probe-tools">
         {#if spec && !recording}
           <button type="button" class="probe-clr" title={isEn ? 'Clear' : '清空'} onclick={clearSpec}>
-            <X size={13} />
+            <Icon name="X" size={13} />
           </button>
         {/if}
         <button
@@ -168,14 +168,14 @@
           title={isEn ? 'Switch to manual text input' : '切换为手动输入热键文本'}
           onclick={toggleMode}
         >
-          <Pencil size={11} />
+          <Icon name="Pencil" size={11} />
           <span>{isEn ? 'Type' : '手输'}</span>
         </button>
       </div>
     </div>
   {:else}
     <div class="probe-box is-text">
-      <span class="probe-ico" aria-hidden="true"><Pencil size={13} /></span>
+      <span class="probe-ico" aria-hidden="true"><Icon name="Pencil" size={13} /></span>
       <input
         bind:this={inputEl}
         type="text"
@@ -189,7 +189,7 @@
       <div class="probe-tools">
         {#if spec}
           <button type="button" class="probe-clr" title={isEn ? 'Clear' : '清空'} onclick={clearSpec}>
-            <X size={13} />
+            <Icon name="X" size={13} />
           </button>
         {/if}
         <button
@@ -198,7 +198,7 @@
           title={isEn ? 'Switch to press-to-capture' : '切换为直接按键捕获'}
           onclick={toggleMode}
         >
-          <Keyboard size={11} />
+          <Icon name="Keyboard" size={11} />
           <span>{isEn ? 'Press' : '按键'}</span>
         </button>
       </div>
@@ -206,7 +206,7 @@
   {/if}
 
   <Button variant={canProbe ? 'primary' : 'secondary'} size="md" disabled={!canProbe} onclick={runProbe}>
-    <Crosshair size={13} />
+    <Icon name="Crosshair" size={13} />
     {isProbingThis ? (isEn ? 'Probing…' : '探测中…') : (isEn ? 'Probe Key' : '探测此键')}
   </Button>
 </div>

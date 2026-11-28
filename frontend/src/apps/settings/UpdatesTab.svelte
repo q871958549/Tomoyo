@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { CheckCircle2, Download, ExternalLink, RefreshCw, AlertCircle } from '@lucide/svelte';
+  import Icon from '../../lib/ui/Icon.svelte';
   import tomoyoLogo from '../../assets/tomoyo-logo.png';
   import { postHost } from '../../lib/ipc';
   import { OFFICIAL_REPO, tr, type Lang } from '../../lib/i18n';
@@ -116,11 +116,11 @@
     </div>
     <div class="hero-acts">
       <Button variant="secondary" onclick={openRepo}>
-        <ExternalLink size={13} />
+        <Icon name="ExternalLink" size={13} />
         {tr(lang, 'btn_github')}
       </Button>
       <Button variant="primary" disabled={checking} onclick={onCheckNow}>
-        <span class="upd-ico {checking ? 'is-spinning' : ''}"><RefreshCw size={13} /></span>
+        <span class="upd-ico {checking ? 'is-spinning' : ''}"><Icon name="RefreshCw" size={13} /></span>
         {checking ? (lang === 'en' ? 'Checking…' : '检查中…') : tr(lang, 'btn_check_upd')}
       </Button>
     </div>
@@ -130,7 +130,7 @@
     <div class="status-box {pulse ? 'is-fresh' : ''}">
       {#if updateStatus.state === 'up_to_date'}
         <div class="st-ok">
-          <CheckCircle2 size={15} />
+          <Icon name="CheckCircle2" size={15} />
           <span>{lang === 'en' ? `Up to date (v${updateStatus.current || version})` : `当前已是最新版本 v${updateStatus.current || version}`}</span>
         </div>
         {#if updateStatus.checked_at_unix}
@@ -151,7 +151,7 @@
             </Button>
             {#if rel.download_url}
               <Button variant="primary" size="sm" disabled={!!installProgress && !installProgress.done} onclick={() => onInstall(rel)}>
-                <Download size={13} />
+                <Icon name="Download" size={13} />
                 {lang === 'en' ? 'Auto-Update & Restart' : '自动下载更新并重启'}
               </Button>
             {/if}
@@ -179,7 +179,7 @@
         {/if}
       {:else if updateStatus.state === 'error'}
         <div class="st-err">
-          <AlertCircle size={15} />
+          <Icon name="AlertCircle" size={15} />
           <span>{updateStatus.message || 'Check failed'}</span>
         </div>
         <div class="hero-acts" style="margin-top:10px">

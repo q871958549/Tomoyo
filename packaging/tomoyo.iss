@@ -96,6 +96,8 @@ begin
   Exec('taskkill.exe', '/F /IM tomoyo-plugin-translate.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Exec('taskkill.exe', '/F /IM tomoyo-plugin-capture.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Exec('taskkill.exe', '/F /IM tomoyo-plugin-clipboard.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec('taskkill.exe', '/F /IM tomoyo-plugin-winlayout.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec('taskkill.exe', '/F /IM tomoyo-plugin-ai.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Exec('taskkill.exe', '/F /IM tomoyo-plugin-hello.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Exec('taskkill.exe', '/F /IM tomoyo-cli.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   // Remove legacy scripts/install-local.ps1 uninstall entry so Add/Remove Programs only shows one Tomoyo

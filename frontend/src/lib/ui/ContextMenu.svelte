@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Check } from '@lucide/svelte';
+  import Icon from './Icon.svelte';
   import type { ContextMenuItem } from '../types';
 
   interface Props {
@@ -67,7 +67,7 @@
           }}
         >
           <span class="t-ctx-slot">
-            {#if item.checked}<Check size={13} />{/if}
+            {#if item.checked}<Icon name="Check" size={13} />{/if}
           </span>
           <span class="t-ctx-label">{item.label}</span>
           {#if item.shortcut}

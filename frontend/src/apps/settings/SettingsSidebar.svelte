@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { Keyboard, Package, RefreshCw, Search, SlidersHorizontal, Workflow } from '@lucide/svelte';
+  import Icon from '../../lib/ui/Icon.svelte';
+  import type { IconName } from '../../lib/ui/iconNodes';
   import tomoyoLogo from '../../assets/tomoyo-logo.png';
   import { searchSettingsEntries, type SettingSearchEntry } from '../../lib/settingsSearch';
   import { tr, type Lang } from '../../lib/i18n';
@@ -20,13 +21,13 @@
   let quickQuery = $state('');
   let searchHits = $derived(searchSettingsEntries(quickQuery));
 
-  const navItems = [
-    { id: 'core' as const, key: 'nav_core', icon: SlidersHorizontal },
-    { id: 'search' as const, key: 'nav_search', icon: Search },
-    { id: 'hotkeys' as const, key: 'nav_hotkeys', icon: Keyboard },
-    { id: 'flows' as const, key: 'nav_flows', icon: Workflow },
-    { id: 'plugins' as const, key: 'nav_plugins', icon: Package },
-    { id: 'system' as const, key: 'nav_system', icon: RefreshCw },
+  const navItems: { id: SettingsTabId; key: string; icon: IconName }[] = [
+    { id: 'core', key: 'nav_core', icon: 'SlidersHorizontal' },
+    { id: 'search', key: 'nav_search', icon: 'Search' },
+    { id: 'hotkeys', key: 'nav_hotkeys', icon: 'Keyboard' },
+    { id: 'flows', key: 'nav_flows', icon: 'Workflow' },
+    { id: 'plugins', key: 'nav_plugins', icon: 'Package' },
+    { id: 'system', key: 'nav_system', icon: 'RefreshCw' },
   ];
 
   function pickHit(hit: SettingSearchEntry) {
@@ -59,9 +60,8 @@
 
   <nav class="nav">
     {#each navItems as item}
-      {@const Icon = item.icon}
       <button type="button" data-tab={item.id} class="nav-item {activeTab === item.id ? 'is-active' : ''}" onclick={() => onSelectTab(item.id)}>
-        <span class="nav-ico"><Icon size={15} /></span>
+        <span class="nav-ico"><Icon name={item.icon} size={15} /></span>
         <span>{tr(lang, item.key)}</span>
         {#if item.id === 'hotkeys' && conflictCount > 0}
           <span class="nav-badge">{conflictCount}</span>

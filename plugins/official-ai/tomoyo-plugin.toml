@@ -1,0 +1,118 @@
+id = "dev.tomoyo.ai"
+name = "本地 AI 助手 (官方插件)"
+version = "3.5.0"
+description = "按需本地优先 AI 效率助手（支持本地 Ollama / OpenAI 兼容端点 · 0 常驻内存）：划词总结润色、报错堆栈诊断、自然语言生成正则/Everything 筛选/终端命令及快捷问答"
+author = "Tomoyo Contributors"
+license = "MIT OR Apache-2.0"
+homepage = "https://github.com/q871958549/Tomoyo"
+icon = "icon.png"
+category = "ai"
+display_mode = "inline"
+tags = ["ai", "ollama", "openai", "llm", "regex", "debug", "summary"]
+permissions = ["network", "clipboard"]
+
+[runtime]
+kind = "stdio_jsonrpc"
+command = "tomoyo-plugin-ai"
+args = []
+
+[triggers]
+keywords = ["ai", "ask"]
+
+[resources]
+max_memory_mb = 64
+idle_timeout_secs = 30
+query_timeout_ms = 25000
+
+[[text_actions]]
+id = "ai_summarize"
+label = "AI 提炼要点"
+match_kinds = ["text", "code", "json"]
+
+[[text_actions]]
+id = "ai_diagnose"
+label = "AI 诊断报错 / 解释"
+match_kinds = ["code", "text"]
+
+[[text_actions]]
+id = "ai_polish"
+label = "AI 润色改写"
+match_kinds = ["text"]
+
+[[settings]]
+key = "provider"
+label = "默认推理后端"
+description = "auto 模式会在已配置 openai_api_key 时优先调用兼容端点，否则直连本地 Ollama"
+section = "模型与连接"
+type = "select"
+default = "auto"
+options = [
+  { value = "auto", label = "智能选择 (有密钥用 OpenAI / 否则 Ollama)" },
+  { value = "ollama", label = "本地 Ollama (100% 离线)" },
+  { value = "openai", label = "OpenAI 兼容接口" },
+]
+
+[[settings]]
+key = "ollama_url"
+label = "本地 Ollama 地址"
+description = "默认 http://127.0.0.1:11434"
+section = "模型与连接"
+type = "text"
+placeholder = "http://127.0.0.1:11434"
+default = "http://127.0.0.1:11434"
+
+[[settings]]
+key = "ollama_model"
+label = "Ollama 模型名称"
+description = "例如 qwen2.5:7b / llama3.2 / deepseek-r1:7b"
+section = "模型与连接"
+type = "text"
+placeholder = "qwen2.5:7b"
+default = "qwen2.5:7b"
+
+[[settings]]
+key = "openai_base_url"
+label = "OpenAI 兼容 Base URL"
+description = "默认 https://api.openai.com/v1（支持 DeepSeek / SiliconFlow / LM Studio 等）"
+section = "API 凭据（系统加密库保存）"
+type = "text"
+placeholder = "https://api.openai.com/v1"
+default = "https://api.openai.com/v1"
+
+[[settings]]
+key = "openai_model"
+label = "OpenAI 兼容模型名称"
+description = "例如 gpt-4o-mini / deepseek-chat"
+section = "API 凭据（系统加密库保存）"
+type = "text"
+placeholder = "gpt-4o-mini"
+default = "gpt-4o-mini"
+
+[[settings]]
+key = "openai_api_key"
+label = "OpenAI 兼容 API Key"
+description = "通过系统级加密凭据库（DPAPI / 密钥环）存储，绝不写入明文配置"
+section = "API 凭据（系统加密库保存）"
+type = "secret"
+placeholder = "输入 sk-... 密钥（仅用本地 Ollama 可留空）"
+
+[[settings]]
+key = "reply_lang"
+label = "默认回答语言"
+section = "行为偏好"
+type = "select"
+default = "zh"
+options = [
+  { value = "zh", label = "简体中文" },
+  { value = "en", label = "English" },
+]
+
+[[settings]]
+key = "timeout_secs"
+label = "请求超时上限 (秒)"
+section = "行为偏好"
+type = "number"
+min = 5
+max = 60
+step = 5
+default = 20

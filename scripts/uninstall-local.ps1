@@ -4,7 +4,7 @@ param(
     [string]$InstallDir = (Join-Path $env:LOCALAPPDATA "Programs\Tomoyo")
 )
 
-Stop-Process -Name "tomoyo","tomoyo-webview-host","tomoyo-capture","tomoyo-plugin-ocr","tomoyo-plugin-notes","tomoyo-plugin-md-editor","tomoyo-plugin-translate","tomoyo-plugin-capture","tomoyo-plugin-clipboard","tomoyo-plugin-hello","tomoyo-cli" -Force -ErrorAction SilentlyContinue
+Stop-Process -Name "tomoyo","tomoyo-webview-host","tomoyo-capture","tomoyo-plugin-ocr","tomoyo-plugin-notes","tomoyo-plugin-md-editor","tomoyo-plugin-translate","tomoyo-plugin-capture","tomoyo-plugin-clipboard","tomoyo-plugin-winlayout","tomoyo-plugin-ai","tomoyo-plugin-hello","tomoyo-cli" -Force -ErrorAction SilentlyContinue
 Start-Sleep -Milliseconds 300
 
 Remove-Item -Path (Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\Tomoyo") -Recurse -Force -ErrorAction SilentlyContinue

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Eye, EyeOff, Search, X } from '@lucide/svelte';
+  import Icon from './Icon.svelte';
 
   interface Props {
     value?: string;
@@ -67,7 +67,7 @@
 
 <div class="t-input-wrap t-input-{size} {invalid ? 'is-invalid' : ''} {disabled ? 'is-disabled' : ''} {extraClass}">
   {#if type === 'search'}
-    <span class="t-input-lead"><Search size={14} /></span>
+    <span class="t-input-lead"><Icon name="Search" size={14} /></span>
   {/if}
   <input
     bind:this={inputEl}
@@ -95,11 +95,11 @@
       title={revealed ? '隐藏' : '显示'}
       onclick={() => (revealed = !revealed)}
     >
-      {#if revealed}<EyeOff size={14} />{:else}<Eye size={14} />{/if}
+      {#if revealed}<Icon name="EyeOff" size={14} />{:else}<Icon name="Eye" size={14} />{/if}
     </button>
   {:else if type === 'search' && value}
     <button type="button" class="t-input-act" tabindex="-1" title="清空" onclick={clearSearch}>
-      <X size={13} />
+      <Icon name="X" size={13} />
     </button>
   {/if}
 </div>

@@ -79,6 +79,7 @@ check() {
   ./target/release/tomoyo-plugin-capture --self-test
   ./target/release/tomoyo-plugin-clipboard --self-test
   ./target/release/tomoyo-plugin-winlayout --self-test
+  ./target/release/tomoyo-plugin-ai --self-test
 }
 
 package() {
@@ -95,6 +96,7 @@ package() {
     tomoyo-plugin-capture
     tomoyo-plugin-clipboard
     tomoyo-plugin-winlayout
+    tomoyo-plugin-ai
     tomoyo-plugin-hello
   )
   for b in "${bins[@]}"; do
@@ -115,7 +117,7 @@ package() {
     install -Dm644 registry/shards/*.json "$pkgdir/usr/share/tomoyo/registry/shards/"
   fi
 
-  for p in example-hello example-python example-wasm example-webview-json builtin-ocr official-notes official-md-editor official-translate official-capture official-clipboard official-devtools-wasm official-regex-wasm official-winlayout; do
+  for p in example-hello example-python example-wasm example-webview-json builtin-ocr official-notes official-md-editor official-translate official-capture official-clipboard official-devtools-wasm official-regex-wasm official-winlayout official-ai; do
     mkdir -p "$pkgdir/usr/share/tomoyo/plugins/$p"
     cp -a "plugins/$p/." "$pkgdir/usr/share/tomoyo/plugins/$p/"
     rm -rf "$pkgdir/usr/share/tomoyo/plugins/$p/target" \

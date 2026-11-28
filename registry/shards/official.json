@@ -1,7 +1,7 @@
 {
   "schema_version": 2,
   "name": "Tomoyo Registry Shard (official)",
-  "updated_at": "2026-11-27",
+  "updated_at": "2026-11-28",
   "total_count": null,
   "shards": [],
   "plugins": [
@@ -25,10 +25,46 @@
         "clipboard"
       ],
       "source": "plugins/builtin-ocr",
-      "sha256": "f0a729ea24a71f8cca1cd17174d871c2d58c4188f5af88601eca26f0b5e9c49d",
+      "sha256": "06fb1b0db8979c00a79cf089cf2d351df1aa7fb97bc777e95b9d41a20cc3bcb9",
       "platforms": {},
       "min_tomoyo_version": null,
       "homepage": null,
+      "updated_at": "",
+      "downloads": 0
+    },
+    {
+      "id": "dev.tomoyo.ai",
+      "name": "本地 AI 助手 (官方插件)",
+      "version": "3.5.0",
+      "description": "按需本地优先 AI 效率助手（支持本地 Ollama / OpenAI 兼容端点 · 0 常驻内存）：划词总结润色、报错堆栈诊断、自然语言生成正则/Everything 筛选/终端命令及快捷问答",
+      "author": "Tomoyo Contributors",
+      "license": "MIT OR Apache-2.0",
+      "runtime_kind": "stdio_jsonrpc",
+      "category": "ai",
+      "icon": "icon.png",
+      "display_mode": "inline",
+      "tags": [
+        "ai",
+        "ollama",
+        "openai",
+        "llm",
+        "regex",
+        "debug",
+        "summary"
+      ],
+      "keywords": [
+        "ai",
+        "ask"
+      ],
+      "permissions": [
+        "network",
+        "clipboard"
+      ],
+      "source": "plugins/official-ai",
+      "sha256": "ff40d0af8dacc34aa6516d1c4289339db01ff12e40d4acb1de5165443b6af57a",
+      "platforms": {},
+      "min_tomoyo_version": null,
+      "homepage": "https://github.com/q871958549/Tomoyo",
       "updated_at": "",
       "downloads": 0
     },
@@ -105,7 +141,7 @@
         "filesystem_write"
       ],
       "source": "plugins/official-clipboard",
-      "sha256": "dce0367de4498809266f5b9626ee95b3bcfe3f3554350daf8f4e83fa74f650fd",
+      "sha256": "bb67dfc1818acb2514177826b40da45fd527de54cba061bf2f7aede801cb6c7d",
       "platforms": {},
       "min_tomoyo_version": null,
       "homepage": "https://github.com/q871958549/Tomoyo",
@@ -217,7 +253,7 @@
         "filesystem_write"
       ],
       "source": "plugins/official-notes",
-      "sha256": "c043ffb86584094ada514986736b02951c9436abce0646a3abbe4fe8d0191494",
+      "sha256": "ad84430f09131aba369407c62249bc81d9a51c0b73b3b42ccb43f164b272ab75",
       "platforms": {},
       "min_tomoyo_version": null,
       "homepage": null,
@@ -284,7 +320,7 @@
         "selection_read"
       ],
       "source": "plugins/official-translate",
-      "sha256": "c27fc7850796c680cd8d1f2ab8721ca9f883ac7d47dbbd8d305f709515919a7c",
+      "sha256": "f23de92bf2df79cb441014a1755dfaaef1ece7dd4ddddf01378d4b35af73732b",
       "platforms": {},
       "min_tomoyo_version": null,
       "homepage": "https://github.com/q871958549/Tomoyo",
@@ -319,7 +355,7 @@
         "shell_exec"
       ],
       "source": "plugins/official-winlayout",
-      "sha256": "5822c70088b7df5981d27bb4d74a7db6b132a353b3560b1e9140d489e2019365",
+      "sha256": "958a2fc4f702e883d276c02b33928bd96d46026a8c9053ced922248496acd399",
       "platforms": {},
       "min_tomoyo_version": null,
       "homepage": null,

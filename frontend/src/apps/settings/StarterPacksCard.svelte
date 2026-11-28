@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Check, Download } from '@lucide/svelte';
+  import Icon from '../../lib/ui/Icon.svelte';
   import { postHost } from '../../lib/ipc';
   import type { Lang } from '../../lib/i18n';
   import Button from '../../lib/ui/Button.svelte';
@@ -126,16 +126,16 @@
         <div class="pack-foot">
           {#if st.total === 0}
             <span class="pack-status">
-              <Check size={12} />
+              <Icon name="Check" size={12} />
               {installedIds.length === 0
                 ? (isEn ? 'Pure Core Active' : '纯净微内核运行中')
                 : (isEn ? 'Zero Core Bloat' : '核心零业务捆绑')}
             </span>
           {:else if st.installedCount === st.total}
-            <span class="pack-status"><Check size={12} />{isEn ? 'All Installed' : '已全部配齐'}</span>
+            <span class="pack-status"><Icon name="Check" size={12} />{isEn ? 'All Installed' : '已全部配齐'}</span>
           {:else if st.missing.length > 0}
             <Button variant="secondary" size="sm" onclick={() => installPack(pack)}>
-              <Download size={12} />
+              <Icon name="Download" size={12} />
               {isEn ? `Install Missing (${st.missing.length})` : `一键补装 (${st.missing.length})`}
             </Button>
           {:else if st.unsupported > 0}

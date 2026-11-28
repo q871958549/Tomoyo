@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Check, ChevronDown } from '@lucide/svelte';
+  import Icon from './Icon.svelte';
   import type { SelectOption } from '../types';
 
   interface Props {
@@ -106,7 +106,7 @@
       {selectedLabel}
     </span>
     <span class="t-select-chev {open ? 'is-open' : ''}">
-      <ChevronDown size={14} />
+      <Icon name="ChevronDown" size={14} />
     </span>
   </button>
 
@@ -130,7 +130,7 @@
             {#if opt.hint}<span class="t-opt-hint">{opt.hint}</span>{/if}
           </span>
           {#if opt.value === value}
-            <span class="t-opt-chk"><Check size={14} /></span>
+            <span class="t-opt-chk"><Icon name="Check" size={14} /></span>
           {/if}
         </button>
       {/each}

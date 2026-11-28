@@ -99,58 +99,6 @@ pub fn probe_active_window() -> Option<ActiveWindowInfo> {
     { None }
 }
 
-#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-pub(crate) fn parse_hyprland_active_window_json(raw: &str) -> Option<ActiveWindowInfo> {
-    let v: serde_json::Value = serde_json::from_str(raw).ok()?;
-    let title = v.get("title").and_then(|t| t.as_str()).map(str::trim).filter(|t| !t.is_empty())?;
-    let app = v
-        .get("class")
-        .and_then(|c| c.as_str())
-        .or_else(|| v.get("initialClass").and_then(|c| c.as_str()))
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .unwrap_or("Hyprland");
-    if title.to_lowercase().contains("tomoyo") || app.to_lowercase().contains("tomoyo") {
-        return None;
-    }
-    Some(ActiveWindowInfo { app: app.into(), title: title.into() })
-}
-
-#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-fn find_focused_sway_node(node: &serde_json::Value) -> Option<ActiveWindowInfo> {
-    if node.get("focused").and_then(|f| f.as_bool()) == Some(true)
-        && let Some(title) = node.get("name").and_then(|t| t.as_str()).map(str::trim).filter(|t| !t.is_empty())
-    {
-        let app = node
-            .get("app_id")
-            .and_then(|s| s.as_str())
-            .or_else(|| node.get("window_properties").and_then(|w| w.get("class")).and_then(|s| s.as_str()))
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .unwrap_or("Sway");
-        if title.to_lowercase().contains("tomoyo") || app.to_lowercase().contains("tomoyo") {
-            return None;
-        }
-        return Some(ActiveWindowInfo { app: app.into(), title: title.into() });
-    }
-    for key in ["nodes", "floating_nodes"] {
-        if let Some(arr) = node.get(key).and_then(|a| a.as_array()) {
-            for child in arr {
-                if let Some(hit) = find_focused_sway_node(child) {
-                    return Some(hit);
-                }
-            }
-        }
-    }
-    None
-}
-
-#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-pub(crate) fn parse_sway_focused_node_json(raw: &str) -> Option<ActiveWindowInfo> {
-    let v: serde_json::Value = serde_json::from_str(raw).ok()?;
-    find_focused_sway_node(&v)
-}
-
 #[cfg(target_os = "linux")]
 fn has_bin_in_path(name: &str) -> bool {
     std::env::var_os("PATH")
@@ -173,18 +121,11 @@ fn cached_qdbus_bin() -> Option<&'static str> {
 
 #[cfg(target_os = "linux")]
 fn apply_linux(preset_id: &str, gap_px: i32, center_pct: i32) -> Result<(), String> {
-    if std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE").is_some_and(|v| !v.is_empty()) {
-        let hypr_args: Option<&[&str]> = match preset_id {
-            "max" => Some(&["dispatch", "fullscreen", "1"]),
-            "always-top" => Some(&["dispatch", "pin"]),
-            _ => None,
-        };
-        if let Some(args) = hypr_args
-            && let Ok(out) = std::process::Command::new("hyprctl").args(args).output()
-            && out.status.success()
-        {
-            return Ok(());
-        }
+    if crate::wayland_wm::try_apply_hyprland(preset_id, gap_px, center_pct) {
+        return Ok(());
+    }
+    if crate::wayland_wm::try_apply_sway(preset_id, gap_px, center_pct) {
+        return Ok(());
     }
     if run_kwin_oneshot(&build_kwin_layout_js(preset_id, gap_px, center_pct)).is_ok() {
         return Ok(());
@@ -205,7 +146,7 @@ fn apply_linux(preset_id: &str, gap_px: i32, center_pct: i32) -> Result<(), Stri
             return Ok(());
         }
     }
-    Err("未能定位支持的工作区窗口管理器（需 KDE KWin 6 / qdbus6、Hyprland 或 X11 wmctrl）".into())
+    Err("未能定位支持的工作区窗口管理器（需 KDE KWin 6 / Hyprland / Sway / X11 wmctrl）".into())
 }
 
 #[cfg(target_os = "linux")]
@@ -256,14 +197,14 @@ fn probe_linux_active_window() -> Option<ActiveWindowInfo> {
     if std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE").is_some_and(|v| !v.is_empty())
         && let Ok(out) = std::process::Command::new("hyprctl").args(["-j", "activewindow"]).output()
         && out.status.success()
-        && let Some(hit) = parse_hyprland_active_window_json(&String::from_utf8_lossy(&out.stdout))
+        && let Some(hit) = crate::wayland_wm::parse_hyprland_active_window_json(&String::from_utf8_lossy(&out.stdout))
     {
         return Some(hit);
     }
     if std::env::var_os("SWAYSOCK").is_some_and(|v| !v.is_empty())
         && let Ok(out) = std::process::Command::new("swaymsg").args(["-t", "get_tree"]).output()
         && out.status.success()
-        && let Some(hit) = parse_sway_focused_node_json(&String::from_utf8_lossy(&out.stdout))
+        && let Some(hit) = crate::wayland_wm::parse_sway_focused_node_json(&String::from_utf8_lossy(&out.stdout))
     {
         return Some(hit);
     }
@@ -407,9 +348,7 @@ fn probe_windows_active_window() -> Option<ActiveWindowInfo> {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        build_kwin_layout_js, parse_hyprland_active_window_json, parse_sway_focused_node_json,
-    };
+    use super::build_kwin_layout_js;
 
     #[test]
     fn kwin_script_uses_object_assign_and_skips_tomoyo() {
@@ -417,20 +356,5 @@ mod tests {
         assert!(js.contains("Object.assign"));
         assert!(js.contains("tomoyo"));
         assert!(js.contains("setMaximize(false, false)"));
-    }
-
-    #[test]
-    fn parses_hyprland_and_sway_active_window_json() {
-        let h = parse_hyprland_active_window_json(r#"{"class":"kitty","title":"nvim main.rs"}"#).unwrap();
-        assert_eq!(h.app, "kitty");
-        assert_eq!(h.title, "nvim main.rs");
-        assert!(parse_hyprland_active_window_json(r#"{"class":"tomoyo","title":"Tomoyo"}"#).is_none());
-
-        let sw = parse_sway_focused_node_json(
-            r#"{"nodes":[{"focused":false,"nodes":[{"focused":true,"app_id":"org.kde.dolphin","name":"Downloads"}]}]}"#,
-        )
-        .unwrap();
-        assert_eq!(sw.app, "org.kde.dolphin");
-        assert_eq!(sw.title, "Downloads");
     }
 }

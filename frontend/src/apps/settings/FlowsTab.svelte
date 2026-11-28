@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { FileCode, Keyboard, Plus, Trash2, Workflow } from '@lucide/svelte';
+  import Icon from '../../lib/ui/Icon.svelte';
   import { postHost } from '../../lib/ipc';
   import { tr, type Lang } from '../../lib/i18n';
   import type { SelectOption, SnippetEntry, WorkflowDef, WorkflowStep } from '../../lib/types';
@@ -179,7 +179,7 @@
     </div>
     {#if flowsPath}
       <Button variant="secondary" size="sm" onclick={() => postHost({ cmd: 'open_path', path: flowsPath })}>
-        <FileCode size={13} />
+        <Icon name="FileCode" size={13} />
         flows.toml
       </Button>
     {/if}
@@ -196,7 +196,7 @@
         <div class="flow-row {f.enabled ? '' : 'is-off'}">
           <div class="flow-main">
             <div class="flow-top">
-              <Workflow size={14} class="flow-ico" />
+              <Icon name="Workflow" size={14} class="flow-ico" />
               <span class="t-label">{f.name}</span>
               {#if f.keyword}<span class="t-pill">{f.keyword}</span>{/if}
               <button
@@ -205,7 +205,7 @@
                 data-flow-hk={f.id}
                 onclick={() => (hkEditId = editingHk ? null : f.id)}
               >
-                <Keyboard size={11} />
+                <Icon name="Keyboard" size={11} />
                 <span>{f.hotkey || (isEn ? 'Bind Hotkey' : '绑定全局热键')}</span>
               </button>
             </div>
@@ -222,7 +222,7 @@
             <button type="button" class="hk-pill" onclick={() => editFlow(f)}>{isEn ? 'Edit' : '编辑'}</button>
             <Switch checked={f.enabled} ariaLabel={f.name} onchange={(v) => toggleEnabled(i, v)} />
             <Button variant="ghost" size="sm" onclick={() => removeFlow(i)}>
-              <Trash2 size={13} />
+              <Icon name="Trash2" size={13} />
             </Button>
           </div>
         </div>
@@ -292,7 +292,7 @@
           <button type="button" class="hk-pill" disabled={idx === 0} onclick={() => moveDraftStep(idx, -1)}>↑</button>
           <button type="button" class="hk-pill" disabled={idx === draftSteps.length - 1} onclick={() => moveDraftStep(idx, 1)}>↓</button>
           <Button variant="ghost" size="sm" onclick={() => removeDraftStep(idx)}>
-            <Trash2 size={12} />
+            <Icon name="Trash2" size={12} />
           </Button>
         {/if}
       </div>
@@ -301,11 +301,11 @@
 
   <div class="creator-foot">
     <Button variant="secondary" size="sm" onclick={addDraftStep}>
-      <Plus size={13} />
+      <Icon name="Plus" size={13} />
       {isEn ? 'Add Step' : '追加步骤'}
     </Button>
     <Button variant="primary" size="sm" class="btn-add-flow" disabled={!draftName.trim()} onclick={createFlow}>
-      <Plus size={13} />
+      <Icon name="Plus" size={13} />
       {isEn ? 'Save Workflow' : '保存并热重载'}
     </Button>
   </div>

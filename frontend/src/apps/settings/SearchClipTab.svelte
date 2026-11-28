@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { FolderOpen, FolderPlus, Trash2 } from '@lucide/svelte';
+  import Icon from '../../lib/ui/Icon.svelte';
   import { postHost } from '../../lib/ipc';
   import { tr, type Lang } from '../../lib/i18n';
   import type { CustomFilterTab, TomoyoConfig } from '../../lib/types';
@@ -83,7 +83,7 @@
         <div class="t-desc">{tr(lang, 'desc_apps_dirs')}</div>
       </div>
       <Button variant="secondary" onclick={() => postHost({ cmd: 'pick_folder' })}>
-        <FolderPlus size={14} />
+        <Icon name="FolderPlus" size={14} />
         {tr(lang, 'btn_browse_dir')}
       </Button>
     </div>
@@ -94,10 +94,10 @@
       <div class="dir-list">
         {#each cfg.apps.extra_dirs as dir, idx}
           <div class="dir-item">
-            <FolderOpen size={14} class="dir-ico" />
+            <Icon name="FolderOpen" size={14} class="dir-ico" />
             <span class="dir-txt" title={dir}>{dir}</span>
             <Button variant="danger" size="sm" onclick={() => removeDir(idx)}>
-              <Trash2 size={13} />
+              <Icon name="Trash2" size={13} />
               {tr(lang, 'del')}
             </Button>
           </div>

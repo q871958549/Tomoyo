@@ -12,20 +12,28 @@ const OFFICIAL_BUNDLED_DIRS: &[&str] = &[
     "official-capture",
     "official-clipboard",
     "official-devtools-wasm",
+    "official-regex-wasm",
+    "official-winlayout",
+    "official-ai",
 ];
 
+fn normalize_cmp_path(p: &Path) -> String {
+    let s = p.to_string_lossy().to_ascii_lowercase();
+    s.strip_prefix("\\\\?\\").unwrap_or(&s).to_string()
+}
+
 pub(crate) fn is_bundled_plugin_dir(dir: &Path) -> bool {
-    let dir_str = dir.to_string_lossy().to_ascii_lowercase();
+    let dir_str = normalize_cmp_path(dir);
     if let Ok(exe) = std::env::current_exe()
         && let Some(parent) = exe.parent()
     {
-        let bundled = parent.join("plugins").to_string_lossy().to_ascii_lowercase();
+        let bundled = normalize_cmp_path(&parent.join("plugins"));
         if dir_str.starts_with(&bundled) {
             return true;
         }
     }
     if let Ok(cwd) = std::env::current_dir() {
-        let local_plugins = cwd.join("plugins").to_string_lossy().to_ascii_lowercase();
+        let local_plugins = normalize_cmp_path(&cwd.join("plugins"));
         if dir_str.starts_with(&local_plugins) {
             return true;
         }
@@ -38,12 +46,9 @@ pub(crate) fn is_bundled_plugin_dir(dir: &Path) -> bool {
     }
     // Linux XDG installs place official Suite plugins in `$XDG_DATA_HOME/tomoyo/plugins/official-*`
     // while keeping third-party plugins in the same root untrusted by default.
-    let data_plugins = tomoyo_core::data_dir()
-        .join("plugins")
-        .to_string_lossy()
-        .to_ascii_lowercase();
+    let data_plugins = normalize_cmp_path(&tomoyo_core::data_dir().join("plugins"));
     if let (Some(parent), Some(leaf)) = (dir.parent(), dir.file_name().and_then(|s| s.to_str()))
-        && parent.to_string_lossy().to_ascii_lowercase() == data_plugins
+        && normalize_cmp_path(parent) == data_plugins
         && OFFICIAL_BUNDLED_DIRS.contains(&leaf.to_ascii_lowercase().as_str())
     {
         return true;
@@ -166,7 +171,10 @@ mod tests {
         let plugins_root = tomoyo_core::data_dir().join("plugins");
         assert!(is_bundled_plugin_dir(&plugins_root.join("official-clipboard")));
         assert!(is_bundled_plugin_dir(&plugins_root.join("official-capture")));
+        assert!(is_bundled_plugin_dir(&plugins_root.join("official-ai")));
         assert!(is_bundled_plugin_dir(&plugins_root.join("builtin-ocr")));
+        let verbatim = Path::new(r"\\?\C:\Windows\Temp\plugins").join("official-ai");
+        assert_eq!(normalize_cmp_path(&verbatim), r"c:\windows\temp\plugins\official-ai");
         assert!(!is_bundled_plugin_dir(&plugins_root.join("com.thirdparty.evil")));
         assert!(!is_bundled_plugin_dir(&plugins_root.join("official-fake-thirdparty")));
     }

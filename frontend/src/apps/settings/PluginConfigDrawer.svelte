@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { AppWindow, ExternalLink, FolderOpen, KeyRound, Keyboard, SlidersHorizontal, Trash2, Zap } from '@lucide/svelte';
+  import Icon from '../../lib/ui/Icon.svelte';
   import { postHost } from '../../lib/ipc';
   import type { PluginEntry, PluginHotkeyDecl, PluginSettingField, SelectOption, TomoyoConfig } from '../../lib/types';
   import type { Lang } from '../../lib/i18n';
@@ -105,7 +105,7 @@
   {#if plugin.has_ui}
     <div class="v3-ui-launch">
       <Button variant="secondary" size="sm" onclick={() => postHost({ cmd: 'open_plugin_ui', plugin_id: plugin.id, query: '' })}>
-        <ExternalLink size={12} />
+        <Icon name="ExternalLink" size={12} />
         {isEn ? 'Open Plugin Window' : '打开插件工作台'}
       </Button>
     </div>
@@ -113,7 +113,7 @@
 
   <div class="v2-sec">
     <div class="v2-sec-title">
-      <AppWindow size={13} />
+      <Icon name="AppWindow" size={13} />
       <span>{isEn ? 'Presentation Mode (Inline vs Independent Window)' : '窗口呈现形式（搜索内嵌预览 vs 独立窗口分离）'}</span>
     </div>
     <div class="v2-row" style="border-top:0;padding-top:2px">
@@ -136,7 +136,7 @@
   {#if hotkeys.length > 0}
     <div class="v2-sec">
       <div class="v2-sec-title">
-        <Keyboard size={13} />
+        <Icon name="Keyboard" size={13} />
         <span>{isEn ? 'Declarative Global Hotkeys (Governed by Tomoyo)' : '声明式全局热键（由 Tomoyo 内核统一治理与避让）'}</span>
       </div>
       {#each hotkeys as hk}
@@ -169,7 +169,7 @@
   {#if visibleFields.length > 0}
     <div class="v2-sec">
       <div class="v2-sec-title">
-        <SlidersHorizontal size={13} />
+        <Icon name="SlidersHorizontal" size={13} />
         <span>{isEn ? 'Plugin Parameters (Protocol v3 Declarative Schema)' : '插件运行参数（Protocol v3 声明式 Schema 自动生成）'}</span>
       </div>
       {#each visibleFields as f, idx}
@@ -185,7 +185,7 @@
               <span class="v2-lbl">{f.label}</span>
               {#if f.type === 'secret'}
                 <span class="t-pill {secretConfigured ? 'is-ok' : ''}">
-                  <KeyRound size={10} />
+                  <Icon name="KeyRound" size={10} />
                   {secretConfigured ? (isEn ? 'Encrypted' : '已加密保存') : (isEn ? 'Not set' : '未配置')}
                 </span>
               {/if}
@@ -221,7 +221,7 @@
                 </div>
                 <Button variant="primary" size="sm" onclick={() => saveSecretField(f.key)}>{isEn ? 'Save' : '加密保存'}</Button>
                 {#if secretConfigured}
-                  <Button variant="secondary" size="sm" onclick={() => clearSecretField(f.key)} title={isEn ? 'Clear secret' : '清除密钥'}><Trash2 size={12} /></Button>
+                  <Button variant="secondary" size="sm" onclick={() => clearSecretField(f.key)} title={isEn ? 'Clear secret' : '清除密钥'}><Icon name="Trash2" size={12} /></Button>
                 {/if}
               </div>
             {:else if f.type === 'dir' || f.type === 'file'}
@@ -234,7 +234,7 @@
                   size="sm"
                   onclick={() => postHost({ cmd: 'pick_plugin_path', plugin_id: pidLow, key: f.key, kind: f.type })}
                 >
-                  <FolderOpen size={12} />
+                  <Icon name="FolderOpen" size={12} />
                   {f.type === 'file' ? (isEn ? 'File…' : '选文件') : (isEn ? 'Dir…' : '选目录')}
                 </Button>
               </div>
@@ -251,7 +251,7 @@
 
   {#if events.length > 0 || plugin.has_ui || (plugin.tray_actions_count || 0) > 0 || (plugin.file_actions_count || 0) > 0}
     <div class="v2-events">
-      <Zap size={12} />
+      <Icon name="Zap" size={12} />
       <span>{isEn ? 'Capabilities:' : '扩展钩子：'}</span>
       {#if plugin.has_ui}<span class="t-pill">Hybrid UI</span>{/if}
       {#if (plugin.tray_actions_count || 0) > 0}<span class="t-pill">{isEn ? `${plugin.tray_actions_count} tray` : `${plugin.tray_actions_count} 项托盘`}</span>{/if}

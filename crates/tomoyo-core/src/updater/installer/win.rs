@@ -22,7 +22,7 @@ const COMMON_PS1_PRELUDE: &str = r#"function Write-UpdateLog([string]$Msg) {
 }
 Write-UpdateLog "Updater helper started (PID=$PID)"
 Start-Sleep -Milliseconds 500
-$targets = @('tomoyo-webview-host','tomoyo','tomoyo-capture','tomoyo-plugin-ocr','tomoyo-plugin-notes','tomoyo-plugin-md-editor','tomoyo-plugin-translate','tomoyo-plugin-capture','tomoyo-plugin-clipboard','tomoyo-plugin-hello','tomoyo-cli')
+$targets = @('tomoyo-webview-host','tomoyo','tomoyo-capture','tomoyo-plugin-ocr','tomoyo-plugin-notes','tomoyo-plugin-md-editor','tomoyo-plugin-translate','tomoyo-plugin-capture','tomoyo-plugin-clipboard','tomoyo-plugin-winlayout','tomoyo-plugin-ai','tomoyo-plugin-hello','tomoyo-cli')
 foreach ($name in $targets) {
   $waitSec = if ($name -eq 'tomoyo') { 4.0 } else { 2.0 }
   $deadline = (Get-Date).AddSeconds($waitSec)

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import { AlertTriangle, CheckCircle2, Keyboard, X, Zap } from '@lucide/svelte';
+  import Icon from './Icon.svelte';
   import { buildComboFromEvent } from '../hotkeys';
   import { postHost, subscribeHost } from '../ipc';
   import type { HotkeySlotStatus, SelectOption } from '../types';
@@ -149,7 +149,7 @@
           <span class="t-hk-prompt">{promptMsg}</span>
         </span>
       {:else}
-        <span class="t-hk-ico" aria-hidden="true"><Keyboard size={13} /></span>
+        <span class="t-hk-ico" aria-hidden="true"><Icon name="Keyboard" size={13} /></span>
         {#if parts.length > 0}
           <span class="t-hk-keys">
             {#each parts as p, idx}
@@ -169,7 +169,7 @@
           title={disabledLabel}
           onclick={(e) => { e.stopPropagation(); onchange(''); }}
         >
-          <X size={12} />
+          <Icon name="X" size={12} />
         </button>
       {/if}
     </div>
@@ -187,7 +187,7 @@
   {#if showConflict}
     <div class="t-hk-status-line">
       <div class="t-hk-badge is-conflict" title={status?.reason || conflictLabel}>
-        <AlertTriangle size={12} />
+        <Icon name="AlertTriangle" size={12} />
         <span>{status?.reason || conflictLabel}</span>
       </div>
       {#if onJumpDoctor}
@@ -196,12 +196,12 @@
     </div>
   {:else if showOverridden}
     <div class="t-hk-badge is-override" title={status?.reason || ''}>
-      <Zap size={12} />
+      <Icon name="Zap" size={12} />
       <span>高优先级接管</span>
     </div>
   {:else if showOk}
     <div class="t-hk-badge is-ok">
-      <CheckCircle2 size={12} />
+      <Icon name="CheckCircle2" size={12} />
       <span>{okLabel}</span>
     </div>
   {/if}

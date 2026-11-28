@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Crosshair, FolderOpen, RefreshCw } from '@lucide/svelte';
+  import Icon from '../../lib/ui/Icon.svelte';
   import { postHost } from '../../lib/ipc';
   import { tr, type Lang } from '../../lib/i18n';
   import type {
@@ -98,7 +98,7 @@
     <p class="tab-lead">{tr(lang, 'lead_hotkeys')}</p>
   </div>
   <Button variant="primary" disabled={auditing} onclick={onRunAudit}>
-    <RefreshCw size={13} />
+    <Icon name="RefreshCw" size={13} />
     {auditing ? (isEn ? 'Scanning…' : '正在探测…') : (isEn ? 'Scan Now' : '重新扫描热键')}
   </Button>
 </div>
@@ -181,7 +181,7 @@
       </div>
       {#if probeResult.found && probeResult.exe_path}
         <Button variant="secondary" size="sm" onclick={() => postHost({ cmd: 'reveal_path', path: probeResult.exe_path })}>
-          <FolderOpen size={13} />
+          <Icon name="FolderOpen" size={13} />
           {isEn ? 'Locate Exe' : '定位程序目录'}
         </Button>
       {/if}
@@ -263,7 +263,7 @@
           <div class="mat-act">
             {#if item.status === 'conflict' || item.status === 'occupied_external' || item.status === 'overridden'}
               <Button variant="ghost" size="sm" disabled={!!probingSpec} onclick={() => onProbe(item.spec)}>
-                <Crosshair size={12} />
+                <Icon name="Crosshair" size={12} />
                 {probingSpec === item.spec ? '…' : (isEn ? 'Probe' : '探测')}
               </Button>
             {/if}
