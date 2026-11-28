@@ -1,6 +1,6 @@
 pkgbase = tomoyo-launcher
 	pkgdesc = Tomoyo Launcher — ultra-low-memory native Rust desktop launcher, clipboard manager, screenshot, OCR & translator
-	pkgver = 2.6.0
+	pkgver = 3.2.0
 	pkgrel = 1
 	url = https://github.com/q871958549/Tomoyo
 	arch = x86_64
@@ -40,7 +40,7 @@ pkgbase = tomoyo-launcher
 	optdepends = kdialog: native KDE folder & confirmation dialogs
 	provides = tomoyo
 	conflicts = tomoyo
-	source = Tomoyo-2.6.0.tar.gz::https://github.com/q871958549/Tomoyo/archive/refs/tags/v2.6.0.tar.gz
+	source = Tomoyo-3.2.0.tar.gz::https://github.com/q871958549/Tomoyo/archive/refs/tags/v3.2.0.tar.gz
 	sha256sums = f6e03195f8da2012e81a20d79b7f5824513b9142aa296c679841b67afe3dfa07
 
 pkgname = tomoyo-launcher

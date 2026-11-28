@@ -1,6 +1,9 @@
 //! macOS native backend adapter (`.app` bundle discovery, Spotlight `mdfind`,
 //! `pbcopy`/`pbpaste`, Finder reveal & LaunchAgent `.plist` autostart generator).
 
+pub mod panel;
+pub use panel::*;
+
 use std::path::Path;
 use tomoyo_ui_shared::{DiscoveredDesktopApp, PlatformBackend};
 

@@ -410,7 +410,7 @@ jobs:
             New-Item -ItemType Directory -Force -Path "$stage/registry/shards" | Out-Null
             Copy-Item registry/shards/*.json "$stage/registry/shards/" -Force
           }
-          foreach ($p in @("example-hello", "example-python", "example-wasm", "example-webview-json", "builtin-ocr", "official-notes", "official-md-editor", "official-translate", "official-capture", "official-clipboard", "official-devtools-wasm", "official-regex-wasm", "official-winlayout")) {
+          foreach ($p in @("example-hello", "example-python", "example-wasm", "example-webview-json", "builtin-ocr", "official-notes", "official-md-editor", "official-translate", "official-capture", "official-clipboard", "official-devtools-wasm", "official-regex-wasm", "official-winlayout", "official-ai")) {
             New-Item -ItemType Directory -Force -Path "$stage/plugins/$p" | Out-Null
             Get-ChildItem "plugins/$p" -Exclude "target","__pycache__" | Copy-Item -Destination "$stage/plugins/$p" -Recurse -Force
           }

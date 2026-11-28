@@ -26,6 +26,7 @@ fn compile_linux_shell(out_dir: &Path) {
     println!("cargo:rerun-if-changed=src/linux/tag_dialog.c");
     println!("cargo:rerun-if-changed=src/linux/pango_draw.c");
     println!("cargo:rerun-if-changed=src/linux/kga_x11.c");
+    println!("cargo:rerun-if-changed=src/linux/portal_hotkeys.c");
     println!("cargo:rerun-if-changed=src/linux/kwin_pos.c");
     println!("cargo:rerun-if-changed=src/linux/wl_clip.c");
     println!("cargo:rerun-if-changed=src/linux/super_panel.c");
@@ -72,6 +73,7 @@ fn compile_linux_shell(out_dir: &Path) {
         ("src/linux/tag_dialog.c", "linux_app_tagdlg.o"),
         ("src/linux/pango_draw.c", "linux_app_pango.o"),
         ("src/linux/kga_x11.c", "linux_app_kga.o"),
+        ("src/linux/portal_hotkeys.c", "linux_app_portal_hk.o"),
         ("src/linux/kwin_pos.c", "linux_app_kwinpos.o"),
         ("src/linux/wl_clip.c", "linux_app_wlclip.o"),
         ("src/linux/super_panel.c", "linux_app_superpanel.o"),

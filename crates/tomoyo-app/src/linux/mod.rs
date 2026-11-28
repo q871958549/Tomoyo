@@ -2,6 +2,7 @@
 
 mod hotkeys;
 mod ipc;
+mod portal_hotkeys;
 mod render_pango;
 mod render_sidebar;
 mod scrollbar_ctrl;

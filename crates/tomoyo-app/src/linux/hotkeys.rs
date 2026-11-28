@@ -1,11 +1,13 @@
 //! Linux global hotkey orchestration via KDE `org.kde.kglobalaccel` D-Bus + health tracking.
 
 use crate::linux::ipc::schedule_on_ui;
+use crate::linux::portal_hotkeys::{
+    kga_service_available, spec_to_portal_trigger, spec_to_qt_key, PortalHotkeyHandle, PortalSlot,
+};
 use std::ffi::{c_char, c_int, c_void, CStr, CString};
 use std::sync::{Arc, Mutex};
 use tomoyo_core::{
-    load_or_init_flows, parse_hotkey, save_hotkey_health, HotkeyHealthReport, HotkeySlotStatus,
-    TomoyoConfig,
+    load_or_init_flows, save_hotkey_health, HotkeyHealthReport, HotkeySlotStatus, TomoyoConfig,
 };
 use tomoyo_plugin_host::{ActivePluginHotkey, PluginHost};
 
@@ -38,6 +40,7 @@ type FireHandler = Arc<Mutex<Option<Box<dyn Fn(HotkeyAction) + Send + Sync>>>>;
 
 pub struct HotkeyManager {
     kga: *mut c_void,
+    portal: Option<PortalHotkeyHandle>,
     registered_ids: Vec<String>,
     slots: Arc<Mutex<Vec<(String, HotkeyAction)>>>,
     on_fire: FireHandler,
@@ -79,9 +82,17 @@ impl HotkeyManager {
         let on_fire: FireHandler = Arc::new(Mutex::new(None));
         let box_ctx = Box::new((Arc::clone(&slots), Arc::clone(&on_fire)));
         let ctx_ptr = Box::into_raw(box_ctx);
-        let kga = unsafe { tomoyo_kga_connect(on_kga_fired, ctx_ptr.cast()) };
+        let (kga, portal) = if kga_service_available() {
+            (unsafe { tomoyo_kga_connect(on_kga_fired, ctx_ptr.cast()) }, None)
+        } else {
+            (
+                std::ptr::null_mut(),
+                PortalHotkeyHandle::connect(on_kga_fired, ctx_ptr.cast()),
+            )
+        };
         Self {
             kga,
+            portal,
             registered_ids: Vec::new(),
             slots,
             on_fire,
@@ -96,6 +107,7 @@ impl HotkeyManager {
     pub fn new_inactive() -> Self {
         Self {
             kga: std::ptr::null_mut(),
+            portal: None,
             registered_ids: Vec::new(),
             slots: Arc::new(Mutex::new(Vec::new())),
             on_fire: Arc::new(Mutex::new(None)),
@@ -197,6 +209,12 @@ impl HotkeyManager {
                 .unwrap_or(0),
             ..Default::default()
         };
+
+        if self.kga.is_null() && self.portal.is_some() {
+            self.register_via_portal(cfg, plugin_host, &mut health);
+            save_hotkey_health(&health);
+            return;
+        }
 
         let ov = c_int::from(cfg.override_conflict_hotkeys);
         let mut active_spec = cfg.hotkey.trim().to_string();
@@ -315,56 +333,101 @@ impl HotkeyManager {
             HotkeySlotStatus { spec: trimmed.into(), ok: false, reason, ..Default::default() }
         }
     }
+    fn register_via_portal(
+        &mut self,
+        cfg: &TomoyoConfig,
+        plugin_host: &PluginHost,
+        health: &mut HotkeyHealthReport,
+    ) {
+        let mut portal_slots: Vec<PortalSlot> = Vec::new();
+        let mut action_pairs: Vec<(String, HotkeyAction)> = Vec::new();
+        let mut summary: Vec<String> = Vec::new();
+        let main_spec = cfg.hotkey.trim().to_string();
+        if let Some(trig) = spec_to_portal_trigger(&main_spec) {
+            portal_slots.push(PortalSlot {
+                id: "main".into(),
+                desc: "唤出/隐藏 Tomoyo".into(),
+                trigger: trig,
+            });
+            action_pairs.push(("main".into(), HotkeyAction::ToggleMain));
+        }
+        if cfg.super_panel.enabled
+            && !cfg.super_panel.hotkey.trim().is_empty()
+            && let Some(trig) = spec_to_portal_trigger(&cfg.super_panel.hotkey)
+        {
+            portal_slots.push(PortalSlot {
+                id: "super_panel".into(),
+                desc: "Tomoyo 超级面板".into(),
+                trigger: trig,
+            });
+            action_pairs.push(("super_panel".into(), HotkeyAction::SuperPanel));
+        }
+        for (i, hk) in plugin_host.active_plugin_hotkeys(cfg).into_iter().take(16).enumerate() {
+            let id = format!("plugin_{i}");
+            let label = format!("{} ({})", hk.plugin_id, hk.hotkey_id);
+            if let Some(trig) = spec_to_portal_trigger(&hk.spec) {
+                portal_slots.push(PortalSlot { id: id.clone(), desc: label.clone(), trigger: trig });
+                action_pairs.push((id, HotkeyAction::Plugin(hk)));
+            }
+        }
+        for (i, fl) in load_or_init_flows()
+            .into_iter()
+            .filter(|f| f.enabled && !f.hotkey.trim().is_empty())
+            .take(16)
+            .enumerate()
+        {
+            let id = format!("flow_{i}");
+            if let Some(trig) = spec_to_portal_trigger(&fl.hotkey) {
+                portal_slots.push(PortalSlot {
+                    id: id.clone(),
+                    desc: format!("工作流: {}", fl.name),
+                    trigger: trig,
+                });
+                action_pairs.push((id, HotkeyAction::Flow(fl.id)));
+            }
+        }
+        let bound = self.portal.as_ref().is_some_and(|p| p.bind(&portal_slots));
+        if bound && let Ok(mut list) = self.slots.lock() {
+            for (id, act) in action_pairs {
+                self.registered_ids.push(id.clone());
+                list.push((id, act));
+            }
+        }
+        for slot in &portal_slots {
+            summary.push(format!("{}={}({})", slot.id, slot.trigger, if bound { "ok" } else { "fail" }));
+        }
+        self.active_label = main_spec.clone();
+        health.main = HotkeySlotStatus {
+            spec: main_spec.clone(),
+            active: if bound { main_spec } else { String::new() },
+            ok: bound,
+            reason: if bound {
+                "已通过 XDG Wayland GlobalShortcuts Portal 绑定".into()
+            } else {
+                "XDG GlobalShortcuts Portal 绑定失败".into()
+            },
+            ..Default::default()
+        };
+        health.clipboard = HotkeySlotStatus { disabled: true, ..Default::default() };
+        health.translate = HotkeySlotStatus { disabled: true, ..Default::default() };
+        health.capture = HotkeySlotStatus { disabled: true, ..Default::default() };
+        health.pin = HotkeySlotStatus { disabled: true, ..Default::default() };
+        health.ocr = HotkeySlotStatus { disabled: true, ..Default::default() };
+        health.record = HotkeySlotStatus { disabled: true, ..Default::default() };
+        self.conflict_msg = (!bound).then(|| health.main.reason.clone());
+        tracing::info!("Linux XDG GlobalShortcuts Portal synced: {}", summary.join(", "));
+    }
 }
 
 impl Drop for HotkeyManager {
     fn drop(&mut self) {
         self.unregister_all();
+        self.portal = None;
         if !self.kga.is_null() {
             unsafe { tomoyo_kga_destroy(self.kga); }
             self.kga = std::ptr::null_mut();
         }
     }
-}
-
-fn spec_to_qt_key(spec: &str) -> Option<i32> {
-    let p = parse_hotkey(spec)?;
-    let mut qt: i32 = 0;
-    if (p.modifiers & 0x0004) != 0 { qt |= 0x0200_0000; }
-    if (p.modifiers & 0x0002) != 0 { qt |= 0x0400_0000; }
-    if (p.modifiers & 0x0001) != 0 { qt |= 0x0800_0000; }
-    if (p.modifiers & 0x0008) != 0 { qt |= 0x1000_0000; }
-    let key: i32 = match p.vk {
-        0x20 => 0x20,
-        0x30..=0x39 | 0x41..=0x5A => p.vk as i32,
-        0x09 => 0x0100_0001,
-        0x0D => 0x0100_0004,
-        0x2D => 0x0100_0006,
-        0x2E => 0x0100_0007,
-        0x2C => 0x0100_0009,
-        0x24 => 0x0100_0010,
-        0x23 => 0x0100_0011,
-        0x25 => 0x0100_0012,
-        0x26 => 0x0100_0013,
-        0x27 => 0x0100_0014,
-        0x28 => 0x0100_0015,
-        0x21 => 0x0100_0016,
-        0x22 => 0x0100_0017,
-        0x70..=0x7B => 0x0100_0030 + (p.vk as i32 - 0x70),
-        0xC0 => 0x60,
-        0xBD => 0x2D,
-        0xBB => 0x3D,
-        0xDB => 0x5B,
-        0xDD => 0x5D,
-        0xDC => 0x5C,
-        0xBA => 0x3B,
-        0xDE => 0x27,
-        0xBC => 0x2C,
-        0xBE => 0x2E,
-        0xBF => 0x2F,
-        _ => return None,
-    };
-    Some(qt | key)
 }
 
 #[cfg(test)]
@@ -375,6 +438,7 @@ mod tests {
     fn inactive_hotkey_manager_never_claims_kga_or_purges_on_drop() {
         let mut mgr = HotkeyManager::new_inactive();
         assert!(mgr.kga.is_null());
+        assert!(mgr.portal.is_none());
         assert!(!mgr.owns_kga_slots);
         mgr.unregister_all();
         assert!(!mgr.owns_kga_slots);

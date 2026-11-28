@@ -101,6 +101,9 @@ jobs:
           ./target/release/tomoyo-cli dev plugins/official-regex-wasm --query "/(\\w+)@([\\w.]+)/ alice@example.com" --once
           ./target/release/tomoyo-cli dev plugins/official-winlayout --query "left" --once
           ./target/release/tomoyo-cli dev plugins/official-ai --query "sum hello" --once
+          ./target/release/tomoyo-cli verify plugins/official-ai
+          ./target/release/tomoyo-cli mcp list
+          cargo package --list --allow-dirty -p tomoyo-protocol -p tomoyo-sdk -p tomoyo-wasm-sdk
 
   windows-test:
     runs-on: windows-latest
@@ -248,3 +251,26 @@ jobs:
         run: |
           cargo check --workspace
           cargo test -p tomoyo-protocol -p tomoyo-core
+
+  linux-arm64-check:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+      - name: Install native Linux ARM64 build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config \
+            libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+            libcurl4-openssl-dev libsecret-1-dev libx11-dev libxext-dev libxtst-dev libdbus-1-dev libwayland-dev libpipewire-0.3-dev
+      - name: Setup Rust toolchain (Linux ARM64)
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+      - name: Verify full workspace builds natively on Linux ARM64
+        env:
+          RUSTFLAGS: "-D warnings"
+        run: |
+          cargo check --workspace
+          cargo test -p tomoyo-protocol -p tomoyo-sdk -p tomoyo-wasm-sdk -p tomoyo-core

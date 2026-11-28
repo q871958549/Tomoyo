@@ -28,6 +28,9 @@
 
 ```text
 ┌──────────────────────────────────────────────────────────────────────────────┐
+│  v4.0.0 · [Wave 1 已完成 ✅] Wayland GlobalShortcuts Portal 回退热键通道       │
+│           Protocol v3/WASM ABI v2 冻结 · macOS NSPanel核心 · ARM64 CI & AUR  │
+├──────────────────────────────────────────────────────────────────────────────┤
 │  v3.5.0 · [已完成 ✅ · Wave 1 + Wave 2 全量交付] 本地 AI 助手 · 离线语义检索 │
 │           按需 STDIO MCP 客户端 (mcp.toml/json) · tomoyo-cli mcp & Portal探测│
 ├──────────────────────────────────────────────────────────────────────────────┤
@@ -534,9 +537,14 @@
      - **按需 STDIO JSON-RPC 2.0 MCP 客户端与 CLI 工具链（`mcp_client.rs` · `mcp` / `tomoyo-cli mcp`）**：兼容 `mcp.toml` 与 Claude `mcp.json`，支持 `initialize` → `tools/list`（5 分钟缓存）→ `tools/call` 按需拉起与清理退出，并配套 `tomoyo-cli mcp list|add|remove|inspect|call` 运维命令与 `--mock-mcp-server` 端到端握手自检；
      - **Wayland `GlobalShortcuts` Portal 预研与诊断探测（[`docs/WAYLAND_PORTAL_GLOBALSHORTCUTS.md`](WAYLAND_PORTAL_GLOBALSHORTCUTS.md) + `tomoyo-cli doctor`）**：完成 `org.freedesktop.portal.GlobalShortcuts` v1/v2 在 KDE Plasma / Hyprland / GNOME 下的交互与接入矩阵设计，并在 `tomoyo-cli doctor` 增加运行时 Portal 可用性诊断。
 4. **Stage 4 (`v4.0.0`) · 稳定协议冻结、可信分发与三平台肌肉记忆统一**：
-   - **协议冻结与开发者生态独立**：冻结长期向后兼容的 Protocol v3 与 WASM ABI，将 `tomoyo-protocol` / `tomoyo-sdk` / `tomoyo-wasm-sdk` 发布至 `crates.io`；
-   - **可信代码签名与官方包源**：对接开源代码签名（如 SignPath.io）打通已预置的 `signtool.exe` Release 自动签名消除 Windows SmartScreen 拦截，正式上架 **Winget**、**Scoop** 与 **Arch AUR**；
-   - **三平台闭环与 ARM64**：基于 `tomoyo-ui-macos` 推进 macOS 原生 `NSPanel` 外壳、`WinLayout` Hyprland/Sway 全预设对齐与 Windows/Linux ARM64 实测矩阵，实现同一套快捷键、片段与工作流在 Windows / Linux / macOS 间无缝延续。
+   - **[Wave 1 已完成 ✅] Wayland GlobalShortcuts Portal 回退、契约冻结与跨端基座拉齐**：
+     - **Linux 非 KDE Wayland 原生热键回退（`portal_hotkeys.c` + `portal_hotkeys.rs`）**：复用 `gio-2.0` GDBus 实现 `org.freedesktop.portal.GlobalShortcuts`（`CreateSession` → 异步 `BindShortcuts` → `Activated` 信号分发），`KGlobalAccel` 不可用时无缝接管 Hyprland / wlroots / GNOME Wayland 全局快捷键；
+     - **Protocol v3 & WASM ABI v2 契约冻结（[`docs/PROTOCOL_STABILITY.md`](PROTOCOL_STABILITY.md)）**：补齐 `protocol_v3_freeze` 与 `wasm_abi_v2_freeze` 黄金测试，CI 持续校验 `tomoyo-protocol` / `tomoyo-sdk` / `tomoyo-wasm-sdk` `crates.io` 打包完整性；
+     - **macOS 原生壳层几何与热键核心（`tomoyo-ui-macos/src/panel.rs`）**：实现 Cocoa `visibleFrame` 居中/防孤立边界钳制、`NSPanelStyleConfig` 与 Carbon `RegisterEventHotKey` 映射，保持三端无差异可测；
+     - **多架构与包管理器清单拉齐**：CI 新增 `linux-arm64-check`（`ubuntu-24.04-arm`）与 `official-ai` 验证，`release.yml` 补全 Windows ARM64 中的 `official-ai`，同步 [`aur-tomoyo-launcher`](../packaging/linux/aur-tomoyo-launcher/PKGBUILD) 并将 AUR `.PKGBUILD`/`.SRCINFO` 纳入 [`sync-release-manifests.mjs`](../scripts/sync-release-manifests.mjs) 自动同步；
+   - **[Wave 2 规划中] 可信代码签名、Mac 实机壳层与正式包源上架**：
+     - 对接开源代码签名（如 SignPath.io）打通已预置的 `signtool.exe` Release 自动签名消除 Windows SmartScreen 拦截，基于 `v4.0.0` 发版推进 **Winget**、**Scoop** 与 **Arch AUR** 提交上架，并将三件套 SDK 发布至 `crates.io`；
+     - 补充 Portal `ListShortcuts` 实际触发键回写、macOS AppKit `NSPanel` 二进制实机闭环及 Linux/Windows ARM64 真机验收。
 
 ---
 

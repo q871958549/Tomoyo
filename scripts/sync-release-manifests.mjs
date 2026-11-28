@@ -74,7 +74,7 @@ for (const wf of wingetFiles) {
   writeTarget(src, wf, w, true);
 }
 
-// 3. Arch Linux / AUR PKGBUILD
+// 3. Arch Linux / AUR PKGBUILDs & .SRCINFO
 const pkgbuildSrc = 'packaging/linux/PKGBUILD';
 if (fs.existsSync(pkgbuildSrc)) {
   let p = fs.readFileSync(pkgbuildSrc, 'utf8');
@@ -84,6 +84,29 @@ if (fs.existsSync(pkgbuildSrc)) {
     p = p.replace(/^sha256sums=\('[^']+'\)/m, `sha256sums=('${srcSha}')`);
   }
   writeTarget(pkgbuildSrc, 'PKGBUILD', p, false);
+}
+
+const aurPkgbuildSrc = 'packaging/linux/aur-tomoyo-launcher/PKGBUILD';
+if (fs.existsSync(aurPkgbuildSrc)) {
+  let p = fs.readFileSync(aurPkgbuildSrc, 'utf8');
+  p = p.replace(/^pkgver=.+$/m, `pkgver=${version}`);
+  p = p.replace(/^pkgrel=.+$/m, 'pkgrel=1');
+  if (srcSha) {
+    p = p.replace(/^sha256sums=\('[^']+'\)/m, `sha256sums=('${srcSha}')`);
+  }
+  writeTarget(aurPkgbuildSrc, 'PKGBUILD.aur', p, false);
+}
+
+const aurSrcinfo = 'packaging/linux/aur-tomoyo-launcher/.SRCINFO';
+if (fs.existsSync(aurSrcinfo)) {
+  let s = fs.readFileSync(aurSrcinfo, 'utf8');
+  s = s.replace(/^(\tpkgver = ).+$/m, `$1${version}`);
+  s = s.replace(/^(\tpkgrel = ).+$/m, '$11');
+  s = s.replace(/^(\tsource = )Tomoyo-[^.]+\.[^.]+\.[^.]+\.tar\.gz::(.+)\/refs\/tags\/v[^\n]+$/m, `$1Tomoyo-${version}.tar.gz::$2/refs/tags/v${version}.tar.gz`);
+  if (srcSha) {
+    s = s.replace(/^(\tsha256sums = ).+$/m, `$1${srcSha}`);
+  }
+  writeTarget(aurSrcinfo, '.SRCINFO.aur', s, false);
 }
 
 console.log(`[OK] Synced release manifests for v${version} (date=${releaseDate}, outDir=${outDir || '-'}, inPlace=${inPlace})`);
