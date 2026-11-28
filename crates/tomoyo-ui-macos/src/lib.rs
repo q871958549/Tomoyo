@@ -1,7 +1,9 @@
 //! macOS native backend adapter (`.app` bundle discovery, Spotlight `mdfind`,
 //! `pbcopy`/`pbpaste`, Finder reveal & LaunchAgent `.plist` autostart generator).
 
+pub mod bridge;
 pub mod panel;
+pub use bridge::*;
 pub use panel::*;
 
 use std::path::Path;

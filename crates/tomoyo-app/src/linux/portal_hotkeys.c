@@ -6,12 +6,17 @@
 #include <unistd.h>
 
 typedef void (*portal_fire_cb)(void *ctx, const char *shortcut_id);
+typedef void (*portal_changed_cb)(void *ctx, const char *pairs_utf8);
 
 typedef struct {
     GDBusConnection *bus;
     guint sub_id;
+    guint changed_sub_id;
+    guint bind_req_sub_id;
+    guint list_req_sub_id;
     gchar *session_handle;
     portal_fire_cb cb;
+    portal_changed_cb changed_cb;
     void *ctx;
     guint seq;
 } portal_hk_t;
@@ -63,16 +68,87 @@ static gchar *portal_sender_segment(GDBusConnection *bus) {
     return seg;
 }
 
-static void on_portal_req_response(
-    GDBusConnection *c,
-    const gchar *sender,
-    const gchar *path,
-    const gchar *iface,
-    const gchar *sig,
-    GVariant *params,
-    gpointer ud
+static void emit_shortcuts_array(portal_hk_t *p, GVariant *arr) {
+    if (!p || !p->changed_cb || !arr) return;
+    GVariantIter it;
+    g_variant_iter_init(&it, arr);
+    const gchar *sid = NULL;
+    GVariant *props = NULL;
+    GString *gs = g_string_new("");
+    while (g_variant_iter_next(&it, "(&s@a{sv})", &sid, &props)) {
+        const gchar *td = NULL;
+        if (props && g_variant_lookup(props, "trigger_description", "&s", &td) && sid && sid[0] && td && td[0]) {
+            g_string_append(gs, sid);
+            g_string_append_c(gs, '=');
+            g_string_append(gs, td);
+            g_string_append_c(gs, '\n');
+        }
+        if (props) g_variant_unref(props);
+    }
+    if (gs->len > 0) {
+        p->changed_cb(p->ctx, gs->str);
+    }
+    g_string_free(gs, TRUE);
+}
+
+static void handle_shortcuts_response(portal_hk_t *p, guint *sub_slot, GVariant *params) {
+    if (!p || !params) return;
+    guint32 code = 2;
+    GVariant *dict = NULL;
+    g_variant_get(params, "(u@a{sv})", &code, &dict);
+    if (code == 0 && dict) {
+        GVariant *sc = g_variant_lookup_value(dict, "shortcuts", G_VARIANT_TYPE("a(sa{sv})"));
+        if (sc) {
+            emit_shortcuts_array(p, sc);
+            g_variant_unref(sc);
+        }
+    }
+    if (dict) g_variant_unref(dict);
+    if (sub_slot && *sub_slot && p->bus) {
+        g_dbus_connection_signal_unsubscribe(p->bus, *sub_slot);
+        *sub_slot = 0;
+    }
+}
+
+static void on_bind_req_response(
+    GDBusConnection *c, const gchar *s, const gchar *path, const gchar *iface, const gchar *sig,
+    GVariant *params, gpointer ud
 ) {
-    (void)c; (void)sender; (void)path; (void)iface; (void)sig;
+    (void)c; (void)s; (void)path; (void)iface; (void)sig;
+    portal_hk_t *p = (portal_hk_t *)ud;
+    if (p) handle_shortcuts_response(p, &p->bind_req_sub_id, params);
+}
+
+static void on_list_req_response(
+    GDBusConnection *c, const gchar *s, const gchar *path, const gchar *iface, const gchar *sig,
+    GVariant *params, gpointer ud
+) {
+    (void)c; (void)s; (void)path; (void)iface; (void)sig;
+    portal_hk_t *p = (portal_hk_t *)ud;
+    if (p) handle_shortcuts_response(p, &p->list_req_sub_id, params);
+}
+
+static void on_portal_shortcuts_changed(
+    GDBusConnection *c, const gchar *s, const gchar *path, const gchar *iface, const gchar *sig,
+    GVariant *params, gpointer ud
+) {
+    (void)c; (void)s; (void)path; (void)iface; (void)sig;
+    portal_hk_t *p = (portal_hk_t *)ud;
+    if (!p || !p->session_handle || !params) return;
+    const gchar *sh = NULL;
+    GVariant *arr = NULL;
+    g_variant_get(params, "(&o@a(sa{sv}))", &sh, &arr);
+    if (sh && arr && strcmp(sh, p->session_handle) == 0) {
+        emit_shortcuts_array(p, arr);
+    }
+    if (arr) g_variant_unref(arr);
+}
+
+static void on_portal_req_response(
+    GDBusConnection *c, const gchar *s, const gchar *path, const gchar *iface, const gchar *sig,
+    GVariant *params, gpointer ud
+) {
+    (void)c; (void)s; (void)path; (void)iface; (void)sig;
     portal_req_t *req = (portal_req_t *)ud;
     if (!req || !params) return;
     guint32 code = 2;
@@ -95,15 +171,10 @@ static void on_portal_req_response(
 }
 
 static void on_portal_activated(
-    GDBusConnection *c,
-    const gchar *sender,
-    const gchar *path,
-    const gchar *iface,
-    const gchar *sig,
-    GVariant *params,
-    gpointer ud
+    GDBusConnection *c, const gchar *s, const gchar *path, const gchar *iface, const gchar *sig,
+    GVariant *params, gpointer ud
 ) {
-    (void)c; (void)sender; (void)path; (void)iface; (void)sig;
+    (void)c; (void)s; (void)path; (void)iface; (void)sig;
     portal_hk_t *p = (portal_hk_t *)ud;
     if (!p || !p->cb || !p->session_handle || !params) return;
     const gchar *sh = NULL;
@@ -119,17 +190,10 @@ static void on_portal_activated(
 
 static guint32 query_portal_version(GDBusConnection *bus) {
     GVariant *res = g_dbus_connection_call_sync(
-        bus,
-        "org.freedesktop.portal.Desktop",
-        "/org/freedesktop/portal/desktop",
-        "org.freedesktop.DBus.Properties",
-        "Get",
+        bus, "org.freedesktop.portal.Desktop", "/org/freedesktop/portal/desktop",
+        "org.freedesktop.DBus.Properties", "Get",
         g_variant_new("(ss)", "org.freedesktop.portal.GlobalShortcuts", "version"),
-        G_VARIANT_TYPE("(v)"),
-        G_DBUS_CALL_FLAGS_NONE,
-        350,
-        NULL,
-        NULL
+        G_VARIANT_TYPE("(v)"), G_DBUS_CALL_FLAGS_NONE, 350, NULL, NULL
     );
     if (!res) return 0;
     GVariant *inner = NULL;
@@ -143,7 +207,7 @@ static guint32 query_portal_version(GDBusConnection *bus) {
     return ver;
 }
 
-void *tomoyo_portal_hk_connect(portal_fire_cb cb, void *ctx) {
+void *tomoyo_portal_hk_connect(portal_fire_cb cb, portal_changed_cb changed_cb, void *ctx) {
     GError *err = NULL;
     GDBusConnection *bus = g_bus_get_sync(G_BUS_TYPE_SESSION, NULL, &err);
     if (!bus) {
@@ -164,16 +228,8 @@ void *tomoyo_portal_hk_connect(portal_fire_cb cb, void *ctx) {
 
     portal_req_t req = { FALSE, 2, NULL };
     guint rsub = g_dbus_connection_signal_subscribe(
-        bus,
-        "org.freedesktop.portal.Desktop",
-        "org.freedesktop.portal.Request",
-        "Response",
-        req_path,
-        NULL,
-        G_DBUS_SIGNAL_FLAGS_NONE,
-        on_portal_req_response,
-        &req,
-        NULL
+        bus, "org.freedesktop.portal.Desktop", "org.freedesktop.portal.Request", "Response",
+        req_path, NULL, G_DBUS_SIGNAL_FLAGS_NONE, on_portal_req_response, &req, NULL
     );
 
     GVariantBuilder opts;
@@ -182,17 +238,10 @@ void *tomoyo_portal_hk_connect(portal_fire_cb cb, void *ctx) {
     g_variant_builder_add(&opts, "{sv}", "session_handle_token", g_variant_new_string(stok));
 
     GVariant *call_res = g_dbus_connection_call_sync(
-        bus,
-        "org.freedesktop.portal.Desktop",
-        "/org/freedesktop/portal/desktop",
-        "org.freedesktop.portal.GlobalShortcuts",
-        "CreateSession",
-        g_variant_new("(a{sv})", &opts),
-        G_VARIANT_TYPE("(o)"),
-        G_DBUS_CALL_FLAGS_NONE,
-        400,
-        NULL,
-        NULL
+        bus, "org.freedesktop.portal.Desktop", "/org/freedesktop/portal/desktop",
+        "org.freedesktop.portal.GlobalShortcuts", "CreateSession",
+        g_variant_new("(a{sv})", &opts), G_VARIANT_TYPE("(o)"),
+        G_DBUS_CALL_FLAGS_NONE, 400, NULL, NULL
     );
     if (call_res) {
         const gchar *returned_path = NULL;
@@ -200,16 +249,8 @@ void *tomoyo_portal_hk_connect(portal_fire_cb cb, void *ctx) {
         if (returned_path && strcmp(returned_path, req_path) != 0) {
             g_dbus_connection_signal_unsubscribe(bus, rsub);
             rsub = g_dbus_connection_signal_subscribe(
-                bus,
-                "org.freedesktop.portal.Desktop",
-                "org.freedesktop.portal.Request",
-                "Response",
-                returned_path,
-                NULL,
-                G_DBUS_SIGNAL_FLAGS_NONE,
-                on_portal_req_response,
-                &req,
-                NULL
+                bus, "org.freedesktop.portal.Desktop", "org.freedesktop.portal.Request", "Response",
+                returned_path, NULL, G_DBUS_SIGNAL_FLAGS_NONE, on_portal_req_response, &req, NULL
             );
         }
         g_variant_unref(call_res);
@@ -233,28 +274,36 @@ void *tomoyo_portal_hk_connect(portal_fire_cb cb, void *ctx) {
     p->bus = bus;
     p->session_handle = req.session_handle;
     p->cb = cb;
+    p->changed_cb = changed_cb;
     p->ctx = ctx;
     p->sub_id = g_dbus_connection_signal_subscribe(
-        bus,
-        "org.freedesktop.portal.Desktop",
-        "org.freedesktop.portal.GlobalShortcuts",
-        "Activated",
-        "/org/freedesktop/portal/desktop",
-        NULL,
-        G_DBUS_SIGNAL_FLAGS_NONE,
-        on_portal_activated,
-        p,
-        NULL
+        bus, "org.freedesktop.portal.Desktop", "org.freedesktop.portal.GlobalShortcuts", "Activated",
+        "/org/freedesktop/portal/desktop", NULL, G_DBUS_SIGNAL_FLAGS_NONE, on_portal_activated, p, NULL
+    );
+    p->changed_sub_id = g_dbus_connection_signal_subscribe(
+        bus, "org.freedesktop.portal.Desktop", "org.freedesktop.portal.GlobalShortcuts", "ShortcutsChanged",
+        "/org/freedesktop/portal/desktop", NULL, G_DBUS_SIGNAL_FLAGS_NONE, on_portal_shortcuts_changed, p, NULL
     );
     return p;
 }
 
+static void subscribe_request_slot(portal_hk_t *p, guint *slot, const gchar *tok, GDBusSignalCallback cb) {
+    if (*slot) {
+        g_dbus_connection_signal_unsubscribe(p->bus, *slot);
+        *slot = 0;
+    }
+    gchar *sender = portal_sender_segment(p->bus);
+    gchar *req_path = g_strdup_printf("/org/freedesktop/portal/desktop/request/%s/%s", sender, tok);
+    g_free(sender);
+    *slot = g_dbus_connection_signal_subscribe(
+        p->bus, "org.freedesktop.portal.Desktop", "org.freedesktop.portal.Request", "Response",
+        req_path, NULL, G_DBUS_SIGNAL_FLAGS_NONE, cb, p, NULL
+    );
+    g_free(req_path);
+}
+
 int tomoyo_portal_hk_bind(
-    void *phk,
-    const char *const *ids,
-    const char *const *descs,
-    const char *const *triggers,
-    size_t count
+    void *phk, const char *const *ids, const char *const *descs, const char *const *triggers, size_t count
 ) {
     portal_hk_t *p = (portal_hk_t *)phk;
     if (!p || !p->bus || !p->session_handle || !ids || !descs || !triggers || count == 0) {
@@ -273,24 +322,37 @@ int tomoyo_portal_hk_bind(
     }
     p->seq++;
     gchar *tok = g_strdup_printf("tomoyo_bind_%lu_%u", (unsigned long)getpid(), p->seq);
+    subscribe_request_slot(p, &p->bind_req_sub_id, tok, on_bind_req_response);
     GVariantBuilder opts;
     g_variant_builder_init(&opts, G_VARIANT_TYPE("a{sv}"));
     g_variant_builder_add(&opts, "{sv}", "handle_token", g_variant_new_string(tok));
     g_free(tok);
 
     g_dbus_connection_call(
-        p->bus,
-        "org.freedesktop.portal.Desktop",
-        "/org/freedesktop/portal/desktop",
-        "org.freedesktop.portal.GlobalShortcuts",
-        "BindShortcuts",
+        p->bus, "org.freedesktop.portal.Desktop", "/org/freedesktop/portal/desktop",
+        "org.freedesktop.portal.GlobalShortcuts", "BindShortcuts",
         g_variant_new("(oa(sa{sv})sa{sv})", p->session_handle, &list, "", &opts),
-        G_VARIANT_TYPE("(o)"),
-        G_DBUS_CALL_FLAGS_NONE,
-        5000,
-        NULL,
-        NULL,
-        NULL
+        G_VARIANT_TYPE("(o)"), G_DBUS_CALL_FLAGS_NONE, 5000, NULL, NULL, NULL
+    );
+    return 1;
+}
+
+int tomoyo_portal_hk_list(void *phk) {
+    portal_hk_t *p = (portal_hk_t *)phk;
+    if (!p || !p->bus || !p->session_handle) return 0;
+    p->seq++;
+    gchar *tok = g_strdup_printf("tomoyo_list_%lu_%u", (unsigned long)getpid(), p->seq);
+    subscribe_request_slot(p, &p->list_req_sub_id, tok, on_list_req_response);
+    GVariantBuilder opts;
+    g_variant_builder_init(&opts, G_VARIANT_TYPE("a{sv}"));
+    g_variant_builder_add(&opts, "{sv}", "handle_token", g_variant_new_string(tok));
+    g_free(tok);
+
+    g_dbus_connection_call(
+        p->bus, "org.freedesktop.portal.Desktop", "/org/freedesktop/portal/desktop",
+        "org.freedesktop.portal.GlobalShortcuts", "ListShortcuts",
+        g_variant_new("(oa{sv})", p->session_handle, &opts),
+        G_VARIANT_TYPE("(o)"), G_DBUS_CALL_FLAGS_NONE, 2000, NULL, NULL, NULL
     );
     return 1;
 }
@@ -298,22 +360,15 @@ int tomoyo_portal_hk_bind(
 void tomoyo_portal_hk_destroy(void *phk) {
     portal_hk_t *p = (portal_hk_t *)phk;
     if (!p) return;
-    if (p->bus && p->sub_id) {
-        g_dbus_connection_signal_unsubscribe(p->bus, p->sub_id);
-    }
+    if (p->bus && p->sub_id) g_dbus_connection_signal_unsubscribe(p->bus, p->sub_id);
+    if (p->bus && p->changed_sub_id) g_dbus_connection_signal_unsubscribe(p->bus, p->changed_sub_id);
+    if (p->bus && p->bind_req_sub_id) g_dbus_connection_signal_unsubscribe(p->bus, p->bind_req_sub_id);
+    if (p->bus && p->list_req_sub_id) g_dbus_connection_signal_unsubscribe(p->bus, p->list_req_sub_id);
     if (p->bus && p->session_handle) {
         GVariant *r = g_dbus_connection_call_sync(
-            p->bus,
-            "org.freedesktop.portal.Desktop",
-            p->session_handle,
-            "org.freedesktop.portal.Session",
-            "Close",
-            NULL,
-            NULL,
-            G_DBUS_CALL_FLAGS_NONE,
-            200,
-            NULL,
-            NULL
+            p->bus, "org.freedesktop.portal.Desktop", p->session_handle,
+            "org.freedesktop.portal.Session", "Close", NULL, NULL,
+            G_DBUS_CALL_FLAGS_NONE, 200, NULL, NULL
         );
         if (r) g_variant_unref(r);
     }

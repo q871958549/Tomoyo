@@ -1,0 +1,51 @@
+name: Publish SDKs to crates.io
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Verify packaging & dry-run without pushing crates to crates.io"
+        type: boolean
+        default: true
+
+jobs:
+  publish-sdks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run Protocol v3 & WASM ABI v2 freeze tests
+        env:
+          RUSTFLAGS: "-D warnings"
+        run: |
+          cargo test -p tomoyo-protocol --test protocol_v3_freeze
+          cargo test -p tomoyo-wasm-sdk --test wasm_abi_v2_freeze
+          cargo check -p tomoyo-sdk --all-targets
+
+      - name: Package & dry-run SDK crates
+        run: |
+          cargo package --locked -p tomoyo-protocol
+          cargo package --locked -p tomoyo-sdk
+          cargo package --locked -p tomoyo-wasm-sdk
+
+      - name: Publish tomoyo-protocol, tomoyo-sdk & tomoyo-wasm-sdk to crates.io
+        if: ${{ inputs.dry_run == false }}
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          if [ -z "${CARGO_REGISTRY_TOKEN}" ]; then
+            echo "CARGO_REGISTRY_TOKEN secret is required when dry_run=false" >&2
+            exit 1
+          fi
+          cargo publish --locked -p tomoyo-protocol --token "${CARGO_REGISTRY_TOKEN}"
+          echo "Waiting 20s for crates.io index propagation..."
+          sleep 20
+          cargo publish --locked -p tomoyo-sdk --token "${CARGO_REGISTRY_TOKEN}"
+          cargo publish --locked -p tomoyo-wasm-sdk --token "${CARGO_REGISTRY_TOKEN}"

@@ -6,10 +6,12 @@
 
 ## 1. SLSA 构建溯源与 SHA-256 校验（已内置）
 
-自 `v2.2.0` 起，每次 GitHub Release 由 GitHub Actions 自动产出：
+自 `v2.2.0` 起（并在 `v4.0.0` 扩展至 Linux ARM64 与 SDK 独立流水线），每次 GitHub Release 由 GitHub Actions 自动产出：
 - **Windows x64**：`Tomoyo-vX.Y.Z-windows-x64-setup.exe`（免 UAC 安装包）、`Tomoyo-vX.Y.Z-windows-x64-portable.zip`、`SHA256SUMS.txt`
 - **Windows ARM64**：`Tomoyo-vX.Y.Z-windows-arm64-portable.zip`、`SHA256SUMS-arm64.txt`
-- **GitHub Artifact Attestations（SLSA Build Provenance）**：每一份安装包与便携包均附带加密构建证明。
+- **Linux x86_64 / ARM64**：`Tomoyo-vX.Y.Z-linux-x86_64.tar.gz`、`Tomoyo-vX.Y.Z-linux-arm64.tar.gz`、Arch/AUR `PKGBUILD`/`.SRCINFO` 与 `SHA256SUMS-linux*.txt`
+- **Rust SDK crates（[`publish-sdk.yml`](../.github/workflows/publish-sdk.yml)）**：支持一键 `dry_run` 校验与按拓扑顺序发布 `tomoyo-protocol`、`tomoyo-sdk`、`tomoyo-wasm-sdk` 至 `crates.io`
+- **GitHub Artifact Attestations（SLSA Build Provenance）**：每一份安装包、便携包与 Linux/ARM64 归档均附带加密构建证明。
 
 用户可在安装前通过 GitHub CLI 一键核验二进制是否 100% 由公开源码在 GitHub Actions 官方流水线构建：
 

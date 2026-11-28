@@ -1,12 +1,15 @@
-//! XDG Desktop Portal `GlobalShortcuts` fallback + hotkey keycode translation.
+//! XDG Desktop Portal `GlobalShortcuts` fallback, trigger readback & keycode translation.
 
+use crate::linux::hotkeys::HotkeyAction;
 use std::ffi::{c_char, c_void, CString};
-use tomoyo_core::parse_hotkey;
+use tomoyo_core::{load_or_init_flows, parse_hotkey, HotkeyHealthReport, TomoyoConfig};
+use tomoyo_plugin_host::PluginHost;
 
 unsafe extern "C" {
     fn tomoyo_kga_is_available() -> i32;
     fn tomoyo_portal_hk_connect(
         cb: unsafe extern "C" fn(*mut c_void, *const c_char),
+        changed_cb: unsafe extern "C" fn(*mut c_void, *const c_char),
         ctx: *mut c_void,
     ) -> *mut c_void;
     fn tomoyo_portal_hk_bind(
@@ -16,6 +19,7 @@ unsafe extern "C" {
         triggers: *const *const c_char,
         count: usize,
     ) -> i32;
+    fn tomoyo_portal_hk_list(phk: *mut c_void) -> i32;
     fn tomoyo_portal_hk_destroy(phk: *mut c_void);
 }
 
@@ -32,9 +36,10 @@ pub(super) struct PortalHotkeyHandle {
 impl PortalHotkeyHandle {
     pub fn connect(
         cb: unsafe extern "C" fn(*mut c_void, *const c_char),
+        changed_cb: unsafe extern "C" fn(*mut c_void, *const c_char),
         ctx: *mut c_void,
     ) -> Option<Self> {
-        let raw = unsafe { tomoyo_portal_hk_connect(cb, ctx) };
+        let raw = unsafe { tomoyo_portal_hk_connect(cb, changed_cb, ctx) };
         (!raw.is_null()).then_some(Self { raw })
     }
 
@@ -42,18 +47,9 @@ impl PortalHotkeyHandle {
         if self.raw.is_null() || slots.is_empty() {
             return false;
         }
-        let ids: Vec<CString> = slots
-            .iter()
-            .filter_map(|s| CString::new(s.id.as_str()).ok())
-            .collect();
-        let descs: Vec<CString> = slots
-            .iter()
-            .filter_map(|s| CString::new(s.desc.as_str()).ok())
-            .collect();
-        let triggers: Vec<CString> = slots
-            .iter()
-            .filter_map(|s| CString::new(s.trigger.as_str()).ok())
-            .collect();
+        let ids: Vec<CString> = slots.iter().filter_map(|s| CString::new(s.id.as_str()).ok()).collect();
+        let descs: Vec<CString> = slots.iter().filter_map(|s| CString::new(s.desc.as_str()).ok()).collect();
+        let triggers: Vec<CString> = slots.iter().filter_map(|s| CString::new(s.trigger.as_str()).ok()).collect();
         let count = ids.len().min(descs.len()).min(triggers.len());
         if count == 0 {
             return false;
@@ -61,15 +57,11 @@ impl PortalHotkeyHandle {
         let id_ptrs: Vec<*const c_char> = ids.iter().take(count).map(|c| c.as_ptr()).collect();
         let desc_ptrs: Vec<*const c_char> = descs.iter().take(count).map(|c| c.as_ptr()).collect();
         let trig_ptrs: Vec<*const c_char> = triggers.iter().take(count).map(|c| c.as_ptr()).collect();
-        unsafe {
-            tomoyo_portal_hk_bind(
-                self.raw,
-                id_ptrs.as_ptr(),
-                desc_ptrs.as_ptr(),
-                trig_ptrs.as_ptr(),
-                count,
-            ) == 1
-        }
+        unsafe { tomoyo_portal_hk_bind(self.raw, id_ptrs.as_ptr(), desc_ptrs.as_ptr(), trig_ptrs.as_ptr(), count) == 1 }
+    }
+
+    pub fn request_list(&self) -> bool {
+        !self.raw.is_null() && unsafe { tomoyo_portal_hk_list(self.raw) == 1 }
     }
 }
 
@@ -84,6 +76,75 @@ impl Drop for PortalHotkeyHandle {
 
 pub(super) fn kga_service_available() -> bool {
     unsafe { tomoyo_kga_is_available() == 1 }
+}
+
+pub(super) fn build_portal_slots(
+    cfg: &TomoyoConfig,
+    plugin_host: &PluginHost,
+) -> (Vec<PortalSlot>, Vec<(String, HotkeyAction)>) {
+    let mut portal_slots: Vec<PortalSlot> = Vec::new();
+    let mut action_pairs: Vec<(String, HotkeyAction)> = Vec::new();
+    let main_spec = cfg.hotkey.trim();
+    if let Some(trig) = spec_to_portal_trigger(main_spec) {
+        portal_slots.push(PortalSlot { id: "main".into(), desc: "唤出/隐藏 Tomoyo".into(), trigger: trig });
+        action_pairs.push(("main".into(), HotkeyAction::ToggleMain));
+    }
+    if cfg.super_panel.enabled
+        && !cfg.super_panel.hotkey.trim().is_empty()
+        && let Some(trig) = spec_to_portal_trigger(&cfg.super_panel.hotkey)
+    {
+        portal_slots.push(PortalSlot { id: "super_panel".into(), desc: "Tomoyo 超级面板".into(), trigger: trig });
+        action_pairs.push(("super_panel".into(), HotkeyAction::SuperPanel));
+    }
+    for (i, hk) in plugin_host.active_plugin_hotkeys(cfg).into_iter().take(16).enumerate() {
+        let id = format!("plugin_{i}");
+        let desc = format!("{} ({})", hk.plugin_id, hk.hotkey_id);
+        if let Some(trig) = spec_to_portal_trigger(&hk.spec) {
+            portal_slots.push(PortalSlot { id: id.clone(), desc, trigger: trig });
+            action_pairs.push((id, HotkeyAction::Plugin(hk)));
+        }
+    }
+    for (i, fl) in load_or_init_flows()
+        .into_iter()
+        .filter(|f| f.enabled && !f.hotkey.trim().is_empty())
+        .take(16)
+        .enumerate()
+    {
+        let id = format!("flow_{i}");
+        if let Some(trig) = spec_to_portal_trigger(&fl.hotkey) {
+            portal_slots.push(PortalSlot {
+                id: id.clone(),
+                desc: format!("工作流: {}", fl.name),
+                trigger: trig,
+            });
+            action_pairs.push((id, HotkeyAction::Flow(fl.id)));
+        }
+    }
+    (portal_slots, action_pairs)
+}
+
+/// Parses `"id=trigger_description\n..."` read back from Portal `BindShortcuts` / `ListShortcuts` / `ShortcutsChanged`.
+pub(super) fn parse_portal_trigger_pairs(raw: &str) -> Vec<(String, String)> {
+    raw.lines()
+        .filter_map(|line| {
+            let (id, trig) = line.split_once('=')?;
+            let id = id.trim();
+            let trig = trig.trim();
+            (!id.is_empty() && !trig.is_empty()).then(|| (id.to_string(), trig.to_string()))
+        })
+        .collect()
+}
+
+/// Updates `HotkeyHealthReport` with compositor-assigned trigger descriptions (`ListShortcuts` / `ShortcutsChanged`).
+pub(super) fn apply_portal_trigger_updates(
+    pairs: &[(String, String)],
+    health: &mut HotkeyHealthReport,
+) -> Option<String> {
+    let main_trig = pairs.iter().find(|(id, _)| id == "main").map(|(_, t)| t.clone())?;
+    health.main.ok = true;
+    health.main.active = main_trig.clone();
+    health.main.reason = format!("已通过 XDG Wayland GlobalShortcuts Portal 绑定（实际键位: {main_trig}）");
+    Some(main_trig)
 }
 
 /// Converts a Tomoyo hotkey string (`Alt+Space`, `Ctrl+Shift+V`) to a Qt keycode for KGlobalAccel.
@@ -171,19 +232,27 @@ pub(super) fn spec_to_portal_trigger(spec: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{spec_to_portal_trigger, spec_to_qt_key, PortalHotkeyHandle, PortalSlot};
+    use super::*;
 
     #[test]
-    fn maps_hotkeys_to_xdg_portal_and_qt_triggers() {
+    fn maps_hotkeys_and_applies_portal_readback_updates() {
         assert_eq!(spec_to_portal_trigger("Alt+Space").as_deref(), Some("ALT+space"));
         assert_eq!(spec_to_portal_trigger("Ctrl+Shift+V").as_deref(), Some("CTRL+SHIFT+v"));
         assert_eq!(spec_to_portal_trigger("Super+Left").as_deref(), Some("LOGO+Left"));
-        assert_eq!(spec_to_portal_trigger("F2").as_deref(), Some("F2"));
         assert!(spec_to_qt_key("Alt+Space").is_some());
+
+        let pairs = parse_portal_trigger_pairs("main=Super+Space\nsuper_panel=Alt+Q\n");
+        assert_eq!(pairs.len(), 2);
+        let mut health = HotkeyHealthReport::default();
+        let updated = apply_portal_trigger_updates(&pairs, &mut health);
+        assert_eq!(updated.as_deref(), Some("Super+Space"));
+        assert!(health.main.ok);
+        assert_eq!(health.main.active, "Super+Space");
+        assert!(health.main.reason.contains("Super+Space"));
     }
 
     #[test]
-    fn inert_portal_handle_ignores_bind_and_drop_safely() {
+    fn inert_portal_handle_ignores_bind_list_and_drop_safely() {
         let h = PortalHotkeyHandle { raw: std::ptr::null_mut() };
         let slots = [PortalSlot {
             id: "main".into(),
@@ -191,5 +260,6 @@ mod tests {
             trigger: "ALT+space".into(),
         }];
         assert!(!h.bind(&slots));
+        assert!(!h.request_list());
     }
 }

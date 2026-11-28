@@ -2,7 +2,8 @@
 
 use crate::linux::ipc::schedule_on_ui;
 use crate::linux::portal_hotkeys::{
-    kga_service_available, spec_to_portal_trigger, spec_to_qt_key, PortalHotkeyHandle, PortalSlot,
+    apply_portal_trigger_updates, build_portal_slots, kga_service_available,
+    parse_portal_trigger_pairs, spec_to_qt_key, PortalHotkeyHandle,
 };
 use std::ffi::{c_char, c_int, c_void, CStr, CString};
 use std::sync::{Arc, Mutex};
@@ -37,6 +38,7 @@ pub enum HotkeyAction {
 }
 
 type FireHandler = Arc<Mutex<Option<Box<dyn Fn(HotkeyAction) + Send + Sync>>>>;
+type HotkeyCtx = (Arc<Mutex<Vec<(String, HotkeyAction)>>>, FireHandler, Arc<Mutex<HotkeyHealthReport>>);
 
 pub struct HotkeyManager {
     kga: *mut c_void,
@@ -44,6 +46,7 @@ pub struct HotkeyManager {
     registered_ids: Vec<String>,
     slots: Arc<Mutex<Vec<(String, HotkeyAction)>>>,
     on_fire: FireHandler,
+    last_health: Arc<Mutex<HotkeyHealthReport>>,
     paused: bool,
     owns_kga_slots: bool,
     pub active_label: String,
@@ -55,7 +58,7 @@ unsafe extern "C" fn on_kga_fired(ctx: *mut c_void, act_ptr: *const c_char) {
         return;
     }
     let act_id = unsafe { CStr::from_ptr(act_ptr) }.to_string_lossy().into_owned();
-    let state = unsafe { &*(ctx as *const (Arc<Mutex<Vec<(String, HotkeyAction)>>>, FireHandler)) };
+    let state = unsafe { &*(ctx as *const HotkeyCtx) };
     let action_opt = state
         .0
         .lock()
@@ -76,18 +79,37 @@ unsafe extern "C" fn on_kga_fired(ctx: *mut c_void, act_ptr: *const c_char) {
     }
 }
 
+unsafe extern "C" fn on_portal_changed(ctx: *mut c_void, pairs_ptr: *const c_char) {
+    if ctx.is_null() || pairs_ptr.is_null() {
+        return;
+    }
+    let raw = unsafe { CStr::from_ptr(pairs_ptr) }.to_string_lossy().into_owned();
+    let pairs = parse_portal_trigger_pairs(&raw);
+    if pairs.is_empty() {
+        return;
+    }
+    let state = unsafe { &*(ctx as *const HotkeyCtx) };
+    if let Ok(mut health) = state.2.lock()
+        && let Some(actual) = apply_portal_trigger_updates(&pairs, &mut health)
+    {
+        tracing::info!(main_trigger = %actual, "Wayland GlobalShortcuts Portal readback updated");
+        save_hotkey_health(&health);
+    }
+}
+
 impl HotkeyManager {
     pub fn new() -> Self {
         let slots = Arc::new(Mutex::new(Vec::new()));
         let on_fire: FireHandler = Arc::new(Mutex::new(None));
-        let box_ctx = Box::new((Arc::clone(&slots), Arc::clone(&on_fire)));
+        let last_health = Arc::new(Mutex::new(HotkeyHealthReport::default()));
+        let box_ctx = Box::new((Arc::clone(&slots), Arc::clone(&on_fire), Arc::clone(&last_health)));
         let ctx_ptr = Box::into_raw(box_ctx);
         let (kga, portal) = if kga_service_available() {
             (unsafe { tomoyo_kga_connect(on_kga_fired, ctx_ptr.cast()) }, None)
         } else {
             (
                 std::ptr::null_mut(),
-                PortalHotkeyHandle::connect(on_kga_fired, ctx_ptr.cast()),
+                PortalHotkeyHandle::connect(on_kga_fired, on_portal_changed, ctx_ptr.cast()),
             )
         };
         Self {
@@ -96,6 +118,7 @@ impl HotkeyManager {
             registered_ids: Vec::new(),
             slots,
             on_fire,
+            last_health,
             paused: false,
             owns_kga_slots: false,
             active_label: "Alt+Space".into(),
@@ -111,6 +134,7 @@ impl HotkeyManager {
             registered_ids: Vec::new(),
             slots: Arc::new(Mutex::new(Vec::new())),
             on_fire: Arc::new(Mutex::new(None)),
+            last_health: Arc::new(Mutex::new(HotkeyHealthReport::default())),
             paused: false,
             owns_kga_slots: false,
             active_label: "Alt+Space".into(),
@@ -339,63 +363,24 @@ impl HotkeyManager {
         plugin_host: &PluginHost,
         health: &mut HotkeyHealthReport,
     ) {
-        let mut portal_slots: Vec<PortalSlot> = Vec::new();
-        let mut action_pairs: Vec<(String, HotkeyAction)> = Vec::new();
-        let mut summary: Vec<String> = Vec::new();
         let main_spec = cfg.hotkey.trim().to_string();
-        if let Some(trig) = spec_to_portal_trigger(&main_spec) {
-            portal_slots.push(PortalSlot {
-                id: "main".into(),
-                desc: "唤出/隐藏 Tomoyo".into(),
-                trigger: trig,
-            });
-            action_pairs.push(("main".into(), HotkeyAction::ToggleMain));
-        }
-        if cfg.super_panel.enabled
-            && !cfg.super_panel.hotkey.trim().is_empty()
-            && let Some(trig) = spec_to_portal_trigger(&cfg.super_panel.hotkey)
-        {
-            portal_slots.push(PortalSlot {
-                id: "super_panel".into(),
-                desc: "Tomoyo 超级面板".into(),
-                trigger: trig,
-            });
-            action_pairs.push(("super_panel".into(), HotkeyAction::SuperPanel));
-        }
-        for (i, hk) in plugin_host.active_plugin_hotkeys(cfg).into_iter().take(16).enumerate() {
-            let id = format!("plugin_{i}");
-            let label = format!("{} ({})", hk.plugin_id, hk.hotkey_id);
-            if let Some(trig) = spec_to_portal_trigger(&hk.spec) {
-                portal_slots.push(PortalSlot { id: id.clone(), desc: label.clone(), trigger: trig });
-                action_pairs.push((id, HotkeyAction::Plugin(hk)));
-            }
-        }
-        for (i, fl) in load_or_init_flows()
-            .into_iter()
-            .filter(|f| f.enabled && !f.hotkey.trim().is_empty())
-            .take(16)
-            .enumerate()
-        {
-            let id = format!("flow_{i}");
-            if let Some(trig) = spec_to_portal_trigger(&fl.hotkey) {
-                portal_slots.push(PortalSlot {
-                    id: id.clone(),
-                    desc: format!("工作流: {}", fl.name),
-                    trigger: trig,
-                });
-                action_pairs.push((id, HotkeyAction::Flow(fl.id)));
-            }
-        }
+        let (portal_slots, action_pairs) = build_portal_slots(cfg, plugin_host);
         let bound = self.portal.as_ref().is_some_and(|p| p.bind(&portal_slots));
-        if bound && let Ok(mut list) = self.slots.lock() {
-            for (id, act) in action_pairs {
-                self.registered_ids.push(id.clone());
-                list.push((id, act));
+        if bound {
+            if let Ok(mut list) = self.slots.lock() {
+                for (id, act) in action_pairs {
+                    self.registered_ids.push(id.clone());
+                    list.push((id, act));
+                }
+            }
+            if let Some(p) = self.portal.as_ref() {
+                let _ = p.request_list();
             }
         }
-        for slot in &portal_slots {
-            summary.push(format!("{}={}({})", slot.id, slot.trigger, if bound { "ok" } else { "fail" }));
-        }
+        let summary: Vec<String> = portal_slots
+            .iter()
+            .map(|slot| format!("{}={}({})", slot.id, slot.trigger, if bound { "ok" } else { "fail" }))
+            .collect();
         self.active_label = main_spec.clone();
         health.main = HotkeySlotStatus {
             spec: main_spec.clone(),
@@ -414,6 +399,9 @@ impl HotkeyManager {
         health.pin = HotkeySlotStatus { disabled: true, ..Default::default() };
         health.ocr = HotkeySlotStatus { disabled: true, ..Default::default() };
         health.record = HotkeySlotStatus { disabled: true, ..Default::default() };
+        if let Ok(mut lh) = self.last_health.lock() {
+            *lh = health.clone();
+        }
         self.conflict_msg = (!bound).then(|| health.main.reason.clone());
         tracing::info!("Linux XDG GlobalShortcuts Portal synced: {}", summary.join(", "));
     }

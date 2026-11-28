@@ -139,6 +139,8 @@ jobs:
           tar -C "$core_stage" -czf "$core_tgz" .
           (cd dist && sha256sum "$(basename "$tgz")" "$(basename "$core_tgz")" > SHA256SUMS-linux.txt)
           (cd dist/plugins && sha256sum tomoyo-plugin-*-linux-x86_64.zip > ../SHA256SUMS-plugins-linux.txt)
+          ver="${tag#v}"
+          node scripts/sync-release-manifests.mjs --version "$ver" --out-dir dist
           cat dist/SHA256SUMS-linux.txt
           cat dist/SHA256SUMS-plugins-linux.txt
 
@@ -165,7 +167,85 @@ jobs:
             dist/plugins/tomoyo-plugin-*-linux-x86_64.zip
             dist/SHA256SUMS-linux.txt
             dist/SHA256SUMS-plugins-linux.txt
-            packaging/linux/PKGBUILD
+            dist/PKGBUILD
+            dist/PKGBUILD.aur
+            dist/.SRCINFO.aur
+
+  build-linux-arm64:
+    runs-on: ubuntu-24.04-arm
+    needs: [build-linux-x86_64]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install native Linux ARM64 dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config \
+            libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+            libcurl4-openssl-dev libsecret-1-dev libx11-dev libxext-dev libxtst-dev libdbus-1-dev libwayland-dev libpipewire-0.3-dev
+
+      - name: Setup Rust toolchain (Linux ARM64)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build & smoke-test Linux ARM64 release binaries
+        run: |
+          cargo build --release --workspace
+          ./target/release/tomoyo-plugin-ai --self-test
+          ./target/release/tomoyo-cli registry check --manifest-only
+
+      - name: Stage Linux ARM64 Suite Bundle & SHA-256
+        run: |
+          tag="${GITHUB_REF_NAME:-}"
+          case "$tag" in v*) ;; *) tag="v3.0.0" ;; esac
+          stage="dist/stage-linux-arm64"
+          rm -rf "$stage"
+          mkdir -p "$stage/assets/fonts" "$stage/assets/plugin-icons" "$stage/registry" "$stage/packaging/linux" "$stage/scripts"
+          for bin in tomoyo tomoyo-webview-host tomoyo-capture tomoyo-cli tomoyo-plugin-hello tomoyo-plugin-ocr tomoyo-plugin-notes tomoyo-plugin-md-editor tomoyo-plugin-translate tomoyo-plugin-capture tomoyo-plugin-clipboard tomoyo-plugin-winlayout tomoyo-plugin-ai; do
+            install -Dm755 "target/release/$bin" "$stage/$bin"
+          done
+          install -Dm644 LICENSE-MIT LICENSE-APACHE README.md "$stage/"
+          if compgen -G "assets/fonts/*.ttf" >/dev/null; then
+            install -Dm644 assets/fonts/*.ttf "$stage/assets/fonts/"
+          fi
+          install -Dm644 assets/plugin-icons/*.png "$stage/assets/plugin-icons/"
+          install -Dm644 assets/tomoyo-icon.png assets/tomoyo-icon.svg "$stage/assets/"
+          install -Dm644 registry/index.json "$stage/registry/index.json"
+          if [ -d registry/shards ]; then
+            mkdir -p "$stage/registry/shards"
+            install -Dm644 registry/shards/*.json "$stage/registry/shards/"
+          fi
+          install -Dm644 packaging/linux/tomoyo.desktop packaging/linux/PKGBUILD "$stage/packaging/linux/"
+          install -Dm755 scripts/install-local.sh scripts/uninstall-local.sh "$stage/scripts/"
+          for p in example-hello example-python example-wasm example-webview-json builtin-ocr official-notes official-md-editor official-translate official-capture official-clipboard official-devtools-wasm official-regex-wasm official-winlayout official-ai; do
+            mkdir -p "$stage/plugins/$p"
+            cp -a "plugins/$p/." "$stage/plugins/$p/"
+            rm -rf "$stage/plugins/$p/target" "$stage/plugins/$p/__pycache__"
+          done
+          tgz="dist/Tomoyo-${tag}-linux-arm64.tar.gz"
+          tar -C "$stage" -czf "$tgz" .
+          (cd dist && sha256sum "$(basename "$tgz")" > SHA256SUMS-linux-arm64.txt)
+          cat dist/SHA256SUMS-linux-arm64.txt
+
+      - name: Attest Linux ARM64 Build Provenance (SLSA)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: |
+            dist/Tomoyo-*-linux-arm64.tar.gz
+            dist/SHA256SUMS-linux-arm64.txt
+
+      - name: Attach Linux ARM64 Assets to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v3
+        with:
+          files: |
+            dist/Tomoyo-*-linux-arm64.tar.gz
+            dist/SHA256SUMS-linux-arm64.txt
 
   build-windows-x64:
     runs-on: windows-latest

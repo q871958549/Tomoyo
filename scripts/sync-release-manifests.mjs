@@ -21,6 +21,7 @@ if (!version || !/^\d+\.\d+\.\d+/.test(version)) {
 
 const setupSha = argVal('--setup-sha256').toUpperCase();
 const zipSha = argVal('--zip-sha256').toLowerCase();
+const arm64ZipSha = argVal('--arm64-zip-sha256').toLowerCase();
 const srcSha = argVal('--src-sha256').toLowerCase();
 const outDir = argVal('--out-dir');
 const inPlace = process.argv.includes('--in-place');
@@ -39,16 +40,30 @@ function writeTarget(relSrc, outName, content, crlf = false) {
   }
 }
 
-// 1. Scoop manifest
+// 1. Scoop manifest (64bit + arm64)
 const scoopSrc = 'packaging/scoop/tomoyo.json';
 if (fs.existsSync(scoopSrc)) {
-  let s = fs.readFileSync(scoopSrc, 'utf8');
-  s = s.replace(/"version":\s*"[^"]+"/, `"version": "${version}"`);
-  s = s.replace(/\/releases\/download\/v[^/]+\/Tomoyo-v[^-]+-/g, `/releases/download/v${version}/Tomoyo-v${version}-`);
-  if (zipSha) {
-    s = s.replace(/"hash":\s*"[^"]+"/, `"hash": "${zipSha}"`);
+  const scoop = JSON.parse(fs.readFileSync(scoopSrc, 'utf8'));
+  scoop.version = version;
+  const rewriteUrl = (u) =>
+    typeof u === 'string'
+      ? u.replace(/\/releases\/download\/v[^/]+\/Tomoyo-v[^-]+-/g, `/releases/download/v${version}/Tomoyo-v${version}-`)
+      : u;
+  if (scoop.architecture?.['64bit']) {
+    scoop.architecture['64bit'].url = rewriteUrl(scoop.architecture['64bit'].url);
+    if (zipSha) scoop.architecture['64bit'].hash = zipSha;
   }
-  writeTarget(scoopSrc, 'tomoyo.scoop.json', s, false);
+  if (scoop.architecture?.arm64) {
+    scoop.architecture.arm64.url = rewriteUrl(scoop.architecture.arm64.url);
+    if (arm64ZipSha) scoop.architecture.arm64.hash = arm64ZipSha;
+  }
+  if (scoop.autoupdate?.architecture?.['64bit']) {
+    scoop.autoupdate.architecture['64bit'].url = rewriteUrl(scoop.autoupdate.architecture['64bit'].url);
+  }
+  if (scoop.autoupdate?.architecture?.arm64) {
+    scoop.autoupdate.architecture.arm64.url = rewriteUrl(scoop.autoupdate.architecture.arm64.url);
+  }
+  writeTarget(scoopSrc, 'tomoyo.scoop.json', `${JSON.stringify(scoop, null, 2)}\n`, false);
 }
 
 // 2. Winget manifests (UTF-8 without BOM, CRLF)

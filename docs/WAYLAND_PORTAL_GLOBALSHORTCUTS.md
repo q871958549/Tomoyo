@@ -25,4 +25,4 @@ Tomoyo Linux 端目前采用两层全局快捷键策略：
 ## 4. 本阶段落地范围与后续计划
 - **Wave 2 已落地**：`tomoyo-cli doctor` 已接入 `org.freedesktop.portal.GlobalShortcuts` 运行时可用性探测；`official-winlayout` 亦在 `wayland_wm.rs` 率先完成 Hyprland/Sway/KWin 多合成器支持。
 - **Stage 4 Wave 1 已落地 ✅**：已在 [`portal_hotkeys.c`](../crates/tomoyo-app/src/linux/portal_hotkeys.c) 与 [`portal_hotkeys.rs`](../crates/tomoyo-app/src/linux/portal_hotkeys.rs) 实现原生 `GlobalShortcuts` Portal 回退通道（复用 `gio-2.0`，零新增 crate，主进程体积严守 `≤ 6.2 MB`）：KDE Plasma 继续优先使用 `org.kde.kglobalaccel`，当 `KGlobalAccel` 未在会话总线运行且检测到 `GlobalShortcuts` Portal v1+ 时自动完成 `CreateSession` → `BindShortcuts` → `Activated` 响应并写入热键体检状态。
-- **后续增强（Stage 4 Wave 2）**：接入 Portal `ListShortcuts` 实绑键位回读与托盘状态联动，覆盖 Hyprland / GNOME 47+ 实机触发键重映射回写。
+- **Stage 4 Wave 2 已落地 ✅**：已补齐异步 `BindShortcuts` 响应、`ListShortcuts` 主动查询与 `ShortcutsChanged` 信号回调，自动将 Hyprland / GNOME 合成器重映射后的实际 `trigger_description` 实时回写至 `hotkey_status.json`。

@@ -28,8 +28,8 @@
 
 ```text
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│  v4.0.0 · [Wave 1 已完成 ✅] Wayland GlobalShortcuts Portal 回退热键通道       │
-│           Protocol v3/WASM ABI v2 冻结 · macOS NSPanel核心 · ARM64 CI & AUR  │
+│  v4.0.0 · [Wave 1 + Wave 2 就绪 ✅] GlobalShortcuts Portal 闭环 · 契约冻结   │
+│           macOS AppKit/Carbon 桥接 · Linux ARM64 Release & SDK 自动发布清单  │
 ├──────────────────────────────────────────────────────────────────────────────┤
 │  v3.5.0 · [已完成 ✅ · Wave 1 + Wave 2 全量交付] 本地 AI 助手 · 离线语义检索 │
 │           按需 STDIO MCP 客户端 (mcp.toml/json) · tomoyo-cli mcp & Portal探测│
@@ -542,9 +542,10 @@
      - **Protocol v3 & WASM ABI v2 契约冻结（[`docs/PROTOCOL_STABILITY.md`](PROTOCOL_STABILITY.md)）**：补齐 `protocol_v3_freeze` 与 `wasm_abi_v2_freeze` 黄金测试，CI 持续校验 `tomoyo-protocol` / `tomoyo-sdk` / `tomoyo-wasm-sdk` `crates.io` 打包完整性；
      - **macOS 原生壳层几何与热键核心（`tomoyo-ui-macos/src/panel.rs`）**：实现 Cocoa `visibleFrame` 居中/防孤立边界钳制、`NSPanelStyleConfig` 与 Carbon `RegisterEventHotKey` 映射，保持三端无差异可测；
      - **多架构与包管理器清单拉齐**：CI 新增 `linux-arm64-check`（`ubuntu-24.04-arm`）与 `official-ai` 验证，`release.yml` 补全 Windows ARM64 中的 `official-ai`，同步 [`aur-tomoyo-launcher`](../packaging/linux/aur-tomoyo-launcher/PKGBUILD) 并将 AUR `.PKGBUILD`/`.SRCINFO` 纳入 [`sync-release-manifests.mjs`](../scripts/sync-release-manifests.mjs) 自动同步；
-   - **[Wave 2 规划中] 可信代码签名、Mac 实机壳层与正式包源上架**：
-     - 对接开源代码签名（如 SignPath.io）打通已预置的 `signtool.exe` Release 自动签名消除 Windows SmartScreen 拦截，基于 `v4.0.0` 发版推进 **Winget**、**Scoop** 与 **Arch AUR** 提交上架，并将三件套 SDK 发布至 `crates.io`；
-     - 补充 Portal `ListShortcuts` 实际触发键回写、macOS AppKit `NSPanel` 二进制实机闭环及 Linux/Windows ARM64 真机验收。
+   - **[Wave 2 已完成 ✅] 键位回读、macOS AppKit/Carbon 桥接与全渠道发版就绪**：
+     - **Wayland Portal `ListShortcuts` + `ShortcutsChanged` 实时回写**：异步接收合成器授权及热键修改事件，将实际触发键回写 `hotkey_status.json`，完善 Hyprland / GNOME 47+ 自愈体验；
+     - **macOS 原生 Objective-C (`AppKit` / `Carbon`) 桥接（`macos_bridge.m` + `build.rs` + `bridge.rs`）**：实现无焦点浮动毛玻璃 `NSPanel` 创建/显隐与 Carbon `RegisterEventHotKey` 全局热键注册封装（macOS 编译器条件链接，不影响 Linux/Windows 零增量）；
+     - **Linux ARM64 正式发布流、SDK 自动发布流与就绪审计（`release.yml` + `publish-sdk.yml` + `verify-release-readiness.mjs`）**：补齐 `ubuntu-24.04-arm` Release 归档、Scoop `arm64` 双架构清单、`crates.io` 三件套一键发布工作流与全清单干跑审计（代码签名密钥/商店提交与 tag 发版待用户确认后触发）。
 
 ---
 

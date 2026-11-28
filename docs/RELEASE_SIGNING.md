@@ -8,8 +8,8 @@ Starting with **v3.0.0**, Tomoyo physically separates the minimal launcher micro
 
 | Profile | Included Binaries & Assets | Use Case |
 | --- | --- | --- |
-| **Core** (`*-core-portable.zip`, `*-core.tar.gz`, Inno Setup *Minimal Core*, `-Profile Core` / `--profile=core`) | `tomoyo`, `tomoyo-webview-host`, `tomoyo-cli`, bundled Alibaba PuHuiTi 3.0 fonts, sharded `registry/` | Pure ultra-low-memory app/file launcher; install any plugins on demand from Plugin Center |
-| **Suite** (default `*-setup.exe`, `*-portable.zip`, `*.tar.gz`) | Everything in Core + `tomoyo-capture` (screenshot, pin, MP4/GIF screen recording) + `tomoyo-plugin-{ocr,notes,md-editor,hello}` + bundled reference plugins | Complete out-of-the-box desktop productivity suite |
+| **Core** (`*-core-portable.zip`, `*-core.tar.gz`, Inno Setup *Minimal Core*, `-Profile Core` / `--profile=core`) | `tomoyo`, `tomoyo-webview-host`, `tomoyo-cli`, OS native UI font stack (font-free bundle), sharded `registry/` | Pure ultra-low-memory app/file launcher; install any plugins on demand from Plugin Center |
+| **Suite** (default `*-setup.exe`, `*-portable.zip`, `*-linux-x86_64.tar.gz`, `*-linux-arm64.tar.gz`) | Everything in Core + `tomoyo-capture` (screenshot, pin, MP4/GIF screen recording) + `tomoyo-plugin-{ocr,notes,md-editor,translate,capture,clipboard,winlayout,ai,hello}` + bundled reference plugins | Complete out-of-the-box desktop productivity suite |
 
 ## 2. Verifying Release Artifacts (SHA-256 + SLSA Provenance)
 
