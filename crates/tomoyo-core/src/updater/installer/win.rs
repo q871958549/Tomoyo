@@ -329,9 +329,7 @@ pub(super) fn launch_windows_update(installer_path: &Path) -> Result<bool, Strin
         return Ok(true);
     }
 
-    let _ = Command::new("explorer.exe")
-        .arg(format!("/select,{}", installer_path.display()))
-        .spawn();
+    let _ = crate::file_manager::reveal_file_in_file_manager(&installer_path.to_string_lossy());
     Ok(false)
 }
 

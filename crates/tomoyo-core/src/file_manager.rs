@@ -87,17 +87,34 @@ fn target_dir_for_generic(path: &str) -> String {
 }
 
 #[cfg_attr(not(windows), allow(dead_code))]
+fn exe_basename_lower(exe: &str) -> String {
+    exe.trim_end_matches(['\\', '/'])
+        .rsplit(['\\', '/'])
+        .next()
+        .unwrap_or("")
+        .to_ascii_lowercase()
+}
+
+#[cfg_attr(not(windows), allow(dead_code))]
+fn replace_shell_placeholders(args_tpl: &str, quoted: &str) -> String {
+    let mut args = args_tpl.trim().to_string();
+    let mut replaced = false;
+    for pat in ["\"%1\"", "\"%V\"", "\"%L\"", "%1", "%V", "%L"] {
+        if args.contains(pat) {
+            args = args.replace(pat, quoted);
+            replaced = true;
+        }
+    }
+    if replaced { args } else { quoted.to_string() }
+}
+
+#[cfg_attr(not(windows), allow(dead_code))]
 pub(crate) fn build_reveal_from_template(
     exe: &str,
     args_tpl: &str,
     path: &str,
 ) -> Option<(String, String)> {
-    let exe_name = exe
-        .trim_end_matches(['\\', '/'])
-        .rsplit(['\\', '/'])
-        .next()
-        .unwrap_or("")
-        .to_ascii_lowercase();
+    let exe_name = exe_basename_lower(exe);
     if exe_name.is_empty() || exe_name == "explorer.exe" {
         return None;
     }
@@ -115,21 +132,41 @@ pub(crate) fn build_reveal_from_template(
         _ => {
             let dir = target_dir_for_generic(path);
             let quoted = format!("\"{dir}\"");
-            let mut args = args_tpl.trim().to_string();
-            let mut replaced = false;
-            for pat in ["\"%1\"", "\"%V\"", "\"%L\"", "%1", "%V", "%L"] {
-                if args.contains(pat) {
-                    args = args.replace(pat, &quoted);
-                    replaced = true;
-                }
-            }
-            Some((exe.into(), if replaced { args } else { quoted }))
+            Some((exe.into(), replace_shell_placeholders(args_tpl, &quoted)))
+        }
+    }
+}
+
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) fn build_open_folder_from_template(
+    exe: &str,
+    args_tpl: &str,
+    dir: &str,
+) -> Option<(String, String)> {
+    let exe_name = exe_basename_lower(exe);
+    if exe_name.is_empty() || exe_name == "explorer.exe" {
+        return None;
+    }
+    match exe_name.as_str() {
+        "onecommander.exe" => Some((exe.into(), format!("-\"{dir}\""))),
+        "dopus.exe" => {
+            let rt = Path::new(exe).with_file_name("dopusrt.exe");
+            let runner = if rt.is_file() { rt.to_string_lossy().into_owned() } else { exe.into() };
+            Some((runner, format!("/acmd Go \"{dir}\" NEWTAB=findexisting")))
+        }
+        "dopusrt.exe" => Some((exe.into(), format!("/acmd Go \"{dir}\" NEWTAB=findexisting"))),
+        "xyplorer.exe" | "files.exe" => Some((exe.into(), format!("\"{dir}\""))),
+        "totalcmd64.exe" | "totalcmd.exe" => Some((exe.into(), format!("/O /T /L=\"{dir}\""))),
+        _ => {
+            let folder = target_dir_for_generic(dir);
+            let quoted = format!("\"{folder}\"");
+            Some((exe.into(), replace_shell_placeholders(args_tpl, &quoted)))
         }
     }
 }
 
 #[cfg(windows)]
-fn resolve_custom_windows_file_manager(path: &str) -> Option<(String, String)> {
+fn resolve_custom_windows_file_manager(path: &str, open_folder: bool) -> Option<(String, String)> {
     use windows::Win32::System::Registry::{HKEY_CLASSES_ROOT, HKEY_CURRENT_USER};
     let probes = [
         (HKEY_CURRENT_USER, "Software\\Classes\\Directory\\shell"),
@@ -153,8 +190,13 @@ fn resolve_custom_windows_file_manager(path: &str) -> Option<(String, String)> {
         if !Path::new(&exe).is_file() {
             continue;
         }
-        if let Some(pair) = build_reveal_from_template(&exe, &tpl, path) {
-            return Some(pair);
+        let pair = if open_folder {
+            build_open_folder_from_template(&exe, &tpl, path)
+        } else {
+            build_reveal_from_template(&exe, &tpl, path)
+        };
+        if let Some(resolved) = pair {
+            return Some(resolved);
         }
     }
     None
@@ -164,14 +206,85 @@ fn resolve_custom_windows_file_manager(path: &str) -> Option<(String, String)> {
 pub fn resolve_reveal_file_command(path: &str) -> (String, String) {
     #[cfg(windows)]
     {
-        if let Some(custom) = resolve_custom_windows_file_manager(path) {
+        let norm = path.replace('/', "\\");
+        if let Some(custom) = resolve_custom_windows_file_manager(&norm, false) {
             return custom;
         }
-        ("explorer.exe".into(), format!("/select,\"{path}\""))
+        ("explorer.exe".into(), format!("/select,\"{norm}\""))
     }
     #[cfg(not(windows))]
     {
         ("xdg-open".into(), path.into())
+    }
+}
+
+/// Resolves a custom Windows file manager executable + arguments to open a directory directly.
+pub fn resolve_open_folder_command(dir: &str) -> Option<(String, String)> {
+    #[cfg(windows)]
+    {
+        let norm = dir.replace('/', "\\");
+        resolve_custom_windows_file_manager(&norm, true)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = dir;
+        None
+    }
+}
+
+#[cfg(windows)]
+fn spawn_windows_raw(exe: &str, raw_args: &str) -> bool {
+    use std::os::windows::process::CommandExt;
+    std::process::Command::new(exe)
+        .raw_arg(raw_args)
+        .spawn()
+        .is_ok()
+}
+
+/// Reveals `path` only when a custom third-party file manager is configured on Windows.
+pub fn reveal_in_custom_file_manager(path: &str) -> bool {
+    #[cfg(windows)]
+    {
+        let norm = path.replace('/', "\\");
+        if let Some((exe, raw_args)) = resolve_custom_windows_file_manager(&norm, false) {
+            return spawn_windows_raw(&exe, &raw_args);
+        }
+        false
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = path;
+        false
+    }
+}
+
+/// Reveals and selects `path` using the user's configured default file manager (OneCommander,
+/// Directory Opus, XYplorer, Total Commander, Files App) or OS native fallback.
+pub fn reveal_file_in_file_manager(path: &str) -> bool {
+    #[cfg(windows)]
+    {
+        let (exe, raw_args) = resolve_reveal_file_command(path);
+        spawn_windows_raw(&exe, &raw_args)
+    }
+    #[cfg(target_os = "linux")]
+    {
+        if crate::linux_sys::dbus_reveal_file(path) {
+            return true;
+        }
+        let target = Path::new(path)
+            .parent()
+            .and_then(|p| p.to_str())
+            .filter(|s| !s.is_empty())
+            .unwrap_or(path);
+        std::process::Command::new("xdg-open")
+            .arg(target)
+            .spawn()
+            .is_ok()
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
+    {
+        let _ = path;
+        false
     }
 }
 
@@ -201,5 +314,33 @@ mod tests {
             Some((r"C:\tc\TOTALCMD64.EXE".into(), "/O /T /L=\"C:\\a\\b.txt\"".into()))
         );
         assert!(build_reveal_from_template(r"C:\Windows\Explorer.exe", "", r"C:\a\b.txt").is_none());
+    }
+
+    #[test]
+    fn builds_open_folder_args_for_custom_managers_and_skips_explorer() {
+        assert_eq!(
+            build_open_folder_from_template(
+                r"C:\Program Files\OneCommander\OneCommander.exe",
+                "-\"%1\"",
+                r"C:\Users\Admin\Videos",
+            ),
+            Some((
+                r"C:\Program Files\OneCommander\OneCommander.exe".into(),
+                "-\"C:\\Users\\Admin\\Videos\"".into()
+            ))
+        );
+        assert_eq!(
+            build_open_folder_from_template(r"E:\Tools\XYplorer.exe", "\"%1\"", r"C:\Logs"),
+            Some((r"E:\Tools\XYplorer.exe".into(), "\"C:\\Logs\"".into()))
+        );
+        assert_eq!(
+            build_open_folder_from_template(r"C:\tc\TOTALCMD64.EXE", "\"%1\"", r"C:\Logs"),
+            Some((r"C:\tc\TOTALCMD64.EXE".into(), "/O /T /L=\"C:\\Logs\"".into()))
+        );
+        assert_eq!(
+            build_open_folder_from_template(r"C:\DO\dopusrt.exe", "\"%1\"", r"C:\Logs"),
+            Some((r"C:\DO\dopusrt.exe".into(), "/acmd Go \"C:\\Logs\" NEWTAB=findexisting".into()))
+        );
+        assert!(build_open_folder_from_template(r"C:\Windows\Explorer.exe", "", r"C:\Logs").is_none());
     }
 }

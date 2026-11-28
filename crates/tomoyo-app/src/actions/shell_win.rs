@@ -222,6 +222,12 @@ pub fn paste_into_previous_window_async(prev_hwnd: isize) {
 
 #[cfg(windows)]
 pub fn shell_open(target: &str, args: Option<&str>, workdir: Option<&str>) -> bool {
+    if args.is_none()
+        && std::path::Path::new(target).is_dir()
+        && let Some((fm_exe, fm_arg)) = tomoyo_core::resolve_open_folder_command(target)
+    {
+        return shell_open_with_verb(windows::core::w!("open"), &fm_exe, Some(&fm_arg), workdir);
+    }
     shell_open_with_verb(windows::core::w!("open"), target, args, workdir)
 }
 

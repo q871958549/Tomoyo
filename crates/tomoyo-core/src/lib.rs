@@ -35,7 +35,10 @@ pub mod wic_thumb;
 pub use config::*;
 pub use diagnostics::*;
 pub use engine::*;
-pub use file_manager::resolve_reveal_file_command;
+pub use file_manager::{
+    resolve_open_folder_command, resolve_reveal_file_command, reveal_file_in_file_manager,
+    reveal_in_custom_file_manager,
+};
 pub use flows::*;
 pub use flows_llm::*;
 pub use fonts::*;

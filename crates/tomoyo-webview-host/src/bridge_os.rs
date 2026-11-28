@@ -53,6 +53,24 @@ pub fn shell_open(target: &str) {
     use windows::Win32::UI::Shell::ShellExecuteW;
     use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 
+    if std::path::Path::new(target).is_dir()
+        && let Some((fm_exe, fm_arg)) = tomoyo_core::resolve_open_folder_command(target)
+    {
+        let exe_w: Vec<u16> = fm_exe.encode_utf16().chain(std::iter::once(0)).collect();
+        let arg_w: Vec<u16> = fm_arg.encode_utf16().chain(std::iter::once(0)).collect();
+        unsafe {
+            let _ = ShellExecuteW(
+                None,
+                w!("open"),
+                PCWSTR(exe_w.as_ptr()),
+                PCWSTR(arg_w.as_ptr()),
+                PCWSTR::null(),
+                SW_SHOWNORMAL,
+            );
+        }
+        return;
+    }
+
     let wide: Vec<u16> = target.encode_utf16().chain(std::iter::once(0)).collect();
     unsafe {
         let _ = ShellExecuteW(

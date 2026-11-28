@@ -9,7 +9,6 @@ use crate::win_record_hud_draw::{
     HUD_W_DONE, HUD_W_ERR, HUD_W_REC,
 };
 use std::ffi::c_void;
-use std::process::Command;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::thread::JoinHandle;
@@ -357,7 +356,7 @@ fn handle_hud_cmd(st: &mut RecHudState, hwnd: HWND, cmd: HudCmd) {
         }
         HudCmd::Reveal => {
             if let Ok(fp) = st.shared.final_path.lock() && let Some(p) = fp.as_ref() {
-                let _ = Command::new("explorer.exe").arg(format!("/select,{}", p.display())).spawn();
+                let _ = tomoyo_core::reveal_file_in_file_manager(&p.to_string_lossy());
             }
         }
     }

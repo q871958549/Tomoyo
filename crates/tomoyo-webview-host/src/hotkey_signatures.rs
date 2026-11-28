@@ -201,6 +201,9 @@ pub(crate) fn reveal_path_native(path: &str) {
     if path.is_empty() || !p.exists() {
         return;
     }
+    if tomoyo_core::reveal_in_custom_file_manager(path) {
+        return;
+    }
     let normalized = path.replace('/', "\\");
     let wide = HSTRING::from(&normalized);
     unsafe {
