@@ -21,7 +21,7 @@ pub(crate) fn hint_item() -> ResultItem {
         preview: Some(PreviewSpec::KeyValue {
             title: "Windows Offline OCR".into(),
             entries: vec![
-                ("Engine".into(), "Windows.Media.Ocr (Adaptive 2x Cubic)".into()),
+                ("Engine".into(), "Windows.Media.Ocr (ClearType 3x + Cubic)".into()),
                 ("Idle RAM".into(), "0 MB (Auto-reaped after 15s)".into()),
                 ("Languages".into(), if langs.is_empty() { "None detected".into() } else { langs }),
                 ("Options".into(), "ocr | ocr en | ocr zh | ocr raw | ocr <path>".into()),
@@ -52,9 +52,10 @@ pub(crate) fn error_item(msg: &str) -> ResultItem {
 pub(crate) fn run_recognize_cli(args: &[String]) {
     let raw_mode = args.iter().any(|a| a == "--raw");
     let json_mode = args.iter().any(|a| a == "--json");
-    let pref = if args.iter().any(|a| a == "--en") {
+    let lang_flag = args.windows(2).find(|w| w[0] == "--lang").map(|w| w[1].to_ascii_lowercase());
+    let pref = if args.iter().any(|a| a == "--en") || lang_flag.as_deref() == Some("en") {
         LangPref::En
-    } else if args.iter().any(|a| a == "--zh") {
+    } else if args.iter().any(|a| a == "--zh") || lang_flag.as_deref() == Some("zh") {
         LangPref::Zh
     } else {
         LangPref::Auto

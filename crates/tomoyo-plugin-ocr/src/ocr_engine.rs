@@ -1,9 +1,13 @@
 //! Offline Windows WinRT `OcrEngine` wrapper with adaptive Cubic upscaling,
 //! language selection, CJK inter-character space cleanup, and latest clipboard image lookup.
 
+pub use crate::ocr_postprocess::clean_cjk_spaces;
+#[cfg(windows)]
+use crate::ocr_postprocess::score_ocr_lines;
 #[cfg(windows)]
 use crate::ocr_preprocess::{
-    build_high_contrast_bgra, compute_ocr_layout, estimate_bg_rgb, pad_bgra, score_ocr_lines,
+    build_cleartype_subpixel_bgra, build_high_contrast_bgra, compute_ocr_layout, estimate_bg_rgb,
+    pad_bgra,
 };
 use std::path::{Path, PathBuf};
 #[cfg(windows)]
@@ -87,62 +91,6 @@ pub fn is_image_ext(p: &Path) -> bool {
         })
 }
 
-/// Removes spurious spaces that Windows `zh-Hans-CN` OCR inserts between adjacent CJK characters
-/// and normalizes full-width `．`/`：`/`／` inside numeric/IP/time tokens while keeping ASCII word spacing.
-pub fn clean_cjk_spaces(line: &str) -> String {
-    let chars: Vec<char> = line.trim().chars().collect();
-    if chars.is_empty() {
-        return String::new();
-    }
-    let mut out = String::with_capacity(line.len());
-    for i in 0..chars.len() {
-        let ch = chars[i];
-        let prev = out.chars().next_back();
-        let next = chars[i + 1..].iter().copied().find(|&c| c != ' ');
-        if ch == ' ' {
-            let drop_space = match (prev, next) {
-                (Some(p), Some(n)) => {
-                    (is_cjk_or_punct(p) && is_cjk_or_punct(n))
-                        || (is_cjk_punct(p) && n.is_ascii_alphanumeric())
-                        || (p.is_ascii_alphanumeric() && is_cjk_punct(n))
-                        || (p.is_ascii_digit() && matches!(n, '.' | ':' | '/'))
-                        || (matches!(p, '.' | ':' | '/') && n.is_ascii_digit())
-                }
-                _ => true,
-            };
-            if !drop_space && prev != Some(' ') {
-                out.push(' ');
-            }
-        } else {
-            let between_digits = prev.is_some_and(|p| p.is_ascii_digit())
-                && next.is_some_and(|n| n.is_ascii_digit());
-            let mapped = if between_digits {
-                match ch {
-                    '．' => '.',
-                    '：' => ':',
-                    '／' => '/',
-                    _ => ch,
-                }
-            } else {
-                ch
-            };
-            out.push(mapped);
-        }
-    }
-    out
-}
-
-fn is_cjk_or_punct(c: char) -> bool {
-    matches!(c, '\u{4E00}'..='\u{9FFF}' | '\u{3400}'..='\u{4DBF}' | '\u{3000}'..='\u{303F}' | '\u{FF01}'..='\u{FF5E}')
-}
-
-fn is_cjk_punct(c: char) -> bool {
-    matches!(
-        c,
-        '，' | '。' | '；' | '：' | '！' | '？' | '（' | '）' | '【' | '】' | '《' | '》' | '、' | '“' | '”' | '‘' | '’' | '．' | '／'
-    )
-}
-
 #[cfg(windows)]
 pub fn available_ocr_languages() -> Vec<String> {
     use windows::Media::Ocr::OcrEngine;
@@ -215,7 +163,12 @@ pub fn recognize_image(
     if use_transform {
         let _ = transform.SetScaledWidth(scaled_w);
         let _ = transform.SetScaledHeight(scaled_h);
-        let _ = transform.SetInterpolationMode(BitmapInterpolationMode::Fant);
+        let interp = if scaled_w > src_w || scaled_h > src_h {
+            BitmapInterpolationMode::Cubic
+        } else {
+            BitmapInterpolationMode::Fant
+        };
+        let _ = transform.SetInterpolationMode(interp);
     }
     let px_provider = decoder
         .GetPixelDataTransformedAsync(
@@ -275,13 +228,13 @@ pub fn recognize_image(
             .map_err(|e| format!("未找到可用的 Windows OCR 语言包: {e}"))?,
     };
 
-    let lang_tag = engine
+    let mut lang_tag = engine
         .RecognizerLanguage()
         .and_then(|l| l.LanguageTag())
         .map(|s| s.to_string())
         .unwrap_or_else(|_| "OCR".into());
 
-    let run_pass = |w: u32, h: u32, bytes: &[u8]| -> Result<Vec<String>, String> {
+    let run_with_engine = |eng: &OcrEngine, w: u32, h: u32, bytes: &[u8]| -> Result<Vec<String>, String> {
         let writer = DataWriter::new().map_err(|e| format!("DataWriter 失败: {e}"))?;
         writer.WriteBytes(bytes).map_err(|e| format!("写入位图缓冲失败: {e}"))?;
         let ibuf = writer.DetachBuffer().map_err(|e| format!("DetachBuffer 失败: {e}"))?;
@@ -292,7 +245,7 @@ pub fn recognize_image(
             h as i32,
         )
         .map_err(|e| format!("创建 SoftwareBitmap 失败: {e}"))?;
-        let res = engine
+        let res = eng
             .RecognizeAsync(&bmp)
             .map_err(|e| format!("OCR 识别调用失败: {e}"))?
             .join()
@@ -325,18 +278,82 @@ pub fn recognize_image(
 
     let bg_rgb = estimate_bg_rgb(&base_bgra, scaled_w, scaled_h);
     let (pass_a_w, pass_a_h, pass_a_buf) = pad_bgra(&base_bgra, scaled_w, scaled_h, pad, bg_rgb);
-    let mut best_lines = run_pass(pass_a_w, pass_a_h, &pass_a_buf)?;
-    let (proc_w, proc_h) = (pass_a_w, pass_a_h);
+    let mut best_lines = run_with_engine(&engine, pass_a_w, pass_a_h, &pass_a_buf)?;
+    let mut best_score = score_ocr_lines(&best_lines);
+    let (mut proc_w, mut proc_h) = (pass_a_w, pass_a_h);
+    let mut best_buf = pass_a_buf;
 
+    // Pass B: ClearType 3x RGB subpixel decode on unscaled UI crops eliminates horizontal character fusion.
+    if !raw_mode
+        && src_w > 0
+        && src_h > 0
+        && (src_w as u64) * (src_h as u64) <= 450_000
+        && src_w * 3 + pad * 2 <= max_dim
+        && src_h * 3 + pad * 2 <= max_dim
+        && let Ok(raw_tf) = BitmapTransform::new()
+        && let Ok(op) = decoder.GetPixelDataTransformedAsync(
+            BitmapPixelFormat::Bgra8,
+            BitmapAlphaMode::Straight,
+            &raw_tf,
+            ExifOrientationMode::RespectExifOrientation,
+            ColorManagementMode::DoNotColorManage,
+        )
+        && let Ok(orig_px) = op.join()
+        && let Ok(orig_data) = orig_px.DetachPixelData()
+    {
+        let orig_bytes = orig_data.to_vec();
+        let orig_bg = estimate_bg_rgb(&orig_bytes, src_w, src_h);
+        let (ct_w, ct_h, ct_buf) =
+            build_cleartype_subpixel_bgra(&orig_bytes, src_w, src_h, pad, orig_bg);
+        if let Ok(ct_lines) = run_with_engine(&engine, ct_w, ct_h, &ct_buf) {
+            let ct_score = score_ocr_lines(&ct_lines);
+            if (!ct_lines.is_empty() && best_lines.is_empty()) || ct_score > best_score {
+                best_lines = ct_lines;
+                best_score = ct_score;
+                proc_w = ct_w;
+                proc_h = ct_h;
+                best_buf = ct_buf;
+            }
+        }
+    }
+
+    // Pass C: Chromatic high-contrast pass rescues low-contrast colored text on dark/tinted UI cards.
     if !raw_mode && (src_w as u64) * (src_h as u64) <= 1_600_000 {
         let (hc_w, hc_h, hc_buf) =
             build_high_contrast_bgra(&base_bgra, scaled_w, scaled_h, pad, bg_rgb);
-        if let Ok(hc_lines) = run_pass(hc_w, hc_h, &hc_buf) {
-            let score_a = score_ocr_lines(&best_lines);
-            let score_b = score_ocr_lines(&hc_lines);
-            if score_b >= score_a {
+        if let Ok(hc_lines) = run_with_engine(&engine, hc_w, hc_h, &hc_buf) {
+            let hc_score = score_ocr_lines(&hc_lines);
+            if (!hc_lines.is_empty() && best_lines.is_empty()) || hc_score > best_score {
                 best_lines = hc_lines;
+                best_score = hc_score;
+                proc_w = hc_w;
+                proc_h = hc_h;
+                best_buf = hc_buf;
             }
+        }
+    }
+
+    // Dual-language smart fallback: if Auto used a non-English model on an ASCII-dominant crop
+    // and an English recognizer is installed, re-evaluate the winning bitmap cleanly.
+    if pref == LangPref::Auto
+        && !lang_tag.to_ascii_lowercase().starts_with("en")
+        && let Some(en_tag) = installed.iter().find(|t| t.to_ascii_lowercase().starts_with("en"))
+    {
+        let total_non_ws = best_lines.iter().flat_map(|l| l.chars()).filter(|c| !c.is_whitespace()).count();
+        let han_cnt = best_lines
+            .iter()
+            .flat_map(|l| l.chars())
+            .filter(|c| matches!(c, '\u{4E00}'..='\u{9FFF}' | '\u{3400}'..='\u{4DBF}'))
+            .count();
+        let ascii_cnt = best_lines.iter().flat_map(|l| l.chars()).filter(char::is_ascii_alphanumeric).count();
+        if ascii_cnt >= 4 && han_cnt * 10 <= total_non_ws.max(1)
+            && let Ok(lang) = Language::CreateLanguage(&HSTRING::from(en_tag))
+            && let Ok(en_eng) = OcrEngine::TryCreateFromLanguage(&lang)
+            && let Ok(en_lines) = run_with_engine(&en_eng, proc_w, proc_h, &best_buf)
+            && score_ocr_lines(&en_lines) > best_score
+        {
+            best_lines = en_lines;
+            lang_tag = en_tag.clone();
         }
     }
 

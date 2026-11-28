@@ -8,6 +8,7 @@ mod ocr_cli;
 mod ocr_engine;
 #[cfg(not(windows))]
 mod ocr_linux;
+mod ocr_postprocess;
 mod ocr_preprocess;
 mod ocr_rpc;
 

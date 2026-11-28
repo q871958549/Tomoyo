@@ -1,7 +1,7 @@
 #![cfg_attr(not(windows), allow(dead_code))]
 
-//! Pure-Rust adaptive upscaling, quiet-zone padding, background-distance high-contrast
-//! normalization, thin UI border suppression, and multi-pass scoring for offline WinRT OCR.
+//! Pure-Rust adaptive upscaling, quiet-zone padding, ClearType 3x RGB subpixel decoding,
+//! background-distance high-contrast normalization, and thin UI border suppression.
 
 /// Returns `(scaled_w, scaled_h, pad_px, needs_transform)` respecting `max_dim` after padding.
 pub fn compute_ocr_layout(
@@ -127,8 +127,16 @@ pub fn build_high_contrast_bgra(
         let dg = px[1].abs_diff(bg.1) as u32;
         let db = px[0].abs_diff(bg.2) as u32;
         let d_max = dr.max(dg).max(db);
+        let d_min = dr.min(dg).min(db);
         let d_luma = (dr * 3 + dg * 6 + db) / 10;
-        let v = ((d_max * 3 + d_luma) / 4).min(255) as u8;
+        let chroma = d_max - d_min;
+        // Avoid inflating ClearType RGB edge halos around black text on bright canvases,
+        // while keeping solid colored UI links/badges dark.
+        let v = if bg.0.min(bg.1).min(bg.2) >= 200 && d_luma < 140 && chroma > 36 {
+            ((d_luma * 3 + d_max) / 4).min(255) as u8
+        } else {
+            ((d_max * 3 + d_luma) / 4).min(255) as u8
+        };
         ink[i] = v;
         hist[v as usize] += 1;
     }
@@ -180,44 +188,30 @@ pub fn build_high_contrast_bgra(
 }
 
 /// Erases thin continuous horizontal/vertical UI box border lines (e.g. button outlines)
-/// spanning > 70% of the crop so adjacent small lines of text aren't rejected by WinRT layout.
+/// spanning > 65–68% of the crop so adjacent small lines of text aren't rejected by WinRT layout.
 fn suppress_thin_ui_borders(gray: &mut [u8], w: usize, h: usize) {
     if w < 32 || h < 20 {
         return;
     }
     let max_bar = ((h.min(w)) / 14).clamp(4, 12);
-    let mut dark_rows = vec![false; h];
-    for (y, flag) in dark_rows.iter_mut().enumerate() {
-        let row = &gray[y * w..(y + 1) * w];
-        let dark = row.iter().filter(|&&v| v < 195).count();
-        *flag = dark * 100 >= w * 68;
-    }
     let mut y = 0;
     while y < h {
-        if !dark_rows[y] {
+        let dark = gray[y * w..(y + 1) * w].iter().filter(|&&v| v < 195).count();
+        if dark * 100 < w * 68 {
             y += 1;
             continue;
         }
         let start = y;
-        while y < h && dark_rows[y] {
+        while y < h && gray[y * w..(y + 1) * w].iter().filter(|&&v| v < 195).count() * 100 >= w * 68 {
             y += 1;
         }
         if y - start <= max_bar {
-            for r in start..y {
-                gray[r * w..(r + 1) * w].fill(255);
-            }
+            gray[start * w..y * w].fill(255);
         }
     }
-
     let mut dark_cols = vec![false; w];
     for (x, flag) in dark_cols.iter_mut().enumerate() {
-        let mut dark = 0usize;
-        for row in 0..h {
-            if gray[row * w + x] < 195 {
-                dark += 1;
-            }
-        }
-        *flag = dark * 100 >= h * 65;
+        *flag = (0..h).filter(|&r| gray[r * w + x] < 195).count() * 100 >= h * 65;
     }
     let mut x = 0;
     while x < w {
@@ -230,10 +224,8 @@ fn suppress_thin_ui_borders(gray: &mut [u8], w: usize, h: usize) {
             x += 1;
         }
         if x - start <= max_bar {
-            for row in 0..h {
-                for c in start..x {
-                    gray[row * w + c] = 255;
-                }
+            for r in 0..h {
+                gray[r * w + start..r * w + x].fill(255);
             }
         }
     }
@@ -248,47 +240,91 @@ fn unsharp_gray(src: &[u8], w: usize, h: usize) -> Vec<u8> {
         for x in 1..(w - 1) {
             let idx = y * w + x;
             let c = src[idx] as i32;
-            let blur = (src[idx - w - 1] as i32
-                + src[idx - w] as i32 * 2
-                + src[idx - w + 1] as i32
-                + src[idx - 1] as i32 * 2
-                + c * 4
-                + src[idx + 1] as i32 * 2
-                + src[idx + w - 1] as i32
-                + src[idx + w] as i32 * 2
-                + src[idx + w + 1] as i32)
-                / 16;
-            let sharpened = c + ((c - blur) * 55) / 100;
-            out[idx] = sharpened.clamp(0, 255) as u8;
+            let blur = (src[idx - w - 1] as i32 + src[idx - w] as i32 * 2 + src[idx - w + 1] as i32
+                + src[idx - 1] as i32 * 2 + c * 4 + src[idx + 1] as i32 * 2
+                + src[idx + w - 1] as i32 + src[idx + w] as i32 * 2 + src[idx + w + 1] as i32) / 16;
+            out[idx] = (c + ((c - blur) * 55) / 100).clamp(0, 255) as u8;
         }
     }
     out
 }
 
-/// Scores an OCR pass so multi-pass selection prefers complete multi-line clean text over garble.
-pub fn score_ocr_lines(lines: &[String]) -> i64 {
-    let mut score = 0i64;
-    for line in lines {
-        let t = line.trim();
-        if t.is_empty() {
-            continue;
+fn cubic_weight(t: f32) -> f32 {
+    let a = t.abs();
+    if a <= 1.0 { 1.5 * a * a * a - 2.5 * a * a + 1.0 }
+    else if a < 2.0 { -0.5 * a * a * a + 2.5 * a * a - 4.0 * a + 2.0 }
+    else { 0.0 }
+}
+
+/// Recovers horizontal 3x ClearType RGB subpixel glyph separation from unscaled screenshots
+/// and applies 4-tap vertical Catmull-Rom Cubic upscaling to 3x resolution with white padding.
+pub fn build_cleartype_subpixel_bgra(
+    src: &[u8],
+    w: u32,
+    h: u32,
+    pad: u32,
+    bg: (u8, u8, u8),
+) -> (u32, u32, Vec<u8>) {
+    let (uw, uh) = (w as usize, h as usize);
+    let sw = uw * 3;
+    let invert_dark = (bg.0 as u32 * 3 + bg.1 as u32 * 6 + bg.2 as u32) / 10 < 128;
+
+    let mut sub = vec![255u8; sw * uh];
+    let mut row_raw = vec![255u8; sw];
+    for y in 0..uh {
+        for x in 0..uw {
+            let o = (y * uw + x) * 4;
+            if o + 2 >= src.len() { break; }
+            let (mut b, mut g, mut r) = (src[o], src[o + 1], src[o + 2]);
+            if invert_dark { r = 255 - r; g = 255 - g; b = 255 - b; }
+            row_raw[x * 3] = r; row_raw[x * 3 + 1] = g; row_raw[x * 3 + 2] = b;
         }
-        score += 120;
-        for ch in t.chars() {
-            if ch.is_ascii_alphanumeric() {
-                score += 10;
-            } else if matches!(ch, '\u{4E00}'..='\u{9FFF}') {
-                score += 12;
-            } else if matches!(ch, '_' | '.' | '-' | '(' | ')' | ':' | '/' | '·' | '，' | '。') {
-                score += 6;
-            } else if matches!(ch, '|' | '~' | '^' | '`' | '\\') {
-                score -= 6;
-            } else if !ch.is_whitespace() {
-                score += 2;
-            }
+        for x in 0..sw {
+            let (l, c, r) = (row_raw[x.saturating_sub(1)] as u16, row_raw[x] as u16, row_raw[(x + 1).min(sw - 1)] as u16);
+            sub[y * sw + x] = ((l + 4 * c + r + 3) / 6) as u8;
         }
     }
-    score
+
+    let mut hist = [0u32; 256];
+    for &v in &sub { hist[v as usize] += 1; }
+    let lo_target = ((sub.len() as f64) * 0.015) as u32;
+    let (mut acc, mut min_v) = (0u32, 0u32);
+    for (v, &cnt) in hist.iter().enumerate() {
+        acc += cnt;
+        if acc >= lo_target { min_v = (v as u32).min(180); break; }
+    }
+    let span = 250u32.saturating_sub(min_v).max(40);
+    for px in &mut sub {
+        let norm = ((*px as u32).saturating_sub(min_v) as f32 / span as f32).clamp(0.0, 1.0);
+        *px = ((1.0 - (1.0 - norm).powf(1.15)) * 255.0).round().clamp(0.0, 255.0) as u8;
+    }
+
+    let nh_inner = uh * 3;
+    let mut gray = vec![255u8; sw * nh_inner];
+    for y in 0..nh_inner {
+        let fy = (y as f32 + 0.5) / 3.0 - 0.5;
+        let iy = fy.floor() as isize;
+        let weights = [-1isize, 0, 1, 2].map(|k| cubic_weight(fy - (iy + k) as f32));
+        let wsum: f32 = weights.iter().sum();
+        let rows = [-1isize, 0, 1, 2].map(|k| (iy + k).clamp(0, uh as isize - 1) as usize * sw);
+        for x in 0..sw {
+            let s = (0..4).map(|k| sub[rows[k] + x] as f32 * weights[k]).sum::<f32>();
+            gray[y * sw + x] = (s / wsum).round().clamp(0.0, 255.0) as u8;
+        }
+    }
+
+    suppress_thin_ui_borders(&mut gray, sw, nh_inner);
+
+    let (nw, nh, upad) = (sw + (pad as usize) * 2, nh_inner + (pad as usize) * 2, pad as usize);
+    let mut out = vec![255u8; nw * nh * 4];
+    for y in 0..nh_inner {
+        for x in 0..sw {
+            let v = gray[y * sw + x];
+            let o = ((y + upad) * nw + (x + upad)) * 4;
+            out[o..o + 3].copy_from_slice(&[v, v, v]);
+        }
+    }
+    (nw as u32, nh as u32, out)
 }
 
 #[cfg(test)]
@@ -301,6 +337,26 @@ mod tests {
         assert!(scaled);
         assert_eq!((w, h, pad), (1220, 228, 48));
         assert!(w + pad * 2 <= 2600 && h + pad * 2 <= 2600);
+    }
+
+    #[test]
+    fn cleartype_subpixel_preserves_horizontal_resolution_and_dimensions() {
+        let (w, h) = (12u32, 6u32);
+        let mut bgra = vec![255u8; (w * h * 4) as usize];
+        // Left subpixel dark (R=0, G=255, B=255), right subpixel dark on same pixel x=4
+        for y in 1..5 {
+            let o = (y * w as usize + 4) * 4;
+            bgra[o] = 20;     // B (right subpixel)
+            bgra[o + 1] = 250; // G (gap)
+            bgra[o + 2] = 20;  // R (left subpixel)
+        }
+        let (nw, nh, out) = build_cleartype_subpixel_bgra(&bgra, w, h, 8, (255, 255, 255));
+        assert_eq!((nw, nh), (12 * 3 + 16, 6 * 3 + 16));
+        let row = (8 + 7) * nw as usize + 8;
+        let sub_r = out[(row + 12) * 4];
+        let sub_g = out[(row + 13) * 4];
+        let sub_b = out[(row + 14) * 4];
+        assert!(sub_g > sub_r && sub_g > sub_b, "subpixel gap G={sub_g} should stay brighter than R={sub_r} & B={sub_b}");
     }
 
     #[test]
