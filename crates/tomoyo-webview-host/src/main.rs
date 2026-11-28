@@ -30,6 +30,7 @@ mod linux_host;
 mod linux_hotkeys;
 #[cfg(target_os = "linux")]
 mod linux_workers;
+mod mcp_ops;
 mod plugin_rpc;
 mod shim_js;
 #[cfg(windows)]
@@ -270,6 +271,8 @@ pub fn build_settings_init_script_for(initial_route: &str) -> String {
         "flows_path": tomoyo_core::flows_file_path().to_string_lossy(),
         "snippets": assets_ops::load_snippets_list(),
         "snippets_path": assets_ops::snippets_file_path().to_string_lossy(),
+        "mcp_servers": mcp_ops::load_mcp_servers_list(),
+        "mcp_path": mcp_ops::mcp_file_path().to_string_lossy(),
         "config_path": TomoyoConfig::config_path().to_string_lossy(),
         "sync_dir": tomoyo_core::configured_sync_dir().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default(),
         "plugins_dir": plugins_dir.to_string_lossy(),

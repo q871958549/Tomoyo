@@ -3,6 +3,7 @@
 //! Runs strictly on-demand via JSON-RPC (`0 MB` idle footprint), connecting to local Ollama
 //! or any user-configured OpenAI-compatible endpoint via OS-encrypted `[[settings]]` secrets.
 
+mod ai_rpc;
 mod client;
 mod history;
 mod http_curl;
@@ -11,14 +12,15 @@ mod mcp_semantic;
 mod prompts;
 mod semantic;
 
+use ai_rpc::{open_workbench_response, workbench_entry_item};
 use client::{invoke_llm, AiConfig};
 use history::{history_path, load_history_from, push_history_to, AiHistoryEntry};
 use mcp_semantic::{build_semantic_items, execute_mcp_action, parse_semantic_dirs, query_mcp};
 use prompts::{extract_first_code_or_line, parse_ai_input, AiMode};
 use serde_json::{json, Value};
 use tomoyo_sdk::{
-    ActionKind, ActionSpec, ExecuteRequest, ExecuteResponse, IconSpec, PluginMeta, PreviewSpec,
-    QueryContext, ResultCategory, ResultItem, TomoyoPlugin,
+    ActionKind, ActionSpec, ExecuteRequest, ExecuteResponse, IconSpec, PluginCallRequest,
+    PluginMeta, PreviewSpec, QueryContext, ResultCategory, ResultItem, TomoyoPlugin,
 };
 
 const PID: &str = "dev.tomoyo.ai";
@@ -142,12 +144,25 @@ impl TomoyoPlugin for AiPlugin {
     }
 
     fn query(&self, ctx: &QueryContext) -> Vec<ResultItem> {
-        if ctx.keyword.as_deref().is_some_and(|k| k.eq_ignore_ascii_case("mcp")) {
-            return query_mcp(ctx.args.trim());
+        let trimmed = ctx.args.trim();
+        let is_mcp = ctx.keyword.as_deref().is_some_and(|k| k.eq_ignore_ascii_case("mcp"));
+        if trimmed.eq_ignore_ascii_case(":ui") || trimmed.eq_ignore_ascii_case("ui") {
+            return vec![workbench_entry_item(
+                if is_mcp { "mcp" } else { "" },
+                "打开 Tomoyo AI & MCP 交互工作台",
+                "对话审校、分段复制代码、MCP 参数表单调用与本地知识库检索（Esc 关闭 0 内存残留）",
+                10_700,
+            )];
+        }
+        if is_mcp {
+            let mut mcp_items = query_mcp(trimmed);
+            if trimmed.is_empty() {
+                mcp_items.insert(0, workbench_entry_item("mcp", "打开 MCP 工具交互表单工作台 (`mcp :ui`)", "可视化浏览 tools/list、自动生成 JSON 参数模板并执行 tools/call", 10_650));
+            }
+            return mcp_items;
         }
         let semantic_dirs = parse_semantic_dirs(&ctx.plugin_settings);
         let clip_text = ctx.clipboard.as_ref().map(|c| c.text.as_str());
-        let trimmed = ctx.args.trim();
         let (head, tail) = trimmed.split_once(char::is_whitespace).unwrap_or((trimmed, ""));
         if matches!(head.to_ascii_lowercase().as_str(), "find" | "mem" | "kb" | "搜笔记") {
             let q = if tail.trim().is_empty() { clip_text.unwrap_or("") } else { tail.trim() };
@@ -216,6 +231,16 @@ impl TomoyoPlugin for AiPlugin {
                             }),
                         },
                     },
+                    ActionSpec {
+                        id: "open_workbench".into(),
+                        label: "在 AI 工作台审校并编辑".into(),
+                        shortcut: Some("Alt+Enter".into()),
+                        kind: ActionKind::PluginExecute {
+                            plugin_id: PID.into(),
+                            action_id: "open_workbench".into(),
+                            payload: json!({ "initial_query": parsed.text }),
+                        },
+                    },
                 ],
                 preview: Some(PreviewSpec::Text {
                     title: format!("{} ({backend})", parsed.mode.title_zh()),
@@ -238,6 +263,7 @@ impl TomoyoPlugin for AiPlugin {
             return out;
         }
 
+        out.push(workbench_entry_item("", "打开 AI & MCP 交互工作台 (`ai :ui`)", "多轮审校、代码提取复制、MCP 表单执行与 BM25 知识检索", 9_420));
         out.extend(quick_mode_items(&backend));
         for (i, h) in history.iter().take(6).enumerate() {
             out.push(history_item(h, 9_200 - i as i64, i));
@@ -246,6 +272,10 @@ impl TomoyoPlugin for AiPlugin {
     }
 
     fn execute(&self, req: &ExecuteRequest) -> ExecuteResponse {
+        if req.action_id == "open_workbench" {
+            let iq = req.payload.get("initial_query").and_then(Value::as_str).unwrap_or("").to_string();
+            return open_workbench_response(iq);
+        }
         if let Some(mcp_resp) = execute_mcp_action(req) {
             return mcp_resp;
         }
@@ -299,6 +329,10 @@ impl TomoyoPlugin for AiPlugin {
             },
         }
     }
+
+    fn call(&self, req: &PluginCallRequest) -> Result<Value, String> {
+        ai_rpc::handle_rpc(req)
+    }
 }
 
 fn main() {
@@ -312,8 +346,15 @@ fn main() {
         ctx.args = "sum hello world".into();
         let hits = AiPlugin.query(&ctx);
         assert!(hits.iter().any(|r| r.id == "ai:exec"));
-        let empty = AiPlugin.query(&QueryContext::new("ai", 2, 10).with_keyword("ai", ""));
-        assert!(empty.len() >= 8);
+        let ui_hits = AiPlugin.query(&QueryContext::new("ai :ui", 2, 10).with_keyword("ai", ":ui"));
+        assert!(ui_hits.iter().any(|r| r.id.starts_with("ai:ui:")));
+        let empty = AiPlugin.query(&QueryContext::new("ai", 3, 10).with_keyword("ai", ""));
+        assert!(empty.len() >= 9);
+        let init = AiPlugin.call(&PluginCallRequest {
+            method: "get_init".into(), params: json!({}),
+            plugin_settings: Default::default(), plugin_secrets: Default::default(),
+        }).unwrap();
+        assert!(init["backend"].is_string() && init["servers"].is_array());
         assert!(!semantic::tokenize("Wayland 窗口").is_empty());
         let exe = std::env::current_exe().unwrap();
         let srv = mcp_client::McpServerConfig {
@@ -321,7 +362,7 @@ fn main() {
             args: vec!["--mock-mcp-server".into()], env: std::collections::BTreeMap::new(), enabled: true,
         };
         assert_eq!(mcp_client::call_server_tool(&srv, "echo_upper", json!({ "text": "ok" })).unwrap(), "OK");
-        println!("[OK] tomoyo-plugin-ai v{} self-test passed (LLM + BM25/CJK Semantic + STDIO MCP handshake)", env!("CARGO_PKG_VERSION"));
+        println!("[OK] tomoyo-plugin-ai v{} self-test passed (LLM + Hybrid RPC/UI + BM25/CJK Semantic + STDIO MCP handshake)", env!("CARGO_PKG_VERSION"));
         return;
     }
     tomoyo_sdk::run(AiPlugin);

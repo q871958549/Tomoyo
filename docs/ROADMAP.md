@@ -554,8 +554,10 @@
    - **[Wave 1 已完成 ✅] 软水位热点拆债与声明式跨机环境档案（`tomoyo-cli profile`）**：
      - 完成 `engine.rs`、`host.rs`、`registry.rs`、`official-clipboard`、`official-notes`、`official-translate` 等 13 个热点文件拆分治理，将软水位棘轮从 **`91` 压降至 `≤ 78`**；
      - 新增 `tomoyo-cli profile export --out`、`profile diff --in` 与 `profile import --in [--dry-run]`（[`profile_cli.rs`](../crates/tomoyo-cli/src/profile_cli.rs)），实现配置、短语、工作流、`mcp.toml` 与已装插件清单的纯文本跨机一键迁移。
-   - **[Wave 2 规划中] 设置中心 MCP 可视化管理与 `official-ai` 按需审校工作台**：
-     - 设置中心可视化增删启停 `mcp.toml` 服务与 `tools/list` 实时探测；为 `dev.tomoyo.ai` 增加基于短命 `tomoyo-webview-host` 的代码 Diff/MCP 参数表单按需工作台，并支持代码仓库 `README`/`docs` 有界离线语义索引。
+   - **[Wave 2 已完成 ✅] 设置中心 MCP 可视化管理、`official-ai` 按需审校工作台与仓库语义增强**：
+     - 设置中心「工作流 → MCP 服务」新增 [`McpServersCard.svelte`](../frontend/src/apps/settings/McpServersCard.svelte) 与 [`mcp_ops.rs`](../crates/tomoyo-webview-host/src/mcp_ops.rs)，支持可视化增删启停 `mcp.toml` 服务及非阻塞 STDIO `tools/list` 实时握手探测与缓存失效（`settings.html` 仍严守 `≤ 300 KB`）；
+     - 为 `dev.tomoyo.ai` 升级 Hybrid Protocol v3（`[ui] entry = "ui/index.html"` + [`ai_rpc.rs`](../plugins/official-ai/src/ai_rpc.rs) `tomoyo/call`），支持 `ai :ui`/`mcp :ui` 唤起短命按需工作台（对话审校、分段复制代码块、MCP 工具 JSON 参数表单调用、`save_note` 一键沉淀及 `Esc` 关闭 0 内存残留）；
+     - [`semantic.rs`](../plugins/official-ai/src/semantic.rs) 新增 Markdown `#`/`##`/`###` 标题分级加权（缓存版本 `v=2` 自动平滑升级）与代码仓库根目录 `README*.md` / `docs/` 优先有界索引（跳过 `dist`/`build`/`out`/`.venv` 等构建产物目录）。
    - **[Wave 3 规划中] 高频长寿隔离插件与 `v4.0.0` GA 正式收口**：
      - 新增独立隔离的 `dev.tomoyo.projects`（本地 Git 仓库速跳）与 `dev.tomoyo.ssh`（`~/.ssh/config` 只读速连）插件，并在 Flows 3.0 加入情景工作空间布局联动；完成双端实机回归后推送 `v4.0.0` Tag 与 `crates.io`/Winget/Scoop/AUR 上架。
 

@@ -19,6 +19,17 @@ args = []
 [triggers]
 keywords = ["ai", "ask", "mcp"]
 
+[ui]
+entry = "ui/index.html"
+title = "Tomoyo AI & MCP 工作台"
+width = 900
+height = 640
+
+[[tray_actions]]
+id = "open_workbench"
+label = "打开 AI & MCP 工作台"
+action_id = "open_workbench"
+
 [resources]
 max_memory_mb = 64
 idle_timeout_secs = 30

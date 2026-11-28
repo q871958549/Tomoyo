@@ -7,7 +7,7 @@
   import type { SettingSearchEntry } from '../../lib/settingsSearch';
   import type {
     CustomFilterTab, HotkeyAuditReport, HotkeyHealthReport, LiveProbeResult,
-    ReleaseInfo, SnippetEntry, TomoyoConfig, UpdateStatus, WorkflowDef,
+    McpProbeResult, McpServerEntry, ReleaseInfo, SnippetEntry, TomoyoConfig, UpdateStatus, WorkflowDef,
   } from '../../lib/types';
   import Button from '../../lib/ui/Button.svelte';
   import Segmented from '../../lib/ui/Segmented.svelte';
@@ -33,6 +33,7 @@
   let plugins = $state(init.plugins);
   let flows = $state<WorkflowDef[]>(init.flows || []);
   let snippets = $state<SnippetEntry[]>(init.snippets || []);
+  let mcpServers = $state<McpServerEntry[]>(init.mcp_servers || []), probingMcp = $state(''), mcpProbe = $state<McpProbeResult | null>(null);
   let dryRes = $state<Record<string, unknown> | null>(null);
   let pluginUpdateCount = $derived(plugins.filter((p) => p.update_available).length);
   let secretsStatus = $state(init.secrets_status);
@@ -53,26 +54,13 @@
   let probingSpec = $state('');
   let probeResult = $state<LiveProbeResult | null>(null);
 
-  let storeLoaded = $state(false);
-  let storeLoading = $state(false);
-  let storeItems = $state<StoreItem[]>([]);
+  let storeLoaded = $state(false), storeLoading = $state(false), storeItems = $state<StoreItem[]>([]);
   let storeMeta = $state<StorePageMeta>({ total: 0, catalogTotal: 0, page: 1, totalPages: 1, categoryCounts: {} });
-  let storeStatus = $state('');
-  let storeDetail = $state<StoreItem | null>(null);
-  let storeDetailLoading = $state(false);
-  let pluginHealth = $state<Record<string, unknown> | null>(null);
-  let checkingPluginHealth = $state(false);
-  let logSource = $state('tomoyo.log');
-  let logErrorsOnly = $state(false);
-  let logContent = $state('');
-  let logMeta = $state('');
-  let updateStatus = $state<UpdateStatus | null>(init.cached_update ?? null);
-  let checkingUpdates = $state(false);
-  let updatePulse = $state(false);
-  let updatesCheckedOnce = $state(false);
-  let checkStartedAt = 0;
-  let manualUpdateCheck = false;
-  let checkTimer: ReturnType<typeof setTimeout> | null = null;
+  let storeStatus = $state(''), storeDetail = $state<StoreItem | null>(null), storeDetailLoading = $state(false);
+  let pluginHealth = $state<Record<string, unknown> | null>(null), checkingPluginHealth = $state(false);
+  let logSource = $state('tomoyo.log'), logErrorsOnly = $state(false), logContent = $state(''), logMeta = $state('');
+  let updateStatus = $state<UpdateStatus | null>(init.cached_update ?? null), checkingUpdates = $state(false), updatePulse = $state(false), updatesCheckedOnce = $state(false);
+  let checkStartedAt = 0, manualUpdateCheck = false, checkTimer: ReturnType<typeof setTimeout> | null = null;
   let installProgress = $state<{ percent: number; message: string; done?: boolean; ok?: boolean } | null>(null);
 
   let lang = $derived<Lang>(cfg.language === 'en' ? 'en' : 'zh');
@@ -97,6 +85,8 @@
   }
   function onSaveFlows(next: WorkflowDef[]) { flows = next; postHost({ cmd: 'save_flows', flows: $state.snapshot(next) }); }
   function onSaveSnippets(next: SnippetEntry[]) { snippets = next; postHost({ cmd: 'save_snippets', snippets: $state.snapshot(next) }); }
+  function onSaveMcp(next: McpServerEntry[]) { mcpServers = next; postHost({ cmd: 'save_mcp_servers', servers: $state.snapshot(next) }); }
+  function onProbeMcp(srv: McpServerEntry) { probingMcp = srv.name; mcpProbe = null; postHost({ cmd: 'probe_mcp_server', server: $state.snapshot(srv) }); }
   function onTogglePlugin(id: string, enabled: boolean) {
     const low = id.toLowerCase();
     const next = (cfg.disabled_plugins || []).filter((x) => x.toLowerCase() !== low);
@@ -154,7 +144,7 @@
       switchTab('system');
     } else if (tab === 'hotkeys' || tab === 'flows' || tab === 'search' || tab === 'core') {
       if (tab === 'search') subSearch = target === 'web' ? 'web' : 'indexing';
-      if (tab === 'flows') subFlows = target === 'snippets' ? 'snippets' : 'flows';
+      if (tab === 'flows') subFlows = target === 'snippets' ? 'snippets' : target === 'mcp' ? 'mcp' : 'flows';
       switchTab(tab);
     }
   }
@@ -302,6 +292,12 @@
       } else if (ev === 'snippets_saved') {
         if (data.ok && Array.isArray(data.snippets)) snippets = data.snippets as SnippetEntry[];
         setToast(`${data.ok ? '✓ ' : '✗ '}${data.message || ''}`, !data.ok);
+      } else if (ev === 'mcp_servers_saved') {
+        if (data.ok && Array.isArray(data.servers)) mcpServers = data.servers as McpServerEntry[];
+        setToast(`${data.ok ? '✓ ' : '✗ '}${data.message || ''}`, !data.ok);
+      } else if (ev === 'mcp_probe_result') {
+        probingMcp = ''; mcpProbe = data as unknown as McpProbeResult;
+        setToast(`${data.ok ? '✓ ' : '✗ '}${data.name || ''}: ${data.message || ''}`, !data.ok);
       } else if (ev === 'flow_dry_run_result' && data.ok) {
         dryRes = data;
       } else if (ev === 'plugin_updates_status' && Array.isArray(data.updates)) {
@@ -387,8 +383,8 @@
         {:else if activeTab === 'hotkeys'}
           <HotkeysTab {cfg} {lang} runningApps={init.running_apps} health={hotkeyHealth} audit={hotkeyAudit} auditing={auditingHotkeys} {probingSpec} {probeResult} onRunAudit={runHotkeyAudit} onProbe={probeHotkeyOwner} onApplyFreeKey={applyFreeKey} {onToggleOverride} {onUpdateAvoidance} />
         {:else if activeTab === 'flows'}
-          <div class="subbar"><Segmented value={subFlows} options={[{ value: 'flows', label: lang === 'en' ? 'Action Flows' : '工作流管道' }, { value: 'snippets', label: lang === 'en' ? 'Snippets (snip)' : '短语模板库' }]} onchange={(v) => (subFlows = v)} /></div>
-          <FlowsTab {lang} sub={subFlows} {flows} flowsPath={init.flows_path || ''} {snippets} snippetsPath={init.snippets_path || ''} {dryRes} {onSaveFlows} {onSaveSnippets} />
+          <div class="subbar"><Segmented value={subFlows} options={[{ value: 'flows', label: lang === 'en' ? 'Action Flows' : '工作流管道' }, { value: 'snippets', label: lang === 'en' ? 'Snippets (snip)' : '短语模板库' }, { value: 'mcp', label: lang === 'en' ? 'MCP Tools' : 'MCP 服务' }]} onchange={(v) => (subFlows = v)} /></div>
+          <FlowsTab {lang} sub={subFlows} {flows} flowsPath={init.flows_path || ''} {snippets} snippetsPath={init.snippets_path || ''} {dryRes} {mcpServers} mcpPath={init.mcp_path || ''} {probingMcp} {mcpProbe} {onSaveFlows} {onSaveSnippets} {onSaveMcp} {onProbeMcp} />
         {:else if activeTab === 'plugins'}
           <div class="subbar">
             <Segmented value={subPlugins} options={[{ value: 'installed', label: lang === 'en' ? 'Modules & Plugins' : '已安装与插件设置' }, { value: 'store', label: tr(lang, 'nav_store') }]} onchange={(v) => { subPlugins = v; if (v === 'store' && !storeLoaded) { storeLoaded = true; fetchStore(); } }} />

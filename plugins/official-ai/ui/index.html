@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>Tomoyo AI &amp; MCP 工作台</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root { --bg:#f7f8fa; --sf:#ffffff; --sub:#f1f3f6; --bd:#e4e7ef; --tx:#111827; --mu:#6b7280; --ac:#2563eb; --ac2:#eff4ff; --ok:#059669; --err:#dc2626; --mono:"JetBrains Mono",Consolas,monospace; }
+    body.dark { --bg:#111217; --sf:#191b22; --sub:#222532; --bd:#2b3040; --tx:#f3f4f6; --mu:#8a94a8; --ac:#6c7bf7; --ac2:rgba(108,123,247,.16); --ok:#34d399; --err:#f87171; }
+    body.midnight { --bg:#0b0e17; --sf:#131828; --sub:#1b2339; --bd:#263150; --tx:#f1f5f9; --mu:#8190ae; --ac:#6366f1; --ac2:rgba(99,102,241,.18); --ok:#34d399; --err:#f87171; }
+    html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tx); font:13.5px/1.5 "Inter","Noto Sans CJK SC","Microsoft YaHei UI",system-ui,sans-serif; }
+    button, input, select, textarea { font:inherit; color:inherit; outline:none; }
+    .app { display:flex; flex-direction:column; height:100%; }
+    .top { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 14px; background:var(--sf); border-bottom:1px solid var(--bd); }
+    .tabs, .row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    .tab { padding:5px 12px; border-radius:7px; border:1px solid transparent; background:transparent; cursor:pointer; font-weight:500; color:var(--mu); }
+    .tab.on { background:var(--ac2); border-color:var(--ac); color:var(--ac); }
+    .pill { display:inline-flex; align-items:center; padding:2px 8px; border-radius:999px; background:var(--sub); color:var(--mu); font-size:11.5px; }
+    .btn { padding:5px 11px; border-radius:7px; border:1px solid var(--bd); background:var(--sf); cursor:pointer; font-size:12.5px; font-weight:500; }
+    .btn:hover { border-color:var(--ac); color:var(--ac); }
+    .btn.p { background:var(--ac); border-color:var(--ac); color:#fff; }
+    .btn.p:hover { opacity:.92; color:#fff; }
+    .btn:disabled { opacity:.5; cursor:not-allowed; }
+    .body { flex:1; min-height:0; display:none; padding:12px 14px; gap:12px; }
+    .body.on { display:flex; }
+    .col { display:flex; flex-direction:column; gap:6px; min-height:0; }
+    .side { width:240px; flex-shrink:0; background:var(--sf); border:1px solid var(--bd); border-radius:10px; padding:8px; overflow-y:auto; display:flex; flex-direction:column; gap:6px; }
+    .main { flex:1; min-width:0; display:flex; flex-direction:column; gap:10px; min-height:0; }
+    .card { background:var(--sf); border:1px solid var(--bd); border-radius:10px; padding:10px 12px; display:flex; flex-direction:column; gap:8px; min-height:0; }
+    .sel, .inp, .ta { border:1px solid var(--bd); background:var(--bg); border-radius:7px; padding:6px 9px; }
+    .sel:focus, .inp:focus, .ta:focus { border-color:var(--ac); }
+    .ta { width:100%; resize:none; line-height:1.55; font-family:var(--mono); font-size:12.5px; }
+    .list-item { padding:7px 9px; border-radius:7px; border:1px solid transparent; cursor:pointer; text-align:left; background:var(--bg); }
+    .list-item:hover, .list-item.on { border-color:var(--ac); background:var(--ac2); }
+    .list-t { font-size:12.5px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .list-s { font-size:11px; color:var(--mu); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:2px; }
+    .code-blocks { display:flex; flex-direction:column; gap:6px; max-height:170px; overflow-y:auto; }
+    .code-box { border:1px solid var(--bd); border-radius:8px; background:var(--bg); padding:7px 10px; font-family:var(--mono); font-size:12px; }
+    .code-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:4px; color:var(--mu); font-size:11px; }
+    pre { white-space:pre-wrap; word-break:break-word; font-family:var(--mono); font-size:12px; }
+    .kb-list { flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:8px; }
+    .foot { height:32px; padding:0 14px; border-top:1px solid var(--bd); background:var(--sf); display:flex; align-items:center; justify-content:space-between; font-size:11.5px; color:var(--mu); }
+    .status.ok { color:var(--ok); }
+    .status.err { color:var(--err); }
+  </style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div class="tabs">
+      <button class="tab on" data-tab="ai">AI 审校工作台</button>
+      <button class="tab" data-tab="mcp">MCP 工具台</button>
+      <button class="tab" data-tab="kb">本地知识库</button>
+    </div>
+    <div class="row">
+      <span id="backendPill" class="pill">连接中…</span>
+      <button class="btn" id="closeBtn">关闭 (Esc)</button>
+    </div>
+  </header>
+
+  <section id="tab-ai" class="body on">
+    <aside class="side">
+      <div class="row" style="justify-content:space-between">
+        <strong style="font-size:12px">最近记录</strong>
+        <button class="btn" id="reloadInit" style="padding:2px 7px;font-size:11px">刷新</button>
+      </div>
+      <div id="histList" class="col"></div>
+    </aside>
+    <div class="main">
+      <div class="card">
+        <div class="row">
+          <select id="aiMode" class="sel">
+            <option value="ask">ask · 快速问答</option><option value="sum">sum · 要点提炼</option>
+            <option value="fix">fix · 报错诊断</option><option value="polish">polish · 润色改写</option>
+            <option value="commit">commit · 提交信息</option><option value="regex">regex · 正则表达式</option>
+            <option value="filter">filter · 文件筛选</option><option value="cmd">cmd · 终端命令</option>
+          </select>
+          <span class="pill">Ctrl+Enter 运行 · 0 MB 闲置</span>
+          <button class="btn p" id="runAiBtn" style="margin-left:auto">运行 AI</button>
+        </div>
+        <textarea id="aiPrompt" class="ta" rows="4" placeholder="输入问题、代码片段或报错日志，生成后可在下方直接编辑、分段复制或存为备忘…"></textarea>
+      </div>
+      <div class="card" style="flex:1">
+        <div class="row">
+          <strong style="font-size:12.5px">AI 回复 / 审校与改写区</strong>
+          <span id="aiMeta" class="pill" style="display:none"></span>
+          <div class="row" style="margin-left:auto">
+            <button class="btn" id="copyReplyBtn">复制全文</button>
+            <button class="btn" id="pasteReplyBtn">直贴回原窗口</button>
+            <button class="btn" id="saveNoteBtn">存为备忘</button>
+          </div>
+        </div>
+        <textarea id="aiReply" class="ta" style="flex:1;min-height:110px" placeholder="AI 回复会显示在这里，支持直接修改后再复制或存为 Markdown 备忘录…"></textarea>
+        <div id="codeBlocks" class="code-blocks"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="tab-mcp" class="body">
+    <aside class="side">
+      <div class="row" style="justify-content:space-between">
+        <strong style="font-size:12px">已发现工具</strong>
+        <button class="btn" id="mcpRefreshBtn" style="padding:2px 7px;font-size:11px">重探</button>
+      </div>
+      <div id="mcpToolList" class="col"></div>
+    </aside>
+    <div class="main">
+      <div class="card">
+        <div class="row">
+          <strong id="mcpSelTitle" style="font-size:13px">请在左侧选择 MCP 工具</strong>
+          <button class="btn p" id="mcpCallBtn" style="margin-left:auto" disabled>执行工具 (tools/call)</button>
+        </div>
+        <div id="mcpSelDesc" style="font-size:12px;color:var(--mu)">按需拉起 STDIO MCP 子进程执行，调用结束立即清理进程。</div>
+        <textarea id="mcpArgs" class="ta" rows="5" placeholder='{"text": "hello"}'></textarea>
+      </div>
+      <div class="card" style="flex:1">
+        <div class="row" style="justify-content:space-between">
+          <strong style="font-size:12.5px">工具执行输出</strong>
+          <button class="btn" id="copyMcpBtn">复制输出</button>
+        </div>
+        <pre id="mcpOut" style="flex:1;overflow-y:auto;background:var(--bg);border:1px solid var(--bd);border-radius:8px;padding:9px"></pre>
+      </div>
+    </div>
+  </section>
+
+  <section id="tab-kb" class="body">
+    <div class="main">
+      <div class="card">
+        <div class="row">
+          <input id="kbQuery" class="inp" style="flex:1" placeholder="输入中文或英文关键词搜索 notes/、snippets.toml 与配置的代码仓 README/docs…" />
+          <button class="btn p" id="kbSearchBtn">语义检索 (BM25+CJK)</button>
+        </div>
+      </div>
+      <div id="kbHits" class="kb-list"></div>
+    </div>
+  </section>
+
+  <footer class="foot">
+    <span id="statusText" class="status">就绪 · 关闭窗口立即释放 100% WebView 内存</span>
+    <span class="mono">dev.tomoyo.ai · Protocol v3</span>
+  </footer>
+</div>
+<script>
+(function() {
+  const $ = (id) => document.getElementById(id);
+  const t = window.tomoyo || {};
+  if (t.theme === 'midnight') document.body.classList.add('midnight');
+  else if (t.isDarkColors && t.isDarkColors()) document.body.classList.add('dark');
+
+  let state = { history: [], tools: [], selTool: null, mcpLoaded: false };
+  const setStatus = (msg, kind = '') => { const el = $('statusText'); el.textContent = msg; el.className = 'status ' + kind; };
+  const copyText = (txt) => { if (t.copyText) t.copyText(txt); setStatus('已复制到剪贴板', 'ok'); };
+  const pasteClose = (txt) => {
+    if (window.chrome && window.chrome.webview) window.chrome.webview.postMessage(JSON.stringify({ cmd: 'copy_and_paste', text: String(txt || '') }));
+    else copyText(txt);
+  };
+  const switchTab = (name) => {
+    document.querySelectorAll('.tab').forEach((b) => b.classList.toggle('on', b.dataset.tab === name));
+    document.querySelectorAll('.body').forEach((s) => s.classList.toggle('on', s.id === 'tab-' + name));
+    if (name === 'mcp' && !state.mcpLoaded) loadMcpTools(false);
+  };
+  document.querySelectorAll('.tab').forEach((b) => b.addEventListener('click', () => switchTab(b.dataset.tab)));
+  $('closeBtn').onclick = () => t.close && t.close();
+
+  function renderCodeBlocks(md) {
+    const box = $('codeBlocks'); box.innerHTML = '';
+    const re = /```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g;
+    let m, idx = 1;
+    while ((m = re.exec(md || '')) !== null) {
+      const code = m[2].trimEnd(), wrap = document.createElement('div');
+      wrap.className = 'code-box';
+      const head = document.createElement('div'); head.className = 'code-head';
+      const lbl = document.createElement('span'); lbl.textContent = '#' + (idx++) + ' · ' + (m[1] || 'code');
+      const btn = document.createElement('button'); btn.className = 'btn'; btn.style.cssText = 'padding:1px 7px;font-size:11px'; btn.textContent = '复制代码块';
+      btn.onclick = () => copyText(code);
+      head.append(lbl, btn);
+      const pre = document.createElement('pre'); pre.textContent = code;
+      wrap.append(head, pre); box.appendChild(wrap);
+    }
+  }
+
+  function renderHistory() {
+    const list = $('histList'); list.innerHTML = '';
+    if (!state.history.length) { list.innerHTML = '<div class="list-s">暂无历史记录</div>'; return; }
+    state.history.forEach((h) => {
+      const btn = document.createElement('button'); btn.className = 'list-item';
+      const tt = document.createElement('div'); tt.className = 'list-t'; tt.textContent = '[' + (h.mode || 'ask').toUpperCase() + '] ' + (h.query || '');
+      const ss = document.createElement('div'); ss.className = 'list-s'; ss.textContent = (h.model || '') + ' · ' + (h.reply || '').slice(0, 48);
+      btn.append(tt, ss);
+      btn.onclick = () => {
+        $('aiMode').value = h.mode || 'ask'; $('aiPrompt').value = h.query || ''; $('aiReply').value = h.reply || '';
+        $('aiMeta').style.display = 'inline-flex'; $('aiMeta').textContent = h.model || '';
+        renderCodeBlocks(h.reply || '');
+      };
+      list.appendChild(btn);
+    });
+  }
+
+  async function initData() {
+    if (!t.callPlugin) return;
+    try {
+      const res = await t.callPlugin('get_init', {});
+      $('backendPill').textContent = res.backend || '就绪';
+      state.history = Array.isArray(res.history) ? res.history : [];
+      renderHistory(); applyInitialQuery(t.initialQuery || '');
+    } catch (e) { setStatus(e.message, 'err'); }
+  }
+
+  function applyInitialQuery(q) {
+    const s = String(q || '').trim();
+    if (!s) return;
+    if (s === 'mcp') switchTab('mcp');
+    else if (s === 'kb' || s === 'find') switchTab('kb');
+    else if (!$('aiPrompt').value) $('aiPrompt').value = s;
+  }
+
+  async function runAi() {
+    const text = $('aiPrompt').value.trim();
+    if (!text) return setStatus('请先输入需要处理的内容', 'err');
+    $('runAiBtn').disabled = true; setStatus('正在调用推理后端…');
+    try {
+      const res = await t.callPlugin('ask', { mode: $('aiMode').value, text });
+      $('aiReply').value = res.text || '';
+      $('aiMeta').style.display = 'inline-flex'; $('aiMeta').textContent = (res.model || '') + ' · ' + (res.elapsed_ms || 0) + ' ms';
+      if (Array.isArray(res.history)) { state.history = res.history; renderHistory(); }
+      renderCodeBlocks(res.text || ''); setStatus('生成完成 (' + (res.elapsed_ms || 0) + ' ms)', 'ok');
+    } catch (e) { setStatus(e.message, 'err'); }
+    finally { $('runAiBtn').disabled = false; }
+  }
+
+  async function loadMcpTools(force) {
+    setStatus(force ? '正在探测全部 MCP 服务 tools/list…' : '正在加载 MCP 工具列表…');
+    try {
+      const res = await t.callPlugin('mcp_list', { force_refresh: !!force });
+      state.mcpLoaded = true; state.tools = Array.isArray(res.tools) ? res.tools : [];
+      const list = $('mcpToolList'); list.innerHTML = '';
+      if (!state.tools.length) {
+        const errs = (res.errors || []).join('; ');
+        const msg = document.createElement('div'); msg.className = 'list-s';
+        msg.textContent = errs ? ('探测失败: ' + errs) : '无可用 MCP 工具；请在设置中心「工作流 → MCP 服务」添加';
+        list.appendChild(msg);
+      }
+      state.tools.forEach((tool) => {
+        const btn = document.createElement('button'); btn.className = 'list-item';
+        const tt = document.createElement('div'); tt.className = 'list-t'; tt.textContent = tool.server + ':' + tool.name;
+        const ss = document.createElement('div'); ss.className = 'list-s'; ss.textContent = tool.description || 'MCP 工具';
+        btn.append(tt, ss);
+        btn.onclick = () => {
+          document.querySelectorAll('#mcpToolList .list-item').forEach((n) => n.classList.remove('on'));
+          btn.classList.add('on'); state.selTool = tool;
+          $('mcpSelTitle').textContent = tool.server + ':' + tool.name;
+          $('mcpSelDesc').textContent = tool.description || '无附加描述';
+          const props = tool.input_schema && tool.input_schema.properties;
+          if (props && typeof props === 'object') {
+            const sample = {};
+            Object.keys(props).forEach((k) => { sample[k] = props[k].type === 'number' ? 0 : props[k].type === 'boolean' ? false : ''; });
+            $('mcpArgs').value = JSON.stringify(sample, null, 2);
+          } else { $('mcpArgs').value = '{}'; }
+          $('mcpCallBtn').disabled = false;
+        };
+        list.appendChild(btn);
+      });
+      setStatus('已加载 ' + state.tools.length + ' 个 MCP 工具', 'ok');
+    } catch (e) { setStatus(e.message, 'err'); }
+  }
+
+  async function callMcpTool() {
+    if (!state.selTool) return;
+    let args = {};
+    try { args = JSON.parse($('mcpArgs').value.trim() || '{}'); }
+    catch (e) { return setStatus('JSON 参数格式错误: ' + e.message, 'err'); }
+    $('mcpCallBtn').disabled = true; setStatus('正在按需拉起 ' + state.selTool.server + ' 执行 ' + state.selTool.name + '…');
+    try {
+      const res = await t.callPlugin('mcp_call', { server: state.selTool.server, tool: state.selTool.name, arguments: args });
+      $('mcpOut').textContent = res.output || ''; setStatus('MCP 执行完成 (' + (res.elapsed_ms || 0) + ' ms)', 'ok');
+    } catch (e) { $('mcpOut').textContent = e.message; setStatus(e.message, 'err'); }
+    finally { $('mcpCallBtn').disabled = false; }
+  }
+
+  async function runKb() {
+    const q = $('kbQuery').value.trim();
+    if (!q) return;
+    setStatus('正在检索本地知识库…');
+    try {
+      const res = await t.callPlugin('semantic_search', { query: q, limit: 12 });
+      const box = $('kbHits'); box.innerHTML = '';
+      const hits = Array.isArray(res.hits) ? res.hits : [];
+      if (!hits.length) {
+        const empty = document.createElement('div'); empty.className = 'card'; empty.textContent = '未匹配到相关文档，可在「设置 → 插件中心 → 本地 AI 助手」配置 semantic_dirs。';
+        box.appendChild(empty);
+      }
+      hits.forEach((h) => {
+        const card = document.createElement('div'); card.className = 'card';
+        const top = document.createElement('div'); top.className = 'row';
+        const tt = document.createElement('strong'); tt.textContent = h.title || '';
+        const sc = document.createElement('span'); sc.className = 'pill'; sc.textContent = 'BM25 ' + Number(h.score || 0).toFixed(2);
+        const cp = document.createElement('button'); cp.className = 'btn'; cp.style.marginLeft = 'auto'; cp.textContent = '复制摘要';
+        cp.onclick = () => copyText(h.preview || '');
+        top.append(tt, sc, cp);
+        const pt = document.createElement('div'); pt.className = 'list-s mono'; pt.textContent = h.path || '';
+        const pv = document.createElement('div'); pv.style.fontSize = '12.5px'; pv.textContent = h.preview || '';
+        card.append(top, pt, pv); box.appendChild(card);
+      });
+      setStatus('命中 ' + hits.length + ' 篇本地文档', 'ok');
+    } catch (e) { setStatus(e.message, 'err'); }
+  }
+
+  $('runAiBtn').onclick = runAi; $('reloadInit').onclick = initData;
+  $('aiPrompt').addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); runAi(); } });
+  $('aiReply').addEventListener('input', () => renderCodeBlocks($('aiReply').value));
+  $('copyReplyBtn').onclick = () => copyText($('aiReply').value);
+  $('pasteReplyBtn').onclick = () => pasteClose($('aiReply').value);
+  $('saveNoteBtn').onclick = async () => {
+    const body = $('aiReply').value.trim();
+    if (!body) return setStatus('回复为空，无法存为备忘', 'err');
+    try { const res = await t.callPlugin('save_note', { title: $('aiPrompt').value.trim().slice(0, 36), body }); setStatus('已存为备忘：' + res.file_name, 'ok'); }
+    catch (e) { setStatus(e.message, 'err'); }
+  };
+  $('mcpRefreshBtn').onclick = () => loadMcpTools(true); $('mcpCallBtn').onclick = callMcpTool;
+  $('copyMcpBtn').onclick = () => copyText($('mcpOut').textContent || '');
+  $('kbSearchBtn').onclick = runKb; $('kbQuery').addEventListener('keydown', (e) => { if (e.key === 'Enter') runKb(); });
+  if (t.onEnter) t.onEnter((p) => p && applyInitialQuery(p.payload || ''));
+  initData();
+})();
+</script>
+</body>
+</html>

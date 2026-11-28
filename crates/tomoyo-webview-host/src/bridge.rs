@@ -22,6 +22,8 @@ pub enum HostMessage {
     SaveFlows { flows: Vec<tomoyo_core::WorkflowDef> },
     SaveSnippets { snippets: Vec<crate::assets_ops::SnippetRow> },
     DryRunFlow { flow: tomoyo_core::WorkflowDef, #[serde(default)] sample_clip: String },
+    SaveMcpServers { servers: Vec<crate::mcp_ops::McpServerRow> },
+    ProbeMcpServer { server: crate::mcp_ops::McpServerRow },
     PickFolder,
     PickSyncDir,
     PickPluginPath { plugin_id: String, key: String, #[serde(default)] kind: String },
@@ -91,6 +93,7 @@ pub struct HostAction {
     pub hotkey_capture_cmd: i8,
     pub async_audit_hotkeys: bool,
     pub async_probe_hotkey: Option<String>,
+    pub async_probe_mcp: Option<crate::mcp_ops::McpServerRow>,
 }
 
 pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isize>) -> HostAction {
@@ -154,6 +157,14 @@ pub fn handle_host_message(raw: &str, db: &mut PluginDb, notify_hwnd: Option<isi
         }
         HostMessage::DryRunFlow { flow, sample_clip } => HostAction {
             reply_json: Some(crate::assets_ops::dry_run_flow_reply(&flow, &sample_clip)),
+            ..Default::default()
+        },
+        HostMessage::SaveMcpServers { servers } => {
+            let (reply, _) = crate::mcp_ops::save_mcp_servers_reply(&servers);
+            HostAction { reply_json: Some(reply), ..Default::default() }
+        }
+        HostMessage::ProbeMcpServer { server } => HostAction {
+            async_probe_mcp: Some(server),
             ..Default::default()
         },
         HostMessage::PickFolder => HostAction { pick_folder_mode: 1, ..Default::default() },

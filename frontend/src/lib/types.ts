@@ -289,6 +289,22 @@ export interface WorkflowDef {
   steps: WorkflowStep[];
 }
 
+export interface McpServerEntry {
+  name: string;
+  command: string;
+  args: string[];
+  env: Record<string, string>;
+  enabled: boolean;
+}
+
+export interface McpProbeResult {
+  name: string;
+  ok: boolean;
+  elapsed_ms?: number;
+  tools?: Array<{ name: string; description?: string }>;
+  message?: string;
+}
+
 export interface SettingsInitPayload {
   version: string;
   platform?: string;
@@ -299,6 +315,8 @@ export interface SettingsInitPayload {
   flows_path?: string;
   snippets?: SnippetEntry[];
   snippets_path?: string;
+  mcp_servers?: McpServerEntry[];
+  mcp_path?: string;
   config_path: string;
   sync_dir?: string;
   plugins_dir: string;

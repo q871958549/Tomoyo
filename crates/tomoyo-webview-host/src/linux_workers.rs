@@ -350,6 +350,12 @@ pub fn dispatch_async_workers(act: HostAction, ch: &Arc<HostChannel>) {
             c.push(crate::plugin_rpc::execute_plugin_rpc(&pid, &req_id, &method, params));
         });
     }
+    if let Some(srv) = act.async_probe_mcp {
+        let c = Arc::clone(ch);
+        let _ = std::thread::Builder::new().name("tomoyo-mcp-probe".into()).spawn(move || {
+            c.push(crate::mcp_ops::probe_mcp_server_reply(&srv));
+        });
+    }
 }
 
 pub struct SocketGuard(pub Option<PathBuf>);

@@ -2,7 +2,8 @@
   import Icon from '../../lib/ui/Icon.svelte';
   import { postHost } from '../../lib/ipc';
   import { tr, type Lang } from '../../lib/i18n';
-  import type { SelectOption, SnippetEntry, WorkflowDef, WorkflowStep } from '../../lib/types';
+  import type { McpProbeResult, McpServerEntry, SelectOption, SnippetEntry, WorkflowDef, WorkflowStep } from '../../lib/types';
+  import McpServersCard from './McpServersCard.svelte';
   import Button from '../../lib/ui/Button.svelte';
   import HotkeyRecorder from '../../lib/ui/HotkeyRecorder.svelte';
   import Input from '../../lib/ui/Input.svelte';
@@ -10,9 +11,9 @@
   import Switch from '../../lib/ui/Switch.svelte';
 
   interface DryRunState { flow_id?: string; trace?: Array<{ index: number; kind: string; output: string }>; effects?: string[]; }
-  interface Props { lang: Lang; sub?: string; flows: WorkflowDef[]; flowsPath: string; snippets?: SnippetEntry[]; snippetsPath?: string; dryRes?: DryRunState | null; onSaveFlows: (next: WorkflowDef[]) => void; onSaveSnippets?: (next: SnippetEntry[]) => void; }
+  interface Props { lang: Lang; sub?: string; flows: WorkflowDef[]; flowsPath: string; snippets?: SnippetEntry[]; snippetsPath?: string; dryRes?: DryRunState | null; mcpServers?: McpServerEntry[]; mcpPath?: string; probingMcp?: string; mcpProbe?: McpProbeResult | null; onSaveFlows: (next: WorkflowDef[]) => void; onSaveSnippets?: (next: SnippetEntry[]) => void; onSaveMcp?: (next: McpServerEntry[]) => void; onProbeMcp?: (srv: McpServerEntry) => void; }
 
-  let { lang, sub = 'flows', flows, flowsPath, snippets = [], snippetsPath = '', dryRes = null, onSaveFlows, onSaveSnippets }: Props = $props();
+  let { lang, sub = 'flows', flows, flowsPath, snippets = [], snippetsPath = '', dryRes = null, mcpServers = [], mcpPath = '', probingMcp = '', mcpProbe = null, onSaveFlows, onSaveSnippets, onSaveMcp, onProbeMcp }: Props = $props();
   let isEn = $derived(lang === 'en');
   let hkEditId = $state<string | null>(null), dryId = $state<string | null>(null), drySample = $state('  Tomoyo\n   Shell  '), editingId = $state<string | null>(null);
   let sKw = $state(''), sTitle = $state(''), sTags = $state(''), sTpl = $state(''), sEdit = $state<string | null>(null);
@@ -142,7 +143,9 @@
   }
 </script>
 
-{#if sub === 'snippets'}
+{#if sub === 'mcp'}
+  <McpServersCard {lang} servers={mcpServers} {mcpPath} probingName={probingMcp} probeResult={mcpProbe} onSaveServers={(n) => onSaveMcp?.(n)} onProbeServer={(s) => onProbeMcp?.(s)} />
+{:else if sub === 'snippets'}
   <div class="tab-head-bar">
     <div><h2>{isEn ? 'Snippets (snip)' : '快捷短语与模板 (snip)'}</h2><p class="tab-lead">{isEn ? 'Portable snippets.toml with {{date}} / {{uuid}} / {{clipboard}}.' : '纯文本 snippets.toml 存储，支持 {{date}} / {{uuid}} / {{clipboard}} 变量。'}</p></div>
     {#if snippetsPath}<button type="button" class="t-chip" onclick={() => postHost({ cmd: 'open_path', path: snippetsPath })}>snippets.toml</button>{/if}

@@ -116,6 +116,8 @@ export function hydrateSettingsInit(): SettingsInitPayload {
     flows_path: raw.flows_path || '',
     snippets: Array.isArray(raw.snippets) ? raw.snippets : [],
     snippets_path: raw.snippets_path || '',
+    mcp_servers: Array.isArray(raw.mcp_servers) ? raw.mcp_servers : [],
+    mcp_path: raw.mcp_path || '',
     config_path: raw.config_path || '',
     sync_dir: raw.sync_dir || '',
     plugins_dir: raw.plugins_dir || '',

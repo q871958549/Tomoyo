@@ -1,7 +1,7 @@
 {
   "schema_version": 2,
   "name": "Tomoyo 开源插件清单 v2（免登录直装 · 支持万级分片索引）",
-  "updated_at": "2026-11-28",
+  "updated_at": "2026-11-29",
   "total_count": 14,
   "shards": [
     {
@@ -9,14 +9,14 @@
       "category": "dev",
       "source": "registry/shards/examples.json",
       "count": 4,
-      "sha256": "3c762011a2b0eefddddddc729b202ee27dd7d4389198e59c43d7edafc53dff55"
+      "sha256": "fbdd7a957b7e5147843ff81e054098d529980240b9f6f8a3301309fdd858e46a"
     },
     {
       "id": "official",
       "category": "ai",
       "source": "registry/shards/official.json",
       "count": 10,
-      "sha256": "b5ed6df52ecf601b70d32d7eda9fc70b978337e99aa787a353375d63b1224981"
+      "sha256": "1850a1a564ed78cc691497a9482969d94a0d46f55d60201dcf52e5ac115d9e0d"
     }
   ],
   "plugins": []

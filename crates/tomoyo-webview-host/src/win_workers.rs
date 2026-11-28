@@ -272,6 +272,12 @@ pub fn dispatch_async_workers(
             push_evt(&tx_c, hwnd_raw, notify_msg, reply);
         });
     }
+    if let Some(srv) = act.async_probe_mcp {
+        let tx_c = tx.clone();
+        let _ = std::thread::Builder::new().name("tomoyo-mcp-probe".into()).spawn(move || {
+            push_evt(&tx_c, hwnd_raw, notify_msg, crate::mcp_ops::probe_mcp_server_reply(&srv));
+        });
+    }
 }
 
 fn push_evt(tx: &mpsc::Sender<String>, hwnd_raw: usize, notify_msg: u32, evt: String) {

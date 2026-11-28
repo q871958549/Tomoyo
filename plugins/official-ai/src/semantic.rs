@@ -6,12 +6,17 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
-const MAX_FILES: usize = 360;
-const MAX_FILE_BYTES: u64 = 128 * 1024;
-const SKIP_DIRS: &[&str] = &[".git", ".archive", "target", "node_modules", "dist", "__pycache__"];
+const MAX_FILES: usize = 300;
+const MAX_FILE_BYTES: u64 = 96 * 1024;
+const SKIP_DIRS: &[&str] = &[
+    ".git", ".archive", "target", "node_modules", "dist", "build", "out", "coverage", ".venv",
+    "venv", "__pycache__",
+];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct CachedDoc {
+    #[serde(default)]
+    v: u8,
     path: String,
     title: String,
     modified_secs: u64,
@@ -50,7 +55,7 @@ pub fn search_at_roots(query: &str, roots: &[PathBuf], cache_path: &Path, limit:
         let Ok(meta) = std::fs::metadata(&path) else { continue; };
         if meta.len() > MAX_FILE_BYTES { continue; }
         let mtime = meta.modified().ok().and_then(|t| t.duration_since(UNIX_EPOCH).ok()).map(|d| d.as_secs()).unwrap_or(0);
-        if let Some(hit) = prev_map.get(&p_str).filter(|d| d.modified_secs == mtime) {
+        if let Some(hit) = prev_map.get(&p_str).filter(|d| d.modified_secs == mtime && d.v >= 2) {
             docs.push(hit.clone());
             continue;
         }
@@ -106,24 +111,49 @@ fn collect_roots(extra_dirs: &[String]) -> Vec<PathBuf> {
     out
 }
 
+fn is_repo_root(dir: &Path) -> bool {
+    dir.join(".git").exists() || dir.join("Cargo.toml").is_file() || dir.join("package.json").is_file()
+}
+
+fn push_doc_file(path: PathBuf, out: &mut Vec<PathBuf>) {
+    if out.len() < MAX_FILES && is_text_doc(&path) && !out.contains(&path) {
+        out.push(path);
+    }
+}
+
 fn collect_files(cur: &Path, depth: usize, out: &mut Vec<PathBuf>) {
     if out.len() >= MAX_FILES || depth > 5 { return; }
     if cur.is_file() {
-        if is_text_doc(cur) { out.push(cur.to_path_buf()); }
+        push_doc_file(cur.to_path_buf(), out);
         return;
     }
     let Ok(rd) = std::fs::read_dir(cur) else { return; };
+    let mut dirs = Vec::new();
+    let mut docs_dir = None;
+    let repo_root = is_repo_root(cur);
+    let mut deferred_files = Vec::new();
     for ent in rd.flatten() {
         if out.len() >= MAX_FILES { break; }
         let path = ent.path();
-        let name = ent.file_name();
-        let name_s = name.to_string_lossy();
+        let name_s = ent.file_name().to_string_lossy().into_owned();
         if SKIP_DIRS.iter().any(|&s| s.eq_ignore_ascii_case(&name_s)) { continue; }
         if path.is_dir() {
-            collect_files(&path, depth + 1, out);
+            if repo_root && name_s.eq_ignore_ascii_case("docs") { docs_dir = Some(path); }
+            else { dirs.push(path); }
         } else if is_text_doc(&path) {
-            out.push(path);
+            let low = name_s.to_ascii_lowercase();
+            if repo_root && (low.starts_with("readme") || low == "changelog.md" || low == "architecture.md") {
+                push_doc_file(path, out);
+            } else {
+                deferred_files.push(path);
+            }
         }
+    }
+    if let Some(d) = docs_dir { collect_files(&d, depth + 1, out); }
+    for f in deferred_files { push_doc_file(f, out); }
+    for d in dirs {
+        if out.len() >= MAX_FILES { break; }
+        collect_files(&d, depth + 1, out);
     }
 }
 
@@ -131,6 +161,14 @@ fn is_text_doc(p: &Path) -> bool {
     p.extension()
         .and_then(|e| e.to_str())
         .is_some_and(|e| matches!(e.to_ascii_lowercase().as_str(), "md" | "txt" | "toml" | "rs" | "ts" | "py"))
+}
+
+fn add_weighted_tokens(tf: &mut HashMap<String, u32>, total_len: &mut usize, text: &str, weight: u32) {
+    let toks = tokenize(text);
+    *total_len += toks.len() * weight as usize;
+    for tok in toks {
+        *tf.entry(tok).or_insert(0) += weight;
+    }
 }
 
 fn index_text(p_str: &str, path: &Path, modified_secs: u64, raw: &str) -> CachedDoc {
@@ -147,13 +185,17 @@ fn index_text(p_str: &str, path: &Path, modified_secs: u64, raw: &str) -> Cached
         .take(64)
         .collect::<String>();
     let preview: String = clean_body.replace(['\r', '\n'], " ").chars().take(180).collect();
-    let tokens = tokenize(&format!("{title}\n{clean_body}"));
-    let len = tokens.len().max(1);
     let mut tf = HashMap::new();
-    for tok in tokens {
-        *tf.entry(tok).or_insert(0) += 1;
+    let mut total_len = 0usize;
+    add_weighted_tokens(&mut tf, &mut total_len, &title, 3);
+    for line in clean_body.lines() {
+        let tr = line.trim_start();
+        let w = if tr.starts_with("### ") { 2 }
+            else if tr.starts_with("## ") || tr.starts_with("# ") { 3 }
+            else { 1 };
+        add_weighted_tokens(&mut tf, &mut total_len, line.trim_start_matches('#'), w);
     }
-    CachedDoc { path: p_str.into(), title, modified_secs, preview, tf, len }
+    CachedDoc { v: 2, path: p_str.into(), title, modified_secs, preview, tf, len: total_len.max(1) }
 }
 
 pub fn tokenize(text: &str) -> Vec<String> {
@@ -219,6 +261,37 @@ mod tests {
 
         let hits2 = search_at_roots("Wayland 窗口坐标", std::slice::from_ref(&dir), &cache, 5);
         assert_eq!(hits2[0].path, hits[0].path);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn heading_weighted_ranking_prefers_markdown_heading_over_body_mention() {
+        let dir = std::env::temp_dir().join(format!("tomoyo_sem_head_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("body_only.md"), "# 通用开发日志\n这里随手提到一次 portal_shortcut 协议背景说明。\n").unwrap();
+        std::fs::write(dir.join("heading_match.md"), "# 系统规范\n## portal_shortcut 热键绑定机制\n详细步骤省略。\n").unwrap();
+        let cache = dir.join("cache.json");
+        let hits = search_at_roots("portal_shortcut", std::slice::from_ref(&dir), &cache, 5);
+        assert_eq!(hits.len(), 2);
+        assert!(hits[0].path.ends_with("heading_match.md"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn repo_root_prioritizes_readme_and_docs_while_skipping_build_dirs() {
+        let dir = std::env::temp_dir().join(format!("tomoyo_sem_repo_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join(".git")).unwrap();
+        std::fs::create_dir_all(dir.join("docs")).unwrap();
+        std::fs::create_dir_all(dir.join("dist")).unwrap();
+        std::fs::write(dir.join("README.md"), "# TomoyoRepo\nArchitecture overview for mcp_workbench.\n").unwrap();
+        std::fs::write(dir.join("docs/guide.md"), "# Guide\nHow mcp_workbench works cleanly.\n").unwrap();
+        std::fs::write(dir.join("dist/junk.md"), "# Ignored\nmcp_workbench compiled output\n").unwrap();
+        let cache = dir.join("cache.json");
+        let hits = search_at_roots("mcp_workbench", std::slice::from_ref(&dir), &cache, 10);
+        assert_eq!(hits.len(), 2);
+        assert!(hits.iter().all(|h| !h.path.contains("dist")));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
