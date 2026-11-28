@@ -253,7 +253,7 @@
   }
   .probe-inp {
     flex: 1; min-width: 0; height: 100%; border: 0; outline: none; background: transparent;
-    color: var(--text); font-family: "Cascadia Mono", Consolas, monospace; font-size: 12.5px;
+    color: var(--text); font-family: var(--font-mono); font-size: 12.5px;
   }
   .probe-inp::placeholder { color: var(--muted); font-family: inherit; }
   .probe-tools { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; margin-left: auto; }

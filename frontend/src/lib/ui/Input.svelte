@@ -150,7 +150,7 @@
     font-size: 13px;
   }
   .t-input-el.is-mono {
-    font-family: "Cascadia Mono", Consolas, monospace;
+    font-family: var(--font-mono);
     font-size: 12.2px;
   }
   .t-input-el::placeholder {

@@ -145,7 +145,7 @@
     text-overflow: ellipsis;
   }
   .t-ctx-sc {
-    font-family: "Cascadia Mono", Consolas, monospace;
+    font-family: var(--font-mono);
     font-size: 11px;
     color: var(--muted);
     margin-left: 12px;

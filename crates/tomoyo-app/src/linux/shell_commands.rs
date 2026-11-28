@@ -12,7 +12,7 @@ use crate::linux::shell_state::{with_current_core, AppCore};
 use std::ffi::CString;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tomoyo_core::{
     download_and_verify_release_asset_with_progress, is_autostart_enabled, is_safe_http_url,
     launch_verified_update_installer, load_or_init_flows, run_flow_llm_transform,
@@ -95,16 +95,25 @@ impl AppCore {
         if self.suppress_clipboard.load(Ordering::Acquire) || is_clipboard_confidential() {
             return;
         }
-        if clipboard_has_rich_attachment() { self.last_clip_snapshot = None; }
+        let rich = clipboard_has_rich_attachment();
+        if rich {
+            self.last_clip_snapshot = None;
+            self.last_rich_clip_at = Some(Instant::now());
+        }
         let sub_text = self.plugin_host.has_event_subscriber(PluginEventKind::ClipboardText);
         let sub_img = self.plugin_host.has_event_subscriber(PluginEventKind::ClipboardImage);
         let src = if sub_text || sub_img { clipboard_source_app_name() } else { String::new() };
-        if sub_text && let Some(files) = read_clipboard_files() {
-            self.dispatch_clipboard_event(
-                PluginEventKind::ClipboardText,
-                serde_json::json!({ "kind": "files", "paths": files, "source_app": src }),
-            );
+        if let Some(files) = read_clipboard_files() {
+            self.last_clip_snapshot = None;
+            self.last_rich_clip_at = Some(Instant::now());
+            if sub_text {
+                self.dispatch_clipboard_event(
+                    PluginEventKind::ClipboardText,
+                    serde_json::json!({ "kind": "files", "paths": files, "source_app": src }),
+                );
+            }
         } else if let Some(txt) = read_clipboard_text() {
+            self.last_rich_clip_at = None;
             let now = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_secs() as i64)
@@ -119,13 +128,17 @@ impl AppCore {
                     serde_json::json!({ "kind": "text", "text": txt, "source_app": src }),
                 );
             }
-        } else if sub_img && let Some((path, w, h, digest)) = read_clipboard_image_png() {
-            self.dispatch_clipboard_event(
-                PluginEventKind::ClipboardImage,
-                serde_json::json!({
-                    "path": path, "width": w, "height": h, "digest": digest, "source_app": src
-                }),
-            );
+        } else if let Some((path, w, h, digest)) = read_clipboard_image_png() {
+            self.last_clip_snapshot = None;
+            self.last_rich_clip_at = Some(Instant::now());
+            if sub_img {
+                self.dispatch_clipboard_event(
+                    PluginEventKind::ClipboardImage,
+                    serde_json::json!({
+                        "path": path, "width": w, "height": h, "digest": digest, "source_app": src
+                    }),
+                );
+            }
         }
     }
 

@@ -328,7 +328,7 @@
   .store-info { flex: 1; min-width: 0; }
   .store-title { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
   .store-ver { font-size: 11.5px; color: var(--muted); }
-  .store-meta { margin-top: 4px; font-size: 11px; color: var(--muted); font-family: "Cascadia Mono", Consolas, monospace; display: flex; gap: 6px; flex-wrap: wrap; }
+  .store-meta { margin-top: 4px; font-size: 11px; color: var(--muted); font-family: var(--font-mono); display: flex; gap: 6px; flex-wrap: wrap; }
   .store-act { flex-shrink: 0; display: flex; align-items: center; gap: 6px; }
   .pager { display: flex; align-items: center; justify-content: space-between; padding-top: 12px; margin-top: 8px; border-top: 1px solid var(--border); }
 </style>

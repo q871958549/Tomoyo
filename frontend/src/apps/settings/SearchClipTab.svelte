@@ -180,7 +180,7 @@
   }
   .dir-txt {
     flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    font-family: "Cascadia Mono", Consolas, monospace; font-size: 12px;
+    font-family: var(--font-mono); font-size: 12px;
   }
   .err-msg { font-size: 12px; color: var(--danger); }
 </style>

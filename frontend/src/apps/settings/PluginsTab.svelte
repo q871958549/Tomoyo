@@ -250,7 +250,7 @@
   .upd-btn { border-color: var(--ok); color: var(--ok); background: var(--ok-soft); }
   .health-bar { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
   .empty-plug { padding: 12px 0 4px; font-size: 12px; color: var(--muted); }
-  .plug-id { font-size: 11px; color: var(--muted); font-family: "Cascadia Mono", Consolas, monospace; }
+  .plug-id { font-size: 11px; color: var(--muted); font-family: var(--font-mono); }
   .perm-item { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--text-secondary); }
-  .path-sub { margin-top: 2px; font-size: 12px; color: var(--muted); font-family: "Cascadia Mono", Consolas, monospace; word-break: break-all; }
+  .path-sub { margin-top: 2px; font-size: 12px; color: var(--muted); font-family: var(--font-mono); word-break: break-all; }
 </style>

@@ -87,7 +87,7 @@
   }
   .sus-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   .sus-title { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; font-size: 12.5px; }
-  .sus-pid { font-size: 11px; color: var(--muted); font-family: "Cascadia Mono", Consolas, monospace; }
+  .sus-pid { font-size: 11px; color: var(--muted); font-family: var(--font-mono); }
   .sus-conf {
     padding: 1px 7px; border-radius: 999px; font-size: 10.5px; font-weight: 500;
     background: var(--surface); color: var(--text-secondary); border: 1px solid var(--border);
@@ -99,7 +99,7 @@
   }
   .sus-close:hover { background: var(--hover); color: var(--text); }
   .sus-rem { margin: 0; font-size: 12.5px; color: var(--text); line-height: 1.55; }
-  .sus-path { font-size: 11px; color: var(--text-secondary); font-family: "Cascadia Mono", Consolas, monospace; word-break: break-all; }
+  .sus-path { font-size: 11px; color: var(--text-secondary); font-family: var(--font-mono); word-break: break-all; }
   .sus-acts { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 2px; }
   :global(.sus-ico) { color: var(--accent); flex-shrink: 0; }
 </style>

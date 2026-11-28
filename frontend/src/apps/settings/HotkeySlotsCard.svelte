@@ -168,7 +168,7 @@
   .rec-hint { font-size: 11.5px; color: var(--muted); }
   .free-chip {
     padding: 2px 8px; border-radius: 6px; border: 1px solid var(--border);
-    background: var(--surface); color: var(--accent); font-family: "Cascadia Mono", Consolas, monospace;
+    background: var(--surface); color: var(--accent); font-family: var(--font-mono);
     font-size: 11.5px; font-weight: 500; cursor: pointer;
   }
   .free-chip:hover { border-color: var(--accent); background: var(--accent-soft); }

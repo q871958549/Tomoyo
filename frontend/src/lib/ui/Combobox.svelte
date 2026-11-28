@@ -186,7 +186,7 @@
   }
   .t-combo-opt {
     display: flex; align-items: center; gap: 6px; padding: 6px 9px; border: 0; border-radius: 6px;
-    background: transparent; color: var(--text); font-family: "Cascadia Mono", Consolas, monospace;
+    background: transparent; color: var(--text); font-family: var(--font-mono);
     font-size: 12px; text-align: left; cursor: pointer;
   }
   .t-combo-opt.is-focus { background: var(--hover); }
@@ -195,7 +195,7 @@
   .t-tag {
     display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 6px 0 9px;
     border-radius: 6px; background: var(--subtle); border: 1px solid var(--border);
-    color: var(--text-secondary); font-family: "Cascadia Mono", Consolas, monospace; font-size: 11.5px;
+    color: var(--text-secondary); font-family: var(--font-mono); font-size: 11.5px;
   }
   .t-tag-x {
     display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px;

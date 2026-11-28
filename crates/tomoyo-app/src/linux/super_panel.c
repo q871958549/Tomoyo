@@ -68,8 +68,7 @@ static void apply_sp_css(
 ) {
     if (!g_sp_css) g_sp_css = gtk_css_provider_new();
     const char *fam = (font_css && font_css[0]) ? font_css : "sans-serif";
-    char css[1280];
-    snprintf(css, sizeof(css),
+    gchar *css = g_strdup_printf(
         "window#tomoyo-sp { background-color: #%06x; border: 1px solid #%06x; border-radius: 10px; } "
         "label#tomoyo-sp-hdr { color: #%06x; font-family: %s; font-size: 12px; padding: 6px 10px 4px 10px; } "
         "button.tomoyo-sp-btn { background: transparent; background-image: none; color: #%06x; "
@@ -79,7 +78,10 @@ static void apply_sp_css(
         muted_rgb & 0xffffff, fam,
         fg_rgb & 0xffffff, fam,
         (accent_rgb >> 16) & 0xff, (accent_rgb >> 8) & 0xff, accent_rgb & 0xff, fg_rgb & 0xffffff);
-    gtk_css_provider_load_from_data(g_sp_css, css, -1, NULL);
+    if (css) {
+        gtk_css_provider_load_from_data(g_sp_css, css, -1, NULL);
+        g_free(css);
+    }
     gtk_style_context_add_provider_for_screen(
         gtk_widget_get_screen(win), GTK_STYLE_PROVIDER(g_sp_css), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
 }

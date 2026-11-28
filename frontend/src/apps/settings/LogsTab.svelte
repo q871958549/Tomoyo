@@ -82,7 +82,7 @@
   .chk-lbl { font-size: 12.5px; color: var(--text-secondary); white-space: nowrap; }
   .log-pre {
     margin: 0; padding: 12px 14px; border-radius: 9px; background: var(--canvas);
-    border: 1px solid var(--border); font-family: "Cascadia Mono", Consolas, monospace;
+    border: 1px solid var(--border); font-family: var(--font-mono);
     font-size: 11.6px; line-height: 1.55; color: var(--text); white-space: pre-wrap;
     word-break: break-word; max-height: 360px; overflow-y: auto;
   }

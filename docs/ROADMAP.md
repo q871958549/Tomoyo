@@ -28,6 +28,10 @@
 
 ```text
 ┌──────────────────────────────────────────────────────────────────────────────┐
+│  v3.4.1 · [已完成 ✅ · Linux 深度打磨与工程减压] Wayland 超级面板贴光标弹出   │
+│           PRIMARY 防滞留截胡 · WinLayout Wayland 探测/Hyprland/Sway 支持     │
+│           plocate 毫秒优先检索 · settings.html 体积压缩减压                  │
+├──────────────────────────────────────────────────────────────────────────────┤
 │  v3.4.0 · [已完成 ✅ · Wave 1 + Wave 2 全量交付] 纯 WASM 正则实验室 · 敏感剪贴│
 │           板脱敏定时销毁 · snippets/flows 干跑与可视化 · WinLayout 窗口上下文  │
 │           插件商店后台 ETag 304 静默更新徽标提示                            │
@@ -506,13 +510,19 @@
      - **官方跨平台窗口布局与前台窗口上下文插件（`dev.tomoyo.winlayout` · `win`/`wl`/`layout`）**：独立按需 STDIO 进程，支持左/右/上/下半屏、四象限、三分屏/主从 2/3、居中专注与窗口置顶切换，覆盖 KDE KWin 6 Wayland（`Object.assign` 几何重绘）与 Win32 FFI 多屏工作区，并附带前台活动窗口上下文卡；
      - **设置中心 Snippets 可视化管理与 Flows 2.0 交互升级（`tomoyo-webview-host`）**：`flows` 视图内置「短语模板库（`snippets.toml`）」录入/编辑/删除与动态变量一键填充，工作流支持在位编辑、步骤 `↑`/`↓` 排序及无副作用实时逐步干跑追踪（`flow_dry_run_result`）；
      - **插件商店后台 `ETag 304` 静默更新徽标提示（`store_health.rs` + `SettingsSidebar`）**：启动设置中心时后台非阻塞比对分片目录 SemVer 与磁盘 ETag 缓存，仅在侧栏插件导航与卡片标红升级徽标，零打扰零冗余流量。
+   - **`v3.4.1` · Linux 深度打磨与工程减压 ✅**：
+     - **Wayland 超级面板贴光标弹出与 `PRIMARY` 防截胡**：`kwin_pos.c` 新增 `Tomoyo Super Panel` 随鼠标坐标 `workspace.cursorPos` 边界自适应定位，`super_panel.c` 改为 GLib `g_strdup_printf` 动态分配 CSS 缓冲避免多字体栈截断，20 秒内新复制文件/图片优先于滞留 `PRIMARY` 文本；
+     - **WinLayout Wayland 探测与平铺扩展**：补齐 Hyprland（`hyprctl -j activewindow`）/ Sway（`swaymsg -t get_tree`）/ KDE Wayland（`kdotool`）前景窗口探测，缓存 `qdbus6` 路径并用原子编号替代每次预卸脚本子进程；
+     - **Linux 文件搜索 `plocate` 毫秒优先路由**：纯名称/扩展名查询优先走 `plocate` 倒排索引（空结果无缝回退 `fd`），仅日期/体积/目录条件走 `fd`；
+     - **前端 `settings.html` 体积减压**：缩短 Svelte scoped CSS 哈希并收紧构建参数，将单文件包体积拉离 `300 KB` 硬限。
 3. **Stage 3 (`v3.5.0`) · 本地优先的克制 AI 与 MCP 桥接（严守休眠零常驻）**：
    - **按需隔离进程 MCP Client / Agent Action Bridge**：通过独立按需子进程连接本地 Ollama、用户自备 OpenAI 兼容端点或本地 MCP 工具，将桌面上下文（划词 / 截图 / 剪贴板 / 文件）路由给合适引擎并将结果直接写回或粘贴，主内核严守零 AI 依赖与 `< 25 MB` 休眠红线；
-   - **高频场景深度整合**：划词/剪贴板一键总结、报错堆栈诊断、翻译润色与「用人话生成复杂筛选/正则」，以及可选本地备忘录/高频文档增量语义检索插件（不侵入核心 Everything 毫秒索引）。
+   - **高频场景深度整合**：划词/剪贴板一键总结、报错堆栈诊断、翻译润色与「用人话生成复杂筛选/正则」，以及可选本地备忘录/高频文档增量语义检索插件（不侵入核心 Everything 毫秒索引）；
+   - **标准 Wayland 协议解耦预研**：评估接入 `org.freedesktop.portal.GlobalShortcuts` 作为 GNOME/Hyprland 通用全局快捷键底座（KDE 继续走 `KGlobalAccel`），同步保持“薄 C 胶水 + 状态收敛 Rust”边界。
 4. **Stage 4 (`v4.0.0`) · 稳定协议冻结、可信分发与三平台肌肉记忆统一**：
    - **协议冻结与开发者生态独立**：冻结长期向后兼容的 Protocol v3 与 WASM ABI，将 `tomoyo-protocol` / `tomoyo-sdk` / `tomoyo-wasm-sdk` 发布至 `crates.io`；
    - **可信代码签名与官方包源**：对接开源代码签名（如 SignPath.io）打通已预置的 `signtool.exe` Release 自动签名消除 Windows SmartScreen 拦截，正式上架 **Winget**、**Scoop** 与 **Arch AUR**；
-   - **三平台闭环与 ARM64**：基于 `tomoyo-ui-macos` 推进 macOS 原生 `NSPanel` 外壳与 Windows/Linux ARM64 实测矩阵，实现同一套快捷键、片段与工作流在 Windows / Linux / macOS 间无缝延续。
+   - **三平台闭环与 ARM64**：基于 `tomoyo-ui-macos` 推进 macOS 原生 `NSPanel` 外壳、`WinLayout` Hyprland/Sway 全预设对齐与 Windows/Linux ARM64 实测矩阵，实现同一套快捷键、片段与工作流在 Windows / Linux / macOS 间无缝延续。
 
 ---
 

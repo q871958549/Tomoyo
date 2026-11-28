@@ -76,6 +76,21 @@ impl CombinedQuery {
     }
 }
 
+pub(crate) fn should_prefer_plocate(cq: &CombinedQuery, has_plocate: bool, has_fd: bool) -> bool {
+    if !has_plocate {
+        return false;
+    }
+    if !has_fd {
+        return true;
+    }
+    !cq.terms.is_empty()
+        && cq.changed_within.is_none()
+        && !cq.yesterday_only
+        && cq.min_size_bytes.is_none()
+        && cq.max_size_bytes.is_none()
+        && cq.path_filters.is_empty()
+}
+
 pub(crate) fn query_linux_files(
     search_text: &str,
     filter: SearchFilter,
@@ -84,9 +99,13 @@ pub(crate) fn query_linux_files(
 ) -> Result<EverythingResponse, &'static str> {
     let cap = max_results.clamp(1, 80);
     let cq = CombinedQuery::from_inputs(search_text, filter, custom_tab);
-    let paths = if has_bin("fd") {
+    let (has_fd, has_plocate, has_locate) = (has_bin("fd"), has_bin("plocate"), has_bin("locate"));
+    let paths = if should_prefer_plocate(&cq, has_plocate, has_fd) {
+        let fast = run_locate_search(&cq, filter != SearchFilter::All, cap);
+        if fast.is_empty() && has_fd { run_fd_search(&cq, cap) } else { fast }
+    } else if has_fd {
         run_fd_search(&cq, cap)
-    } else if has_bin("plocate") || has_bin("locate") {
+    } else if has_plocate || has_locate {
         run_locate_search(&cq, filter != SearchFilter::All, cap)
     } else {
         return Err("missing fd/plocate");
@@ -348,5 +367,18 @@ mod tests {
         assert!(y.folders_only);
         assert_eq!(parse_inline_hints("dm:thismonth").changed_within, Some("30d"));
         assert_eq!(parse_inline_hints("dm:thisyear").changed_within, Some("365d"));
+    }
+
+    #[test]
+    fn prefers_plocate_for_plain_queries_and_fd_for_rich_filters() {
+        let plain = CombinedQuery::from_inputs("Cargo.toml", SearchFilter::All, None);
+        assert!(should_prefer_plocate(&plain, true, true));
+        let dated = CombinedQuery::from_inputs("dm:today report", SearchFilter::Pdf, None);
+        assert!(!should_prefer_plocate(&dated, true, true));
+        let sized = CombinedQuery::from_inputs("size:>5mb video", SearchFilter::All, None);
+        assert!(!should_prefer_plocate(&sized, true, true));
+        let scoped = CombinedQuery::from_inputs("path:Downloads iso", SearchFilter::All, None);
+        assert!(!should_prefer_plocate(&scoped, true, true));
+        assert!(should_prefer_plocate(&scoped, true, false));
     }
 }

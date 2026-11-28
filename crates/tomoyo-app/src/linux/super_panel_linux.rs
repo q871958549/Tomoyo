@@ -12,6 +12,7 @@ use crate::renderer::Rgb;
 use std::cell::RefCell;
 use std::ffi::{c_char, c_int, c_void, CString};
 use std::path::Path;
+use std::time::Duration;
 use tomoyo_core::{
     format_css_font_stack, Lang, TomoyoConfig, PLUGIN_CAPTURE, PLUGIN_CLIPBOARD, PLUGIN_NOTES,
     PLUGIN_OCR, PLUGIN_TRANSLATE,
@@ -152,12 +153,34 @@ pub(super) fn build_linux_super_actions(
     (lang.pick("Tomoyo 超级面板", "Tomoyo Super Panel").into(), actions)
 }
 
+pub(super) fn pick_super_panel_source<'a>(
+    sel: Option<&'a str>,
+    files: Option<&'a [String]>,
+    recent_rich_clip: bool,
+) -> (Option<&'a str>, Option<&'a [String]>) {
+    if recent_rich_clip && files.is_some_and(|f| !f.is_empty()) {
+        return (None, files);
+    }
+    if sel.is_some_and(|s| !s.trim().is_empty()) {
+        return (sel, None);
+    }
+    (None, files)
+}
+
 impl AppCore {
     pub(super) fn open_super_panel(&mut self) {
+        let recent_rich_clip = self
+            .last_rich_clip_at
+            .is_some_and(|t| t.elapsed() <= Duration::from_secs(20));
         let sel = read_primary_selection_text();
-        let files = if sel.is_none() { read_clipboard_files() } else { None };
+        let files = if recent_rich_clip || sel.is_none() {
+            read_clipboard_files()
+        } else {
+            None
+        };
+        let (eff_sel, eff_files) = pick_super_panel_source(sel.as_deref(), files.as_deref(), recent_rich_clip);
         let Ok(cfg) = self.config.read().map(|c| c.clone()) else { return; };
-        let (header, actions) = build_linux_super_actions(sel.as_deref(), files.as_deref(), &cfg, &self.plugin_host, self.lang);
+        let (header, actions) = build_linux_super_actions(eff_sel, eff_files, &cfg, &self.plugin_host, self.lang);
         if actions.is_empty() { return; }
         let c_hdr = CString::new(header).unwrap_or_default();
         let c_labels: Vec<CString> = actions.iter().map(|a| CString::new(a.label.as_str()).unwrap_or_default()).collect();
@@ -215,5 +238,13 @@ mod tests {
         cfg.disabled_plugins.push(PLUGIN_TRANSLATE.into());
         let (_h3, eacts) = build_linux_super_actions(None, None, &cfg, &host, Lang::Zh);
         assert!(eacts.len() <= 6 && !eacts.iter().any(|a| matches!(a.kind, LinuxSuperKind::OpenTranslator(_))));
+    }
+
+    #[test]
+    fn recent_rich_clipboard_beats_stale_primary_selection() {
+        let files = vec!["/tmp/shot.png".to_string()];
+        assert_eq!(pick_super_panel_source(Some("stale terminal text"), Some(&files), true), (None, Some(files.as_slice())));
+        assert_eq!(pick_super_panel_source(Some("fresh selection"), Some(&files), false), (Some("fresh selection"), None));
+        assert_eq!(pick_super_panel_source(Some("   "), Some(&files), false), (None, Some(files.as_slice())));
     }
 }
